@@ -98,14 +98,41 @@ func extractPriority(labels []string) string {
 // FetchClosedIssueNumbers returns the issue numbers of all closed issues in
 // the given repo. This is used to build the closed-set for dependency resolution.
 func FetchClosedIssueNumbers(repo string) ([]int, error) {
+	return fetchNumbersByState(repo, "closed")
+}
+
+// FetchAllIssueNumbers returns a set of all issue numbers (open and closed)
+// in the given repo. Useful for validating cross-references.
+func FetchAllIssueNumbers(repo string) (map[int]bool, error) {
+	open, err := fetchNumbersByState(repo, "open")
+	if err != nil {
+		return nil, err
+	}
+	closed, err := fetchNumbersByState(repo, "closed")
+	if err != nil {
+		return nil, err
+	}
+
+	all := make(map[int]bool, len(open)+len(closed))
+	for _, n := range open {
+		all[n] = true
+	}
+	for _, n := range closed {
+		all[n] = true
+	}
+	return all, nil
+}
+
+// fetchNumbersByState fetches issue numbers filtered by state (open/closed).
+func fetchNumbersByState(repo, state string) ([]int, error) {
 	out, err := CommandRunner("gh", "issue", "list",
 		"--repo", repo,
-		"--state", "closed",
+		"--state", state,
 		"--json", "number",
 		"--limit", "500",
 	)
 	if err != nil {
-		return nil, fmt.Errorf("gh issue list (closed): %w", err)
+		return nil, fmt.Errorf("gh issue list (%s): %w", state, err)
 	}
 
 	var raw []struct {

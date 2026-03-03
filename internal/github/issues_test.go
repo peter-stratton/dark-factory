@@ -110,6 +110,34 @@ func TestLabelParsing(t *testing.T) {
 	}
 }
 
+func TestFetchAllIssueNumbers(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	callCount := 0
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		callCount++
+		// First call = open, second = closed
+		if callCount == 1 {
+			return []byte(`[{"number":1},{"number":2}]`), nil
+		}
+		return []byte(`[{"number":3},{"number":4}]`), nil
+	}
+
+	all, err := FetchAllIssueNumbers("owner/repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("expected 4 numbers, got %d", len(all))
+	}
+	for _, n := range []int{1, 2, 3, 4} {
+		if !all[n] {
+			t.Errorf("expected %d in result set", n)
+		}
+	}
+}
+
 func TestEmptyMilestone(t *testing.T) {
 	orig := CommandRunner
 	CommandRunner = fakeGH([]ghIssue{})
