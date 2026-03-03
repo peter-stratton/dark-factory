@@ -105,6 +105,7 @@ before implementation begins.
 - Baseline commit recording before each issue for rollback reference
 - `git pull --rebase origin main` after each merge
 - Single-issue mode (`--issue N`)
+- `godark implement <issue-number>` — direct single-issue command (no milestone/deps)
 - Summary stats at end (implemented, skipped, failed)
 
 ---

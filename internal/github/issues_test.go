@@ -138,6 +138,50 @@ func TestFetchAllIssueNumbers(t *testing.T) {
 	}
 }
 
+func TestFetchIssue(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`{"number":42,"title":"Add widget","body":"Please add a widget.","labels":[{"name":"p2"},{"name":"enhancement"}]}`), nil
+	}
+
+	issue, err := FetchIssue("owner/repo", 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if issue.Number != 42 {
+		t.Errorf("number: got %d, want 42", issue.Number)
+	}
+	if issue.Title != "Add widget" {
+		t.Errorf("title: got %q, want %q", issue.Title, "Add widget")
+	}
+	if issue.Body != "Please add a widget." {
+		t.Errorf("body: got %q", issue.Body)
+	}
+	if issue.Priority != "p2" {
+		t.Errorf("priority: got %q, want %q", issue.Priority, "p2")
+	}
+	if len(issue.Labels) != 2 {
+		t.Fatalf("labels: got %d, want 2", len(issue.Labels))
+	}
+}
+
+func TestFetchIssueError(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("not found")
+	}
+
+	_, err := FetchIssue("owner/repo", 999)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
 func TestEmptyMilestone(t *testing.T) {
 	orig := CommandRunner
 	CommandRunner = fakeGH([]ghIssue{})
