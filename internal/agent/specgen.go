@@ -20,26 +20,15 @@ func GenerateSpec(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return nil, fmt.Errorf("rendering spec_generator prompt: %w", err)
 	}
 
-	timeout, err := parseTimeout(cfg.AgentTimeout)
+	opts, err := newRunOpts(rendered, cfg, authEnv)
 	if err != nil {
-		return nil, fmt.Errorf("parsing agent_timeout: %w", err)
-	}
-
-	opts := RunOpts{
-		Prompt:      rendered,
-		Env:         authEnv,
-		Image:       cfg.Docker.Image,
-		Repo:        cfg.Repo,
-		Branch:      "",
-		WorkDir:     "/workspace",
-		ClaudeFlags: cfg.ClaudeFlags,
-		Timeout:     timeout,
+		return nil, err
 	}
 
 	logger.Info("starting spec generator agent",
 		"issue_number", issue.Number,
 		"issue_title", issue.Title,
-		"branch", fmt.Sprintf("%d-%s", issue.Number, slug),
+		"branch", BranchName(issue.Number, slug),
 	)
 
 	return Run(ctx, opts, cfg.NoSandbox, logger)

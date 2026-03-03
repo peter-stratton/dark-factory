@@ -186,3 +186,66 @@ func TestParseDeps_MixedCase(t *testing.T) {
 		t.Errorf("ParseDeps = %v, want [4]", deps)
 	}
 }
+
+func TestParseDeps_EmptyBody(t *testing.T) {
+	deps := ParseDeps("")
+	if len(deps) != 0 {
+		t.Errorf("ParseDeps(\"\") = %v, want []", deps)
+	}
+}
+
+func TestParseDeps_IssueRefWithoutBlockerPrefix(t *testing.T) {
+	// #5 appearing in normal text should NOT be treated as a dependency.
+	body := "This relates to #5 but is not blocked by anything."
+	deps := ParseDeps(body)
+	if len(deps) != 0 {
+		t.Errorf("ParseDeps = %v, want [] (refs without blocker prefix should be ignored)", deps)
+	}
+}
+
+func TestParseDeps_LargeIssueNumber(t *testing.T) {
+	body := "Blocked by: #999999"
+	deps := ParseDeps(body)
+	if len(deps) != 1 || deps[0] != 999999 {
+		t.Errorf("ParseDeps = %v, want [999999]", deps)
+	}
+}
+
+func TestResolveWithDeps(t *testing.T) {
+	issues := []github.Issue{
+		{Number: 1, Body: ""},
+		{Number: 2, Body: "**Blocked by**: #1"},
+		{Number: 3, Body: "Depends on: #99"},
+	}
+	closed := ClosedSet([]int{1})
+	result := ResolveWithDeps(issues, closed)
+	if len(result) != 2 {
+		t.Fatalf("got %d issues, want 2", len(result))
+	}
+	if result[0].Issue.Number != 1 {
+		t.Errorf("first issue = #%d, want #1", result[0].Issue.Number)
+	}
+	if result[1].Issue.Number != 2 {
+		t.Errorf("second issue = #%d, want #2", result[1].Issue.Number)
+	}
+	if len(result[1].Deps) != 1 || result[1].Deps[0] != 1 {
+		t.Errorf("issue #2 deps = %v, want [1]", result[1].Deps)
+	}
+}
+
+func TestClosedSet(t *testing.T) {
+	s := ClosedSet([]int{1, 5, 10})
+	if !s[1] || !s[5] || !s[10] {
+		t.Error("expected all numbers in set")
+	}
+	if s[2] {
+		t.Error("expected 2 to not be in set")
+	}
+}
+
+func TestClosedSet_Empty(t *testing.T) {
+	s := ClosedSet(nil)
+	if len(s) != 0 {
+		t.Errorf("expected empty set, got %v", s)
+	}
+}

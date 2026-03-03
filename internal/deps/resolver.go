@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/patterns"
 )
 
 // depPattern matches dependency declarations like:
@@ -14,14 +15,11 @@ import (
 //   - BLOCKED BY: #4
 var depPattern = regexp.MustCompile(`(?im)^\**(?:blocked by|depends on)\**:\s*(.+)$`)
 
-// issueRefPattern matches issue number references like #1, #42.
-var issueRefPattern = regexp.MustCompile(`#(\d+)`)
-
 // ParseDeps extracts dependency issue numbers from an issue body.
 func ParseDeps(body string) []int {
 	var deps []int
 	for _, match := range depPattern.FindAllStringSubmatch(body, -1) {
-		refs := issueRefPattern.FindAllStringSubmatch(match[1], -1)
+		refs := patterns.IssueRef.FindAllStringSubmatch(match[1], -1)
 		for _, ref := range refs {
 			n, err := strconv.Atoi(ref[1])
 			if err != nil {

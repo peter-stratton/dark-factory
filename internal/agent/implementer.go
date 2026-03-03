@@ -18,7 +18,7 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 	data := newPromptData(issue, cfg, slug)
 
 	// Check if the feature branch already exists on the remote.
-	branch := fmt.Sprintf("%d-%s", issue.Number, slug)
+	branch := BranchName(issue.Number, slug)
 	out, err := GuardRunner("git", "ls-remote", "--heads", "origin", branch)
 	if err == nil && strings.TrimSpace(string(out)) != "" {
 		data.BranchExists = true
@@ -29,26 +29,15 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 		return nil, fmt.Errorf("rendering implementer prompt: %w", err)
 	}
 
-	timeout, err := parseTimeout(cfg.AgentTimeout)
+	opts, err := newRunOpts(rendered, cfg, authEnv)
 	if err != nil {
-		return nil, fmt.Errorf("parsing agent_timeout: %w", err)
-	}
-
-	opts := RunOpts{
-		Prompt:      rendered,
-		Env:         authEnv,
-		Image:       cfg.Docker.Image,
-		Repo:        cfg.Repo,
-		Branch:      "",
-		WorkDir:     "/workspace",
-		ClaudeFlags: cfg.ClaudeFlags,
-		Timeout:     timeout,
+		return nil, err
 	}
 
 	logger.Info("starting implementer agent",
 		"issue_number", issue.Number,
 		"issue_title", issue.Title,
-		"branch", fmt.Sprintf("%d-%s", issue.Number, slug),
+		"branch", branch,
 	)
 
 	return Run(ctx, opts, cfg.NoSandbox, logger)
@@ -66,20 +55,9 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, cfg *config.Co
 		return nil, fmt.Errorf("rendering implementer_retry prompt: %w", err)
 	}
 
-	timeout, err := parseTimeout(cfg.AgentTimeout)
+	opts, err := newRunOpts(rendered, cfg, authEnv)
 	if err != nil {
-		return nil, fmt.Errorf("parsing agent_timeout: %w", err)
-	}
-
-	opts := RunOpts{
-		Prompt:      rendered,
-		Env:         authEnv,
-		Image:       cfg.Docker.Image,
-		Repo:        cfg.Repo,
-		Branch:      "",
-		WorkDir:     "/workspace",
-		ClaudeFlags: cfg.ClaudeFlags,
-		Timeout:     timeout,
+		return nil, err
 	}
 
 	logger.Info("starting implementer retry agent",
@@ -88,6 +66,11 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, cfg *config.Co
 	)
 
 	return Run(ctx, opts, cfg.NoSandbox, logger)
+}
+
+// BranchName returns the conventional branch name for an issue.
+func BranchName(issueNumber int, slug string) string {
+	return fmt.Sprintf("%d-%s", issueNumber, slug)
 }
 
 func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptData {
@@ -103,6 +86,25 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ScenarioDir:    cfg.ScenarioDir,
 		ReviewDir:      cfg.ReviewDir,
 	}
+}
+
+// newRunOpts builds a RunOpts from a rendered prompt and config. This
+// consolidates the repeated timeout-parsing + opts-construction that every
+// agent function needs.
+func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string) (RunOpts, error) {
+	timeout, err := parseTimeout(cfg.AgentTimeout)
+	if err != nil {
+		return RunOpts{}, fmt.Errorf("parsing agent_timeout: %w", err)
+	}
+	return RunOpts{
+		Prompt:      rendered,
+		Env:         authEnv,
+		Image:       cfg.Docker.Image,
+		Repo:        cfg.Repo,
+		WorkDir:     "/workspace",
+		ClaudeFlags: cfg.ClaudeFlags,
+		Timeout:     timeout,
+	}, nil
 }
 
 func parseTimeout(s string) (time.Duration, error) {

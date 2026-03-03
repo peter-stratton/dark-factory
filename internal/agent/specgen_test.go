@@ -13,7 +13,7 @@ func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 		SpecGenerator: "Generate spec for #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} slug={{.Slug}}",
 	}
 
-	result, err := GenerateSpec(context.Background(), testIssue(), testImplementerConfig(), prompts, nil, testLogger(t))
+	result, err := GenerateSpec(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("GenerateSpec() error = %v", err)
 	}
@@ -33,7 +33,7 @@ func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 func TestGenerateSpec_InvalidTimeout(t *testing.T) {
 	stubRunner(t)
 
-	cfg := testImplementerConfig()
+	cfg := testConfig()
 	cfg.AgentTimeout = "invalid"
 
 	prompts := &Prompts{

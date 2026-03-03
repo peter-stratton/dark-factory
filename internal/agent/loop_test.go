@@ -313,3 +313,98 @@ func TestProcessIssue_MergeAndPullOnApproval(t *testing.T) {
 		t.Error("expected git pull --rebase to be called")
 	}
 }
+
+func TestCheckDriftAndClose_NoDrift(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte("src/main.go\n"), nil
+	})
+
+	cfg := loopConfig()
+	err := checkDriftAndClose("abc123", cfg, 10, testLogger(t))
+	if err != nil {
+		t.Errorf("expected no error when no drift, got: %v", err)
+	}
+}
+
+func TestCheckDriftAndClose_Drift(t *testing.T) {
+	var closeCalled bool
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "diff --name-only") {
+			return []byte("CLAUDE.md\nsrc/main.go\n"), nil
+		}
+		if strings.Contains(joined, "pr close") {
+			closeCalled = true
+		}
+		return []byte(""), nil
+	})
+
+	cfg := loopConfig()
+	err := checkDriftAndClose("abc123", cfg, 10, testLogger(t))
+	if err == nil {
+		t.Fatal("expected error when drift detected")
+	}
+	if !strings.Contains(err.Error(), "protected path drift") {
+		t.Errorf("error = %v, want 'protected path drift'", err)
+	}
+	if !closeCalled {
+		t.Error("expected PR to be closed")
+	}
+}
+
+func TestCheckDriftAndClose_GitDiffError(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("git error")
+	})
+
+	cfg := loopConfig()
+	err := checkDriftAndClose("abc123", cfg, 10, testLogger(t))
+	if err != nil {
+		t.Errorf("expected nil error on git diff failure (non-fatal), got: %v", err)
+	}
+}
+
+func TestProcessIssue_SkipsSpecGenWhenNoPrompt(t *testing.T) {
+	agentCallCount := 0
+	setupLoopTest(t, []string{
+		"implementer output",
+		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	})
+
+	// Override Runner to count agent calls.
+	origRunner := Runner
+	t.Cleanup(func() { Runner = origRunner })
+	Runner = func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+		agentCallCount++
+		if agentCallCount == 2 {
+			return []byte("reviewer output\nREVIEW_RESULT=APPROVED\n"), []byte(""), 0, nil
+		}
+		return []byte("implementer output"), []byte(""), 0, nil
+	}
+
+	// No SpecGenerator prompt → should only have 2 agent calls (implement + review).
+	prompts := testPrompts(t)
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t))
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if agentCallCount != 2 {
+		t.Errorf("expected 2 agent calls (implement + review), got %d", agentCallCount)
+	}
+}

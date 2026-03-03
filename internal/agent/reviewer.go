@@ -25,19 +25,9 @@ func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Conf
 		return nil, fmt.Errorf("rendering reviewer prompt: %w", err)
 	}
 
-	timeout, err := parseTimeout(cfg.AgentTimeout)
+	opts, err := newRunOpts(rendered, cfg, authEnv)
 	if err != nil {
-		return nil, fmt.Errorf("parsing agent_timeout: %w", err)
-	}
-
-	opts := RunOpts{
-		Prompt:      rendered,
-		Env:         authEnv,
-		Image:       cfg.Docker.Image,
-		Repo:        cfg.Repo,
-		WorkDir:     "/workspace",
-		ClaudeFlags: cfg.ClaudeFlags,
-		Timeout:     timeout,
+		return nil, err
 	}
 
 	logger.Info("starting reviewer agent",

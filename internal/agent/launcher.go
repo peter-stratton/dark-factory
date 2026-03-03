@@ -104,7 +104,7 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 
 	claudeArgs := fmt.Sprintf("claude -p --dangerously-skip-permissions %q", opts.Prompt)
 	for _, f := range opts.ClaudeFlags {
-		claudeArgs += " " + f
+		claudeArgs += " " + fmt.Sprintf("%q", f)
 	}
 
 	cloneScript := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
