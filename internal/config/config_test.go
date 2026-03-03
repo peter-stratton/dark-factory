@@ -9,6 +9,7 @@ import (
 
 func strPtr(s string) *string { return &s }
 func intPtr(i int) *int       { return &i }
+func boolPtr(b bool) *bool    { return &b }
 
 func writeYAML(t *testing.T, dir, content string) string {
 	t.Helper()
@@ -218,5 +219,55 @@ func TestIssueAloneSuffices(t *testing.T) {
 	}
 	if cfg.Issue != 42 {
 		t.Errorf("Issue = %d, want 42", cfg.Issue)
+	}
+}
+
+func TestNoSandboxDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NoSandbox {
+		t.Error("NoSandbox should default to false")
+	}
+}
+
+func TestNoSandboxFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+no_sandbox: true
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.NoSandbox {
+		t.Error("NoSandbox = false, want true from YAML")
+	}
+}
+
+func TestNoSandboxFlagOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+no_sandbox: false
+`)
+
+	cfg, err := Load(path, CLIFlags{NoSandbox: boolPtr(true)})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.NoSandbox {
+		t.Error("NoSandbox = false, want true (flag should override)")
 	}
 }
