@@ -1,3 +1,6 @@
+# working
+.worktrees/*
+
 # Binaries
 /godark
 bin/
