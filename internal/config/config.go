@@ -39,10 +39,13 @@ type CrossCompile struct {
 
 // Docker holds Docker sandbox configuration.
 type Docker struct {
-	Image      string `yaml:"image"`
-	Dockerfile string `yaml:"dockerfile"`
-	Mount      string `yaml:"mount"`
-	User       string `yaml:"user"`
+	Image         string   `yaml:"image"`
+	Dockerfile    string   `yaml:"dockerfile"`
+	Mount         string   `yaml:"mount"`
+	User          string   `yaml:"user"`
+	GoVersion     string   `yaml:"go_version"`
+	NodeVersion   string   `yaml:"node_version"`
+	ExtraPackages []string `yaml:"extra_packages"`
 }
 
 // Prompts holds paths to prompt template files.
