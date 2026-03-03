@@ -21,6 +21,8 @@ type Config struct {
 	CrossCompile CrossCompile `yaml:"cross_compile"`
 
 	ProtectedPaths []string `yaml:"protected_paths"`
+	RoadmapPath    string   `yaml:"roadmap_path"`
+	PlanningDir    string   `yaml:"planning_dir"`
 	ScenarioDir    string   `yaml:"scenario_dir"`
 	ReviewDir      string   `yaml:"review_dir"`
 	LogDir         string   `yaml:"log_dir"`
@@ -89,6 +91,8 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 func defaults() *Config {
 	return &Config{
 		MaxRetries:  2,
+		RoadmapPath: "docs/ROADMAP.md",
+		PlanningDir: "docs/planning/",
 		ScenarioDir: "tests/scenarios/",
 		ReviewDir:   "tests/review/",
 		LogDir:      "logs/",

@@ -1,0 +1,77 @@
+---
+name: godark-create-roadmap
+description: Create a project roadmap and GitHub milestones through conversation
+argument-hint: "<project-goal>"
+disable-model-invocation: true
+---
+
+# Create Roadmap
+
+Help the user define a phased roadmap for their project and write it to
+`docs/ROADMAP.md`. Create a GitHub milestone for each phase.
+
+## Steps
+
+1. **Gather context** — Read `CLAUDE.md` and `docs/CONTEXT.md` (if they exist)
+   to understand the project. Read `godark.yaml` to find the `repo` and
+   `roadmap_path` (default: `docs/ROADMAP.md`).
+
+2. **Discuss goals** — Ask the user about:
+   - What the project does and who it's for
+   - What a working MVP looks like
+   - Key constraints or technical decisions already made
+   - Rough features they have in mind
+
+3. **Propose phases** — Based on the discussion, propose a phased breakdown.
+   Each phase should have:
+   - A clear goal (what's true when the phase is done)
+   - A short list of issue-level work items (not full specs — just slugs)
+   - Dependencies on prior phases
+
+   Ask the user to review. Iterate until they're satisfied with the phasing.
+
+4. **Write the roadmap** — Create `docs/ROADMAP.md` (or the configured
+   `roadmap_path`) using the format below. Create parent directories if needed.
+
+5. **Create milestones** — For each phase, run:
+   ```
+   gh milestone create "<Phase Name>" --repo <repo>
+   ```
+   If the milestone already exists, skip it and note that in the output.
+
+6. **Print summary** — List the phases, milestone names, and file path.
+
+## Format
+
+```markdown
+# <Project Name> — Roadmap
+
+> One-line project description.
+
+---
+
+## Phase 1: <Name>
+
+**Goal**: <What's true when this phase is complete.>
+
+**Milestone**: `<Phase Name>` | **Label**: `phase-1`
+
+- <Issue slug — brief description of a work item>
+- <Issue slug — brief description of a work item>
+
+---
+
+## Phase 2: <Name>
+...
+```
+
+## Rules
+
+- Every phase must have a **Goal**, **Milestone**, and **Label**.
+- Milestone names must match exactly between the roadmap and GitHub.
+- Labels follow the pattern `phase-N`.
+- Issue slugs are short descriptions, not full specs — those come later in
+  `/godark-create-planning-doc`.
+- If a roadmap already exists, ask the user whether to replace it or append new
+  phases.
+- Do not create GitHub issues — that is handled by `/godark-create-issues`.
