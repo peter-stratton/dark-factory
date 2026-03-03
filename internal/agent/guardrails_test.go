@@ -142,6 +142,34 @@ func TestCheckProtectedDrift_EmptyWhenClean(t *testing.T) {
 	}
 }
 
+func TestHasScenarioSpec_Found(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("Relates to: Issue #5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !HasScenarioSpec(dir, 5) {
+		t.Error("HasScenarioSpec() = false, want true")
+	}
+}
+
+func TestHasScenarioSpec_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("Relates to: Issue #99\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if HasScenarioSpec(dir, 5) {
+		t.Error("HasScenarioSpec() = true, want false")
+	}
+}
+
+func TestHasScenarioSpec_MissingDir(t *testing.T) {
+	if HasScenarioSpec("/nonexistent-dir-12345", 5) {
+		t.Error("HasScenarioSpec() = true, want false for missing dir")
+	}
+}
+
 func TestWarnMissingScenario_NoWarningWhenFound(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("Relates to: Issue #5\n"), 0o644); err != nil {

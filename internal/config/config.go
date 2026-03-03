@@ -56,6 +56,7 @@ type Prompts struct {
 	Implementer      string `yaml:"implementer"`
 	ImplementerRetry string `yaml:"implementer_retry"`
 	Reviewer         string `yaml:"reviewer"`
+	SpecGenerator    string `yaml:"spec_generator"`
 }
 
 // CLIFlags holds flag values passed on the command line.

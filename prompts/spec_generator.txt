@@ -1,0 +1,42 @@
+Read CLAUDE.md completely before doing anything else.
+Then generate a scenario spec for GitHub issue #{{.IssueNumber}} in the {{.Repo}} repository.
+
+Issue title: {{.IssueTitle}}
+Issue body:
+{{.IssueBody}}
+
+Before writing the spec:
+1. Read the full issue body carefully, including any acceptance criteria
+2. Explore the codebase to understand the architecture, patterns, and conventions
+3. Read existing scenario specs in {{.ScenarioDir}} to understand the expected format
+
+CRITICAL RULES:
+- Create a feature branch: git checkout -b {{.IssueNumber}}-{{.Slug}}
+- Never commit directly to main
+- Do NOT modify any protected paths: {{.ProtectedPaths}}
+- Do NOT modify existing files in {{.ScenarioDir}}
+
+Scenario spec format (follow this exactly):
+
+```markdown
+# Scenario: <descriptive feature name>
+
+Relates to: Issue #<number>
+
+## Setup
+- Description of test fixture state and prerequisites
+
+## Cases
+
+### <Case name>
+Description of what to do.
+- Expected outcome 1
+- Expected outcome 2
+```
+
+Steps:
+1. Choose a descriptive filename (e.g., {{.ScenarioDir}}<short-slug>.md)
+2. Write the scenario spec covering all cases from the issue
+3. Include edge cases and error scenarios where appropriate
+4. Commit with message: "test: add scenario spec for issue #{{.IssueNumber}}"
+5. Push the branch: git push -u origin {{.IssueNumber}}-{{.Slug}}

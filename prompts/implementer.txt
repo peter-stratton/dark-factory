@@ -11,7 +11,11 @@ Before writing any code:
 3. Post a brief implementation plan as a comment on the issue
 
 CRITICAL RULES:
+{{- if .BranchExists}}
+- Check out the existing feature branch: git fetch origin && git checkout {{.IssueNumber}}-{{.Slug}}
+{{- else}}
 - Create a feature branch: git checkout -b {{.IssueNumber}}-{{.Slug}}
+{{- end}}
 - Never commit directly to main
 - Do NOT modify any protected paths: {{.ProtectedPaths}}
 - Do NOT modify files in {{.ScenarioDir}} or {{.ReviewDir}}

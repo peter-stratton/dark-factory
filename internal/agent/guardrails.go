@@ -117,19 +117,14 @@ func ParseReviewResult(stdout string) string {
 	return ""
 }
 
-// WarnMissingScenario checks whether any scenario spec file in scenarioDir
-// references the given issue number. If not, it posts a warning comment on
-// the PR.
-func WarnMissingScenario(repo string, prNum, issueNum int, scenarioDir string, logger *slog.Logger) error {
+// HasScenarioSpec returns true if any .md file in scenarioDir contains a
+// reference to the given issue number (e.g. "#5").
+func HasScenarioSpec(scenarioDir string, issueNum int) bool {
 	ref := fmt.Sprintf("#%d", issueNum)
 
 	entries, err := os.ReadDir(scenarioDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			logger.Warn("scenario directory not found", "dir", scenarioDir)
-		} else {
-			return fmt.Errorf("reading scenario dir: %w", err)
-		}
+		return false
 	}
 
 	for _, e := range entries {
@@ -141,12 +136,26 @@ func WarnMissingScenario(repo string, prNum, issueNum int, scenarioDir string, l
 			continue
 		}
 		if strings.Contains(string(data), ref) {
-			return nil // found a scenario referencing this issue
+			return true
 		}
+	}
+	return false
+}
+
+// WarnMissingScenario checks whether any scenario spec file in scenarioDir
+// references the given issue number. If not, it posts a warning comment on
+// the PR.
+func WarnMissingScenario(repo string, prNum, issueNum int, scenarioDir string, logger *slog.Logger) error {
+	if HasScenarioSpec(scenarioDir, issueNum) {
+		return nil
+	}
+
+	if _, err := os.ReadDir(scenarioDir); err != nil && os.IsNotExist(err) {
+		logger.Warn("scenario directory not found", "dir", scenarioDir)
 	}
 
 	comment := fmt.Sprintf("Warning: no scenario spec found referencing issue #%d in %s. Consider creating one with `godark create-scenario %d`.", issueNum, scenarioDir, issueNum)
-	_, err = GuardRunner("gh", "pr", "comment", strconv.Itoa(prNum), "--repo", repo, "--body", comment)
+	_, err := GuardRunner("gh", "pr", "comment", strconv.Itoa(prNum), "--repo", repo, "--body", comment)
 	if err != nil {
 		return fmt.Errorf("posting scenario warning: %w", err)
 	}
