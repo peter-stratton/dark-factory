@@ -1,0 +1,108 @@
+package github
+
+import (
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"sort"
+	"strings"
+)
+
+// Issue represents a GitHub issue with the fields needed for orchestration.
+type Issue struct {
+	Number   int
+	Title    string
+	Body     string
+	Labels   []string
+	Priority string // "p1", "p2", "p3", or "" for unlabeled
+}
+
+// ghIssue maps the JSON fields returned by gh issue list.
+type ghIssue struct {
+	Number int      `json:"number"`
+	Title  string   `json:"title"`
+	Body   string   `json:"body"`
+	Labels []label  `json:"labels"`
+}
+
+type label struct {
+	Name string `json:"name"`
+}
+
+// priorityRank returns a sort key for priority labels.
+// Lower rank = higher priority. Unlabeled issues sort last.
+var priorityRank = map[string]int{
+	"p1": 0,
+	"p2": 1,
+	"p3": 2,
+	"":   3,
+}
+
+// CommandRunner executes a command and returns its combined output.
+// Replaceable for testing.
+var CommandRunner = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).Output()
+}
+
+// FetchMilestoneIssues returns open issues for the given milestone in the
+// given repo, sorted by priority label (p1 → p2 → p3 → unlabeled) then by
+// issue number ascending within each tier.
+func FetchMilestoneIssues(repo, milestone string) ([]Issue, error) {
+	out, err := CommandRunner("gh", "issue", "list",
+		"--repo", repo,
+		"--milestone", milestone,
+		"--state", "open",
+		"--json", "number,title,body,labels",
+		"--limit", "200",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("gh issue list: %w", err)
+	}
+
+	var raw []ghIssue
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parsing gh output: %w", err)
+	}
+
+	issues := make([]Issue, len(raw))
+	for i, r := range raw {
+		labels := make([]string, len(r.Labels))
+		for j, l := range r.Labels {
+			labels[j] = l.Name
+		}
+		issues[i] = Issue{
+			Number:   r.Number,
+			Title:    r.Title,
+			Body:     r.Body,
+			Labels:   labels,
+			Priority: extractPriority(labels),
+		}
+	}
+
+	sortIssues(issues)
+	return issues, nil
+}
+
+// extractPriority finds the first p1/p2/p3 label and returns it.
+// Returns "" if no priority label is found.
+func extractPriority(labels []string) string {
+	for _, l := range labels {
+		lower := strings.ToLower(l)
+		if lower == "p1" || lower == "p2" || lower == "p3" {
+			return lower
+		}
+	}
+	return ""
+}
+
+// sortIssues sorts by priority rank ascending, then by issue number ascending.
+func sortIssues(issues []Issue) {
+	sort.Slice(issues, func(i, j int) bool {
+		ri := priorityRank[issues[i].Priority]
+		rj := priorityRank[issues[j].Priority]
+		if ri != rj {
+			return ri < rj
+		}
+		return issues[i].Number < issues[j].Number
+	})
+}
