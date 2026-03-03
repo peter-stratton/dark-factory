@@ -17,6 +17,15 @@ repo: ""              # GitHub repository (owner/repo)
 # roadmap_path: docs/ROADMAP.md
 # planning_dir: docs/planning/
 # scenario_dir: tests/scenarios/
+
+# Prompt templates
+prompts:
+  implementer: prompts/implementer.txt
+  implementer_retry: prompts/implementer_retry.txt
+  reviewer: prompts/reviewer.txt
+
+# Agent timeout (Go duration format: "30m", "1h", etc.)
+# agent_timeout: "30m"
 `
 
 var initCmd = &cobra.Command{
