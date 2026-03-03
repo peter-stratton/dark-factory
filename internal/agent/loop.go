@@ -34,6 +34,17 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	}
 	baseSHA := trimOutput(baseSHAOut)
 
+	// Step 0: Generate scenario spec if missing.
+	if prompts.SpecGenerator != "" && !HasScenarioSpec(cfg.ScenarioDir, issue.Number) {
+		logger.Info("no scenario spec found, generating", "issue_number", issue.Number)
+		specResult, err := GenerateSpec(ctx, issue, cfg, prompts, authEnv, logger)
+		if err != nil {
+			logger.Warn("spec generation failed, continuing without spec", "error", err)
+		} else if specResult.TimedOut {
+			logger.Warn("spec generation timed out, continuing without spec")
+		}
+	}
+
 	// Step 1: Implement.
 	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger)
 	if err != nil {

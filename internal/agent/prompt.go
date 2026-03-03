@@ -16,6 +16,7 @@ type Prompts struct {
 	Implementer      string
 	ImplementerRetry string
 	Reviewer         string
+	SpecGenerator    string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -31,6 +32,7 @@ type PromptData struct {
 	ProtectedPaths string
 	ScenarioDir    string
 	ReviewDir      string
+	BranchExists   bool
 }
 
 // LoadPrompts reads the three prompt template files specified in cfg.Prompts.
@@ -50,11 +52,26 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		return nil, fmt.Errorf("reading reviewer prompt %q: %w", cfg.Prompts.Reviewer, err)
 	}
 
-	return &Prompts{
+	p := &Prompts{
 		Implementer:      string(impl),
 		ImplementerRetry: string(retry),
 		Reviewer:         string(rev),
-	}, nil
+	}
+
+	// SpecGenerator is optional — skip if path is empty or file doesn't exist.
+	if cfg.Prompts.SpecGenerator != "" {
+		specGen, err := os.ReadFile(cfg.Prompts.SpecGenerator)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("reading spec_generator prompt %q: %w", cfg.Prompts.SpecGenerator, err)
+			}
+			// File doesn't exist — leave SpecGenerator empty.
+		} else {
+			p.SpecGenerator = string(specGen)
+		}
+	}
+
+	return p, nil
 }
 
 // RenderPrompt executes a text/template against the given data and returns

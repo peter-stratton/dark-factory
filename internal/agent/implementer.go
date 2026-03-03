@@ -17,6 +17,13 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 	slug := Slugify(issue.Title)
 	data := newPromptData(issue, cfg, slug)
 
+	// Check if the feature branch already exists on the remote.
+	branch := fmt.Sprintf("%d-%s", issue.Number, slug)
+	out, err := GuardRunner("git", "ls-remote", "--heads", "origin", branch)
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		data.BranchExists = true
+	}
+
 	rendered, err := RenderPrompt(prompts.Implementer, data)
 	if err != nil {
 		return nil, fmt.Errorf("rendering implementer prompt: %w", err)
