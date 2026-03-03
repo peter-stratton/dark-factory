@@ -1,0 +1,6 @@
+pre-push:
+  commands:
+    test:
+      run: go test ./...
+    vet:
+      run: go vet ./...
