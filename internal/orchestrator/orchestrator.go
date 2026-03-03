@@ -1,18 +1,21 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
+	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/deps"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/sandbox"
 )
 
 // Run is the main entry point for the orchestration loop.
 // It fetches issues, resolves dependencies, and either prints the execution
 // plan (dry-run) or iterates through processable issues.
-func Run(cfg *config.Config, logger *slog.Logger, dryRun bool) error {
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, dryRun bool) error {
 	logger.Info("starting orchestration",
 		"repo", cfg.Repo,
 		"milestone", cfg.Milestone,
@@ -54,6 +57,14 @@ func Run(cfg *config.Config, logger *slog.Logger, dryRun bool) error {
 		}
 	}
 
+	// Single-issue mode: filter processable to the requested issue.
+	if cfg.Issue != 0 {
+		processable, err = filterSingleIssue(processable, blocked, cfg.Issue)
+		if err != nil {
+			return err
+		}
+	}
+
 	logger.Info("dependency resolution complete",
 		"total", len(issues),
 		"blocked", len(blocked),
@@ -63,11 +74,26 @@ func Run(cfg *config.Config, logger *slog.Logger, dryRun bool) error {
 	// Step 4: Print or process.
 	if dryRun {
 		printDryRun(processable, blocked, len(issues))
-	} else {
-		processIssues(processable, blocked, len(issues), logger)
+		return nil
 	}
 
-	return nil
+	return processIssues(ctx, processable, blocked, len(issues), cfg, logger)
+}
+
+// filterSingleIssue extracts a single issue from processable, returning an
+// error if it's not found or is blocked.
+func filterSingleIssue(processable []github.Issue, blocked []blockedIssue, issueNum int) ([]github.Issue, error) {
+	for _, issue := range processable {
+		if issue.Number == issueNum {
+			return []github.Issue{issue}, nil
+		}
+	}
+	for _, bi := range blocked {
+		if bi.Issue.Number == issueNum {
+			return nil, fmt.Errorf("issue #%d is blocked by %s", issueNum, formatIssueRefs(bi.BlockedBy))
+		}
+	}
+	return nil, fmt.Errorf("issue #%d not found in milestone", issueNum)
 }
 
 // blockedIssue pairs an issue with its open (unresolved) dependency numbers.
@@ -115,25 +141,82 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 	printSummary(total, len(blocked), len(processable))
 }
 
-// processIssues iterates processable issues and logs placeholder messages.
-func processIssues(processable []github.Issue, blocked []blockedIssue, total int, logger *slog.Logger) {
+// processIssues runs each processable issue through the agent loop and prints
+// summary stats.
+func processIssues(ctx context.Context, processable []github.Issue, blocked []blockedIssue, total int, cfg *config.Config, logger *slog.Logger) error {
 	if len(processable) == 0 {
 		fmt.Println("All issues are blocked — nothing to process.")
 		printSummary(total, len(blocked), 0)
-		return
+		return nil
+	}
+
+	// Collect auth tokens once at the start.
+	authEnv, err := sandbox.CollectAuthEnv(logger)
+	if err != nil {
+		return fmt.Errorf("collecting auth: %w", err)
+	}
+
+	// Load prompt templates once.
+	prompts, err := agent.LoadPrompts(cfg)
+	if err != nil {
+		return fmt.Errorf("loading prompts: %w", err)
+	}
+
+	// Build Docker image once if using sandbox mode.
+	if !cfg.NoSandbox {
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker)
+		tag, err := sandbox.BuildImage(ctx, dc, logger)
+		if err != nil {
+			return fmt.Errorf("building Docker image: %w", err)
+		}
+		cfg.Docker.Image = tag
+	}
+
+	// Process each issue.
+	var stats struct {
+		implemented      int
+		needsHumanReview int
+		failed           int
 	}
 
 	for _, issue := range processable {
-		logger.Info("would process issue (agent execution not implemented yet)",
-			"issue_number", issue.Number,
-			"title", issue.Title,
-			"priority", issue.Priority,
-		)
-		fmt.Printf("Processing #%d %s — not implemented yet (Phase 2)\n", issue.Number, issue.Title)
-	}
-	fmt.Println()
+		if ctx.Err() != nil {
+			logger.Warn("context cancelled, stopping", "error", ctx.Err())
+			break
+		}
 
-	printSummary(total, len(blocked), len(processable))
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger)
+
+		switch outcome.Status {
+		case "implemented":
+			stats.implemented++
+			fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+		case "needs-human-review":
+			stats.needsHumanReview++
+			fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
+		default:
+			stats.failed++
+			errMsg := ""
+			if outcome.Err != nil {
+				errMsg = outcome.Err.Error()
+			}
+			fmt.Printf("  #%d %s — failed: %s\n", issue.Number, issue.Title, errMsg)
+		}
+
+		logger.Info("issue outcome",
+			"issue_number", outcome.IssueNumber,
+			"status", outcome.Status,
+			"pr_number", outcome.PRNumber,
+			"retries", outcome.Retries,
+			"error", outcome.Err,
+		)
+	}
+
+	fmt.Println()
+	fmt.Printf("Results: %d implemented, %d needs-human-review, %d failed, %d skipped (blocked)\n",
+		stats.implemented, stats.needsHumanReview, stats.failed, len(blocked))
+
+	return nil
 }
 
 // printSummary outputs the final count line.

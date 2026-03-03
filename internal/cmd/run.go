@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/logging"
@@ -56,7 +59,10 @@ each unblocked issue through the implement → review → merge loop.`,
 			return fmt.Errorf("creating logger: %w", err)
 		}
 
-		return orchestrator.Run(cfg, logger, dryRun)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		return orchestrator.Run(ctx, cfg, logger, dryRun)
 	},
 }
 

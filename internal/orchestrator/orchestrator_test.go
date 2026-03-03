@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -96,7 +97,7 @@ func TestDryRun_ListsIssuesInOrder(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -122,7 +123,7 @@ func TestDryRun_BlockedIssuesShownSeparately(t *testing.T) {
 	setupFakeGH(t, openIssues, nil) // #99 not closed
 
 	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -148,7 +149,7 @@ func TestDryRun_SummaryCounts(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -172,7 +173,7 @@ func TestDryRun_LogFileCreated(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		if err := Run(testConfig(), logger, true); err != nil {
+		if err := Run(context.Background(), testConfig(), logger, true); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
@@ -190,7 +191,7 @@ func TestEmptyMilestone(t *testing.T) {
 	setupFakeGH(t, []ghIssue{}, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -209,7 +210,7 @@ func TestAllBlocked(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), false)
+		err := Run(context.Background(), testConfig(), testLogger(t), false)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -223,31 +224,6 @@ func TestAllBlocked(t *testing.T) {
 	}
 }
 
-func TestNormalMode_PlaceholderMessages(t *testing.T) {
-	openIssues := []ghIssue{
-		{Number: 1, Title: "first task", Labels: []ghLabel{{Name: "p1"}}},
-		{Number: 2, Title: "second task", Labels: []ghLabel{{Name: "p2"}}},
-	}
-	setupFakeGH(t, openIssues, nil)
-
-	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), false)
-		if err != nil {
-			t.Fatalf("Run() error = %v", err)
-		}
-	})
-
-	if !strings.Contains(output, "#1 first task") {
-		t.Error("expected issue #1 in output")
-	}
-	if !strings.Contains(output, "#2 second task") {
-		t.Error("expected issue #2 in output")
-	}
-	if !strings.Contains(output, "not implemented yet") {
-		t.Error("expected 'not implemented yet' placeholder")
-	}
-}
-
 func TestDryRun_ClosedDepsUnblock(t *testing.T) {
 	openIssues := []ghIssue{
 		{Number: 5, Title: "depends on closed", Body: "**Blocked by**: #3", Labels: []ghLabel{}},
@@ -255,7 +231,7 @@ func TestDryRun_ClosedDepsUnblock(t *testing.T) {
 	setupFakeGH(t, openIssues, []int{3}) // #3 is closed
 
 	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -301,7 +277,7 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -313,6 +289,73 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	if !strings.Contains(output, "[priority: none]") {
 		t.Error("expected priority 'none' for unlabeled issues")
 	}
+}
+
+func TestSingleIssueMode_FiltersCorrectly(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "first", Labels: []ghLabel{}},
+		{Number: 2, Title: "second", Labels: []ghLabel{}},
+		{Number: 3, Title: "third", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	cfg := testConfig()
+	cfg.Issue = 2
+
+	output := captureStdout(t, func() {
+		err := Run(context.Background(), cfg, testLogger(t), true)
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "#2 second") {
+		t.Errorf("expected issue #2 in output, got:\n%s", output)
+	}
+	// Should not contain the other issues in processable section
+	if strings.Contains(output, "#1 first") {
+		t.Errorf("expected issue #1 filtered out, got:\n%s", output)
+	}
+}
+
+func TestSingleIssueMode_ErrorWhenBlocked(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "blocked", Body: "**Blocked by**: #99", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	cfg := testConfig()
+	cfg.Issue = 1
+
+	captureStdout(t, func() {
+		err := Run(context.Background(), cfg, testLogger(t), true)
+		if err == nil {
+			t.Fatal("expected error for blocked single issue")
+		}
+		if !strings.Contains(err.Error(), "blocked by") {
+			t.Errorf("expected 'blocked by' in error, got: %v", err)
+		}
+	})
+}
+
+func TestSingleIssueMode_ErrorWhenNotFound(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "first", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	cfg := testConfig()
+	cfg.Issue = 999
+
+	captureStdout(t, func() {
+		err := Run(context.Background(), cfg, testLogger(t), true)
+		if err == nil {
+			t.Fatal("expected error for missing single issue")
+		}
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("expected 'not found' in error, got: %v", err)
+		}
+	})
 }
 
 // Suppress unused import warnings.

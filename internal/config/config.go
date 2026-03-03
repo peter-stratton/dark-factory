@@ -15,6 +15,7 @@ type Config struct {
 	Issue      int    `yaml:"issue"`
 	MaxRetries int    `yaml:"max_retries"`
 
+	AgentTimeout string       `yaml:"agent_timeout"`
 	ClaudeFlags  []string     `yaml:"claude_flags"`
 	BuildCommand string       `yaml:"build_command"`
 	TestCommand  string       `yaml:"test_command"`
