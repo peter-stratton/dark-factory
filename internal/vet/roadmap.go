@@ -9,10 +9,8 @@ import (
 	"strings"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/patterns"
 )
-
-// phasePattern matches "Phase N" at the start of a milestone title.
-var phasePattern = regexp.MustCompile(`(?i)^phase\s+(\d+)`)
 
 // issueHeadingPattern matches "## Issue N:" or "## Issue #N:" headings.
 var issueHeadingPattern = regexp.MustCompile(`(?i)^##\s+issue\s+#?(\d+)\s*:`)
@@ -80,7 +78,7 @@ func ValidateRoadmap(planningDir string, milestoneIssues []github.Issue, milesto
 // pattern "phase-N" have one consistent with the milestone title.
 func checkLabelMismatch(r *Report, milestoneIssues []github.Issue, milestoneTitle string) {
 	var expectedLabel string
-	if m := phasePattern.FindStringSubmatch(milestoneTitle); m != nil {
+	if m := patterns.Phase.FindStringSubmatch(milestoneTitle); m != nil {
 		expectedLabel = "phase-" + m[1]
 	} else {
 		expectedLabel = strings.ReplaceAll(strings.ToLower(milestoneTitle), " ", "-")

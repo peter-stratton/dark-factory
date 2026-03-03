@@ -77,17 +77,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		logger.Warn("failed to ensure Closes ref", "error", err)
 	}
 
-	touched, err := CheckProtectedDrift(baseSHA, cfg.ProtectedPaths)
-	if err != nil {
-		logger.Warn("failed to check protected drift", "error", err)
-	}
-	if len(touched) > 0 {
-		reason := fmt.Sprintf("Closing: agent modified protected paths: %v", touched)
-		if closeErr := ClosePR(cfg.Repo, prNum, reason); closeErr != nil {
-			logger.Warn("failed to close PR", "error", closeErr)
-		}
+	if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
 		outcome.Status = "failed"
-		outcome.Err = fmt.Errorf("protected path drift: %v", touched)
+		outcome.Err = driftErr
 		return outcome
 	}
 
@@ -150,17 +142,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			}
 
 			// Re-check drift after retry.
-			touched, err := CheckProtectedDrift(baseSHA, cfg.ProtectedPaths)
-			if err != nil {
-				logger.Warn("failed to check protected drift after retry", "error", err)
-			}
-			if len(touched) > 0 {
-				reason := fmt.Sprintf("Closing: agent modified protected paths after retry: %v", touched)
-				if closeErr := ClosePR(cfg.Repo, prNum, reason); closeErr != nil {
-					logger.Warn("failed to close PR", "error", closeErr)
-				}
+			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
 				outcome.Status = "failed"
-				outcome.Err = fmt.Errorf("protected path drift after retry: %v", touched)
+				outcome.Err = driftErr
 				return outcome
 			}
 
@@ -184,6 +168,24 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	outcome.Status = "needs-human-review"
 	outcome.Retries = maxAttempts - 1
 	return outcome
+}
+
+// checkDriftAndClose checks for protected path modifications and closes the
+// PR if any are found. Returns a non-nil error only when drift is detected.
+func checkDriftAndClose(baseSHA string, cfg *config.Config, prNum int, logger *slog.Logger) error {
+	touched, err := CheckProtectedDrift(baseSHA, cfg.ProtectedPaths)
+	if err != nil {
+		logger.Warn("failed to check protected drift", "error", err)
+		return nil
+	}
+	if len(touched) == 0 {
+		return nil
+	}
+	reason := fmt.Sprintf("Closing: agent modified protected paths: %v", touched)
+	if closeErr := ClosePR(cfg.Repo, prNum, reason); closeErr != nil {
+		logger.Warn("failed to close PR", "error", closeErr)
+	}
+	return fmt.Errorf("protected path drift: %v", touched)
 }
 
 func trimOutput(b []byte) string {

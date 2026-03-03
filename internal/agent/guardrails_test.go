@@ -8,13 +8,6 @@ import (
 	"testing"
 )
 
-func stubGuardRunner(t *testing.T, fn func(string, ...string) ([]byte, error)) {
-	t.Helper()
-	orig := GuardRunner
-	t.Cleanup(func() { GuardRunner = orig })
-	GuardRunner = fn
-}
-
 func TestParseReviewResult_Approved(t *testing.T) {
 	stdout := "some output\nREVIEW_RESULT=APPROVED\nmore output"
 	got := ParseReviewResult(stdout)
@@ -211,6 +204,96 @@ func TestWarnMissingScenario_PostsWarningWhenMissing(t *testing.T) {
 	}
 	if !commentPosted {
 		t.Error("expected warning comment when no scenario found")
+	}
+}
+
+func TestFindPR_MalformedJSON(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(`not json`), nil
+	})
+
+	_, err := FindPR("owner/repo")
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+	if !strings.Contains(err.Error(), "parsing PR JSON") {
+		t.Errorf("error = %v, want 'parsing PR JSON'", err)
+	}
+}
+
+func TestEnsureClosesRef_NoOpWhenFixesPresent(t *testing.T) {
+	var editCalled bool
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "pr" && args[1] == "view" {
+			return []byte(`{"body": "Some PR body\n\nFixes #5"}`), nil
+		}
+		if len(args) > 0 && args[0] == "pr" && args[1] == "edit" {
+			editCalled = true
+		}
+		return nil, nil
+	})
+
+	err := EnsureClosesRef("owner/repo", 10, 5)
+	if err != nil {
+		t.Fatalf("EnsureClosesRef() error = %v", err)
+	}
+	if editCalled {
+		t.Error("expected no edit when Fixes ref already present")
+	}
+}
+
+func TestEnsureClosesRef_MalformedJSON(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(`not json`), nil
+	})
+
+	err := EnsureClosesRef("owner/repo", 10, 5)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+	if !strings.Contains(err.Error(), "parsing PR body") {
+		t.Errorf("error = %v, want 'parsing PR body'", err)
+	}
+}
+
+func TestClosePR_ReturnsError(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("network error")
+	})
+
+	err := ClosePR("owner/repo", 10, "reason")
+	if err == nil {
+		t.Fatal("expected error from ClosePR")
+	}
+	if !strings.Contains(err.Error(), "closing PR #10") {
+		t.Errorf("error = %v, want 'closing PR #10'", err)
+	}
+}
+
+func TestParseReviewResult_FirstMatchWins(t *testing.T) {
+	stdout := "REVIEW_RESULT=APPROVED\nREVIEW_RESULT=CHANGES_REQUESTED\n"
+	got := ParseReviewResult(stdout)
+	if got != "APPROVED" {
+		t.Errorf("ParseReviewResult() = %q, want %q (first match should win)", got, "APPROVED")
+	}
+}
+
+func TestParseReviewResult_WhitespaceHandling(t *testing.T) {
+	stdout := "  REVIEW_RESULT=APPROVED  \n"
+	got := ParseReviewResult(stdout)
+	if got != "APPROVED" {
+		t.Errorf("ParseReviewResult() = %q, want %q", got, "APPROVED")
+	}
+}
+
+func TestHasScenarioSpec_SkipsNonMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("Relates to: Issue #5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if HasScenarioSpec(dir, 5) {
+		t.Error("HasScenarioSpec() should skip non-.md files")
 	}
 }
 

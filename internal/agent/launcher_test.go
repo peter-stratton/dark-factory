@@ -2,26 +2,16 @@ package agent
 
 import (
 	"context"
-	"log/slog"
-	"os"
 	"strings"
 	"testing"
 )
 
-func testLogger(t *testing.T) *slog.Logger {
-	t.Helper()
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-}
-
 func TestRun_NoSandbox_DispatchesToRunner(t *testing.T) {
-	orig := Runner
-	t.Cleanup(func() { Runner = orig })
-
 	var capturedArgs []string
-	Runner = func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedArgs = append([]string{name}, args...)
 		return []byte("out"), []byte("err"), 0, nil
-	}
+	})
 
 	opts := RunOpts{
 		Prompt:      "test prompt",
@@ -56,12 +46,9 @@ func TestRun_NoSandbox_DispatchesToRunner(t *testing.T) {
 }
 
 func TestRun_NoSandbox_NonZeroExit(t *testing.T) {
-	orig := Runner
-	t.Cleanup(func() { Runner = orig })
-
-	Runner = func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 		return []byte("out"), []byte("err"), 1, nil
-	}
+	})
 
 	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
 	if err != nil {
@@ -73,13 +60,10 @@ func TestRun_NoSandbox_NonZeroExit(t *testing.T) {
 }
 
 func TestRun_NoSandbox_Timeout(t *testing.T) {
-	orig := Runner
-	t.Cleanup(func() { Runner = orig })
-
-	Runner = func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 		<-ctx.Done()
 		return []byte("partial"), []byte(""), 0, ctx.Err()
-	}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Immediately cancel

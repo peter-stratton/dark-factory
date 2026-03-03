@@ -104,9 +104,10 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	} else if err != nil {
 		return nil, fmt.Errorf("docker wait: %w\noutput: %s", err, out)
 	} else {
-		code, parseErr := strconv.Atoi(strings.TrimSpace(string(out)))
+		trimmed := strings.TrimSpace(string(out))
+		code, parseErr := strconv.Atoi(trimmed)
 		if parseErr != nil {
-			return nil, fmt.Errorf("parsing exit code %q: %w", strings.TrimSpace(string(out)), parseErr)
+			return nil, fmt.Errorf("parsing exit code %q: %w", trimmed, parseErr)
 		}
 		result.ExitCode = code
 	}

@@ -88,6 +88,10 @@ func GenerateClaudeConfig(workDir string) string {
 			},
 		},
 	}
-	data, _ := json.MarshalIndent(cfg, "", "  ")
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		// This should never happen with a simple struct, but handle it.
+		return "{}"
+	}
 	return string(data)
 }

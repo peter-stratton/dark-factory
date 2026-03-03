@@ -59,6 +59,100 @@ func TestLoadPrompts_MissingFile(t *testing.T) {
 	}
 }
 
+func TestLoadPrompts_SpecGeneratorOptional(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"impl.txt", "retry.txt", "rev.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("template"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &config.Config{
+		Prompts: config.Prompts{
+			Implementer:      filepath.Join(dir, "impl.txt"),
+			ImplementerRetry: filepath.Join(dir, "retry.txt"),
+			Reviewer:         filepath.Join(dir, "rev.txt"),
+			// SpecGenerator intentionally empty.
+		},
+	}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.SpecGenerator != "" {
+		t.Errorf("SpecGenerator = %q, want empty", p.SpecGenerator)
+	}
+}
+
+func TestLoadPrompts_SpecGeneratorLoaded(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"impl.txt", "retry.txt", "rev.txt", "specgen.txt"} {
+		content := "template"
+		if name == "specgen.txt" {
+			content = "specgen template"
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &config.Config{
+		Prompts: config.Prompts{
+			Implementer:      filepath.Join(dir, "impl.txt"),
+			ImplementerRetry: filepath.Join(dir, "retry.txt"),
+			Reviewer:         filepath.Join(dir, "rev.txt"),
+			SpecGenerator:    filepath.Join(dir, "specgen.txt"),
+		},
+	}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.SpecGenerator != "specgen template" {
+		t.Errorf("SpecGenerator = %q, want %q", p.SpecGenerator, "specgen template")
+	}
+}
+
+func TestLoadPrompts_SpecGeneratorMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"impl.txt", "retry.txt", "rev.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("template"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &config.Config{
+		Prompts: config.Prompts{
+			Implementer:      filepath.Join(dir, "impl.txt"),
+			ImplementerRetry: filepath.Join(dir, "retry.txt"),
+			Reviewer:         filepath.Join(dir, "rev.txt"),
+			SpecGenerator:    filepath.Join(dir, "nonexistent.txt"),
+		},
+	}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() should not error for missing spec_generator, got: %v", err)
+	}
+	if p.SpecGenerator != "" {
+		t.Errorf("SpecGenerator = %q, want empty for missing file", p.SpecGenerator)
+	}
+}
+
+func TestRenderPrompt_BranchExistsField(t *testing.T) {
+	tmpl := "{{if .BranchExists}}existing{{else}}new{{end}}"
+	data := PromptData{BranchExists: true}
+	result, err := RenderPrompt(tmpl, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if result != "existing" {
+		t.Errorf("RenderPrompt() = %q, want %q", result, "existing")
+	}
+}
+
 func TestRenderPrompt_SubstitutesAllFields(t *testing.T) {
 	tmpl := "Issue #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} PR={{.PRNumber}} build={{.BuildCommand}} test={{.TestCommand}} protected={{.ProtectedPaths}} scenario={{.ScenarioDir}} review={{.ReviewDir}} slug={{.Slug}}"
 

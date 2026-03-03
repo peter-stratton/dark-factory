@@ -4,58 +4,12 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
 )
-
-func stubRunner(t *testing.T) *[]string {
-	t.Helper()
-	orig := Runner
-	t.Cleanup(func() { Runner = orig })
-
-	var captured []string
-	Runner = func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
-		captured = append([]string{name}, args...)
-		return []byte("ok"), []byte(""), 0, nil
-	}
-	return &captured
-}
-
-func testIssue() github.Issue {
-	return github.Issue{
-		Number: 42,
-		Title:  "Add Widget Support",
-		Body:   "Implement widgets for the dashboard.",
-	}
-}
-
-func testImplementerConfig() *config.Config {
-	return &config.Config{
-		Repo:           "owner/repo",
-		NoSandbox:      true,
-		AgentTimeout:   "10m",
-		BuildCommand:   "go build ./...",
-		TestCommand:    "go test ./...",
-		ProtectedPaths: []string{"CLAUDE.md", "tests/scenarios/"},
-		ScenarioDir:    "tests/scenarios/",
-		ReviewDir:      "tests/review/",
-	}
-}
-
-func testPrompts(t *testing.T) *Prompts {
-	t.Helper()
-	return &Prompts{
-		Implementer:      "Implement #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} slug={{.Slug}}",
-		ImplementerRetry: "Retry PR #{{.PRNumber}} for #{{.IssueNumber}} repo={{.Repo}}",
-		Reviewer:         "Review PR #{{.PRNumber}} for #{{.IssueNumber}}",
-	}
-}
 
 func TestImplement_RendersPromptAndCallsRun(t *testing.T) {
 	captured := stubRunner(t)
 
-	result, err := Implement(context.Background(), testIssue(), testImplementerConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -76,7 +30,7 @@ func TestImplement_RendersPromptAndCallsRun(t *testing.T) {
 func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 	captured := stubRunner(t)
 
-	result, err := Retry(context.Background(), testIssue(), 7, testImplementerConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Retry(context.Background(), testIssue(), 7, testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -96,7 +50,7 @@ func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 func TestImplement_AgentTimeoutParsed(t *testing.T) {
 	stubRunner(t)
 
-	cfg := testImplementerConfig()
+	cfg := testConfig()
 	cfg.AgentTimeout = "5m"
 
 	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
@@ -108,7 +62,7 @@ func TestImplement_AgentTimeoutParsed(t *testing.T) {
 func TestImplement_InvalidTimeout(t *testing.T) {
 	stubRunner(t)
 
-	cfg := testImplementerConfig()
+	cfg := testConfig()
 	cfg.AgentTimeout = "invalid"
 
 	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
@@ -117,15 +71,85 @@ func TestImplement_InvalidTimeout(t *testing.T) {
 	}
 }
 
-func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
-	orig := Runner
-	t.Cleanup(func() { Runner = orig })
+func TestBranchName(t *testing.T) {
+	got := BranchName(42, "add-widget-support")
+	if got != "42-add-widget-support" {
+		t.Errorf("BranchName() = %q, want %q", got, "42-add-widget-support")
+	}
+}
 
-	Runner = func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte("fail output"), []byte(""), 1, nil
+func TestNewRunOpts_SetsAllFields(t *testing.T) {
+	cfg := testConfig()
+	env := map[string]string{"FOO": "bar"}
+	opts, err := newRunOpts("prompt text", cfg, env)
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	if opts.Prompt != "prompt text" {
+		t.Errorf("Prompt = %q, want %q", opts.Prompt, "prompt text")
+	}
+	if opts.Image != cfg.Docker.Image {
+		t.Errorf("Image = %q, want %q", opts.Image, cfg.Docker.Image)
+	}
+	if opts.Repo != cfg.Repo {
+		t.Errorf("Repo = %q, want %q", opts.Repo, cfg.Repo)
+	}
+	if opts.WorkDir != "/workspace" {
+		t.Errorf("WorkDir = %q, want %q", opts.WorkDir, "/workspace")
+	}
+	if opts.Env["FOO"] != "bar" {
+		t.Errorf("Env missing FOO=bar")
+	}
+}
+
+func TestNewRunOpts_InvalidTimeout(t *testing.T) {
+	cfg := testConfig()
+	cfg.AgentTimeout = "bad"
+	_, err := newRunOpts("prompt", cfg, nil)
+	if err == nil {
+		t.Fatal("expected error for invalid timeout")
+	}
+}
+
+func TestImplement_BranchExistsDetection(t *testing.T) {
+	// Stub Runner (agent call) and GuardRunner (git ls-remote).
+	var capturedPrompt string
+	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+		// The prompt is the 3rd argument: claude -p --dangerously-skip-permissions <prompt>
+		if len(args) >= 3 {
+			capturedPrompt = args[2]
+		}
+		return []byte("ok"), []byte(""), 0, nil
+	})
+
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		// Simulate branch existing on remote.
+		if name == "git" && len(args) > 0 && args[0] == "ls-remote" {
+			return []byte("abc123\trefs/heads/42-add-widget-support\n"), nil
+		}
+		return []byte(""), nil
+	})
+
+	// Use a template that includes BranchExists.
+	prompts := &Prompts{
+		Implementer: "{{if .BranchExists}}EXISTING{{else}}NEW{{end}}",
 	}
 
-	result, err := Implement(context.Background(), testIssue(), testImplementerConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
+	}
+	if !strings.Contains(capturedPrompt, "EXISTING") {
+		t.Errorf("expected BranchExists=true in prompt, got: %s", capturedPrompt)
+	}
+}
+
+func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte("fail output"), []byte(""), 1, nil
+	})
+
+	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Implement() should not return error for non-zero exit, got: %v", err)
 	}

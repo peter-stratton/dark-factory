@@ -7,13 +7,11 @@ import (
 	"strings"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/patterns"
 )
 
 // blockerPattern matches "Blocked by: #1, #2" or "Depends on: #3" lines.
 var blockerPattern = regexp.MustCompile(`(?i)^(?:blocked by|depends on)\s*:\s*(.+)$`)
-
-// issueRefPattern matches "#N" references.
-var issueRefPattern = regexp.MustCompile(`#(\d+)`)
 
 // ValidateIssues checks that each issue has the required structure for agent
 // consumption. It returns a report of findings.
@@ -57,7 +55,7 @@ func ValidateIssues(issues []github.Issue, allIssueNumbers map[int]bool, phaseLa
 			}
 
 			// Check each referenced issue exists
-			refs := issueRefPattern.FindAllStringSubmatch(m[1], -1)
+			refs := patterns.IssueRef.FindAllStringSubmatch(m[1], -1)
 			for _, ref := range refs {
 				num, _ := strconv.Atoi(ref[1])
 				if !allIssueNumbers[num] {

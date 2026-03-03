@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/patterns"
 )
 
 // relatesToPattern matches "Relates to: Issue #N" lines, capturing all #N refs.
@@ -86,7 +87,7 @@ func validateScenarioFile(r *Report, path string, allIssueNumbers map[int]bool) 
 			continue
 		}
 		hasRelatesTo = true
-		refs := issueRefPattern.FindAllStringSubmatch(m[1], -1)
+		refs := patterns.IssueRef.FindAllStringSubmatch(m[1], -1)
 		if len(refs) == 0 {
 			r.Add(Finding{Severity: Error, Location: loc, Message: fmt.Sprintf("malformed Relates to line (no issue refs): %q", trimmed)})
 			continue
