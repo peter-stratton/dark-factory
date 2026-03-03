@@ -61,6 +61,8 @@ confined environment.
 - Repo cloning or worktree inside container (not host volume mount)
 - `--no-sandbox` flag to run agents directly on the host
 
+**Issues**: #20–#24
+
 ---
 
 ## Phase 4: Agent Execution
