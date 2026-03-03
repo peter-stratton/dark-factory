@@ -27,6 +27,8 @@ type Config struct {
 	ReviewDir      string   `yaml:"review_dir"`
 	LogDir         string   `yaml:"log_dir"`
 
+	NoSandbox bool `yaml:"no_sandbox"`
+
 	Docker  Docker  `yaml:"docker"`
 	Prompts Prompts `yaml:"prompts"`
 }
@@ -62,6 +64,7 @@ type CLIFlags struct {
 	Milestone  *string
 	Issue      *int
 	MaxRetries *int
+	NoSandbox  *bool
 	Config     string
 }
 
@@ -114,6 +117,9 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.MaxRetries != nil {
 		cfg.MaxRetries = *flags.MaxRetries
+	}
+	if flags.NoSandbox != nil {
+		cfg.NoSandbox = *flags.NoSandbox
 	}
 }
 

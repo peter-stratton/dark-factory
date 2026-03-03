@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/logging"
@@ -36,10 +37,18 @@ each unblocked issue through the implement → review → merge loop.`,
 			v, _ := cmd.Flags().GetInt("max-retries")
 			flags.MaxRetries = &v
 		}
+		if cmd.Flags().Changed("no-sandbox") {
+			v, _ := cmd.Flags().GetBool("no-sandbox")
+			flags.NoSandbox = &v
+		}
 
 		cfg, err := config.Load(configPath, flags)
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
+		}
+
+		if cfg.NoSandbox {
+			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}
 
 		logger, err := logging.NewLogger(cfg.LogDir)
