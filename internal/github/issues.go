@@ -149,6 +149,36 @@ func fetchNumbersByState(repo, state string) ([]int, error) {
 	return numbers, nil
 }
 
+// FetchIssue returns a single GitHub issue by number.
+func FetchIssue(repo string, number int) (Issue, error) {
+	out, err := CommandRunner("gh", "issue", "view",
+		fmt.Sprintf("%d", number),
+		"--repo", repo,
+		"--json", "number,title,body,labels",
+	)
+	if err != nil {
+		return Issue{}, fmt.Errorf("gh issue view: %w", err)
+	}
+
+	var raw ghIssue
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return Issue{}, fmt.Errorf("parsing gh output: %w", err)
+	}
+
+	labels := make([]string, len(raw.Labels))
+	for i, l := range raw.Labels {
+		labels[i] = l.Name
+	}
+
+	return Issue{
+		Number:   raw.Number,
+		Title:    raw.Title,
+		Body:     raw.Body,
+		Labels:   labels,
+		Priority: extractPriority(labels),
+	}, nil
+}
+
 // sortIssues sorts by priority rank ascending, then by issue number ascending.
 func sortIssues(issues []Issue) {
 	sort.Slice(issues, func(i, j int) bool {
