@@ -95,6 +95,33 @@ func extractPriority(labels []string) string {
 	return ""
 }
 
+// FetchClosedIssueNumbers returns the issue numbers of all closed issues in
+// the given repo. This is used to build the closed-set for dependency resolution.
+func FetchClosedIssueNumbers(repo string) ([]int, error) {
+	out, err := CommandRunner("gh", "issue", "list",
+		"--repo", repo,
+		"--state", "closed",
+		"--json", "number",
+		"--limit", "500",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("gh issue list (closed): %w", err)
+	}
+
+	var raw []struct {
+		Number int `json:"number"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parsing gh output: %w", err)
+	}
+
+	numbers := make([]int, len(raw))
+	for i, r := range raw {
+		numbers[i] = r.Number
+	}
+	return numbers, nil
+}
+
 // sortIssues sorts by priority rank ascending, then by issue number ascending.
 func sortIssues(issues []Issue) {
 	sort.Slice(issues, func(i, j int) bool {

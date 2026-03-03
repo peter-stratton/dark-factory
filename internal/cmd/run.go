@@ -3,6 +3,9 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/spf13/cobra"
 )
 
@@ -12,8 +15,39 @@ var runCmd = &cobra.Command{
 	Long: `Fetch issues from a GitHub milestone, resolve dependencies, and process
 each unblocked issue through the implement → review → merge loop.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("run: not implemented yet (Phase 2)")
-		return nil
+		configPath, _ := cmd.Flags().GetString("config")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+		flags := config.CLIFlags{Config: configPath}
+
+		if cmd.Flags().Changed("repo") {
+			v, _ := cmd.Flags().GetString("repo")
+			flags.Repo = &v
+		}
+		if cmd.Flags().Changed("milestone") {
+			v, _ := cmd.Flags().GetString("milestone")
+			flags.Milestone = &v
+		}
+		if cmd.Flags().Changed("issue") {
+			v, _ := cmd.Flags().GetInt("issue")
+			flags.Issue = &v
+		}
+		if cmd.Flags().Changed("max-retries") {
+			v, _ := cmd.Flags().GetInt("max-retries")
+			flags.MaxRetries = &v
+		}
+
+		cfg, err := config.Load(configPath, flags)
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+
+		logger, err := logging.NewLogger(cfg.LogDir)
+		if err != nil {
+			return fmt.Errorf("creating logger: %w", err)
+		}
+
+		return orchestrator.Run(cfg, logger, dryRun)
 	},
 }
 
