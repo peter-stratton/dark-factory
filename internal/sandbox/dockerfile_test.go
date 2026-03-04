@@ -88,7 +88,7 @@ func TestGenerateDockerfileDefault(t *testing.T) {
 		{"node install", "setup_20.x"},
 		{"useradd", "useradd -m -s /bin/bash devloop"},
 		{"python3 install", "python3"},
-		{"pip sdk install", "pip install claude-agent-sdk"},
+		{"pip sdk install", "pip install 'claude-agent-sdk>=0.1.0,<0.2.0'"},
 		{"copy agent runner", "COPY agent_runner.py /usr/local/bin/agent_runner.py"},
 	}
 	for _, c := range checks {
@@ -263,8 +263,8 @@ func TestGenerateDockerfileIncludesPipInstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(df, "pip install claude-agent-sdk") {
-		t.Error("Dockerfile missing 'pip install claude-agent-sdk'")
+	if !strings.Contains(df, "pip install 'claude-agent-sdk>=0.1.0,<0.2.0'") {
+		t.Error("Dockerfile missing pinned claude-agent-sdk install")
 	}
 }
 
