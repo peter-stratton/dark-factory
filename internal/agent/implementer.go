@@ -96,10 +96,19 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 	if err != nil {
 		return RunOpts{}, fmt.Errorf("parsing agent_timeout: %w", err)
 	}
+
+	// Merge authEnv with GODARK_PROTECTED_PATHS so the agent runner can
+	// enforce protected-path guardrails via in-process hooks.
+	env := make(map[string]string, len(authEnv)+1)
+	for k, v := range authEnv {
+		env[k] = v
+	}
+	env["GODARK_PROTECTED_PATHS"] = strings.Join(cfg.ProtectedPaths, ",")
+
 	return RunOpts{
 		Prompt:  rendered,
 		Role:    role,
-		Env:     authEnv,
+		Env:     env,
 		Image:   cfg.Docker.Image,
 		Repo:    cfg.Repo,
 		WorkDir: "/workspace",
