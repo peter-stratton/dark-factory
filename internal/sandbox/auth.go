@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,15 +13,10 @@ import (
 func CollectAuthEnv(logger *slog.Logger) (map[string]string, error) {
 	env := make(map[string]string)
 
-	// Anthropic auth: prefer OAuth token over API key so the SDK uses OAuth
-	// when available. Only one auth token is forwarded to avoid the SDK
-	// picking up the API key from the process environment.
-	if v := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN"); v != "" {
-		env["CLAUDE_CODE_OAUTH_TOKEN"] = v
-	} else if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
+	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
 		env["ANTHROPIC_API_KEY"] = v
 	} else {
-		return nil, fmt.Errorf("missing authentication: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN")
+		return nil, fmt.Errorf("missing authentication: set ANTHROPIC_API_KEY")
 	}
 
 	// GitHub token: try env first, then gh CLI fallback.
@@ -48,48 +42,4 @@ func CollectAuthEnv(logger *slog.Logger) (map[string]string, error) {
 	logger.Info("collected auth env", "keys", keys)
 
 	return env, nil
-}
-
-// maskToken returns the first 4 characters of s followed by "***".
-// Useful for debug logging without exposing full secrets.
-func maskToken(s string) string {
-	if len(s) <= 4 {
-		return s + "***"
-	}
-	return s[:4] + "***"
-}
-
-// claudeConfig is the structure written to ~/.claude.json inside the container.
-type claudeConfig struct {
-	HasCompletedOnboarding bool                      `json:"hasCompletedOnboarding"`
-	Theme                  string                    `json:"theme"`
-	NumStartups            int                       `json:"numStartups"`
-	Projects               map[string]projectConfig  `json:"projects"`
-}
-
-type projectConfig struct {
-	HasTrustDialogAccepted         bool `json:"hasTrustDialogAccepted"`
-	HasCompletedProjectOnboarding  bool `json:"hasCompletedProjectOnboarding"`
-}
-
-// GenerateClaudeConfig returns the JSON content for ~/.claude.json inside the
-// container. The workDir parameter becomes the key in the projects map.
-func GenerateClaudeConfig(workDir string) string {
-	cfg := claudeConfig{
-		HasCompletedOnboarding: true,
-		Theme:                  "dark",
-		NumStartups:            1,
-		Projects: map[string]projectConfig{
-			workDir: {
-				HasTrustDialogAccepted:        true,
-				HasCompletedProjectOnboarding: true,
-			},
-		},
-	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		// This should never happen with a simple struct, but handle it.
-		return "{}"
-	}
-	return string(data)
 }

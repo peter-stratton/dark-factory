@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -21,7 +20,6 @@ func TestCollectAuthEnv_APIKey(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-1234")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_test")
 
 	env, err := CollectAuthEnv(slog.Default())
@@ -33,52 +31,12 @@ func TestCollectAuthEnv_APIKey(t *testing.T) {
 	}
 }
 
-func TestCollectAuthEnv_OAuthToken(t *testing.T) {
-	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
-		return []byte("gho_fake\n"), nil
-	})()
-
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-xyz")
-	t.Setenv("GH_TOKEN", "gho_test")
-
-	env, err := CollectAuthEnv(slog.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if env["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-token-xyz" {
-		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %q, want oauth-token-xyz", env["CLAUDE_CODE_OAUTH_TOKEN"])
-	}
-}
-
-func TestCollectAuthEnv_BothAuthTokens_PrefersOAuth(t *testing.T) {
-	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
-		return []byte("gho_fake\n"), nil
-	})()
-
-	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-tok")
-	t.Setenv("GH_TOKEN", "gho_test")
-
-	env, err := CollectAuthEnv(slog.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := env["ANTHROPIC_API_KEY"]; ok {
-		t.Error("ANTHROPIC_API_KEY should not be set when OAuth token is available")
-	}
-	if env["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-tok" {
-		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %q, want oauth-tok", env["CLAUDE_CODE_OAUTH_TOKEN"])
-	}
-}
-
 func TestCollectAuthEnv_NoAuthTokens(t *testing.T) {
 	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
 		return nil, fmt.Errorf("not logged in")
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
 	_, err := CollectAuthEnv(slog.Default())
@@ -90,6 +48,25 @@ func TestCollectAuthEnv_NoAuthTokens(t *testing.T) {
 	}
 }
 
+// TestCollectAuthEnv_OAuthTokenNotFallback confirms that setting only
+// CLAUDE_CODE_OAUTH_TOKEN (without ANTHROPIC_API_KEY) is not accepted.
+func TestCollectAuthEnv_OAuthTokenNotFallback(t *testing.T) {
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("gho_fake\n"), nil
+	})()
+
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("GH_TOKEN", "gho_test")
+
+	_, err := CollectAuthEnv(slog.Default())
+	if err == nil {
+		t.Fatal("expected error: ANTHROPIC_API_KEY is required; OAuth token is not a fallback")
+	}
+	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Errorf("error = %q, want mention of ANTHROPIC_API_KEY", err)
+	}
+}
+
 func TestCollectAuthEnv_GHTokenFromEnv(t *testing.T) {
 	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
 		t.Error("CommandRunner should not be called when GH_TOKEN is set")
@@ -97,7 +74,6 @@ func TestCollectAuthEnv_GHTokenFromEnv(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_from_env")
 
 	env, err := CollectAuthEnv(slog.Default())
@@ -118,7 +94,6 @@ func TestCollectAuthEnv_GHTokenFallback(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
 	env, err := CollectAuthEnv(slog.Default())
@@ -136,7 +111,6 @@ func TestCollectAuthEnv_GHTokenMissing(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
 	_, err := CollectAuthEnv(slog.Default())
@@ -148,47 +122,12 @@ func TestCollectAuthEnv_GHTokenMissing(t *testing.T) {
 	}
 }
 
-func TestGenerateClaudeConfig(t *testing.T) {
-	result := GenerateClaudeConfig("/workspace")
-
-	var parsed map[string]interface{}
-	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-
-	if v, ok := parsed["hasCompletedOnboarding"].(bool); !ok || !v {
-		t.Error("hasCompletedOnboarding should be true")
-	}
-	if v, ok := parsed["theme"].(string); !ok || v != "dark" {
-		t.Errorf("theme = %q, want dark", v)
-	}
-	if v, ok := parsed["numStartups"].(float64); !ok || v != 1 {
-		t.Errorf("numStartups = %v, want 1", v)
-	}
-
-	projects, ok := parsed["projects"].(map[string]interface{})
-	if !ok {
-		t.Fatal("projects is not an object")
-	}
-	ws, ok := projects["/workspace"].(map[string]interface{})
-	if !ok {
-		t.Fatal("projects[/workspace] is not an object")
-	}
-	if v, ok := ws["hasTrustDialogAccepted"].(bool); !ok || !v {
-		t.Error("hasTrustDialogAccepted should be true")
-	}
-	if v, ok := ws["hasCompletedProjectOnboarding"].(bool); !ok || !v {
-		t.Error("hasCompletedProjectOnboarding should be true")
-	}
-}
-
 func TestCollectAuthEnv_NoSecretsInLog(t *testing.T) {
 	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
 		return []byte("gho_fake\n"), nil
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-secret-key-12345")
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_secret_token_789")
 
 	var buf strings.Builder
@@ -211,22 +150,5 @@ func TestCollectAuthEnv_NoSecretsInLog(t *testing.T) {
 	}
 	if strings.Contains(logOutput, env["GH_TOKEN"]) {
 		t.Error("log should not contain raw GH_TOKEN value")
-	}
-}
-
-func TestMaskToken(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"sk-1234567890", "sk-1***"},
-		{"abc", "abc***"},
-		{"", "***"},
-	}
-	for _, tt := range tests {
-		got := maskToken(tt.input)
-		if got != tt.want {
-			t.Errorf("maskToken(%q) = %q, want %q", tt.input, got, tt.want)
-		}
 	}
 }
