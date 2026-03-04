@@ -17,18 +17,28 @@ var vetScenariosCmd = &cobra.Command{
 		asJSON, _ := cmd.Flags().GetBool("json")
 		scenarioDir, _ := cmd.Flags().GetString("scenario-dir")
 
-		if repo == "" || milestone == "" {
-			return fmt.Errorf("--repo and --milestone are required")
-		}
+		var issues []github.Issue
+		var allNums map[int]bool
 
-		issues, err := github.FetchMilestoneIssues(repo, milestone)
-		if err != nil {
-			return fmt.Errorf("fetching milestone issues: %w", err)
-		}
-
-		allNums, err := github.FetchAllIssueNumbers(repo)
-		if err != nil {
-			return fmt.Errorf("fetching all issue numbers: %w", err)
+		if milestone != "" {
+			if repo == "" {
+				return fmt.Errorf("--repo is required when --milestone is specified")
+			}
+			var err error
+			issues, err = github.FetchMilestoneIssues(repo, milestone)
+			if err != nil {
+				return fmt.Errorf("fetching milestone issues: %w", err)
+			}
+			allNums, err = github.FetchAllIssueNumbers(repo)
+			if err != nil {
+				return fmt.Errorf("fetching all issue numbers: %w", err)
+			}
+		} else if repo != "" {
+			var err error
+			allNums, err = github.FetchAllIssueNumbers(repo)
+			if err != nil {
+				return fmt.Errorf("fetching all issue numbers: %w", err)
+			}
 		}
 
 		report := vet.ValidateScenarios(scenarioDir, issues, allNums)
