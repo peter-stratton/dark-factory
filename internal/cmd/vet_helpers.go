@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
+	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/patterns"
 	"github.com/phs/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
@@ -30,4 +32,28 @@ func milestoneToLabel(milestone string) string {
 		return "phase-" + m[1]
 	}
 	return strings.ReplaceAll(strings.ToLower(milestone), " ", "-")
+}
+
+// resolveTag resolves --milestone and --tag flags into a milestone title.
+// --milestone takes precedence. If --tag is provided, it looks up the
+// matching milestone from the repo. Returns ("", nil) if neither is set.
+func resolveTag(cmd *cobra.Command) (string, error) {
+	milestone, _ := cmd.Flags().GetString("milestone")
+	tag, _ := cmd.Flags().GetString("tag")
+	repo, _ := cmd.Flags().GetString("repo")
+
+	if milestone != "" && tag != "" {
+		return "", fmt.Errorf("--milestone and --tag are mutually exclusive")
+	}
+	if tag != "" {
+		if repo == "" {
+			return "", fmt.Errorf("--repo is required when using --tag")
+		}
+		title, err := github.ResolveMilestoneByTag(repo, tag)
+		if err != nil {
+			return "", err
+		}
+		return title, nil
+	}
+	return milestone, nil
 }

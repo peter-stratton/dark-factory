@@ -33,8 +33,8 @@ inside Claude Code to prepare your project:
 | 2 | `/godark-create-planning-doc <phase-number>` | Write a detailed planning doc for a roadmap phase |
 | 3 | `/godark-create-issues <planning-doc-path>` | Create GitHub issues from the planning doc |
 | 4 | `/godark-create-scenario <issue-number>` | Generate a scenario spec for each issue |
-| 5 | `godark vet issues --repo owner/repo --milestone "Phase N"` | Validate issues are agent-ready |
-| 6 | `godark vet scenarios --repo owner/repo --milestone "Phase N"` | Validate scenario specs |
+| 5 | `godark vet issues --repo owner/repo --tag phase-N` | Validate issues are agent-ready |
+| 6 | `godark vet scenarios --repo owner/repo --tag phase-N` | Validate scenario specs |
 
 Once vetting passes, kick off the loop:
 
@@ -113,7 +113,8 @@ Available Commands:
 ```
 Flags:
       --json               Output findings as JSON
-      --milestone string   GitHub milestone to validate
+      --milestone string   GitHub milestone to validate (exact title)
+      --tag string         Milestone tag (e.g., phase-3) — resolved to full milestone title
       --repo string        GitHub repository (owner/repo)
 ```
 
@@ -122,7 +123,8 @@ Flags:
 ```
 Flags:
       --json                  Output findings as JSON
-      --milestone string      GitHub milestone to validate
+      --milestone string      GitHub milestone to validate (exact title)
+      --tag string            Milestone tag (e.g., phase-3) — resolved to full milestone title
       --repo string           GitHub repository (owner/repo)
       --scenario-dir string   Path to scenario spec directory (default "tests/scenarios/")
 ```
@@ -132,7 +134,8 @@ Flags:
 ```
 Flags:
       --json                  Output findings as JSON
-      --milestone string      GitHub milestone to validate
+      --milestone string      GitHub milestone to validate (exact title)
+      --tag string            Milestone tag (e.g., phase-3) — resolved to full milestone title
       --planning-dir string   Path to planning docs directory (default "docs/planning/")
       --repo string           GitHub repository (owner/repo)
 ```

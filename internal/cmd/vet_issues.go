@@ -13,11 +13,14 @@ var vetIssuesCmd = &cobra.Command{
 	Short: "Validate GitHub issue structure for agent consumption",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repo, _ := cmd.Flags().GetString("repo")
-		milestone, _ := cmd.Flags().GetString("milestone")
 		asJSON, _ := cmd.Flags().GetBool("json")
 
+		milestone, err := resolveTag(cmd)
+		if err != nil {
+			return err
+		}
 		if repo == "" || milestone == "" {
-			return fmt.Errorf("--repo and --milestone are required")
+			return fmt.Errorf("--repo and either --milestone or --tag are required")
 		}
 
 		issues, err := github.FetchMilestoneIssues(repo, milestone)
@@ -44,7 +47,8 @@ var vetIssuesCmd = &cobra.Command{
 func init() {
 	f := vetIssuesCmd.Flags()
 	f.String("repo", "", "GitHub repository (owner/repo)")
-	f.String("milestone", "", "GitHub milestone to validate")
+	f.String("milestone", "", "GitHub milestone to validate (exact title)")
+	f.String("tag", "", "Milestone tag (e.g., phase-3) — resolved to full milestone title")
 	f.Bool("json", false, "Output findings as JSON")
 
 	vetCmd.AddCommand(vetIssuesCmd)

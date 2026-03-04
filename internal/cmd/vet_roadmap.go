@@ -13,12 +13,15 @@ var vetRoadmapCmd = &cobra.Command{
 	Short: "Validate planning docs against milestone issues",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repo, _ := cmd.Flags().GetString("repo")
-		milestone, _ := cmd.Flags().GetString("milestone")
 		asJSON, _ := cmd.Flags().GetBool("json")
 		planningDir, _ := cmd.Flags().GetString("planning-dir")
 
+		milestone, err := resolveTag(cmd)
+		if err != nil {
+			return err
+		}
 		if repo == "" || milestone == "" {
-			return fmt.Errorf("--repo and --milestone are required")
+			return fmt.Errorf("--repo and either --milestone or --tag are required")
 		}
 
 		issues, err := github.FetchMilestoneIssues(repo, milestone)
@@ -41,7 +44,8 @@ var vetRoadmapCmd = &cobra.Command{
 func init() {
 	f := vetRoadmapCmd.Flags()
 	f.String("repo", "", "GitHub repository (owner/repo)")
-	f.String("milestone", "", "GitHub milestone to validate")
+	f.String("milestone", "", "GitHub milestone to validate (exact title)")
+	f.String("tag", "", "Milestone tag (e.g., phase-3) — resolved to full milestone title")
 	f.Bool("json", false, "Output findings as JSON")
 	f.String("planning-dir", "docs/planning/", "Path to planning docs directory")
 

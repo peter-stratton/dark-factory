@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -42,6 +43,44 @@ var priorityRank = map[string]int{
 // Replaceable for testing.
 var CommandRunner = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).Output()
+}
+
+// ResolveMilestoneByTag fetches all milestones from the repo and returns the
+// title of the one whose label form matches the given tag. For example, tag
+// "phase-3" matches milestone "Phase 3: Analysis Commands" because
+// milestoneToLabel("Phase 3: Analysis Commands") == "phase-3".
+func ResolveMilestoneByTag(repo, tag string) (string, error) {
+	out, err := CommandRunner("gh", "api",
+		fmt.Sprintf("repos/%s/milestones", repo),
+		"--paginate",
+		"--jq", ".[].title",
+	)
+	if err != nil {
+		return "", fmt.Errorf("fetching milestones: %w", err)
+	}
+
+	normalizedTag := strings.ToLower(strings.TrimSpace(tag))
+	for _, line := range strings.Split(string(out), "\n") {
+		title := strings.TrimSpace(line)
+		if title == "" {
+			continue
+		}
+		label := milestoneToLabel(title)
+		if label == normalizedTag {
+			return title, nil
+		}
+	}
+	return "", fmt.Errorf("no milestone found matching tag %q", tag)
+}
+
+// milestoneToLabel converts a milestone title to its label form.
+// "Phase 2" and "Phase 2: Vault Reader + Foundation" both become "phase-2".
+func milestoneToLabel(title string) string {
+	re := regexp.MustCompile(`(?i)^phase\s+(\d+)`)
+	if m := re.FindStringSubmatch(title); m != nil {
+		return "phase-" + m[1]
+	}
+	return strings.ReplaceAll(strings.ToLower(title), " ", "-")
 }
 
 // FetchMilestoneIssues returns open issues for the given milestone in the
