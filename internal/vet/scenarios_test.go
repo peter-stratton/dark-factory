@@ -245,6 +245,23 @@ Relates to: Issue #10, Issue #11
 	}
 }
 
+func TestValidateScenarios_RecursesIntoSubdirs(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "phase-1")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSpec(t, sub, "feature-x.md", validSpec)
+
+	issues := []github.Issue{{Number: 10}}
+	allNums := map[int]bool{10: true}
+
+	r := ValidateScenarios(dir, issues, allNums)
+	if len(r.Findings()) != 0 {
+		t.Errorf("expected 0 findings, got %d: %+v", len(r.Findings()), r.Findings())
+	}
+}
+
 func TestValidateScenarios_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 

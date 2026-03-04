@@ -20,7 +20,16 @@ var relatesToPattern = regexp.MustCompile(`(?i)^relates\s+to\s*:\s*(.+)$`)
 func ValidateScenarios(scenarioDir string, milestoneIssues []github.Issue, allIssueNumbers map[int]bool) *Report {
 	r := &Report{}
 
-	files, err := filepath.Glob(filepath.Join(scenarioDir, "*.md"))
+	var files []string
+	err := filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".md") {
+			files = append(files, path)
+		}
+		return nil
+	})
 	if err != nil {
 		r.Add(Finding{Severity: Error, Location: scenarioDir, Message: fmt.Sprintf("reading scenario dir: %v", err)})
 		return r
@@ -53,7 +62,14 @@ func ValidateScenarios(scenarioDir string, milestoneIssues []github.Issue, allIs
 // validateScenarioFile checks a single scenario file and returns the set of
 // issue numbers it relates to.
 func validateScenarioFile(r *Report, path string, allIssueNumbers map[int]bool) map[int]bool {
+	// Show path relative to the scenario dir parent for clearer diagnostics.
 	loc := filepath.Base(path)
+	if parts := strings.Split(filepath.ToSlash(path), "/"); len(parts) >= 2 {
+		parent := parts[len(parts)-2]
+		if strings.HasPrefix(parent, "phase-") {
+			loc = parent + "/" + filepath.Base(path)
+		}
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {

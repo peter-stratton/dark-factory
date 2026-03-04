@@ -131,29 +131,29 @@ func ParseReviewResult(stdout string) string {
 	return ""
 }
 
-// HasScenarioSpec returns true if any .md file in scenarioDir contains a
-// reference to the given issue number (e.g. "#5").
+// HasScenarioSpec returns true if any .md file in scenarioDir (including
+// subdirectories) contains a reference to the given issue number (e.g. "#5").
 func HasScenarioSpec(scenarioDir string, issueNum int) bool {
 	ref := fmt.Sprintf("#%d", issueNum)
 
-	entries, err := os.ReadDir(scenarioDir)
-	if err != nil {
-		return false
-	}
-
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
+	found := false
+	_ = filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found {
+			return err
 		}
-		data, err := os.ReadFile(filepath.Join(scenarioDir, e.Name()))
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
 		if err != nil {
-			continue
+			return nil
 		}
 		if strings.Contains(string(data), ref) {
-			return true
+			found = true
 		}
-	}
-	return false
+		return nil
+	})
+	return found
 }
 
 // WarnMissingScenario checks whether any scenario spec file in scenarioDir
