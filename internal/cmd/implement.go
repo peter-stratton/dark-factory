@@ -75,7 +75,7 @@ loop directly, without milestone or dependency resolution.`,
 		}
 
 		// Auto-detect project type when no runtime/commands are explicitly configured.
-		detect.ApplyToConfig(cfg, logger)
+		detect.ApplyToConfig(cfg, ".", logger)
 
 		authEnv, err := sandbox.CollectAuthEnv(logger)
 		if err != nil {

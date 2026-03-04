@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -188,28 +189,46 @@ func TestDetectRuntime_FlutterVersionParsing(t *testing.T) {
 	}
 }
 
-// TestApplyDetection_ConfigWins verifies that explicit config values are not
-// overwritten by detection. This tests the orchestration wiring condition.
-func TestApplyDetection_ConfigWins(t *testing.T) {
+// TestApplyToConfig_ConfigWins verifies that ApplyToConfig does not overwrite
+// explicit config values.
+func TestApplyToConfig_ConfigWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n\ngo 1.26\n")
 
 	cfg := &config.Config{
 		Runtime: config.Runtime{Name: "node"},
 	}
+	logger := slog.Default()
 
-	// Simulate the orchestrator condition: only detect when all three are empty.
-	if cfg.Runtime.Name == "" && cfg.BuildCommand == "" && cfg.TestCommand == "" {
-		dp, err := DetectRuntime(dir)
-		if err == nil {
-			cfg.Runtime = dp.Runtime
-			cfg.BuildCommand = dp.BuildCommand
-			cfg.TestCommand = dp.TestCommand
-		}
-	}
+	ApplyToConfig(cfg, dir, logger)
 
 	if cfg.Runtime.Name != "node" {
 		t.Errorf("Runtime.Name = %q, want %q (explicit config must not be overwritten)", cfg.Runtime.Name, "node")
+	}
+}
+
+// TestApplyToConfig_DetectionApplied verifies that ApplyToConfig applies
+// detected values when no runtime or commands are explicitly configured.
+func TestApplyToConfig_DetectionApplied(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n\ngo 1.26\n")
+
+	cfg := &config.Config{}
+	logger := slog.Default()
+
+	ApplyToConfig(cfg, dir, logger)
+
+	if cfg.Runtime.Name != "go" {
+		t.Errorf("Runtime.Name = %q, want %q", cfg.Runtime.Name, "go")
+	}
+	if cfg.Runtime.Version != "1.26" {
+		t.Errorf("Runtime.Version = %q, want %q", cfg.Runtime.Version, "1.26")
+	}
+	if cfg.TestCommand != "go test ./..." {
+		t.Errorf("TestCommand = %q, want %q", cfg.TestCommand, "go test ./...")
+	}
+	if cfg.BuildCommand != "go build ./..." {
+		t.Errorf("BuildCommand = %q, want %q", cfg.BuildCommand, "go build ./...")
 	}
 }
 

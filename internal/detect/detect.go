@@ -82,11 +82,11 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 
 // ApplyToConfig runs detection if no runtime or commands are explicitly configured,
 // and applies the detected values to cfg, logging results to logger.
-func ApplyToConfig(cfg *config.Config, logger *slog.Logger) {
+func ApplyToConfig(cfg *config.Config, repoPath string, logger *slog.Logger) {
 	if cfg.Runtime.Name != "" || cfg.BuildCommand != "" || cfg.TestCommand != "" {
 		return
 	}
-	dp, err := DetectRuntime(".")
+	dp, err := DetectRuntime(repoPath)
 	if err != nil {
 		logger.Info("project type detection failed, continuing without defaults", "error", err)
 		return
