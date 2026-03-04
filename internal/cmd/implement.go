@@ -125,7 +125,11 @@ loop directly, without milestone or dependency resolution.`,
 				logger.Warn("failed to fetch changed files for punchlist",
 					"pr_number", outcome.PRNumber, "error", err)
 			}
-			spec := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issueNumber)
+			spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issueNumber)
+			if err != nil {
+				logger.Warn("failed to read scenario spec for punchlist",
+					"issue_number", issueNumber, "error", err)
+			}
 			entries := []punchlist.Entry{{
 				IssueNumber:  issue.Number,
 				IssueTitle:   issue.Title,

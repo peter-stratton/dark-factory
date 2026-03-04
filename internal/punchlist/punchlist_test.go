@@ -232,7 +232,10 @@ func TestReadScenarioSpec_Found(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := ReadScenarioSpec(dir, 42)
+	result, err := ReadScenarioSpec(dir, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if result != specContent {
 		t.Errorf("ReadScenarioSpec = %q, want %q", result, specContent)
 	}
@@ -240,16 +243,19 @@ func TestReadScenarioSpec_Found(t *testing.T) {
 
 func TestReadScenarioSpec_NotFound(t *testing.T) {
 	dir := t.TempDir()
-	result := ReadScenarioSpec(dir, 99)
+	result, err := ReadScenarioSpec(dir, 99)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if result != "" {
 		t.Errorf("expected empty string when no spec found, got %q", result)
 	}
 }
 
 func TestReadScenarioSpec_NonExistentDir(t *testing.T) {
-	result := ReadScenarioSpec("/nonexistent-dir-xyz-punchlist", 42)
-	if result != "" {
-		t.Errorf("expected empty string for nonexistent dir, got %q", result)
+	_, err := ReadScenarioSpec("/nonexistent-dir-xyz-punchlist", 42)
+	if err == nil {
+		t.Error("expected error for nonexistent dir, got nil")
 	}
 }
 
@@ -264,7 +270,10 @@ func TestReadScenarioSpec_MultipleFiles_ReturnsFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := ReadScenarioSpec(dir, 5)
+	result, err := ReadScenarioSpec(dir, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if result == "" {
 		t.Error("expected non-empty result when specs exist")
 	}

@@ -250,7 +250,11 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 				logger.Warn("failed to fetch changed files for punchlist",
 					"pr_number", p.outcome.PRNumber, "error", err)
 			}
-			spec := punchlist.ReadScenarioSpec(cfg.ScenarioDir, p.issue.Number)
+			spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, p.issue.Number)
+			if err != nil {
+				logger.Warn("failed to read scenario spec for punchlist",
+					"issue_number", p.issue.Number, "error", err)
+			}
 			entries = append(entries, punchlist.Entry{
 				IssueNumber:  p.issue.Number,
 				IssueTitle:   p.issue.Title,

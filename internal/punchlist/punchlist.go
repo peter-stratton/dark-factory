@@ -45,13 +45,17 @@ func FetchChangedFiles(repo string, prNum int) ([]string, error) {
 }
 
 // ReadScenarioSpec reads the content of the first scenario spec file in
-// scenarioDir that references the given issue number. Returns "" if none found.
-func ReadScenarioSpec(scenarioDir string, issueNum int) string {
+// scenarioDir that references the given issue number. Returns ("", nil) if
+// none found, or ("", err) if the directory cannot be walked.
+func ReadScenarioSpec(scenarioDir string, issueNum int) (string, error) {
 	ref := fmt.Sprintf("#%d", issueNum)
 	var content string
-	_ = filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || content != "" {
+	err := filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
 			return err
+		}
+		if content != "" {
+			return filepath.SkipAll
 		}
 		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
 			return nil
@@ -65,7 +69,7 @@ func ReadScenarioSpec(scenarioDir string, issueNum int) string {
 		}
 		return nil
 	})
-	return content
+	return content, err
 }
 
 // Generate produces a human-readable punchlist from the given entries.
@@ -151,8 +155,12 @@ func extractVerificationSteps(body string) []string {
 
 		// Explicit checkboxes anywhere in the body.
 		if strings.HasPrefix(trimmed, "- [ ] ") || strings.HasPrefix(trimmed, "* [ ] ") {
-			item := strings.TrimPrefix(trimmed, "- [ ] ")
-			item = strings.TrimPrefix(item, "* [ ] ")
+			var item string
+			if strings.HasPrefix(trimmed, "- [ ] ") {
+				item = strings.TrimPrefix(trimmed, "- [ ] ")
+			} else {
+				item = strings.TrimPrefix(trimmed, "* [ ] ")
+			}
 			items = append(items, item)
 			continue
 		}
@@ -160,8 +168,12 @@ func extractVerificationSteps(body string) []string {
 		// Bullet points within test/acceptance sections.
 		if inTestSection {
 			if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
-				item := strings.TrimPrefix(trimmed, "- ")
-				item = strings.TrimPrefix(item, "* ")
+				var item string
+				if strings.HasPrefix(trimmed, "- ") {
+					item = strings.TrimPrefix(trimmed, "- ")
+				} else {
+					item = strings.TrimPrefix(trimmed, "* ")
+				}
 				if item != "" {
 					items = append(items, item)
 				}
