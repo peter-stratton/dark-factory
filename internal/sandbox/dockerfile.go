@@ -49,6 +49,14 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
+{{else if eq .RuntimeName "elixir"}}
+# Install Erlang/OTP and Elixir
+RUN curl -fsSL https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb \
+      -o /tmp/erlang-solutions.deb \
+    && dpkg -i /tmp/erlang-solutions.deb && rm /tmp/erlang-solutions.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends esl-erlang{{if .RuntimeVersion}} "elixir={{.RuntimeVersion}}*"{{else}} elixir{{end}} \
+    && rm -rf /var/lib/apt/lists/*
 {{end}}
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
@@ -93,7 +101,7 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		if runtimeVersion == "" {
 			runtimeVersion = "stable"
 		}
-	case "node", "rust", "python", "":
+	case "node", "rust", "python", "elixir", "":
 		// no validation needed
 	default:
 		logger.Warn("unknown runtime, skipping toolchain install", "runtime", runtimeName)

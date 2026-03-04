@@ -506,6 +506,55 @@ func TestGenerateDockerfileRuntimeVersionNewlineRejected(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileElixirRuntime(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "elixir"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "esl-erlang") {
+		t.Error("Elixir Dockerfile missing Erlang/OTP install (esl-erlang)")
+	}
+	if !strings.Contains(df, "elixir") {
+		t.Error("Elixir Dockerfile missing Elixir install")
+	}
+}
+
+func TestGenerateDockerfileElixirNoVersion(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "elixir", Version: ""}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("empty Elixir version should not return error: %v", err)
+	}
+	// Without a version, should install latest (no version pin in apt).
+	if !strings.Contains(df, "esl-erlang") {
+		t.Error("Elixir Dockerfile missing esl-erlang")
+	}
+	if strings.Contains(df, "elixir=") {
+		t.Error("Elixir Dockerfile should not pin version when Version is empty")
+	}
+}
+
+func TestGenerateDockerfileElixirWithVersion(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "elixir", Version: "1.14.3"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "1.14.3") {
+		t.Error("Elixir Dockerfile missing specified version")
+	}
+	if !strings.Contains(df, "elixir=1.14.3") {
+		t.Error("Elixir Dockerfile missing versioned elixir package install")
+	}
+}
+
 func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 	runtimes := []config.Runtime{
 		{Name: "go", Version: "1.26.0"},

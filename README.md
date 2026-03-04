@@ -89,6 +89,7 @@ godark run --milestone "Phase N" --repo owner/repo
 | flutter  | `pubspec.yaml`    | _(none)_              | `flutter test`       |
 | node     | `package.json`    | `npm run build`       | `npm test`           |
 | rust     | `Cargo.toml`      | `cargo build`         | `cargo test`         |
+| elixir   | `mix.exs`         | `mix compile`         | `mix test`           |
 | python   | `pyproject.toml` or `requirements.txt` | _(none)_ | `pytest` |
 
 If no marker file is found, `godark` proceeds without installing a language toolchain. Use a custom `docker.dockerfile` or set `runtime:` explicitly for unsupported languages.
