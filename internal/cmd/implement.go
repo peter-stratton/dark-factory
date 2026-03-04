@@ -10,6 +10,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
@@ -71,6 +72,23 @@ loop directly, without milestone or dependency resolution.`,
 		logger, err := logging.NewLogger(cfg.LogDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
+		}
+
+		// Auto-detect project type when no runtime/commands are explicitly configured.
+		if cfg.Runtime.Name == "" && cfg.BuildCommand == "" && cfg.TestCommand == "" {
+			if dp, err := detect.DetectRuntime("."); err != nil {
+				logger.Info("project type detection failed, continuing without defaults", "error", err)
+			} else {
+				cfg.Runtime = dp.Runtime
+				cfg.BuildCommand = dp.BuildCommand
+				cfg.TestCommand = dp.TestCommand
+				logger.Info("auto-detected project type",
+					"runtime", dp.Runtime.Name,
+					"version", dp.Runtime.Version,
+					"build_command", dp.BuildCommand,
+					"test_command", dp.TestCommand,
+				)
+			}
 		}
 
 		authEnv, err := sandbox.CollectAuthEnv(logger)

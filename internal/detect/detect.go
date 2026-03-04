@@ -1,0 +1,120 @@
+package detect
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/phs/dark-factory/internal/config"
+	"gopkg.in/yaml.v3"
+)
+
+// DetectedProject holds the auto-detected project type and default commands.
+type DetectedProject struct {
+	Runtime      config.Runtime
+	BuildCommand string
+	TestCommand  string
+}
+
+// DetectRuntime scans repoPath for language marker files and returns a
+// DetectedProject with sensible defaults. First match wins.
+// Returns an error if no known marker file is found.
+func DetectRuntime(repoPath string) (*DetectedProject, error) {
+	// 1. Go — go.mod
+	if data, err := os.ReadFile(filepath.Join(repoPath, "go.mod")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "go", Version: parseGoMod(data)},
+			BuildCommand: "go build ./...",
+			TestCommand:  "go test ./...",
+		}, nil
+	}
+
+	// 2. Flutter — pubspec.yaml
+	if data, err := os.ReadFile(filepath.Join(repoPath, "pubspec.yaml")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "flutter", Version: parsePubspecSDK(data)},
+			BuildCommand: "",
+			TestCommand:  "flutter test",
+		}, nil
+	}
+
+	// 3. Node — package.json
+	if data, err := os.ReadFile(filepath.Join(repoPath, "package.json")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "node", Version: parseNodeEngines(data)},
+			BuildCommand: "npm run build",
+			TestCommand:  "npm test",
+		}, nil
+	}
+
+	// 4. Rust — Cargo.toml
+	if _, err := os.Stat(filepath.Join(repoPath, "Cargo.toml")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "rust"},
+			BuildCommand: "cargo build",
+			TestCommand:  "cargo test",
+		}, nil
+	}
+
+	// 5. Python — pyproject.toml (preferred) or requirements.txt (fallback)
+	if _, err := os.Stat(filepath.Join(repoPath, "pyproject.toml")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "python"},
+			BuildCommand: "",
+			TestCommand:  "pytest",
+		}, nil
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "requirements.txt")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "python"},
+			BuildCommand: "",
+			TestCommand:  "pytest",
+		}, nil
+	}
+
+	return nil, fmt.Errorf("could not detect project type: no known marker files found in %s", repoPath)
+}
+
+// parseGoMod extracts the Go version from go.mod content.
+// Returns an empty string if no "go <version>" directive is found.
+func parseGoMod(data []byte) string {
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "go ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "go "))
+		}
+	}
+	return ""
+}
+
+// parsePubspecSDK extracts the sdk version hint from pubspec.yaml content.
+// Returns an empty string if the field is absent or the file cannot be parsed.
+func parsePubspecSDK(data []byte) string {
+	var pubspec struct {
+		Environment struct {
+			SDK string `yaml:"sdk"`
+		} `yaml:"environment"`
+	}
+	if err := yaml.Unmarshal(data, &pubspec); err != nil {
+		return ""
+	}
+	return pubspec.Environment.SDK
+}
+
+// parseNodeEngines extracts the node engine version from package.json content.
+// Returns an empty string if the field is absent or the file cannot be parsed.
+func parseNodeEngines(data []byte) string {
+	var pkg struct {
+		Engines struct {
+			Node string `json:"node"`
+		} `json:"engines"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return ""
+	}
+	return pkg.Engines.Node
+}
