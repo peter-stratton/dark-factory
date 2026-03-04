@@ -123,7 +123,7 @@ func TestGenerateDockerfileCustomImage(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfileCustomGoVersion(t *testing.T) {
+func TestGenerateDockerfileGoRuntimeWithVersion(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime.Name = "go"
 	cfg.Runtime.Version = "1.22"

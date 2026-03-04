@@ -2,6 +2,7 @@
 
 > A Go CLI that orchestrates autonomous AI agents to implement GitHub issues,
 > review their own work, and merge — without human intervention.
+> Supports Go, Flutter, Node.js, Rust, and Python projects.
 
 This document captures everything learned from building a bash prototype of this
 system. Use it to build a proper Go CLI from scratch.
@@ -234,13 +235,13 @@ NEVER commit directly to main. All work must be on a feature branch.
 
 Then implement the issue exactly as specified:
 - Write the implementation code
-- Write unit tests alongside the code (e.g. internal/foo/foo_test.go)
+- Write unit tests alongside the implementation
 - Unit tests should cover the test cases listed in the issue
 - Do not modify anything in tests/scenarios/ under any circumstances
 
 After implementation:
-- Run: go test ./... (must pass)
-- Run: GOARCH=arm64 GOOS=linux go build -o bin/ ./cmd/... (must pass)
+- Run the project's build command (e.g. go build ./..., cargo build, npm run build)
+- Run the project's test command (e.g. go test ./..., cargo test, npm test) — must pass
 - Do NOT read, modify, or create files in tests/scenarios/ or tests/review/
 - Commit all changes with message that includes 'Closes #N'
 - Push the feature branch and open a PR targeting main
@@ -261,8 +262,8 @@ Steps:
    Also read the latest review: gh pr reviews P
 3. Read the issue body for #N to recall the requirements
 4. Fix the issues described in the review
-5. Run: go test ./... (must pass)
-6. Run: GOARCH=arm64 GOOS=linux go build -o bin/ ./cmd/... (must pass)
+5. Run the project's build command — must pass
+6. Run the project's test command — must pass
 7. Do NOT read, modify, or create files in tests/scenarios/ or tests/review/
 8. Commit the fixes with a message like 'Fix review feedback for #N'
 9. Push to the existing PR branch: git push
@@ -282,15 +283,15 @@ Then:
    Do NOT modify these files.
 3. Read the issue body for #N to understand the acceptance criteria.
 4. Review the code changes: gh pr diff P
-5. Run the agent's unit tests: go test ./... -v -count=1
-6. Verify cross-compilation: GOARCH=arm64 GOOS=linux go build -o bin/ ./cmd/...
-7. Based on the scenario spec and the actual implementation, write Go integration
+5. Run the agent's unit tests using the project's test command (e.g. go test ./... -v -count=1)
+6. Run the project's build command to confirm a clean build
+7. Based on the scenario spec and the actual implementation, write integration
    tests in tests/review/ (create the directory). These tests should:
    - Import or invoke the actual code from this PR
    - Validate the behaviors described in the markdown scenario spec
    - Use temp directories, never touch real data
-   - Be runnable with: go test ./tests/review/ -v -count=1
-8. Run your generated tests: go test ./tests/review/ -v -count=1
+   - Be runnable with the project's test runner
+8. Run your generated tests
 
 If ALL tests pass and acceptance criteria are met:
 - Delete tests/review/
@@ -327,13 +328,17 @@ repo: owner/repo
 milestone: "Phase 1"
 max_retries: 2
 
-# Agent execution
-claude_flags: ["-p", "--dangerously-skip-permissions"]
-build_command: "go build -o bin/ ./cmd/..."
-test_command: "go test ./..."
-cross_compile:
-  GOOS: linux
-  GOARCH: arm64
+# Agent execution — auto-detected from go.mod, pubspec.yaml, etc. if not set
+build_command: ""
+test_command: ""
+runtime:
+  name: ""    # go, flutter, node, rust, python
+  version: "" # optional — auto-detected if empty
+
+# Environment variables injected into the sandbox container
+sandbox_env: {}
+  # GOOS: linux
+  # GOARCH: arm64
 
 # Protected paths (agents cannot modify these)
 protected_paths:
@@ -416,7 +421,7 @@ These are checks the CLI performs regardless of what the agent does:
 ## What the Prototype Got Wrong
 
 - Running in the user's working directory caused merge conflicts
-- Hardcoded Go-specific commands (should be configurable for any language)
+- Hardcoded Go-specific commands (now auto-detected and configurable for any language)
 - Prompt templates embedded in bash strings (hard to maintain, no syntax highlighting)
 - No structured output format (grepping for `REVIEW_RESULT=APPROVED` is fragile)
 - No timeout on agent execution (a stuck agent blocks the entire loop)

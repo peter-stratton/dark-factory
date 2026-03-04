@@ -88,7 +88,7 @@ func ApplyToConfig(cfg *config.Config, repoPath string, logger *slog.Logger) {
 	}
 	dp, err := DetectRuntime(repoPath)
 	if err != nil {
-		logger.Info("project type detection failed, continuing without defaults", "error", err)
+		logger.Warn("project type not detected, continuing without toolchain defaults", "error", err)
 		return
 	}
 	cfg.Runtime = dp.Runtime
