@@ -16,7 +16,6 @@ type Config struct {
 	MaxRetries int    `yaml:"max_retries"`
 
 	AgentTimeout string       `yaml:"agent_timeout"`
-	ClaudeFlags  []string     `yaml:"claude_flags"`
 	BuildCommand string       `yaml:"build_command"`
 	TestCommand  string       `yaml:"test_command"`
 	CrossCompile CrossCompile `yaml:"cross_compile"`

@@ -27,7 +27,6 @@ repo: owner/repo
 milestone: "Phase 1"
 max_retries: 3
 issue: 5
-claude_flags: ["-p", "--dangerously-skip-permissions"]
 build_command: "go build -o bin/ ./cmd/..."
 test_command: "go test ./..."
 cross_compile:
@@ -66,9 +65,6 @@ prompts:
 	}
 	if cfg.Issue != 5 {
 		t.Errorf("Issue = %d, want 5", cfg.Issue)
-	}
-	if len(cfg.ClaudeFlags) != 2 || cfg.ClaudeFlags[0] != "-p" {
-		t.Errorf("ClaudeFlags = %v, want [-p --dangerously-skip-permissions]", cfg.ClaudeFlags)
 	}
 	if cfg.BuildCommand != "go build -o bin/ ./cmd/..." {
 		t.Errorf("BuildCommand = %q", cfg.BuildCommand)
@@ -269,5 +265,22 @@ no_sandbox: false
 	}
 	if !cfg.NoSandbox {
 		t.Error("NoSandbox = false, want true (flag should override)")
+	}
+}
+
+// TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
+// claude_flags field loads without error. The field is silently ignored for
+// backward compatibility.
+func TestClaudeFlagsIgnored(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+claude_flags: ["-v"]
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Errorf("unexpected error loading config with legacy claude_flags: %v", err)
 	}
 }
