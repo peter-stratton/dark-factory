@@ -90,5 +90,6 @@ func testPrompts(t *testing.T) *Prompts {
 		Implementer:      "Implement #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} slug={{.Slug}}",
 		ImplementerRetry: "Retry PR #{{.PRNumber}} for #{{.IssueNumber}} repo={{.Repo}}",
 		Reviewer:         "Review PR #{{.PRNumber}} for #{{.IssueNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}} for #{{.IssueNumber}}",
 	}
 }

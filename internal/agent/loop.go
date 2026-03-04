@@ -91,7 +91,85 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 	_ = WarnMissingScenario(cfg.Repo, prNum, issue.Number, cfg.ScenarioDir, logger)
 
-	// Step 4: Review/retry loop.
+	// Step 4: Quality review gate (if prompt is configured).
+	if prompts.QualityReviewer != "" {
+		qualityMaxAttempts := cfg.MaxRetries + 1
+		qualityPassed := false
+		for qAttempt := 0; qAttempt < qualityMaxAttempts; qAttempt++ {
+			if ctx.Err() != nil {
+				outcome.Status = "failed"
+				outcome.Err = ctx.Err()
+				return outcome
+			}
+
+			qResult, err := QualityReview(ctx, issue, prNum, cfg, prompts, authEnv, logger)
+			if err != nil {
+				outcome.Status = "failed"
+				outcome.Err = fmt.Errorf("quality reviewer agent: %w", err)
+				return outcome
+			}
+
+			switch qResult.Verdict {
+			case "APPROVED":
+				qualityPassed = true
+			case "CHANGES_REQUESTED":
+				retriesLeft := qualityMaxAttempts - qAttempt - 1
+				if retriesLeft <= 0 {
+					break // exit loop, will label needs-human-review
+				}
+
+				logger.Info("quality review requested changes, retrying implementation",
+					"issue_number", issue.Number,
+					"attempt", qAttempt+1,
+					"retries_left", retriesLeft,
+				)
+
+				retryResult, err := Retry(ctx, issue, prNum, sessionID, cfg, prompts, authEnv, logger)
+				if err != nil {
+					outcome.Status = "failed"
+					outcome.Err = fmt.Errorf("retry agent (quality): %w", err)
+					return outcome
+				}
+				if retryResult.TimedOut {
+					outcome.Status = "failed"
+					outcome.Err = fmt.Errorf("retry agent (quality) timed out")
+					return outcome
+				}
+
+				sessionID = retryResult.SessionID
+
+				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+					outcome.Status = "failed"
+					outcome.Err = driftErr
+					return outcome
+				}
+
+			default:
+				outcome.Status = "failed"
+				outcome.Err = fmt.Errorf("quality reviewer agent did not produce a verdict")
+				return outcome
+			}
+
+			if qualityPassed {
+				break
+			}
+		}
+
+		if !qualityPassed {
+			if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+				logger.Warn("failed to label PR", "error", err)
+			}
+			comment := fmt.Sprintf("Exhausted %d quality review/retry cycles. Labeling for human review.", qualityMaxAttempts)
+			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+				logger.Warn("failed to comment on PR", "error", err)
+			}
+			outcome.Status = "needs-human-review"
+			outcome.Retries = qualityMaxAttempts - 1
+			return outcome
+		}
+	}
+
+	// Step 5: Review/retry loop.
 	maxAttempts := cfg.MaxRetries + 1
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if ctx.Err() != nil {

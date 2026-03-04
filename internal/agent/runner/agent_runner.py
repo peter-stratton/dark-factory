@@ -7,7 +7,7 @@ structured result line.
 
 Environment variables:
   GODARK_PROMPT          The prompt text to send to the agent
-  GODARK_ROLE            Agent role: implementer, implementer_retry, reviewer, or spec_generator
+  GODARK_ROLE            Agent role: implementer, implementer_retry, reviewer, quality_reviewer, or spec_generator
   GODARK_SESSION_ID      Session ID for resuming a previous session
   GODARK_WORKDIR         Working directory (default: /workspace)
   GODARK_PROTECTED_PATHS Comma-separated list of protected paths (exact or dir prefix)
@@ -39,6 +39,10 @@ _ROLE_PERMISSIONS: dict[str, dict] = {
         "allowed_tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
     },
     "reviewer": {
+        "allowed_tools": ["Read", "Glob", "Grep", "Bash"],
+        "disallowed_tools": ["Write", "Edit"],
+    },
+    "quality_reviewer": {
         "allowed_tools": ["Read", "Glob", "Grep", "Bash"],
         "disallowed_tools": ["Write", "Edit"],
     },
@@ -257,13 +261,25 @@ async def main() -> None:
         else:
             raise
 
-    # For the reviewer role, extract the verdict from result_text.
+    # For reviewer/quality_reviewer roles, extract the verdict from result_text.
     verdict = ""
     if role == "reviewer" and result_text:
         upper = result_text.upper()
         for line in upper.splitlines():
             stripped = line.strip()
             if "REVIEW" in stripped and "RESULT" in stripped:
+                if "CHANGES" in stripped:
+                    verdict = "CHANGES_REQUESTED"
+                    break
+                elif "APPROVED" in stripped:
+                    verdict = "APPROVED"
+                    break
+
+    if role == "quality_reviewer" and result_text:
+        upper = result_text.upper()
+        for line in upper.splitlines():
+            stripped = line.strip()
+            if "QUALITY" in stripped and "RESULT" in stripped:
                 if "CHANGES" in stripped:
                     verdict = "CHANGES_REQUESTED"
                     break
