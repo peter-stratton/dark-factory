@@ -411,21 +411,18 @@ func TestGenerateDockerfileSandboxEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(df, `ENV GOOS="linux"`) {
-		t.Error(`Dockerfile missing ENV GOOS="linux" from SandboxEnv`)
+	if !strings.Contains(df, `ENV GOOS=linux`) {
+		t.Error(`Dockerfile missing ENV GOOS=linux from SandboxEnv`)
 	}
 }
 
-func TestGenerateDockerfileSandboxEnvValueWithSpaces(t *testing.T) {
+func TestGenerateDockerfileSandboxEnvValueWithSpacesRejected(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.SandboxEnv = map[string]string{"FOO": "bar baz"}
 
-	df, err := GenerateDockerfile(cfg, slog.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(df, `ENV FOO="bar baz"`) {
-		t.Error(`Dockerfile missing ENV FOO="bar baz" — value with spaces must be quoted`)
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for SandboxEnv value containing spaces, got nil")
 	}
 }
 
@@ -439,23 +436,23 @@ func TestGenerateDockerfileSandboxEnvNewlineRejected(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfileSandboxEnvDoubleQuoteRejected(t *testing.T) {
+func TestGenerateDockerfileSandboxEnvValueTabRejected(t *testing.T) {
 	cfg := DefaultDockerConfig()
-	cfg.SandboxEnv = map[string]string{"FOO": `bar"baz`}
+	cfg.SandboxEnv = map[string]string{"FOO": "bar\tbaz"}
 
 	_, err := GenerateDockerfile(cfg, slog.Default())
 	if err == nil {
-		t.Fatal("expected error for SandboxEnv value containing double quote, got nil")
+		t.Fatal("expected error for SandboxEnv value containing tab, got nil")
 	}
 }
 
-func TestGenerateDockerfileSandboxEnvKeyDoubleQuoteRejected(t *testing.T) {
+func TestGenerateDockerfileSandboxEnvKeyEqualsRejected(t *testing.T) {
 	cfg := DefaultDockerConfig()
-	cfg.SandboxEnv = map[string]string{`FO"O`: "val"}
+	cfg.SandboxEnv = map[string]string{"FO=O": "val"}
 
 	_, err := GenerateDockerfile(cfg, slog.Default())
 	if err == nil {
-		t.Fatal("expected error for SandboxEnv key containing double quote, got nil")
+		t.Fatal("expected error for SandboxEnv key containing '=', got nil")
 	}
 }
 

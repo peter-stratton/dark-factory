@@ -58,7 +58,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 {{range .SandboxEnv}}
-ENV {{.Key}}="{{.Value}}"
+ENV {{.Key}}={{.Value}}
 {{- end}}
 
 # Install Python agent runner dependencies
@@ -123,11 +123,11 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		if strings.ContainsAny(k, "\n\r") || strings.ContainsAny(v, "\n\r") {
 			return "", fmt.Errorf("SandboxEnv key/value must not contain newlines: %q=%q", k, v)
 		}
-		if strings.ContainsRune(k, '"') {
-			return "", fmt.Errorf("SandboxEnv key must not contain double quotes: %q", k)
+		if strings.ContainsAny(k, "= \t") {
+			return "", fmt.Errorf("SandboxEnv key must not contain '=', spaces, or tabs: %q", k)
 		}
-		if strings.ContainsRune(v, '"') {
-			return "", fmt.Errorf("SandboxEnv value must not contain double quotes: %q=%q", k, v)
+		if strings.ContainsAny(v, " \t") {
+			return "", fmt.Errorf("SandboxEnv value must not contain spaces or tabs: %q=%q", k, v)
 		}
 		sortedEnv = append(sortedEnv, envVar{Key: k, Value: v})
 	}
