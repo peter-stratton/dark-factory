@@ -30,7 +30,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go
-RUN curl -fsSL https://go.dev/dl/go{{.GoVersion}}.linux-amd64.tar.gz \
+RUN curl -fsSL https://go.dev/dl/go{{.RuntimeVersion}}.linux-amd64.tar.gz \
       | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
@@ -57,17 +57,17 @@ WORKDIR /workspace
 // GenerateDockerfile renders a Dockerfile from the given DockerConfig.
 func GenerateDockerfile(cfg DockerConfig) (string, error) {
 	data := struct {
-		Image         string
-		GoVersion     string
-		NodeVersion   string
-		User          string
-		ExtraPackages []string
+		Image          string
+		RuntimeVersion string
+		NodeVersion    string
+		User           string
+		ExtraPackages  []string
 	}{
-		Image:         cfg.Image,
-		GoVersion:     cfg.GoVersion,
-		NodeVersion:   cfg.NodeVersion,
-		User:          cfg.User,
-		ExtraPackages: cfg.ExtraPackages,
+		Image:          cfg.Image,
+		RuntimeVersion: cfg.Runtime.Version,
+		NodeVersion:    cfg.NodeVersion,
+		User:           cfg.User,
+		ExtraPackages:  cfg.ExtraPackages,
 	}
 
 	var buf bytes.Buffer

@@ -16,8 +16,11 @@ func TestDefaultConfig(t *testing.T) {
 	if dc.Image != "ubuntu:22.04" {
 		t.Errorf("Image = %q, want ubuntu:22.04", dc.Image)
 	}
-	if dc.GoVersion != "1.26.0" {
-		t.Errorf("GoVersion = %q, want 1.26.0", dc.GoVersion)
+	if dc.Runtime.Name != "" {
+		t.Errorf("Runtime.Name = %q, want empty string", dc.Runtime.Name)
+	}
+	if dc.Runtime.Version != "" {
+		t.Errorf("Runtime.Version = %q, want empty string", dc.Runtime.Version)
 	}
 	if dc.NodeVersion != "20" {
 		t.Errorf("NodeVersion = %q, want 20", dc.NodeVersion)
@@ -28,21 +31,24 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestDockerConfigFromConfig(t *testing.T) {
-	cfg := config.Docker{
+	docker := config.Docker{
 		Image:         "debian:bookworm",
-		GoVersion:     "1.22",
 		NodeVersion:   "18",
 		User:          "runner",
 		Mount:         "/src",
 		ExtraPackages: []string{"vim", "jq"},
 	}
-	dc := DockerConfigFromConfig(cfg)
+	runtime := config.Runtime{Name: "go", Version: "1.26.0"}
+	dc := DockerConfigFromConfig(docker, runtime)
 
 	if dc.Image != "debian:bookworm" {
 		t.Errorf("Image = %q, want debian:bookworm", dc.Image)
 	}
-	if dc.GoVersion != "1.22" {
-		t.Errorf("GoVersion = %q, want 1.22", dc.GoVersion)
+	if dc.Runtime.Name != "go" {
+		t.Errorf("Runtime.Name = %q, want go", dc.Runtime.Name)
+	}
+	if dc.Runtime.Version != "1.26.0" {
+		t.Errorf("Runtime.Version = %q, want 1.26.0", dc.Runtime.Version)
 	}
 	if dc.NodeVersion != "18" {
 		t.Errorf("NodeVersion = %q, want 18", dc.NodeVersion)
@@ -59,14 +65,17 @@ func TestDockerConfigFromConfig(t *testing.T) {
 }
 
 func TestDockerConfigFromConfigDefaults(t *testing.T) {
-	dc := DockerConfigFromConfig(config.Docker{})
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{})
 	def := DefaultDockerConfig()
 
 	if dc.Image != def.Image {
 		t.Errorf("Image = %q, want default %q", dc.Image, def.Image)
 	}
-	if dc.GoVersion != def.GoVersion {
-		t.Errorf("GoVersion = %q, want default %q", dc.GoVersion, def.GoVersion)
+	if dc.Runtime.Name != "" {
+		t.Errorf("Runtime.Name = %q, want empty string", dc.Runtime.Name)
+	}
+	if dc.Runtime.Version != "" {
+		t.Errorf("Runtime.Version = %q, want empty string", dc.Runtime.Version)
 	}
 }
 
@@ -84,7 +93,6 @@ func TestGenerateDockerfileDefault(t *testing.T) {
 		{"claude-code", "npm install -g @anthropic-ai/claude-code"},
 		{"user directive", "USER devloop"},
 		{"workdir", "WORKDIR /workspace"},
-		{"go install", "go1.26.0.linux-amd64.tar.gz"},
 		{"node install", "setup_20.x"},
 		{"useradd", "useradd -m -s /bin/bash devloop"},
 		{"python3 install", "python3"},
@@ -114,7 +122,7 @@ func TestGenerateDockerfileCustomImage(t *testing.T) {
 
 func TestGenerateDockerfileCustomGoVersion(t *testing.T) {
 	cfg := DefaultDockerConfig()
-	cfg.GoVersion = "1.22"
+	cfg.Runtime.Version = "1.22"
 
 	df, err := GenerateDockerfile(cfg)
 	if err != nil {
