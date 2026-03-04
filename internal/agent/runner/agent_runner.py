@@ -176,18 +176,39 @@ async def main() -> None:
     cost_usd = 0.0
     is_error = False
 
-    async for message in claude_agent_sdk.query(prompt=prompt, options=options):
-        try:
-            msg_dict = message.model_dump(mode="json") if hasattr(message, "model_dump") else vars(message)
-        except Exception:
-            msg_dict = {"type": type(message).__name__, "raw": str(message)}
-        print(json.dumps(msg_dict, default=str), flush=True)
+    async def _collect_messages(opts):
+        """Stream messages from the SDK, printing each one. Returns (session_id, result, cost, is_error)."""
+        nonlocal result_session_id, result_text, cost_usd, is_error
+        result_session_id = ""
+        result_text = ""
+        cost_usd = 0.0
+        is_error = False
+        async for message in claude_agent_sdk.query(prompt=prompt, options=opts):
+            try:
+                msg_dict = message.model_dump(mode="json") if hasattr(message, "model_dump") else vars(message)
+            except Exception:
+                msg_dict = {"type": type(message).__name__, "raw": str(message)}
+            print(json.dumps(msg_dict, default=str), flush=True)
 
-        if isinstance(message, ResultMessage):
-            result_session_id = getattr(message, "session_id", "") or ""
-            result_text = getattr(message, "result", "") or ""
-            cost_usd = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
-            is_error = bool(getattr(message, "is_error", False))
+            if isinstance(message, ResultMessage):
+                result_session_id = getattr(message, "session_id", "") or ""
+                result_text = getattr(message, "result", "") or ""
+                cost_usd = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
+                is_error = bool(getattr(message, "is_error", False))
+
+    try:
+        await _collect_messages(options)
+    except Exception as exc:
+        if session_id:
+            # Resume failed — fall back to a fresh session with the retry prompt.
+            warning = {
+                "warning": f"session resume failed, starting fresh session: {exc!r}",
+            }
+            print(json.dumps(warning), file=sys.stderr, flush=True)
+            options.resume = None
+            await _collect_messages(options)
+        else:
+            raise
 
     final = {
         "session_id": result_session_id,
