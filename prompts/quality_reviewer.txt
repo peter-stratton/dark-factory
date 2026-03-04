@@ -35,3 +35,6 @@ Based on your findings:
 CRITICAL: You MUST print exactly one of these lines:
   QUALITY_RESULT=APPROVED
   QUALITY_RESULT=CHANGES_REQUESTED
+{{if .StrictnessDirective}}
+{{.StrictnessDirective}}
+{{end}}

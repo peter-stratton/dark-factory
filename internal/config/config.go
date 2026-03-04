@@ -34,7 +34,8 @@ type Config struct {
 	ReviewDir      string   `yaml:"review_dir"`
 	LogDir         string   `yaml:"log_dir"`
 
-	NoSandbox bool `yaml:"no_sandbox"`
+	NoSandbox              bool `yaml:"no_sandbox"`
+	QualityStrictnessDecay bool `yaml:"quality_strictness_decay"`
 
 	Docker  Docker  `yaml:"docker"`
 	Prompts Prompts `yaml:"prompts"`
@@ -98,12 +99,13 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 
 func defaults() *Config {
 	return &Config{
-		MaxRetries:  2,
-		RoadmapPath: "docs/ROADMAP.md",
-		PlanningDir: "docs/planning/",
-		ScenarioDir: "tests/scenarios/",
-		ReviewDir:   "tests/review/",
-		LogDir:      "logs/",
+		MaxRetries:             2,
+		RoadmapPath:            "docs/ROADMAP.md",
+		PlanningDir:            "docs/planning/",
+		ScenarioDir:            "tests/scenarios/",
+		ReviewDir:              "tests/review/",
+		LogDir:                 "logs/",
+		QualityStrictnessDecay: true,
 	}
 }
 

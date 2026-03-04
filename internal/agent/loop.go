@@ -102,7 +102,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				return outcome
 			}
 
-			qResult, err := QualityReview(ctx, issue, prNum, cfg, prompts, authEnv, logger)
+			qResult, err := QualityReview(ctx, issue, prNum, cfg, prompts, authEnv, logger, qAttempt)
 			if err != nil {
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("quality reviewer agent: %w", err)

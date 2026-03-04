@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
+
+	"github.com/phs/dark-factory/internal/config"
 )
 
 func TestQualityReview_ReturnsVerdict(t *testing.T) {
@@ -11,7 +14,7 @@ func TestQualityReview_ReturnsVerdict(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -26,7 +29,7 @@ func TestQualityReview_ChangesRequested(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -42,7 +45,7 @@ func TestQualityReview_SetsQualityReviewerRole(t *testing.T) {
 		return []byte("QUALITY_RESULT=APPROVED\n"), []byte(""), 0, nil
 	})
 
-	_, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -58,7 +61,7 @@ func TestQualityReview_StructuredVerdict(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -85,5 +88,194 @@ func TestParseQualityResult_NoMatch(t *testing.T) {
 	got := ParseQualityResult("no sentinel here")
 	if got != "" {
 		t.Errorf("ParseQualityResult() = %q, want %q", got, "")
+	}
+}
+
+// --- strictnessDirective unit tests ---
+
+func TestStrictnessDirective_Cycle0NoDirective(t *testing.T) {
+	got := strictnessDirective(0, 3, true)
+	if got != "" {
+		t.Errorf("cycle=0 should have no directive, got %q", got)
+	}
+}
+
+func TestStrictnessDirective_DecayDisabled(t *testing.T) {
+	got := strictnessDirective(2, 3, false)
+	if got != "" {
+		t.Errorf("decay=false should have no directive, got %q", got)
+	}
+}
+
+func TestStrictnessDirective_SingleAttemptNoDirective(t *testing.T) {
+	got := strictnessDirective(0, 1, true)
+	if got != "" {
+		t.Errorf("maxAttempts=1 should have no directive, got %q", got)
+	}
+}
+
+func TestStrictnessDirective_MidCycleNarrowsScope(t *testing.T) {
+	got := strictnessDirective(1, 3, true)
+	if !strings.Contains(got, "security vulnerabilities and correctness issues only") {
+		t.Errorf("mid-cycle directive should mention correctness narrowing, got %q", got)
+	}
+	if !strings.Contains(got, "STRICTNESS OVERRIDE") {
+		t.Errorf("mid-cycle directive should have STRICTNESS OVERRIDE prefix, got %q", got)
+	}
+}
+
+func TestStrictnessDirective_FinalCycleSecurityOnly(t *testing.T) {
+	got := strictnessDirective(2, 3, true)
+	if !strings.Contains(got, "final quality review cycle") {
+		t.Errorf("final cycle directive should mention 'final quality review cycle', got %q", got)
+	}
+	if !strings.Contains(got, "security vulnerability") {
+		t.Errorf("final cycle directive should mention 'security vulnerability', got %q", got)
+	}
+}
+
+func TestStrictnessDirective_MidCycleContainsRetryNumber(t *testing.T) {
+	got := strictnessDirective(1, 5, true)
+	if !strings.Contains(got, "retry 2") {
+		t.Errorf("mid-cycle directive should contain retry number 2, got %q", got)
+	}
+}
+
+// --- QualityReview prompt rendering tests ---
+
+func qualityConfigWithDecay(maxRetries int) *config.Config {
+	cfg := testConfig()
+	cfg.MaxRetries = maxRetries
+	cfg.QualityStrictnessDecay = true
+	return cfg
+}
+
+func qualityPromptsWithDirective(t *testing.T) *Prompts {
+	t.Helper()
+	p := testPrompts(t)
+	p.QualityReviewer = "Quality review PR #{{.PRNumber}} for #{{.IssueNumber}}{{if .StrictnessDirective}}\n{{.StrictnessDirective}}{{end}}"
+	return p
+}
+
+func TestQualityReview_Cycle0NoDirectiveInPrompt(t *testing.T) {
+	var capturedPrompt string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedPrompt = env["GODARK_PROMPT"]
+		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	cfg := qualityConfigWithDecay(2) // maxAttempts=3
+	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 0)
+	if err != nil {
+		t.Fatalf("QualityReview() error = %v", err)
+	}
+
+	if strings.Contains(capturedPrompt, "STRICTNESS OVERRIDE") {
+		t.Errorf("cycle=0 prompt should not contain STRICTNESS OVERRIDE, got: %q", capturedPrompt)
+	}
+}
+
+func TestQualityReview_Cycle1NarrowsScope(t *testing.T) {
+	var capturedPrompt string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedPrompt = env["GODARK_PROMPT"]
+		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	cfg := qualityConfigWithDecay(2) // maxAttempts=3
+	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 1)
+	if err != nil {
+		t.Fatalf("QualityReview() error = %v", err)
+	}
+
+	if !strings.Contains(capturedPrompt, "security vulnerabilities and correctness issues only") {
+		t.Errorf("cycle=1 prompt should contain correctness narrowing, got: %q", capturedPrompt)
+	}
+}
+
+func TestQualityReview_FinalCycleSecurityOnly(t *testing.T) {
+	var capturedPrompt string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedPrompt = env["GODARK_PROMPT"]
+		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	cfg := qualityConfigWithDecay(2) // maxAttempts=3, final cycle=2
+	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 2)
+	if err != nil {
+		t.Fatalf("QualityReview() error = %v", err)
+	}
+
+	if !strings.Contains(capturedPrompt, "final quality review cycle") {
+		t.Errorf("final cycle prompt should contain 'final quality review cycle', got: %q", capturedPrompt)
+	}
+	if !strings.Contains(capturedPrompt, "security vulnerability") {
+		t.Errorf("final cycle prompt should contain 'security vulnerability', got: %q", capturedPrompt)
+	}
+}
+
+func TestQualityReview_SingleAttemptNoDirective(t *testing.T) {
+	var capturedPrompt string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedPrompt = env["GODARK_PROMPT"]
+		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	cfg := qualityConfigWithDecay(0) // maxAttempts=1
+	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 0)
+	if err != nil {
+		t.Fatalf("QualityReview() error = %v", err)
+	}
+
+	if strings.Contains(capturedPrompt, "STRICTNESS OVERRIDE") {
+		t.Errorf("single-attempt prompt should not contain STRICTNESS OVERRIDE, got: %q", capturedPrompt)
+	}
+}
+
+func TestQualityReview_DecayDisabledNoDirective(t *testing.T) {
+	var capturedPrompt string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedPrompt = env["GODARK_PROMPT"]
+		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	cfg := testConfig()
+	cfg.MaxRetries = 2
+	cfg.QualityStrictnessDecay = false
+	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 2)
+	if err != nil {
+		t.Fatalf("QualityReview() error = %v", err)
+	}
+
+	if strings.Contains(capturedPrompt, "STRICTNESS OVERRIDE") {
+		t.Errorf("decay=false prompt should not contain STRICTNESS OVERRIDE, got: %q", capturedPrompt)
+	}
+}
+
+func TestQualityReview_DirectiveAppendedNotReplaced(t *testing.T) {
+	var capturedPrompt string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedPrompt = env["GODARK_PROMPT"]
+		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	cfg := qualityConfigWithDecay(2) // maxAttempts=3
+	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 1)
+	if err != nil {
+		t.Fatalf("QualityReview() error = %v", err)
+	}
+
+	// Prompt should contain both original instructions and the directive.
+	if !strings.Contains(capturedPrompt, "Quality review PR") {
+		t.Errorf("prompt should contain original quality reviewer text, got: %q", capturedPrompt)
+	}
+	if !strings.Contains(capturedPrompt, "STRICTNESS OVERRIDE") {
+		t.Errorf("prompt should contain strictness directive, got: %q", capturedPrompt)
 	}
 }
