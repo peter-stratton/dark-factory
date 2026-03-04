@@ -12,13 +12,15 @@ import (
 	"github.com/phs/dark-factory/internal/deps"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
 // Run is the main entry point for the orchestration loop.
 // It fetches issues, resolves dependencies, and either prints the execution
 // plan (dry-run) or iterates through processable issues.
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool) error {
+// punchlistPath is the optional file path to write the punchlist to (stdout always receives it).
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool, punchlistPath string) error {
 	logger.Info("starting orchestration",
 		"repo", cfg.Repo,
 		"milestone", milestone,
@@ -83,7 +85,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		return nil
 	}
 
-	return processIssues(ctx, processable, blocked, len(issues), cfg, logger)
+	return processIssues(ctx, processable, blocked, len(issues), cfg, logger, punchlistPath)
 }
 
 // filterSingleIssue extracts a single issue from processable, returning an
@@ -148,8 +150,8 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 }
 
 // processIssues runs each processable issue through the agent loop and prints
-// summary stats.
-func processIssues(ctx context.Context, processable []github.Issue, blocked []blockedIssue, total int, cfg *config.Config, logger *slog.Logger) error {
+// summary stats. punchlistPath is the optional file path to write the punchlist to.
+func processIssues(ctx context.Context, processable []github.Issue, blocked []blockedIssue, total int, cfg *config.Config, logger *slog.Logger, punchlistPath string) error {
 	if len(processable) == 0 {
 		fmt.Println("All issues are blocked — nothing to process.")
 		printSummary(total, len(blocked), 0)
@@ -185,6 +187,12 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 		needsHumanReview int
 		failed           int
 	}
+
+	type processedItem struct {
+		issue   github.Issue
+		outcome agent.IssueOutcome
+	}
+	var processed []processedItem
 
 	for _, issue := range processable {
 		if ctx.Err() != nil {
@@ -224,11 +232,45 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 			"retries", outcome.Retries,
 			"error", outcome.Err,
 		)
+
+		if outcome.PRNumber > 0 {
+			processed = append(processed, processedItem{issue, outcome})
+		}
 	}
 
 	fmt.Println()
 	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
 		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, len(blocked))
+
+	if len(processed) > 0 {
+		entries := make([]punchlist.Entry, 0, len(processed))
+		for _, p := range processed {
+			files, err := punchlist.FetchChangedFiles(cfg.Repo, p.outcome.PRNumber)
+			if err != nil {
+				logger.Warn("failed to fetch changed files for punchlist",
+					"pr_number", p.outcome.PRNumber, "error", err)
+			}
+			spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, p.issue.Number)
+			if err != nil {
+				logger.Warn("failed to read scenario spec for punchlist",
+					"issue_number", p.issue.Number, "error", err)
+			}
+			entries = append(entries, punchlist.Entry{
+				IssueNumber:  p.issue.Number,
+				IssueTitle:   p.issue.Title,
+				IssueBody:    p.issue.Body,
+				PRNumber:     p.outcome.PRNumber,
+				Repo:         cfg.Repo,
+				ScenarioSpec: spec,
+				ChangedFiles: files,
+			})
+		}
+		text := punchlist.Generate(entries)
+		fmt.Println()
+		if err := punchlist.Write(text, punchlistPath); err != nil {
+			logger.Warn("failed to write punchlist", "error", err)
+		}
+	}
 
 	return nil
 }
