@@ -22,7 +22,7 @@ CRITICAL RULES:
 
 Implementation steps:
 1. Write the implementation code
-2. Write unit tests (foo_test.go next to foo.go)
+2. Write unit tests alongside the implementation
 {{- if .BuildCommand}}
 3. Run build: {{.BuildCommand}}
 {{- end}}

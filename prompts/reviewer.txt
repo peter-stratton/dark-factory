@@ -15,8 +15,12 @@ Steps:
 {{- if .BuildCommand}}
 6. Verify build: {{.BuildCommand}}
 {{- end}}
-7. Generate Go integration tests in {{.ReviewDir}} that validate the behaviors described in the scenario spec
-8. Run your integration tests: go test ./{{.ReviewDir}} -v
+7. Generate integration tests in {{.ReviewDir}} that validate the behaviors described in the scenario spec
+8. Run your integration tests (use the appropriate test runner for the project language, or fall back to {{.TestCommand}})
+
+CRITICAL RULES:
+- Do NOT modify any protected paths: {{.ProtectedPaths}}
+- Do NOT modify files in {{.ScenarioDir}}
 
 Based on your findings:
 - If ALL tests pass and the implementation meets acceptance criteria:
