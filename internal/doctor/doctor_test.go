@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -9,12 +10,12 @@ import (
 
 // stubRunner returns a CommandRunner stub that succeeds for the listed
 // commands (identified by name+args[0] if any) and fails for all others.
-func stubRunner(pass ...string) func(string, ...string) ([]byte, error) {
+func stubRunner(pass ...string) func(context.Context, string, ...string) ([]byte, error) {
 	passSet := make(map[string]bool, len(pass))
 	for _, p := range pass {
 		passSet[p] = true
 	}
-	return func(name string, args ...string) ([]byte, error) {
+	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		key := name
 		if len(args) > 0 {
 			key = name + " " + args[0]

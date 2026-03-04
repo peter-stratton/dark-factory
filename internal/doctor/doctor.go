@@ -1,17 +1,19 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
+var CommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
 // EnvLookup looks up an environment variable.
@@ -22,13 +24,7 @@ var EnvLookup = os.Getenv
 type Check struct {
 	Name string
 	Fix  string
-	run  func() bool
-}
-
-// Result holds the outcome of running a Check.
-type Result struct {
-	Check *Check
-	Passed bool
+	run  func(ctx context.Context) bool
 }
 
 // runtimeVersionCmd returns the command and args to verify a named runtime is
@@ -59,31 +55,31 @@ func Checks(runtime string) []*Check {
 		{
 			Name: "Docker daemon running",
 			Fix:  "Start Docker Desktop or the Docker daemon (e.g. `sudo systemctl start docker`).",
-			run: func() bool {
-				_, err := CommandRunner("docker", "info")
+			run: func(ctx context.Context) bool {
+				_, err := CommandRunner(ctx, "docker", "info")
 				return err == nil
 			},
 		},
 		{
 			Name: "gh CLI installed",
 			Fix:  "Install the GitHub CLI: https://cli.github.com",
-			run: func() bool {
-				_, err := CommandRunner("gh", "--version")
+			run: func(ctx context.Context) bool {
+				_, err := CommandRunner(ctx, "gh", "--version")
 				return err == nil
 			},
 		},
 		{
 			Name: "gh CLI authenticated",
 			Fix:  "Run `gh auth login` to authenticate.",
-			run: func() bool {
-				_, err := CommandRunner("gh", "auth", "status")
+			run: func(ctx context.Context) bool {
+				_, err := CommandRunner(ctx, "gh", "auth", "status")
 				return err == nil
 			},
 		},
 		{
 			Name: "ANTHROPIC_API_KEY set",
 			Fix:  "Export ANTHROPIC_API_KEY in your shell profile or pass it in the environment.",
-			run: func() bool {
+			run: func(ctx context.Context) bool {
 				return EnvLookup("ANTHROPIC_API_KEY") != ""
 			},
 		},
@@ -98,8 +94,8 @@ func Checks(runtime string) []*Check {
 			checks = append(checks, &Check{
 				Name: fmt.Sprintf("%s toolchain available", rt),
 				Fix:  fmt.Sprintf("Install the %s toolchain and ensure it is on your PATH.", rt),
-				run: func() bool {
-					_, err := CommandRunner(b, a...)
+				run: func(ctx context.Context) bool {
+					_, err := CommandRunner(ctx, b, a...)
 					return err == nil
 				},
 			})
@@ -109,8 +105,8 @@ func Checks(runtime string) []*Check {
 	checks = append(checks, &Check{
 		Name: "Python 3 available",
 		Fix:  "Install Python 3: https://www.python.org/downloads/",
-		run: func() bool {
-			_, err := CommandRunner("python3", "--version")
+		run: func(ctx context.Context) bool {
+			_, err := CommandRunner(ctx, "python3", "--version")
 			return err == nil
 		},
 	})
@@ -123,7 +119,9 @@ func Checks(runtime string) []*Check {
 func Run(w io.Writer, checks []*Check) bool {
 	allPassed := true
 	for _, c := range checks {
-		passed := c.run()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		passed := c.run(ctx)
+		cancel()
 		if passed {
 			fmt.Fprintf(w, "[PASS] %s\n", c.Name)
 		} else {

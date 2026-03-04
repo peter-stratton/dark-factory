@@ -33,7 +33,6 @@ Checks performed:
 		checks := doctor.Checks(runtime)
 		passed := doctor.Run(os.Stdout, checks)
 		if !passed {
-			fmt.Fprintln(os.Stderr, "\ndoctor: one or more checks failed")
 			return fmt.Errorf("pre-flight checks failed")
 		}
 		return nil
