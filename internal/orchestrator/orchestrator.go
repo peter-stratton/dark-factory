@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"strings"
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
@@ -191,6 +193,10 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 		case "implemented":
 			stats.implemented++
 			fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+			if err := PullAfterMerge(logger); err != nil {
+				logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
+				break
+			}
 		case "needs-human-review":
 			stats.needsHumanReview++
 			fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
@@ -222,6 +228,43 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 // printSummary outputs the final count line.
 func printSummary(total, blocked, processable int) {
 	fmt.Printf("Summary: %d total, %d blocked, %d processable\n", total, blocked, processable)
+}
+
+// CommandRunner executes a command and returns its combined output.
+// Replaceable for testing.
+var CommandRunner = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// PullAfterMerge syncs the local repo with the remote after a successful merge.
+// If the working tree is dirty, it logs an actionable message and returns an
+// error so the orchestration loop can stop gracefully.
+func PullAfterMerge(logger *slog.Logger) error {
+	_, err := CommandRunner("git", "pull", "--rebase", "origin", "main")
+	if err == nil {
+		logger.Info("pulled latest changes after merge")
+		return nil
+	}
+
+	// Check if the repo is dirty.
+	out, statusErr := CommandRunner("git", "status", "--porcelain")
+	if statusErr != nil {
+		logger.Warn("failed to pull after merge and could not check repo status",
+			"pull_error", err,
+			"status_error", statusErr,
+		)
+		return fmt.Errorf("pull after merge failed: %w", err)
+	}
+
+	if dirty := strings.TrimSpace(string(out)); dirty != "" {
+		logger.Warn("local repo has uncommitted changes — commit your changes then run: git pull --rebase origin main",
+			"dirty_files", dirty,
+		)
+		return fmt.Errorf("local repo is dirty, cannot pull after merge")
+	}
+
+	logger.Warn("failed to pull after merge", "error", err)
+	return fmt.Errorf("pull after merge failed: %w", err)
 }
 
 // formatIssueRefs formats a slice of issue numbers as "#1, #2, #3".

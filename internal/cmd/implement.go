@@ -12,6 +12,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -101,6 +102,13 @@ loop directly, without milestone or dependency resolution.`,
 
 		fmt.Printf("Issue #%d: %s (PR #%d, %d retries)\n",
 			outcome.IssueNumber, outcome.Status, outcome.PRNumber, outcome.Retries)
+
+		if outcome.Status == "implemented" {
+			if err := orchestrator.PullAfterMerge(logger); err != nil {
+				logger.Warn("could not sync local repo after merge", "error", err)
+			}
+		}
+
 		return nil
 	},
 }
