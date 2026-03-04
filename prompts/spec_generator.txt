@@ -35,7 +35,7 @@ Description of what to do.
 ```
 
 Steps:
-1. Name the file using the issue number as prefix: {{.ScenarioDir}}{{.IssueNumber}}-<short-slug>.md (e.g., {{.ScenarioDir}}{{.IssueNumber}}-add-feature.md)
+1. Determine the phase from the issue's milestone (e.g., "Phase 3" → phase-3). Place the file in the matching subdirectory, creating it if needed: {{.ScenarioDir}}<phase-tag>/{{.IssueNumber}}-<short-slug>.md (e.g., {{.ScenarioDir}}phase-3/{{.IssueNumber}}-add-feature.md). If no milestone is set, place the file directly in {{.ScenarioDir}}.
 2. Write the scenario spec covering all cases from the issue
 3. Include edge cases and error scenarios where appropriate
 4. Commit with message: "test: add scenario spec for issue #{{.IssueNumber}}"

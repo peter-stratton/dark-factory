@@ -11,17 +11,24 @@ Generate a scenario spec file for the given GitHub issue.
 
 ## Steps
 
-1. **Fetch the issue** — Run `gh issue view <issue-number>` to get the issue
-   title and body. If the command fails, stop and report the error.
+1. **Fetch the issue** — Run `gh issue view <issue-number> --json title,body,milestone`
+   to get the issue title, body, and milestone. If the command fails, stop and
+   report the error.
 
-2. **Read existing specs for reference** — List files in `tests/scenarios/` and
-   read one or two to understand the project's scenario spec style.
+2. **Determine the phase** — Extract the phase from the issue's milestone name
+   (e.g., "Phase 3" → `phase-3`). If no milestone is set, ask the user which
+   phase subdirectory to use.
 
-3. **Generate the spec file** — Create a new file in `tests/scenarios/` using
-   the format below. The filename must be kebab-case derived from the scenario
-   title (e.g., `config-loading.md`).
+3. **Read existing specs for reference** — List files in `tests/scenarios/` and
+   its subdirectories, and read one or two to understand the project's scenario
+   spec style.
 
-4. **Print the path** — After writing the file, print the path so the user can
+4. **Generate the spec file** — Create a new file in the appropriate phase
+   subdirectory under `tests/scenarios/` (e.g., `tests/scenarios/phase-3/`),
+   creating the subdirectory if needed. The filename must be kebab-case derived
+   from the scenario title (e.g., `config-loading.md`).
+
+5. **Print the path** — After writing the file, print the path so the user can
    review it.
 
 ## Format

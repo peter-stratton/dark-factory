@@ -327,6 +327,21 @@ func TestParseReviewResult_CaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestHasScenarioSpec_RecursesIntoSubdirs(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "phase-3")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "spec.md"), []byte("Relates to: Issue #5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !HasScenarioSpec(dir, 5) {
+		t.Error("HasScenarioSpec() = false, want true for file in subdirectory")
+	}
+}
+
 func TestHasScenarioSpec_SkipsNonMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("Relates to: Issue #5\n"), 0o644); err != nil {
