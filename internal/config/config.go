@@ -8,6 +8,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Runtime identifies the project's toolchain and optional version.
+type Runtime struct {
+	Name    string `yaml:"name"`    // go, flutter, node, rust, python
+	Version string `yaml:"version"` // optional — auto-detected if empty
+}
+
 // Config holds all configuration for a godark run.
 type Config struct {
 	Repo       string `yaml:"repo"`
@@ -15,10 +21,11 @@ type Config struct {
 	Issue      int    `yaml:"issue"`
 	MaxRetries int    `yaml:"max_retries"`
 
-	AgentTimeout string       `yaml:"agent_timeout"`
-	BuildCommand string       `yaml:"build_command"`
-	TestCommand  string       `yaml:"test_command"`
-	CrossCompile CrossCompile `yaml:"cross_compile"`
+	AgentTimeout string            `yaml:"agent_timeout"`
+	BuildCommand string            `yaml:"build_command"`
+	TestCommand  string            `yaml:"test_command"`
+	SandboxEnv   map[string]string `yaml:"sandbox_env"`
+	Runtime      Runtime           `yaml:"runtime"`
 
 	ProtectedPaths []string `yaml:"protected_paths"`
 	RoadmapPath    string   `yaml:"roadmap_path"`
@@ -33,19 +40,12 @@ type Config struct {
 	Prompts Prompts `yaml:"prompts"`
 }
 
-// CrossCompile holds cross-compilation environment variables.
-type CrossCompile struct {
-	GOOS   string `yaml:"GOOS"`
-	GOARCH string `yaml:"GOARCH"`
-}
-
 // Docker holds Docker sandbox configuration.
 type Docker struct {
 	Image         string   `yaml:"image"`
 	Dockerfile    string   `yaml:"dockerfile"`
 	Mount         string   `yaml:"mount"`
 	User          string   `yaml:"user"`
-	GoVersion     string   `yaml:"go_version"`
 	NodeVersion   string   `yaml:"node_version"`
 	ExtraPackages []string `yaml:"extra_packages"`
 }

@@ -166,7 +166,7 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 
 	// Build Docker image once if using sandbox mode.
 	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker)
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime)
 		tag, err := sandbox.BuildImage(ctx, dc, logger)
 		if err != nil {
 			return fmt.Errorf("building Docker image: %w", err)

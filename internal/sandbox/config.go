@@ -10,7 +10,7 @@ import (
 // DockerConfig holds the resolved configuration for Dockerfile generation.
 type DockerConfig struct {
 	Image         string
-	GoVersion     string
+	Runtime       config.Runtime
 	NodeVersion   string
 	User          string
 	ExtraPackages []string
@@ -21,33 +21,30 @@ type DockerConfig struct {
 func DefaultDockerConfig() DockerConfig {
 	return DockerConfig{
 		Image:       "ubuntu:22.04",
-		GoVersion:   "1.26.0",
 		NodeVersion: "20",
 		User:        "devloop",
 	}
 }
 
-// DockerConfigFromConfig maps a config.Docker into a DockerConfig,
+// DockerConfigFromConfig maps a config.Docker and config.Runtime into a DockerConfig,
 // applying defaults for any zero-value fields.
-func DockerConfigFromConfig(cfg config.Docker) DockerConfig {
+func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime) DockerConfig {
 	dc := DefaultDockerConfig()
-	if cfg.Image != "" {
-		dc.Image = cfg.Image
+	if docker.Image != "" {
+		dc.Image = docker.Image
 	}
-	if cfg.GoVersion != "" {
-		dc.GoVersion = cfg.GoVersion
+	dc.Runtime = runtime
+	if docker.NodeVersion != "" {
+		dc.NodeVersion = docker.NodeVersion
 	}
-	if cfg.NodeVersion != "" {
-		dc.NodeVersion = cfg.NodeVersion
+	if docker.User != "" {
+		dc.User = docker.User
 	}
-	if cfg.User != "" {
-		dc.User = cfg.User
+	if docker.Mount != "" {
+		dc.Mount = docker.Mount
 	}
-	if cfg.Mount != "" {
-		dc.Mount = cfg.Mount
-	}
-	if len(cfg.ExtraPackages) > 0 {
-		dc.ExtraPackages = cfg.ExtraPackages
+	if len(docker.ExtraPackages) > 0 {
+		dc.ExtraPackages = docker.ExtraPackages
 	}
 	return dc
 }

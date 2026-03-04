@@ -29,9 +29,12 @@ max_retries: 3
 issue: 5
 build_command: "go build -o bin/ ./cmd/..."
 test_command: "go test ./..."
-cross_compile:
+sandbox_env:
   GOOS: linux
   GOARCH: arm64
+runtime:
+  name: go
+  version: "1.26.0"
 protected_paths:
   - tests/scenarios/
   - CLAUDE.md
@@ -72,11 +75,17 @@ prompts:
 	if cfg.TestCommand != "go test ./..." {
 		t.Errorf("TestCommand = %q", cfg.TestCommand)
 	}
-	if cfg.CrossCompile.GOOS != "linux" {
-		t.Errorf("CrossCompile.GOOS = %q, want linux", cfg.CrossCompile.GOOS)
+	if cfg.SandboxEnv["GOOS"] != "linux" {
+		t.Errorf("SandboxEnv[GOOS] = %q, want linux", cfg.SandboxEnv["GOOS"])
 	}
-	if cfg.CrossCompile.GOARCH != "arm64" {
-		t.Errorf("CrossCompile.GOARCH = %q, want arm64", cfg.CrossCompile.GOARCH)
+	if cfg.SandboxEnv["GOARCH"] != "arm64" {
+		t.Errorf("SandboxEnv[GOARCH] = %q, want arm64", cfg.SandboxEnv["GOARCH"])
+	}
+	if cfg.Runtime.Name != "go" {
+		t.Errorf("Runtime.Name = %q, want go", cfg.Runtime.Name)
+	}
+	if cfg.Runtime.Version != "1.26.0" {
+		t.Errorf("Runtime.Version = %q, want 1.26.0", cfg.Runtime.Version)
 	}
 	if len(cfg.ProtectedPaths) != 2 {
 		t.Errorf("ProtectedPaths = %v, want 2 entries", cfg.ProtectedPaths)
@@ -92,6 +101,85 @@ prompts:
 	}
 	if cfg.Prompts.Reviewer != "prompts/reviewer.md" {
 		t.Errorf("Prompts.Reviewer = %q", cfg.Prompts.Reviewer)
+	}
+}
+
+func TestRuntimeFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+runtime:
+  name: flutter
+  version: "3.41"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Runtime.Name != "flutter" {
+		t.Errorf("Runtime.Name = %q, want flutter", cfg.Runtime.Name)
+	}
+	if cfg.Runtime.Version != "3.41" {
+		t.Errorf("Runtime.Version = %q, want 3.41", cfg.Runtime.Version)
+	}
+}
+
+func TestEmptyRuntimeIsZeroValued(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Runtime.Name != "" {
+		t.Errorf("Runtime.Name = %q, want empty string", cfg.Runtime.Name)
+	}
+	if cfg.Runtime.Version != "" {
+		t.Errorf("Runtime.Version = %q, want empty string", cfg.Runtime.Version)
+	}
+}
+
+func TestSandboxEnvFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+sandbox_env:
+  GOOS: linux
+  GOARCH: arm64
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SandboxEnv["GOOS"] != "linux" {
+		t.Errorf("SandboxEnv[GOOS] = %q, want linux", cfg.SandboxEnv["GOOS"])
+	}
+	if cfg.SandboxEnv["GOARCH"] != "arm64" {
+		t.Errorf("SandboxEnv[GOARCH] = %q, want arm64", cfg.SandboxEnv["GOARCH"])
+	}
+}
+
+func TestEmptySandboxEnvIsNil(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+milestone: "Phase 1"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SandboxEnv != nil {
+		t.Errorf("SandboxEnv = %v, want nil", cfg.SandboxEnv)
 	}
 }
 
