@@ -135,6 +135,62 @@ func TestNewRunOpts_InvalidTimeout(t *testing.T) {
 	}
 }
 
+func TestNewRunOpts_SetsProtectedPathsEnv(t *testing.T) {
+	cfg := testConfig() // ProtectedPaths: ["CLAUDE.md", "tests/scenarios/"]
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	got := opts.Env["GODARK_PROTECTED_PATHS"]
+	if got != "CLAUDE.md,tests/scenarios/" {
+		t.Errorf("GODARK_PROTECTED_PATHS = %q, want %q", got, "CLAUDE.md,tests/scenarios/")
+	}
+}
+
+func TestNewRunOpts_EmptyProtectedPathsEnv(t *testing.T) {
+	cfg := testConfig()
+	cfg.ProtectedPaths = nil
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	got := opts.Env["GODARK_PROTECTED_PATHS"]
+	if got != "" {
+		t.Errorf("GODARK_PROTECTED_PATHS = %q, want empty string", got)
+	}
+}
+
+func TestImplement_ProtectedPathsInEnv(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
+	}
+
+	got := capturedEnv["GODARK_PROTECTED_PATHS"]
+	if got != "CLAUDE.md,tests/scenarios/" {
+		t.Errorf("GODARK_PROTECTED_PATHS = %q, want %q", got, "CLAUDE.md,tests/scenarios/")
+	}
+}
+
+func TestNewRunOpts_DoesNotMutateAuthEnv(t *testing.T) {
+	cfg := testConfig()
+	authEnv := map[string]string{"GH_TOKEN": "tok-xyz"}
+	_, err := newRunOpts("prompt", cfg, authEnv, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	// authEnv should not have been modified
+	if _, ok := authEnv["GODARK_PROTECTED_PATHS"]; ok {
+		t.Error("newRunOpts must not mutate the caller's authEnv map")
+	}
+}
+
 func TestImplement_BranchExistsDetection(t *testing.T) {
 	// Stub Runner (agent call) and GuardRunner (git ls-remote).
 	var capturedEnv map[string]string
