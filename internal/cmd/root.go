@@ -11,8 +11,9 @@ var rootCmd = &cobra.Command{
 review their own work, and merge — without human intervention.
 
 It fetches issues from a milestone, resolves dependencies, and runs a
-two-agent loop: one agent implements, another reviews. Approved PRs are
-squash-merged automatically.`,
+three-agent loop: one agent implements, a second audits code quality, and
+a third reviews against scenario specs. Approved PRs are squash-merged
+automatically.`,
 }
 
 func Execute() error {

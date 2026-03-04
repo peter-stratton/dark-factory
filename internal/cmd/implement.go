@@ -33,7 +33,7 @@ loop directly, without milestone or dependency resolution.`,
 		configPath, _ := cmd.Flags().GetString("config")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
-		flags := config.CLIFlags{Config: configPath, Issue: &issueNumber}
+		flags := config.CLIFlags{Config: configPath}
 
 		if cmd.Flags().Changed("repo") {
 			v, _ := cmd.Flags().GetString("repo")
@@ -120,7 +120,7 @@ loop directly, without milestone or dependency resolution.`,
 func init() {
 	f := implementCmd.Flags()
 	f.String("repo", "", "GitHub repository (owner/repo)")
-	f.Int("max-retries", 2, "Maximum review/fix retry cycles")
+	f.Int("max-retries", 3, "Maximum review/fix retry cycles")
 	f.Bool("dry-run", false, "Print issue details and exit")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.String("config", "godark.yaml", "Path to configuration file")

@@ -11,17 +11,53 @@ A Go CLI that orchestrates autonomous AI agents to implement GitHub issues,
 review their own work, and merge — without human intervention. Supports Go,
 Flutter, Node.js, Rust, and Python projects.
 
+## Prerequisites
+
+### Authentication
+
+| Variable | Required | Source |
+|----------|----------|--------|
+| `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` | Yes (one of) | Claude Code subscription token or Anthropic API key |
+| `GH_TOKEN` | Yes | GitHub personal access token, or run `gh auth login` |
+
+If both Anthropic tokens are set, `CLAUDE_CODE_OAUTH_TOKEN` takes priority.
+
+`GH_TOKEN` can be set explicitly, or `godark` will attempt to retrieve it
+automatically by running `gh auth token` (which requires a prior
+`gh auth login`). If neither source provides a token, `godark` exits with
+an error.
+
+### Host tools
+
+| Tool | Required | Notes |
+|------|----------|-------|
+| Docker | Yes (unless `--no-sandbox`) | Daemon must be running; used to build and run agent containers |
+| `gh` | Yes | GitHub CLI — used for issue fetching, PR operations, and git auth |
+| `git` | Yes | Repository operations and post-merge pulls |
+| `python3` | Only in `--no-sandbox` mode | Runs the embedded `agent_runner.py` on the host; in sandbox mode, Python is pre-installed in the container |
+
+### A note on `--no-sandbox`
+
+> **Warning:** In `--no-sandbox` mode, agents run directly on your host machine
+> with full filesystem and network access. There is no isolation — an agent can
+> read, modify, or delete any file your user account can access, install
+> packages, and execute arbitrary shell commands. Use this mode only for
+> development and debugging on machines where you accept that risk. For
+> production runs, always use the default Docker sandbox.
+
 ## How it works
 
-Given a GitHub repo and a milestone, `godark` runs a two-agent development loop:
+Given a GitHub repo and a milestone, `godark` runs a three-agent development loop:
 
 1. **Fetch** open issues from the milestone, sorted by priority (`p1` → `p2` → `p3` → unlabeled)
 2. **Resolve dependencies** — issues declare `Blocked by: #N` or `Depends on: #N` in their body; skip any whose dependencies are still open
-3. **Agent 1 (Implementer)** — Claude Code implements the issue, writes unit tests, and opens a PR
-4. **Agent 2 (Reviewer)** — a separate Claude Code instance reviews the PR against human-authored scenario specs, generates ephemeral integration tests, and approves or requests changes
-5. **Retry loop** — if the reviewer rejects, Agent 1 reads the review comments and pushes fixes (max N retries)
-6. **Merge or escalate** — approved PRs are squash-merged; failed PRs are labeled `needs-human-review`
-7. **Repeat** — move to the next unblocked issue
+3. **Implementer** — Claude Code implements the issue, writes unit tests, and opens a PR
+4. **Guard rails** — verify the PR exists, contains `Closes #N`, and didn't touch protected files
+5. **Quality reviewer** — a separate Claude Code instance audits the PR for security, performance, and code quality issues; if it requests changes, the implementer retries before functional review begins
+6. **Functional reviewer** — another Claude Code instance reviews the PR against human-authored scenario specs, generates ephemeral integration tests, and approves or requests changes
+7. **Retry loop** — if either reviewer rejects, the implementer reads the review comments and pushes fixes (max N retries per gate)
+8. **Merge or escalate** — approved PRs are squash-merged; failed PRs are labeled `needs-human-review`
+9. **Repeat** — move to the next unblocked issue
 
 ## Pre-run checklist
 
@@ -43,16 +79,36 @@ Once vetting passes, kick off the loop:
 godark run --milestone "Phase N" --repo owner/repo
 ```
 
+## Supported runtimes
+
+`godark` auto-detects the project language by scanning the repo root for well-known marker files. Detection applies only when `runtime`, `build_command`, and `test_command` are all absent from the config.
+
+| Runtime  | Marker file       | Default build command | Default test command |
+|----------|-------------------|-----------------------|----------------------|
+| go       | `go.mod`          | `go build ./...`      | `go test ./...`      |
+| flutter  | `pubspec.yaml`    | _(none)_              | `flutter test`       |
+| node     | `package.json`    | `npm run build`       | `npm test`           |
+| rust     | `Cargo.toml`      | `cargo build`         | `cargo test`         |
+| python   | `pyproject.toml` or `requirements.txt` | _(none)_ | `pytest` |
+
+If no marker file is found, `godark` proceeds without installing a language toolchain. Use a custom `docker.dockerfile` or set `runtime:` explicitly for unsupported languages.
+
 ## CLI reference
 
 ```
 godark orchestrates autonomous AI agents to implement GitHub issues,
 review their own work, and merge — without human intervention.
 
+It fetches issues from a milestone, resolves dependencies, and runs a
+three-agent loop: one agent implements, a second audits code quality,
+and a third reviews against scenario specs. Approved PRs are
+squash-merged automatically.
+
 Usage:
   godark [command]
 
 Available Commands:
+  completion  Generate the autocompletion script for the specified shell
   implement   Implement a single GitHub issue
   init        Initialize a project with godark skills and default config
   run         Run the development loop for a milestone or single issue
@@ -74,10 +130,11 @@ Flags:
       --config string      Path to configuration file (default "godark.yaml")
       --dry-run            Print execution plan without taking action
       --issue int          Single issue number to process (instead of milestone)
-      --max-retries int    Maximum review/fix retry cycles per issue (default 2)
-      --milestone string   GitHub milestone to process
+      --max-retries int    Maximum review/fix retry cycles per issue (default 3)
+      --milestone string   GitHub milestone to process (exact title)
       --no-sandbox         Run agents on host instead of in Docker
       --repo string        GitHub repository (owner/repo)
+      --tag string         Milestone tag (e.g., phase-3) — resolved to full milestone title
 ```
 
 ### godark implement
@@ -92,7 +149,7 @@ Usage:
 Flags:
       --config string     Path to configuration file (default "godark.yaml")
       --dry-run           Print issue details and exit
-      --max-retries int   Maximum review/fix retry cycles (default 2)
+      --max-retries int   Maximum review/fix retry cycles (default 3)
       --no-sandbox        Run agents on host instead of in Docker
       --repo string       GitHub repository (owner/repo)
 ```
@@ -100,6 +157,9 @@ Flags:
 ### godark vet
 
 ```
+Check that issues have clear acceptance criteria, correct blocker
+notations, and are fully actionable by agents.
+
 Usage:
   godark vet [command]
 
@@ -107,6 +167,9 @@ Available Commands:
   issues      Validate GitHub issue structure for agent consumption
   scenarios   Validate scenario spec files
   roadmap     Validate planning docs against milestone issues
+
+Flags:
+      --config string   Path to configuration file (default "godark.yaml")
 ```
 
 #### godark vet issues
@@ -115,8 +178,8 @@ Available Commands:
 Flags:
       --json               Output findings as JSON
       --milestone string   GitHub milestone to validate (exact title)
-      --tag string         Milestone tag (e.g., phase-3) — resolved to full milestone title
       --repo string        GitHub repository (owner/repo)
+      --tag string         Milestone tag (e.g., phase-3) — resolved to full milestone title
 ```
 
 #### godark vet scenarios
@@ -125,9 +188,9 @@ Flags:
 Flags:
       --json                  Output findings as JSON
       --milestone string      GitHub milestone to validate (exact title)
-      --tag string            Milestone tag (e.g., phase-3) — resolved to full milestone title
       --repo string           GitHub repository (owner/repo)
       --scenario-dir string   Path to scenario spec directory (default "tests/scenarios/")
+      --tag string            Milestone tag (e.g., phase-3) — resolved to full milestone title
 ```
 
 #### godark vet roadmap
@@ -136,9 +199,9 @@ Flags:
 Flags:
       --json                  Output findings as JSON
       --milestone string      GitHub milestone to validate (exact title)
-      --tag string            Milestone tag (e.g., phase-3) — resolved to full milestone title
       --planning-dir string   Path to planning docs directory (default "docs/planning/")
       --repo string           GitHub repository (owner/repo)
+      --tag string            Milestone tag (e.g., phase-3) — resolved to full milestone title
 ```
 
 ### godark init
@@ -162,6 +225,15 @@ Usage:
   godark status [flags]
 ```
 
+### godark version
+
+```
+Print the version and build time.
+
+Usage:
+  godark version [flags]
+```
+
 ## Configuration
 
 `godark init` creates a default `godark.yaml` in the project root. All fields
@@ -171,14 +243,11 @@ can be overridden by CLI flags where applicable.
 # Required — GitHub repository (owner/repo)
 repo: owner/repo
 
-# Required (one of) — target milestone or single issue
-milestone: "Phase 1"
-issue: 0
-
 # Retry and execution
-max_retries: 2            # review/fix cycles before escalating (default 2)
+max_retries: 3            # review/fix cycles before escalating (default 3)
 agent_timeout: "30m"      # max wall-clock time per agent run
 no_sandbox: false         # run agents on host instead of Docker
+quality_strictness_decay: true  # use diminishing strictness on quality review retries
 
 # Build and test commands run inside the container (auto-detected if not set)
 build_command: ""
@@ -214,22 +283,9 @@ prompts:
   implementer: ""
   implementer_retry: ""
   reviewer: ""
+  quality_reviewer: ""
   spec_generator: ""
 ```
-
-## Supported runtimes
-
-`godark` auto-detects the project language by scanning the repo root for well-known marker files. Detection applies only when `runtime`, `build_command`, and `test_command` are all absent from the config.
-
-| Runtime  | Marker file       | Default build command | Default test command |
-|----------|-------------------|-----------------------|----------------------|
-| go       | `go.mod`          | `go build ./...`      | `go test ./...`      |
-| flutter  | `pubspec.yaml`    | _(none)_              | `flutter test`       |
-| node     | `package.json`    | `npm run build`       | `npm test`           |
-| rust     | `Cargo.toml`      | `cargo build`         | `cargo test`         |
-| python   | `pyproject.toml` or `requirements.txt` | _(none)_ | `pytest` |
-
-If no marker file is found, `godark` proceeds without installing a language toolchain. Use a custom `docker.dockerfile` or set `runtime:` explicitly for unsupported languages.
 
 ## Building
 

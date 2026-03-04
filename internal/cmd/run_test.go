@@ -24,7 +24,7 @@ func TestNoSandboxFlagParsing(t *testing.T) {
 func TestNoSandboxConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
-	err := os.WriteFile(p, []byte("repo: owner/repo\nmilestone: v1\nno_sandbox: true\n"), 0o644)
+	err := os.WriteFile(p, []byte("repo: owner/repo\nno_sandbox: true\n"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestNoSandboxConfigFile(t *testing.T) {
 func TestNoSandboxDefaultFalse(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
-	err := os.WriteFile(p, []byte("repo: owner/repo\nmilestone: v1\n"), 0o644)
+	err := os.WriteFile(p, []byte("repo: owner/repo\n"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestNoSandboxDefaultFalse(t *testing.T) {
 func TestNoSandboxFlagOverridesConfig(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
-	err := os.WriteFile(p, []byte("repo: owner/repo\nmilestone: v1\nno_sandbox: false\n"), 0o644)
+	err := os.WriteFile(p, []byte("repo: owner/repo\nno_sandbox: false\n"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
