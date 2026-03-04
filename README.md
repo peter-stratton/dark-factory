@@ -8,7 +8,8 @@
 ```
 
 A Go CLI that orchestrates autonomous AI agents to implement GitHub issues,
-review their own work, and merge — without human intervention.
+review their own work, and merge — without human intervention. Supports Go,
+Flutter, Node.js, Rust, and Python projects.
 
 ## How it works
 
@@ -179,14 +180,17 @@ max_retries: 2            # review/fix cycles before escalating (default 2)
 agent_timeout: "30m"      # max wall-clock time per agent run
 no_sandbox: false         # run agents on host instead of Docker
 
-# Build and test commands run inside the container
+# Build and test commands run inside the container (auto-detected if not set)
 build_command: ""
 test_command: ""
 
-# Cross-compilation env vars injected into the container
-cross_compile:
-  GOOS: ""
-  GOARCH: ""
+# Environment variables injected into the sandbox container
+sandbox_env: {}
+
+# Project runtime — auto-detected from go.mod, pubspec.yaml, etc. if not set
+runtime:
+  name: ""     # go, flutter, node, rust, python
+  version: ""  # optional — auto-detected from go.mod, package.json engines, etc.
 
 # Paths (relative to repo root)
 protected_paths: []                    # files agents must never modify
@@ -202,8 +206,7 @@ docker:
   dockerfile: ""           # custom Dockerfile path (overrides generated one)
   mount: ""                # host path to mount into the container
   user: ""                 # non-root user inside the container
-  go_version: ""           # Go version to install (from .tool-versions)
-  node_version: ""         # Node.js major version to install
+  node_version: ""         # Node.js major version to install (default: 20)
   extra_packages: []       # additional apt packages to install
 
 # Prompt template overrides (paths to custom prompt files)
@@ -213,6 +216,20 @@ prompts:
   reviewer: ""
   spec_generator: ""
 ```
+
+## Supported runtimes
+
+`godark` auto-detects the project language by scanning the repo root for well-known marker files. Detection applies only when `runtime`, `build_command`, and `test_command` are all absent from the config.
+
+| Runtime  | Marker file       | Default build command | Default test command |
+|----------|-------------------|-----------------------|----------------------|
+| go       | `go.mod`          | `go build ./...`      | `go test ./...`      |
+| flutter  | `pubspec.yaml`    | _(none)_              | `flutter test`       |
+| node     | `package.json`    | `npm run build`       | `npm test`           |
+| rust     | `Cargo.toml`      | `cargo build`         | `cargo test`         |
+| python   | `pyproject.toml` or `requirements.txt` | _(none)_ | `pytest` |
+
+If no marker file is found, `godark` proceeds without installing a language toolchain. Use a custom `docker.dockerfile` or set `runtime:` explicitly for unsupported languages.
 
 ## Building
 
