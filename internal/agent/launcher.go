@@ -34,7 +34,9 @@ type Result struct {
 	TimedOut   bool
 	SessionID  string
 	CostUSD    float64
-	ResultText string // agent's final text output (from SDK result message)
+	ResultText string   // agent's final text output (from SDK result message)
+	Verdict    string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
+	ToolTrace  []string // summary of tool calls made by the agent
 }
 
 // Runner executes a command on the host with the given environment. Replaceable for testing.
@@ -136,6 +138,8 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 		res.SessionID = parsed.SessionID
 		res.CostUSD = parsed.CostUSD
 		res.ResultText = parsed.Result
+		res.Verdict = parsed.Verdict
+		res.ToolTrace = parsed.ToolTrace
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}
@@ -198,6 +202,8 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		res.SessionID = parsed.SessionID
 		res.CostUSD = parsed.CostUSD
 		res.ResultText = parsed.Result
+		res.Verdict = parsed.Verdict
+		res.ToolTrace = parsed.ToolTrace
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}
@@ -208,10 +214,12 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 
 // runnerFinalResult is the structured JSON output printed as the last line by agent_runner.py.
 type runnerFinalResult struct {
-	SessionID string  `json:"session_id"`
-	Result    string  `json:"result"`
-	CostUSD   float64 `json:"cost_usd"`
-	IsError   bool    `json:"is_error"`
+	SessionID string   `json:"session_id"`
+	Result    string   `json:"result"`
+	CostUSD   float64  `json:"cost_usd"`
+	IsError   bool     `json:"is_error"`
+	Verdict   string   `json:"verdict,omitempty"`
+	ToolTrace []string `json:"tool_trace,omitempty"`
 }
 
 // parseRunnerOutput extracts the structured final result from runner stdout.

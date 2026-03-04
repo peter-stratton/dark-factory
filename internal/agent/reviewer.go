@@ -40,7 +40,11 @@ func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Conf
 		return nil, fmt.Errorf("running reviewer agent: %w", err)
 	}
 
-	verdict := ParseReviewResult(result.ResultText)
+	// Use structured verdict from runner JSON first; fall back to parsing result text.
+	verdict := result.Verdict
+	if verdict == "" {
+		verdict = ParseReviewResult(result.ResultText)
+	}
 	logger.Info("reviewer finished",
 		"issue_number", issue.Number,
 		"pr_number", prNum,

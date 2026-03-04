@@ -194,6 +194,58 @@ func TestRun_NoSandbox_NoDangerouslySkipPermissions(t *testing.T) {
 	}
 }
 
+func TestRun_NoSandbox_ParsesVerdict(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"","result":"text","cost_usd":0,"is_error":false,"verdict":"APPROVED"}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Verdict != "APPROVED" {
+		t.Errorf("Verdict = %q, want %q", result.Verdict, "APPROVED")
+	}
+}
+
+func TestRun_NoSandbox_NoVerdictField_EmptyVerdict(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		// Implementer output — no verdict field.
+		out := `{"session_id":"","result":"Implementation done","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Verdict != "" {
+		t.Errorf("Verdict = %q, want empty for non-reviewer output", result.Verdict)
+	}
+}
+
+func TestRun_NoSandbox_ParsesToolTrace(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"","result":"done","cost_usd":0,"is_error":false,"tool_trace":["Read foo.go","Edit bar.go"]}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(result.ToolTrace) != 2 {
+		t.Fatalf("ToolTrace len = %d, want 2", len(result.ToolTrace))
+	}
+	if result.ToolTrace[0] != "Read foo.go" {
+		t.Errorf("ToolTrace[0] = %q, want %q", result.ToolTrace[0], "Read foo.go")
+	}
+	if result.ToolTrace[1] != "Edit bar.go" {
+		t.Errorf("ToolTrace[1] = %q, want %q", result.ToolTrace[1], "Edit bar.go")
+	}
+}
+
 func TestRun_NoSandbox_PromptNotInArgs(t *testing.T) {
 	var capturedArgs []string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {

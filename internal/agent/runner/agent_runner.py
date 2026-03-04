@@ -175,20 +175,39 @@ async def main() -> None:
     result_text = ""
     cost_usd = 0.0
     is_error = False
+    tool_trace: list[str] = []
 
     async def _collect_messages(opts):
         """Stream messages from the SDK, printing each one. Returns (session_id, result, cost, is_error)."""
-        nonlocal result_session_id, result_text, cost_usd, is_error
+        nonlocal result_session_id, result_text, cost_usd, is_error, tool_trace
         result_session_id = ""
         result_text = ""
         cost_usd = 0.0
         is_error = False
+        tool_trace = []
         async for message in claude_agent_sdk.query(prompt=prompt, options=opts):
             try:
                 msg_dict = message.model_dump(mode="json") if hasattr(message, "model_dump") else vars(message)
             except Exception:
                 msg_dict = {"type": type(message).__name__, "raw": str(message)}
             print(json.dumps(msg_dict, default=str), flush=True)
+
+            # Collect tool-use summaries from AssistantMessage content blocks.
+            msg_type = type(message).__name__
+            if msg_type == "AssistantMessage":
+                for block in getattr(message, "content", []):
+                    block_type = type(block).__name__
+                    if block_type == "ToolUseBlock":
+                        tool_name = getattr(block, "name", "")
+                        tool_input = getattr(block, "input", {}) or {}
+                        if tool_name in ("Edit", "Write", "Read"):
+                            fp = tool_input.get("file_path", "")
+                            tool_trace.append(f"{tool_name} {fp}" if fp else tool_name)
+                        elif tool_name == "Bash":
+                            cmd = (tool_input.get("command", "") or "")[:80]
+                            tool_trace.append(f"Bash: {cmd}")
+                        elif tool_name:
+                            tool_trace.append(tool_name)
 
             if isinstance(message, ResultMessage):
                 result_session_id = getattr(message, "session_id", "") or ""
@@ -210,12 +229,30 @@ async def main() -> None:
         else:
             raise
 
-    final = {
+    # For the reviewer role, extract the verdict from result_text.
+    verdict = ""
+    if role == "reviewer" and result_text:
+        upper = result_text.upper()
+        for line in upper.splitlines():
+            stripped = line.strip()
+            if "REVIEW" in stripped and "RESULT" in stripped:
+                if "CHANGES" in stripped:
+                    verdict = "CHANGES_REQUESTED"
+                    break
+                elif "APPROVED" in stripped:
+                    verdict = "APPROVED"
+                    break
+
+    final: dict = {
         "session_id": result_session_id,
         "result": result_text,
         "cost_usd": cost_usd,
         "is_error": is_error,
     }
+    if verdict:
+        final["verdict"] = verdict
+    if tool_trace:
+        final["tool_trace"] = tool_trace
     print(json.dumps(final), flush=True)
 
 

@@ -51,3 +51,64 @@ func TestReview_SetsReviewerRole(t *testing.T) {
 		t.Errorf("GODARK_ROLE = %q, want %q", capturedEnv["GODARK_ROLE"], "reviewer")
 	}
 }
+
+func TestReview_StructuredVerdictApproved(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"","result":"some text","cost_usd":0,"is_error":false,"verdict":"APPROVED"}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if result.Verdict != "APPROVED" {
+		t.Errorf("Verdict = %q, want %q", result.Verdict, "APPROVED")
+	}
+}
+
+func TestReview_StructuredVerdictChangesRequested(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"","result":"some text","cost_usd":0,"is_error":false,"verdict":"CHANGES_REQUESTED"}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if result.Verdict != "CHANGES_REQUESTED" {
+		t.Errorf("Verdict = %q, want %q", result.Verdict, "CHANGES_REQUESTED")
+	}
+}
+
+func TestReview_NoStructuredVerdict_FallsBackToStdout(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		// No verdict field in JSON; result text contains the sentinel.
+		out := `{"session_id":"","result":"REVIEW_RESULT=APPROVED\n","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if result.Verdict != "APPROVED" {
+		t.Errorf("Verdict = %q, want %q (fallback)", result.Verdict, "APPROVED")
+	}
+}
+
+func TestReview_NeitherSource_EmptyVerdict(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"","result":"no sentinel here","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if result.Verdict != "" {
+		t.Errorf("Verdict = %q, want %q", result.Verdict, "")
+	}
+}
