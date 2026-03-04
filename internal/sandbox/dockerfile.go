@@ -100,11 +100,19 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		runtimeName = ""
 	}
 
+	// Validate runtimeVersion for newline injection.
+	if strings.ContainsAny(runtimeVersion, "\n\r") {
+		return "", fmt.Errorf("Runtime.Version must not contain newlines: %q", runtimeVersion)
+	}
+
 	// Sort SandboxEnv keys for deterministic Dockerfile output.
 	sortedEnv := make([]envVar, 0, len(cfg.SandboxEnv))
 	for k, v := range cfg.SandboxEnv {
 		if strings.ContainsAny(k, "\n\r") || strings.ContainsAny(v, "\n\r") {
 			return "", fmt.Errorf("SandboxEnv key/value must not contain newlines: %q=%q", k, v)
+		}
+		if strings.ContainsRune(v, '"') {
+			return "", fmt.Errorf("SandboxEnv value must not contain double quotes: %q=%q", k, v)
 		}
 		sortedEnv = append(sortedEnv, envVar{Key: k, Value: v})
 	}

