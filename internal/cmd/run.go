@@ -95,7 +95,7 @@ func init() {
 	f.String("milestone", "", "GitHub milestone to process (exact title)")
 	f.String("tag", "", "Milestone tag (e.g., phase-3) — resolved to full milestone title")
 	f.Int("issue", 0, "Single issue number to process (instead of milestone)")
-	f.Int("max-retries", 2, "Maximum review/fix retry cycles per issue")
+	f.Int("max-retries", 3, "Maximum review/fix retry cycles per issue")
 	f.Bool("dry-run", false, "Print execution plan without taking action")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.String("config", "godark.yaml", "Path to configuration file")

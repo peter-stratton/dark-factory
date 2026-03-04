@@ -224,8 +224,8 @@ func TestMissingFileFlagsSufficient(t *testing.T) {
 	if cfg.Repo != "owner/repo" {
 		t.Errorf("Repo = %q, want %q", cfg.Repo, "owner/repo")
 	}
-	if cfg.MaxRetries != 2 {
-		t.Errorf("MaxRetries = %d, want 2 (default)", cfg.MaxRetries)
+	if cfg.MaxRetries != 3 {
+		t.Errorf("MaxRetries = %d, want 3 (default)", cfg.MaxRetries)
 	}
 }
 
@@ -253,8 +253,8 @@ milestone: "Phase 1"
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.MaxRetries != 2 {
-		t.Errorf("MaxRetries = %d, want 2 (default)", cfg.MaxRetries)
+	if cfg.MaxRetries != 3 {
+		t.Errorf("MaxRetries = %d, want 3 (default)", cfg.MaxRetries)
 	}
 	if cfg.ScenarioDir != "tests/scenarios/" {
 		t.Errorf("ScenarioDir = %q, want default", cfg.ScenarioDir)

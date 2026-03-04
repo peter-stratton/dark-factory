@@ -120,7 +120,7 @@ loop directly, without milestone or dependency resolution.`,
 func init() {
 	f := implementCmd.Flags()
 	f.String("repo", "", "GitHub repository (owner/repo)")
-	f.Int("max-retries", 2, "Maximum review/fix retry cycles")
+	f.Int("max-retries", 3, "Maximum review/fix retry cycles")
 	f.Bool("dry-run", false, "Print issue details and exit")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.String("config", "godark.yaml", "Path to configuration file")

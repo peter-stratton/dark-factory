@@ -99,7 +99,7 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 
 func defaults() *Config {
 	return &Config{
-		MaxRetries:             2,
+		MaxRetries:             3,
 		RoadmapPath:            "docs/ROADMAP.md",
 		PlanningDir:            "docs/planning/",
 		ScenarioDir:            "tests/scenarios/",
