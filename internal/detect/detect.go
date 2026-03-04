@@ -156,28 +156,16 @@ func parseNodeEngines(data []byte) string {
 
 // parseMixExs extracts the elixir version constraint from mix.exs content.
 // Returns an empty string if no elixir key is found or the value cannot be parsed.
+// The check is anchored to the start of the trimmed line (like parseGoMod uses
+// HasPrefix), which avoids false positives on comment lines and longer atom keys.
 func parseMixExs(data []byte) string {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		// Skip comment lines.
-		if strings.HasPrefix(line, "#") {
+		if !strings.HasPrefix(line, "elixir:") {
 			continue
 		}
-		idx := strings.Index(line, "elixir:")
-		if idx < 0 {
-			continue
-		}
-		// Require a word boundary before "elixir:" to avoid matching longer atom
-		// keys such as "myelixir:".
-		if idx > 0 {
-			prev := line[idx-1]
-			if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
-				(prev >= '0' && prev <= '9') || prev == '_' {
-				continue
-			}
-		}
-		rest := line[idx+len("elixir:"):]
+		rest := strings.TrimPrefix(line, "elixir:")
 		i := strings.Index(rest, `"`)
 		if i < 0 {
 			continue
