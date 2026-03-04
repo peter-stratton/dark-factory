@@ -15,6 +15,7 @@ type DockerConfig struct {
 	User          string
 	ExtraPackages []string
 	Mount         string
+	SandboxEnv    map[string]string
 }
 
 // DefaultDockerConfig returns a DockerConfig with sensible defaults.
@@ -26,9 +27,9 @@ func DefaultDockerConfig() DockerConfig {
 	}
 }
 
-// DockerConfigFromConfig maps a config.Docker and config.Runtime into a DockerConfig,
-// applying defaults for any zero-value fields.
-func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime) DockerConfig {
+// DockerConfigFromConfig maps a config.Docker, config.Runtime, and sandbox environment
+// variables into a DockerConfig, applying defaults for any zero-value fields.
+func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandboxEnv map[string]string) DockerConfig {
 	dc := DefaultDockerConfig()
 	if docker.Image != "" {
 		dc.Image = docker.Image
@@ -46,6 +47,7 @@ func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime) Docker
 	if len(docker.ExtraPackages) > 0 {
 		dc.ExtraPackages = docker.ExtraPackages
 	}
+	dc.SandboxEnv = sandboxEnv
 	return dc
 }
 

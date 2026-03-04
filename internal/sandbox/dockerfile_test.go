@@ -39,7 +39,7 @@ func TestDockerConfigFromConfig(t *testing.T) {
 		ExtraPackages: []string{"vim", "jq"},
 	}
 	runtime := config.Runtime{Name: "go", Version: "1.26.0"}
-	dc := DockerConfigFromConfig(docker, runtime)
+	dc := DockerConfigFromConfig(docker, runtime, map[string]string{"GOOS": "linux"})
 
 	if dc.Image != "debian:bookworm" {
 		t.Errorf("Image = %q, want debian:bookworm", dc.Image)
@@ -65,7 +65,7 @@ func TestDockerConfigFromConfig(t *testing.T) {
 }
 
 func TestDockerConfigFromConfigDefaults(t *testing.T) {
-	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{})
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil)
 	def := DefaultDockerConfig()
 
 	if dc.Image != def.Image {
@@ -122,6 +122,7 @@ func TestGenerateDockerfileCustomImage(t *testing.T) {
 
 func TestGenerateDockerfileCustomGoVersion(t *testing.T) {
 	cfg := DefaultDockerConfig()
+	cfg.Runtime.Name = "go"
 	cfg.Runtime.Version = "1.22"
 
 	df, err := GenerateDockerfile(cfg)
@@ -283,5 +284,175 @@ func TestGenerateDockerfileCopiesAgentRunner(t *testing.T) {
 	}
 	if !strings.Contains(df, "COPY agent_runner.py /usr/local/bin/agent_runner.py") {
 		t.Error("Dockerfile missing COPY agent_runner.py directive")
+	}
+}
+
+func TestGenerateDockerfileGoRuntime(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "go", Version: "1.26.0"}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "go1.26.0.linux-amd64.tar.gz") {
+		t.Error("Go Dockerfile missing expected tarball URL")
+	}
+}
+
+func TestGenerateDockerfileFlutterRuntime(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "flutter"}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "git clone") || !strings.Contains(df, "flutter") {
+		t.Error("Flutter Dockerfile missing git clone of flutter")
+	}
+	if !strings.Contains(df, "flutter precache") {
+		t.Error("Flutter Dockerfile missing flutter precache")
+	}
+}
+
+func TestGenerateDockerfileNodeRuntime(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "node"}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Node.js is installed exactly once (for Claude Code), not a second time for the runtime.
+	count := strings.Count(df, "nodesource.com")
+	if count != 1 {
+		t.Errorf("expected exactly 1 Node.js install, got %d", count)
+	}
+}
+
+func TestGenerateDockerfileRustRuntime(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "rust"}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "rustup") {
+		t.Error("Rust Dockerfile missing rustup")
+	}
+}
+
+func TestGenerateDockerfilePythonRuntime(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "python"}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "python3-venv") {
+		t.Error("Python Dockerfile missing python3-venv")
+	}
+}
+
+func TestGenerateDockerfileEmptyRuntime(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: ""}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("empty runtime should not return error: %v", err)
+	}
+	// No Go, Flutter, Rust, or Python-venv-specific install expected.
+	if strings.Contains(df, "go.dev/dl") {
+		t.Error("empty runtime Dockerfile should not install Go")
+	}
+	if strings.Contains(df, "rustup") {
+		t.Error("empty runtime Dockerfile should not install Rust")
+	}
+	if strings.Contains(df, "flutter") {
+		t.Error("empty runtime Dockerfile should not install Flutter")
+	}
+}
+
+func TestGenerateDockerfileGoRequiresVersion(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "go", Version: ""}
+
+	_, err := GenerateDockerfile(cfg)
+	if err == nil {
+		t.Fatal("expected error for Go runtime without version, got nil")
+	}
+}
+
+func TestGenerateDockerfileFlutterNoVersionUsesStable(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "flutter", Version: ""}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "--branch stable") {
+		t.Error("Flutter Dockerfile without version should use stable branch")
+	}
+}
+
+func TestGenerateDockerfileSandboxEnv(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.SandboxEnv = map[string]string{"GOOS": "linux"}
+
+	df, err := GenerateDockerfile(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "ENV GOOS=linux") {
+		t.Error("Dockerfile missing ENV GOOS=linux from SandboxEnv")
+	}
+}
+
+func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
+	runtimes := []config.Runtime{
+		{Name: "go", Version: "1.26.0"},
+		{Name: "flutter"},
+		{Name: "node"},
+		{Name: "rust"},
+		{Name: "python"},
+		{Name: ""},
+	}
+	for _, rt := range runtimes {
+		cfg := DefaultDockerConfig()
+		cfg.Runtime = rt
+		df, err := GenerateDockerfile(cfg)
+		if err != nil {
+			t.Fatalf("runtime %q: unexpected error: %v", rt.Name, err)
+		}
+		if !strings.Contains(df, "npm install -g @anthropic-ai/claude-code") {
+			t.Errorf("runtime %q: Dockerfile missing Claude Code install", rt.Name)
+		}
+	}
+}
+
+func TestImageTagChangesWithRuntime(t *testing.T) {
+	cfgGo := DefaultDockerConfig()
+	cfgGo.Runtime = config.Runtime{Name: "go", Version: "1.26.0"}
+	dfGo, err := GenerateDockerfile(cfgGo)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cfgNode := DefaultDockerConfig()
+	cfgNode.Runtime = config.Runtime{Name: "node"}
+	dfNode, err := GenerateDockerfile(cfgNode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	tagGo := ImageTag(dfGo)
+	tagNode := ImageTag(dfNode)
+	if tagGo == tagNode {
+		t.Error("image tags should differ when runtime changes")
 	}
 }
