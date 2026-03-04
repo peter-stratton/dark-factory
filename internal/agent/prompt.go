@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/prompts"
 )
 
 // Prompts holds the loaded template text for each agent prompt.
@@ -35,40 +36,54 @@ type PromptData struct {
 	BranchExists   bool
 }
 
-// LoadPrompts reads the three prompt template files specified in cfg.Prompts.
+// loadPromptFile reads a prompt from the config path if set, otherwise from
+// the embedded default. name is the embedded filename (e.g. "implementer.txt").
+func loadPromptFile(configPath, name string) (string, error) {
+	if configPath != "" {
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			return "", fmt.Errorf("reading prompt %q: %w", configPath, err)
+		}
+		return string(data), nil
+	}
+	data, err := prompts.FS.ReadFile(name)
+	if err != nil {
+		return "", fmt.Errorf("reading embedded prompt %q: %w", name, err)
+	}
+	return string(data), nil
+}
+
+// LoadPrompts reads prompt template files, using embedded defaults for any
+// paths not specified in the config.
 func LoadPrompts(cfg *config.Config) (*Prompts, error) {
-	impl, err := os.ReadFile(cfg.Prompts.Implementer)
+	impl, err := loadPromptFile(cfg.Prompts.Implementer, "implementer.txt")
 	if err != nil {
-		return nil, fmt.Errorf("reading implementer prompt %q: %w", cfg.Prompts.Implementer, err)
+		return nil, err
 	}
 
-	retry, err := os.ReadFile(cfg.Prompts.ImplementerRetry)
+	retry, err := loadPromptFile(cfg.Prompts.ImplementerRetry, "implementer_retry.txt")
 	if err != nil {
-		return nil, fmt.Errorf("reading implementer_retry prompt %q: %w", cfg.Prompts.ImplementerRetry, err)
+		return nil, err
 	}
 
-	rev, err := os.ReadFile(cfg.Prompts.Reviewer)
+	rev, err := loadPromptFile(cfg.Prompts.Reviewer, "reviewer.txt")
 	if err != nil {
-		return nil, fmt.Errorf("reading reviewer prompt %q: %w", cfg.Prompts.Reviewer, err)
+		return nil, err
 	}
 
 	p := &Prompts{
-		Implementer:      string(impl),
-		ImplementerRetry: string(retry),
-		Reviewer:         string(rev),
+		Implementer:      impl,
+		ImplementerRetry: retry,
+		Reviewer:         rev,
 	}
 
-	// SpecGenerator is optional — skip if path is empty or file doesn't exist.
-	if cfg.Prompts.SpecGenerator != "" {
-		specGen, err := os.ReadFile(cfg.Prompts.SpecGenerator)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return nil, fmt.Errorf("reading spec_generator prompt %q: %w", cfg.Prompts.SpecGenerator, err)
-			}
-			// File doesn't exist — leave SpecGenerator empty.
-		} else {
-			p.SpecGenerator = string(specGen)
-		}
+	// SpecGenerator is optional — load from config or embedded default.
+	specGen, err := loadPromptFile(cfg.Prompts.SpecGenerator, "spec_generator.txt")
+	if err != nil {
+		// If the embedded file doesn't exist either, just leave it empty.
+		p.SpecGenerator = ""
+	} else {
+		p.SpecGenerator = specGen
 	}
 
 	return p, nil

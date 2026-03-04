@@ -59,7 +59,29 @@ func TestLoadPrompts_MissingFile(t *testing.T) {
 	}
 }
 
-func TestLoadPrompts_SpecGeneratorOptional(t *testing.T) {
+func TestLoadPrompts_EmbeddedDefaults(t *testing.T) {
+	// No prompt paths configured — should load from embedded defaults.
+	cfg := &config.Config{}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.Implementer == "" {
+		t.Error("Implementer should be loaded from embedded default")
+	}
+	if p.ImplementerRetry == "" {
+		t.Error("ImplementerRetry should be loaded from embedded default")
+	}
+	if p.Reviewer == "" {
+		t.Error("Reviewer should be loaded from embedded default")
+	}
+	if p.SpecGenerator == "" {
+		t.Error("SpecGenerator should be loaded from embedded default")
+	}
+}
+
+func TestLoadPrompts_SpecGeneratorDefaultsToEmbedded(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"impl.txt", "retry.txt", "rev.txt"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("template"), 0o644); err != nil {
@@ -72,7 +94,7 @@ func TestLoadPrompts_SpecGeneratorOptional(t *testing.T) {
 			Implementer:      filepath.Join(dir, "impl.txt"),
 			ImplementerRetry: filepath.Join(dir, "retry.txt"),
 			Reviewer:         filepath.Join(dir, "rev.txt"),
-			// SpecGenerator intentionally empty.
+			// SpecGenerator intentionally empty — should load embedded default.
 		},
 	}
 
@@ -80,8 +102,8 @@ func TestLoadPrompts_SpecGeneratorOptional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPrompts() error = %v", err)
 	}
-	if p.SpecGenerator != "" {
-		t.Errorf("SpecGenerator = %q, want empty", p.SpecGenerator)
+	if p.SpecGenerator == "" {
+		t.Error("SpecGenerator should be loaded from embedded default when config path is empty")
 	}
 }
 

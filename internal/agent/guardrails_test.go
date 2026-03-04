@@ -37,7 +37,7 @@ func TestFindPR_ReturnsPRNumber(t *testing.T) {
 		return []byte(`{"number": 42}`), nil
 	})
 
-	num, err := FindPR("owner/repo")
+	num, err := FindPR("owner/repo", "test-branch")
 	if err != nil {
 		t.Fatalf("FindPR() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestFindPR_ReturnsZeroOnError(t *testing.T) {
 		return nil, fmt.Errorf("no PR found")
 	})
 
-	num, err := FindPR("owner/repo")
+	num, err := FindPR("owner/repo", "test-branch")
 	if err != nil {
 		t.Fatalf("FindPR() error = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestFindPR_MalformedJSON(t *testing.T) {
 		return []byte(`not json`), nil
 	})
 
-	_, err := FindPR("owner/repo")
+	_, err := FindPR("owner/repo", "test-branch")
 	if err == nil {
 		t.Fatal("expected error for malformed JSON")
 	}

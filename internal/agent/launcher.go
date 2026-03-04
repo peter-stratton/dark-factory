@@ -102,7 +102,14 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		workDir = "/workspace"
 	}
 
-	claudeArgs := fmt.Sprintf("claude -p --dangerously-skip-permissions %q", opts.Prompt)
+	// Pass the prompt via environment variable to avoid shell quoting issues.
+	env := make(map[string]string, len(opts.Env)+1)
+	for k, v := range opts.Env {
+		env[k] = v
+	}
+	env["GODARK_PROMPT"] = opts.Prompt
+
+	claudeArgs := "claude -p --dangerously-skip-permissions \"$GODARK_PROMPT\""
 	for _, f := range opts.ClaudeFlags {
 		claudeArgs += " " + fmt.Sprintf("%q", f)
 	}
@@ -113,7 +120,7 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	sandboxOpts := sandbox.RunOpts{
 		Image:   opts.Image,
 		Cmd:     []string{"sh", "-c", entrypoint},
-		Env:     opts.Env,
+		Env:     env,
 		Timeout: opts.Timeout,
 	}
 
@@ -122,10 +129,26 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		return nil, fmt.Errorf("running sandbox container: %w", err)
 	}
 
+	if result.ExitCode != 0 && !result.TimedOut {
+		logger.Warn("container exited with error",
+			"exit_code", result.ExitCode,
+			"stderr", truncate(result.Stderr, 2000),
+			"stdout_tail", truncate(result.Stdout, 500),
+		)
+	}
+
 	return &Result{
 		ExitCode: result.ExitCode,
 		Stdout:   result.Stdout,
 		Stderr:   result.Stderr,
 		TimedOut: result.TimedOut,
 	}, nil
+}
+
+// truncate returns the last n bytes of s.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "..." + s[len(s)-n:]
 }

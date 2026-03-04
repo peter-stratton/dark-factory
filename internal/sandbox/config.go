@@ -21,7 +21,7 @@ type DockerConfig struct {
 func DefaultDockerConfig() DockerConfig {
 	return DockerConfig{
 		Image:       "ubuntu:22.04",
-		GoVersion:   "1.23",
+		GoVersion:   "1.26.0",
 		NodeVersion: "20",
 		User:        "devloop",
 	}

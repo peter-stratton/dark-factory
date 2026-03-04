@@ -31,7 +31,7 @@ loop directly, without milestone or dependency resolution.`,
 		configPath, _ := cmd.Flags().GetString("config")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
-		flags := config.CLIFlags{Config: configPath}
+		flags := config.CLIFlags{Config: configPath, Issue: &issueNumber}
 
 		if cmd.Flags().Changed("repo") {
 			v, _ := cmd.Flags().GetString("repo")

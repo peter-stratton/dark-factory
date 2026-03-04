@@ -17,10 +17,10 @@ var GuardRunner = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
-// FindPR returns the PR number for the current branch in the given repo,
+// FindPR returns the PR number for the given branch in the given repo,
 // or 0 if no PR is found.
-func FindPR(repo string) (int, error) {
-	out, err := GuardRunner("gh", "pr", "view", "--repo", repo, "--json", "number")
+func FindPR(repo, branch string) (int, error) {
+	out, err := GuardRunner("gh", "pr", "view", branch, "--repo", repo, "--json", "number")
 	if err != nil {
 		// gh pr view exits non-zero when no PR exists
 		return 0, nil

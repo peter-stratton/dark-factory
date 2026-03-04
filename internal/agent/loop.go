@@ -23,6 +23,9 @@ type IssueOutcome struct {
 func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) IssueOutcome {
 	outcome := IssueOutcome{IssueNumber: issue.Number}
 
+	slug := Slugify(issue.Title)
+	branch := BranchName(issue.Number, slug)
+
 	logger.Info("processing issue", "issue_number", issue.Number, "title", issue.Title)
 
 	// Record base SHA for drift detection.
@@ -59,7 +62,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	}
 
 	// Step 2: Find PR.
-	prNum, err := FindPR(cfg.Repo)
+	prNum, err := FindPR(cfg.Repo, branch)
 	if err != nil {
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("finding PR: %w", err)
@@ -108,10 +111,6 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("merging PR: %w", err)
 				return outcome
-			}
-			// Pull latest main.
-			if _, err := GuardRunner("git", "pull", "--rebase", "origin", "main"); err != nil {
-				logger.Warn("failed to pull after merge", "error", err)
 			}
 			outcome.Status = "implemented"
 			outcome.Retries = attempt

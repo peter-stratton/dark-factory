@@ -267,8 +267,8 @@ func TestProcessIssue_RechecksProtectedDriftAfterRetry(t *testing.T) {
 	}
 }
 
-func TestProcessIssue_MergeAndPullOnApproval(t *testing.T) {
-	var mergedCalled, pullCalled bool
+func TestProcessIssue_MergeOnApproval(t *testing.T) {
+	var mergedCalled bool
 	setupLoopTest(t, []string{
 		"implementer output",
 		"REVIEW_RESULT=APPROVED",
@@ -295,9 +295,6 @@ func TestProcessIssue_MergeAndPullOnApproval(t *testing.T) {
 				t.Error("expected --delete-branch flag")
 			}
 		}
-		if name == "git" && strings.Contains(joined, "pull --rebase") {
-			pullCalled = true
-		}
 		return []byte(""), nil
 	})
 
@@ -308,9 +305,6 @@ func TestProcessIssue_MergeAndPullOnApproval(t *testing.T) {
 	}
 	if !mergedCalled {
 		t.Error("expected gh pr merge to be called")
-	}
-	if !pullCalled {
-		t.Error("expected git pull --rebase to be called")
 	}
 }
 
