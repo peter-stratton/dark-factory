@@ -61,7 +61,16 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 		}, nil
 	}
 
-	// 5. Python — pyproject.toml (preferred) or requirements.txt (fallback)
+	// 5. Elixir — mix.exs
+	if data, err := os.ReadFile(filepath.Join(repoPath, "mix.exs")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "elixir", Version: parseMixExs(data)},
+			BuildCommand: "mix compile",
+			TestCommand:  "mix test",
+		}, nil
+	}
+
+	// 6. Python — pyproject.toml (preferred) or requirements.txt (fallback)
 	if _, err := os.Stat(filepath.Join(repoPath, "pyproject.toml")); err == nil {
 		return &DetectedProject{
 			Runtime:      config.Runtime{Name: "python"},
@@ -143,4 +152,29 @@ func parseNodeEngines(data []byte) string {
 		return ""
 	}
 	return pkg.Engines.Node
+}
+
+// parseMixExs extracts the elixir version constraint from mix.exs content.
+// Returns an empty string if no elixir key is found or the value cannot be parsed.
+// The check is anchored to the start of the trimmed line (like parseGoMod uses
+// HasPrefix), which avoids false positives on comment lines and longer atom keys.
+func parseMixExs(data []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "elixir:") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "elixir:")
+		i := strings.Index(rest, `"`)
+		if i < 0 {
+			continue
+		}
+		j := strings.Index(rest[i+1:], `"`)
+		if j < 0 {
+			continue
+		}
+		return rest[i+1 : i+1+j]
+	}
+	return ""
 }

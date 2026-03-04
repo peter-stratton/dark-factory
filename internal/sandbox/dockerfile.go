@@ -49,6 +49,14 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
+{{else if eq .RuntimeName "elixir"}}
+# Install Erlang/OTP and Elixir
+RUN curl -fsSL https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb \
+      -o /tmp/erlang-solutions.deb \
+    && dpkg -i /tmp/erlang-solutions.deb && rm /tmp/erlang-solutions.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends esl-erlang{{if .RuntimeVersion}} "elixir={{.RuntimeVersion}}*"{{else}} elixir{{end}} \
+    && rm -rf /var/lib/apt/lists/*
 {{end}}
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
@@ -92,6 +100,20 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 	case "flutter":
 		if runtimeVersion == "" {
 			runtimeVersion = "stable"
+		}
+	case "elixir":
+		// Strip spaces to normalise Elixir version constraints (e.g. "~> 1.14" → "~>1.14").
+		// mix.exs uses the pessimistic operator with a space, but apt package specs do not
+		// allow spaces, so we remove them before validation and template rendering.
+		runtimeVersion = strings.ReplaceAll(runtimeVersion, " ", "")
+		// Enforce an allowlist for the version to prevent apt package injection.
+		// The version is embedded in a quoted apt package spec (e.g. "elixir=1.14.3*"),
+		// so characters like `"`, `$`, and backtick could break out of the argument.
+		if strings.IndexFunc(runtimeVersion, func(c rune) bool {
+			return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+				c == '.' || c == '~' || c == '+' || c == '-' || c == '>' || c == '<' || c == '=')
+		}) >= 0 {
+			return "", fmt.Errorf("Runtime.Version contains invalid character for Elixir: %q", runtimeVersion)
 		}
 	case "node", "rust", "python", "":
 		// no validation needed

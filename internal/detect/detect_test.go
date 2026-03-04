@@ -305,6 +305,133 @@ func TestApplyToConfig_Flutter_EndToEnd(t *testing.T) {
 	}
 }
 
+func TestDetectRuntime_Elixir(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\n  def project do\n    [\n      app: :my_app,\n      elixir: \"~> 1.14\"\n    ]\n  end\nend\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "elixir" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "elixir")
+	}
+	if got.TestCommand != "mix test" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "mix test")
+	}
+	if got.BuildCommand != "mix compile" {
+		t.Errorf("BuildCommand = %q, want %q", got.BuildCommand, "mix compile")
+	}
+}
+
+func TestDetectRuntime_ElixirVersionParsed(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\n  def project do\n    [\n      app: :my_app,\n      elixir: \"~> 1.14\"\n    ]\n  end\nend\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Version != "~> 1.14" {
+		t.Errorf("Runtime.Version = %q, want %q", got.Runtime.Version, "~> 1.14")
+	}
+}
+
+func TestDetectRuntime_ElixirNoVersionInMixExs(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\n  def project do\n    [app: :my_app]\n  end\nend\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "elixir" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "elixir")
+	}
+	if got.Runtime.Version != "" {
+		t.Errorf("Runtime.Version = %q, want empty string", got.Runtime.Version)
+	}
+}
+
+func TestDetectRuntime_ElixirAfterRust(t *testing.T) {
+	// Rust (Cargo.toml) has higher priority than Elixir (mix.exs).
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Cargo.toml"), "[package]\nname = \"myapp\"\n")
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "rust" {
+		t.Errorf("Runtime.Name = %q, want rust (Rust should win over Elixir)", got.Runtime.Name)
+	}
+}
+
+func TestDetectRuntime_ElixirBeforePython(t *testing.T) {
+	// Elixir (mix.exs) has higher priority than Python (pyproject.toml).
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+	writeFile(t, filepath.Join(dir, "pyproject.toml"), "[build-system]\nrequires = [\"setuptools\"]\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "elixir" {
+		t.Errorf("Runtime.Name = %q, want elixir (Elixir should win over Python)", got.Runtime.Name)
+	}
+}
+
+func TestDetectRuntime_NodeWinsOverElixir(t *testing.T) {
+	// Node (package.json) has higher priority than Elixir (mix.exs).
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"name":"myapp"}`)
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "node" {
+		t.Errorf("Runtime.Name = %q, want node (Node should win over Elixir)", got.Runtime.Name)
+	}
+}
+
+func TestDetectRuntime_ElixirCommentLineNotMatched(t *testing.T) {
+	// A mix.exs that only mentions elixir: inside a comment should not parse a version.
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\n  # elixir: \"~> 1.14\" (not a real key)\n  def project do\n    [app: :my_app]\n  end\nend\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "elixir" {
+		t.Errorf("Runtime.Name = %q, want elixir", got.Runtime.Name)
+	}
+	if got.Runtime.Version != "" {
+		t.Errorf("Runtime.Version = %q, want empty (comment line must not be matched)", got.Runtime.Version)
+	}
+}
+
+func TestDetectRuntime_ElixirLongerAtomKeyNotMatched(t *testing.T) {
+	// A key like "myelixir:" must not be mistaken for the "elixir:" key.
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule MyApp.MixProject do\n  def project do\n    [\n      myelixir: \"~> 1.14\"\n    ]\n  end\nend\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "elixir" {
+		t.Errorf("Runtime.Name = %q, want elixir", got.Runtime.Name)
+	}
+	if got.Runtime.Version != "" {
+		t.Errorf("Runtime.Version = %q, want empty (myelixir: must not be matched)", got.Runtime.Version)
+	}
+}
+
 // writeFile is a test helper that creates a file with the given content.
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
