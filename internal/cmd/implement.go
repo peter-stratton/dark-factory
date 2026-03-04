@@ -88,7 +88,7 @@ loop directly, without milestone or dependency resolution.`,
 		}
 
 		if !cfg.NoSandbox {
-			dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime)
+			dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
 			tag, err := sandbox.BuildImage(cmd.Context(), dc, logger)
 			if err != nil {
 				return fmt.Errorf("building Docker image: %w", err)

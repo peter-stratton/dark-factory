@@ -20,7 +20,7 @@ var CommandRunner = func(name string, args ...string) ([]byte, error) {
 // BuildImage generates a Dockerfile from cfg, writes it to a temp directory,
 // and runs docker build. It returns the image tag on success.
 func BuildImage(ctx context.Context, cfg DockerConfig, logger *slog.Logger) (string, error) {
-	content, err := GenerateDockerfile(cfg)
+	content, err := GenerateDockerfile(cfg, logger)
 	if err != nil {
 		return "", fmt.Errorf("generating Dockerfile: %w", err)
 	}
