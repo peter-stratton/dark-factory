@@ -51,7 +51,7 @@ func TestCollectAuthEnv_OAuthToken(t *testing.T) {
 	}
 }
 
-func TestCollectAuthEnv_BothAuthTokens(t *testing.T) {
+func TestCollectAuthEnv_BothAuthTokens_PrefersOAuth(t *testing.T) {
 	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
 		return []byte("gho_fake\n"), nil
 	})()
@@ -64,11 +64,11 @@ func TestCollectAuthEnv_BothAuthTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := env["ANTHROPIC_API_KEY"]; !ok {
-		t.Error("expected ANTHROPIC_API_KEY in map")
+	if _, ok := env["ANTHROPIC_API_KEY"]; ok {
+		t.Error("ANTHROPIC_API_KEY should not be set when OAuth token is available")
 	}
-	if _, ok := env["CLAUDE_CODE_OAUTH_TOKEN"]; !ok {
-		t.Error("expected CLAUDE_CODE_OAUTH_TOKEN in map")
+	if env["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-tok" {
+		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %q, want oauth-tok", env["CLAUDE_CODE_OAUTH_TOKEN"])
 	}
 }
 
