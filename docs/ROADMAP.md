@@ -178,3 +178,46 @@ making it easy for humans to spot-check agent work.
 - GitHub diff links for each PR (easy human spot-checking)
 - Manual test punchlist generation at end of each dev-loop run
 - Log viewer (parsed JSON structured logs with filtering)
+
+---
+
+## Phase 7: Review Quality & Code Quality Gates
+
+**Goal**: Ensure the reviewer agent is doing genuine, thorough work — not
+rubberstamping. Add automated quality gates that catch shallow reviews and
+improve overall code quality in the dev loop.
+
+**Milestone**: `Phase 7` | **Label**: `phase-7`
+
+### Review depth validation
+- Tool trace floor: reject reviews where the reviewer didn't read the PR diff,
+  run tests, or generate review tests in `tests/review/`
+- Token/cost floor: flag suspiciously cheap reviews (below a configurable
+  threshold) as likely rubberstamps
+- Review body quality check: verify the reviewer's PR review contains specific
+  file references and concrete observations (not generic "looks good")
+
+### Mandatory review test execution
+- Hard gate: reviewer must create and run ephemeral tests in `tests/review/`
+  for the review to count — no tests means automatic `CHANGES_REQUESTED`
+- Verify via PostToolUse audit trace: scan for Write to `tests/review/` and
+  Bash with `go test ./tests/review/`
+
+### Canary defect injection
+- Before review, inject a known trivial bug into the PR (e.g., a syntax error
+  or failing test assertion) via a guard rail step
+- If the reviewer approves despite the canary, the review is invalid
+- Remove the canary before merge if the reviewer catches it
+- Configurable: `canary_defects: true` in `godark.yaml` (default off)
+
+### Dual-reviewer sampling
+- Configurable percentage of PRs get a second independent review
+- If the two reviewers disagree, escalate to `needs-human-review`
+- Provides ground truth for calibrating other quality gates
+- `dual_review_sample_rate: 0.1` in `godark.yaml` (default 0, disabled)
+
+### Configurable lint gate
+- Run a configurable lint command (e.g., `golangci-lint run`) as an additional
+  quality gate after the implementer finishes, before review
+- Lint failures trigger a retry without consuming a review cycle
+- `lint_command` in `godark.yaml` (default empty, disabled)
