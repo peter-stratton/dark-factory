@@ -14,6 +14,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
+	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -117,6 +118,30 @@ loop directly, without milestone or dependency resolution.`,
 			}
 		}
 
+		if outcome.PRNumber > 0 {
+			punchlistPath, _ := cmd.Flags().GetString("punchlist")
+			files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
+			if err != nil {
+				logger.Warn("failed to fetch changed files for punchlist",
+					"pr_number", outcome.PRNumber, "error", err)
+			}
+			spec := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issueNumber)
+			entries := []punchlist.Entry{{
+				IssueNumber:  issue.Number,
+				IssueTitle:   issue.Title,
+				IssueBody:    issue.Body,
+				PRNumber:     outcome.PRNumber,
+				Repo:         cfg.Repo,
+				ScenarioSpec: spec,
+				ChangedFiles: files,
+			}}
+			text := punchlist.Generate(entries)
+			fmt.Println()
+			if err := punchlist.Write(text, punchlistPath); err != nil {
+				logger.Warn("failed to write punchlist", "error", err)
+			}
+		}
+
 		return nil
 	},
 }
@@ -129,6 +154,7 @@ func init() {
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-merge", false, "Skip PR merge after approval (human reviews and merges manually)")
 	f.String("config", "godark.yaml", "Path to configuration file")
+	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 
 	rootCmd.AddCommand(implementCmd)
 }

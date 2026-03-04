@@ -96,7 +96,8 @@ each unblocked issue through the implement → review → merge loop.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun)
+		punchlistPath, _ := cmd.Flags().GetString("punchlist")
+		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun, punchlistPath)
 	},
 }
 
@@ -111,6 +112,7 @@ func init() {
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-merge", false, "Skip PR merge after approval (human reviews and merges manually)")
 	f.String("config", "godark.yaml", "Path to configuration file")
+	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 
 	rootCmd.AddCommand(runCmd)
 }
