@@ -231,6 +231,13 @@ improve overall code quality in the dev loop.
 - Print a pass/fail checklist with actionable fix instructions for each failure
 - Exit non-zero if any required check fails
 
+### Configurable auth token preference
+- Allow `godark.yaml` to specify which auth token to prefer when both
+  `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` are set
+- Currently hardcoded to prefer OAuth; make it configurable for teams that
+  want to use API keys for cost tracking or rate-limit isolation
+- `auth_preference: oauth | api_key` in `godark.yaml` (default `oauth`)
+
 ### Configurable lint gate
 - Run a configurable lint command (e.g., `golangci-lint run`) as an additional
   quality gate after the implementer finishes, before review
