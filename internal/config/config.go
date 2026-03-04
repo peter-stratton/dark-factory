@@ -55,6 +55,7 @@ type Prompts struct {
 	Implementer      string `yaml:"implementer"`
 	ImplementerRetry string `yaml:"implementer_retry"`
 	Reviewer         string `yaml:"reviewer"`
+	QualityReviewer  string `yaml:"quality_reviewer"`
 	SpecGenerator    string `yaml:"spec_generator"`
 }
 

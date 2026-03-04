@@ -17,6 +17,7 @@ type Prompts struct {
 	Implementer      string
 	ImplementerRetry string
 	Reviewer         string
+	QualityReviewer  string
 	SpecGenerator    string
 }
 
@@ -75,6 +76,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		Implementer:      impl,
 		ImplementerRetry: retry,
 		Reviewer:         rev,
+	}
+
+	// QualityReviewer is optional — load from config or embedded default.
+	qualRev, err := loadPromptFile(cfg.Prompts.QualityReviewer, "quality_reviewer.txt")
+	if err != nil {
+		p.QualityReviewer = ""
+	} else {
+		p.QualityReviewer = qualRev
 	}
 
 	// SpecGenerator is optional — load from config or embedded default.
