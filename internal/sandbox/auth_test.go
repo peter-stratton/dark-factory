@@ -20,6 +20,7 @@ func TestCollectAuthEnv_APIKey(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-1234")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_test")
 
 	env, err := CollectAuthEnv(slog.Default())
@@ -37,6 +38,7 @@ func TestCollectAuthEnv_NoAuthTokens(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
 	_, err := CollectAuthEnv(slog.Default())
@@ -48,22 +50,45 @@ func TestCollectAuthEnv_NoAuthTokens(t *testing.T) {
 	}
 }
 
-// TestCollectAuthEnv_OAuthTokenNotFallback confirms that setting only
-// CLAUDE_CODE_OAUTH_TOKEN (without ANTHROPIC_API_KEY) is not accepted.
-func TestCollectAuthEnv_OAuthTokenNotFallback(t *testing.T) {
+func TestCollectAuthEnv_OAuthTokenOnly(t *testing.T) {
 	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
 		return []byte("gho_fake\n"), nil
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-abc")
 	t.Setenv("GH_TOKEN", "gho_test")
 
-	_, err := CollectAuthEnv(slog.Default())
-	if err == nil {
-		t.Fatal("expected error: ANTHROPIC_API_KEY is required; OAuth token is not a fallback")
+	env, err := CollectAuthEnv(slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
-		t.Errorf("error = %q, want mention of ANTHROPIC_API_KEY", err)
+	if env["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-token-abc" {
+		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %q, want oauth-token-abc", env["CLAUDE_CODE_OAUTH_TOKEN"])
+	}
+	if _, ok := env["ANTHROPIC_API_KEY"]; ok {
+		t.Error("ANTHROPIC_API_KEY should not be set when OAuth token is used")
+	}
+}
+
+func TestCollectAuthEnv_OAuthPreferredOverAPIKey(t *testing.T) {
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("gho_fake\n"), nil
+	})()
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-abc")
+	t.Setenv("GH_TOKEN", "gho_test")
+
+	env, err := CollectAuthEnv(slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-token-abc" {
+		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %q, want oauth-token-abc", env["CLAUDE_CODE_OAUTH_TOKEN"])
+	}
+	if _, ok := env["ANTHROPIC_API_KEY"]; ok {
+		t.Error("ANTHROPIC_API_KEY should not be set when OAuth token takes priority")
 	}
 }
 
@@ -74,6 +99,7 @@ func TestCollectAuthEnv_GHTokenFromEnv(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_from_env")
 
 	env, err := CollectAuthEnv(slog.Default())
@@ -94,6 +120,7 @@ func TestCollectAuthEnv_GHTokenFallback(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
 	env, err := CollectAuthEnv(slog.Default())
@@ -111,6 +138,7 @@ func TestCollectAuthEnv_GHTokenMissing(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
 	_, err := CollectAuthEnv(slog.Default())
@@ -128,6 +156,7 @@ func TestCollectAuthEnv_NoSecretsInLog(t *testing.T) {
 	})()
 
 	t.Setenv("ANTHROPIC_API_KEY", "sk-secret-key-12345")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_secret_token_789")
 
 	var buf strings.Builder
