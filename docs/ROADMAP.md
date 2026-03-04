@@ -27,7 +27,7 @@ prints the execution plan. No agent execution in this phase.
 
 ---
 
-## Phase 2: Quality & Vetting
+## Phase 2: Quality & Vetting ✅
 
 **Goal**: The `godark vet` subcommand validates that roadmap docs and GitHub
 issues are clear, unambiguous, and fully actionable by agents. Built early so
@@ -40,11 +40,11 @@ it can be used to validate issues for all subsequent phases.
 - Scenario spec validation (`godark vet scenarios`)
 - Roadmap validation (`godark vet roadmap`)
 
-**Issues**: #14–#17
+**Issues**: #14–#17 (all closed)
 
 ---
 
-## Phase 3: Docker Sandbox
+## Phase 3: Docker Sandbox ✅
 
 **Goal**: Run agents in isolated containers for safety. The user's working
 directory is never touched — all agent work happens in a container. Required
@@ -61,7 +61,7 @@ confined environment.
 - Repo cloning or worktree inside container (not host volume mount)
 - `--no-sandbox` flag to run agents directly on the host
 
-**Issues**: #20–#24
+**Issues**: #20–#24 (all closed)
 
 ---
 
@@ -108,14 +108,69 @@ before implementation begins.
 - `godark implement <issue-number>` — direct single-issue command (no milestone/deps)
 - Summary stats at end (implemented, skipped, failed)
 
+**Issues**: #29 (closed); remaining issues not yet created
+
 ---
 
-## Phase 5: Run Review Dashboard
+## Phase 5: Agent SDK Migration
+
+**Goal**: Replace the `claude -p` shell invocation layer with the Claude Agent
+SDK (`claude-agent-sdk`), running inside the existing Docker container. The Go
+CLI and container isolation are preserved; the SDK runs as a small Python script
+inside the container image.
+
+**Milestone**: `Phase 5` | **Label**: `phase-5`
+
+### Invocation layer rewrite
+- Add `agent_runner.py` to the Docker image — a thin SDK wrapper that reads
+  the prompt from `$GODARK_PROMPT`, calls `query()`, and streams structured
+  output to stdout
+- Update `launcher.go` (`runSandbox`) to invoke the Python runner instead of
+  building a shell entrypoint around `claude -p`
+- Update `dockerfile.go` to install Python + `claude-agent-sdk` (replace
+  Claude Code CLI install)
+
+### Role-scoped permissions
+- Implementer: `allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"]`
+- Reviewer: `allowed_tools=["Read", "Glob", "Grep", "Bash"]`,
+  `disallowed_tools=["Write", "Edit"]` — reviewer literally cannot modify files
+- Spec generator: `allowed_tools=["Read", "Write", "Glob", "Grep"]` — no Bash
+
+### Preventive guardrails via hooks
+- `PreToolUse` hook on `Write|Edit` to deny modifications to protected paths
+  (currently detected post-hoc by `CheckProtectedDrift`)
+- Agent receives a `systemMessage` explaining why the write was blocked, so it
+  can adjust rather than failing silently
+- `PostToolUse` audit hook logging every tool call for structured telemetry
+
+### Session resumption for retries
+- Capture `session_id` from implementer's first run
+- On `CHANGES_REQUESTED`, resume the implementer session with reviewer feedback
+  instead of cold-starting a new agent invocation
+- Eliminates context re-discovery on retries — agent remembers its reasoning,
+  which files it changed, and why
+
+### Structured output parsing
+- Replace `REVIEW_RESULT=` sentinel grepping with typed SDK message parsing
+- Capture implementer's tool-use trace and pass to reviewer for richer review
+  context (reviewer sees what the agent explored, not just the final diff)
+
+### Cleanup
+- Delete `GenerateClaudeConfig()` from `auth.go` (SDK has no onboarding dialogs)
+- Remove `ClaudeFlags` from config and `CLAUDE_CODE_OAUTH_TOKEN` from auth
+- Simplify `auth.go` `CollectAuthEnv()` (SDK handles API key natively;
+  only `GH_TOKEN` still needs forwarding)
+
+**Issues**: #36–#41
+
+---
+
+## Phase 6: Run Review Dashboard
 
 **Goal**: `godark status` serves a local web UI for reviewing dev-loop runs,
 making it easy for humans to spot-check agent work.
 
-**Milestone**: `Phase 5` | **Label**: `phase-5`
+**Milestone**: `Phase 6` | **Label**: `phase-6`
 
 - Local web server serving a review dashboard
 - Homepage: list of dev-loop runs with summary stats (issues processed, pass/fail counts)
