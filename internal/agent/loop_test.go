@@ -600,6 +600,66 @@ func TestProcessIssue_QualityReviewChangesRequestedTriggersRetry(t *testing.T) {
 	}
 }
 
+func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
+	cfg := loopConfig()
+	cfg.QualityStrictnessDecay = true
+	// MaxRetries=2 → qualityMaxAttempts=3
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var qualityPrompts []string
+
+	// Prompts with StrictnessDirective variable so we can observe the rendered output.
+	prompts := testPrompts(t)
+	prompts.QualityReviewer = "Quality review PR #{{.PRNumber}}{{if .StrictnessDirective}}\n{{.StrictnessDirective}}{{end}}"
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality review cycle=0 (should have no directive)
+			if env["GODARK_ROLE"] == "quality_reviewer" {
+				qualityPrompts = append(qualityPrompts, env["GODARK_PROMPT"])
+			}
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 3: // retry
+			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+		case 4: // quality review cycle=1 (should have directive)
+			if env["GODARK_ROLE"] == "quality_reviewer" {
+				qualityPrompts = append(qualityPrompts, env["GODARK_PROMPT"])
+			}
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t))
+
+	if len(qualityPrompts) != 2 {
+		t.Fatalf("expected 2 quality review calls, got %d", len(qualityPrompts))
+	}
+	// First call (cycle=0) should not have directive.
+	if strings.Contains(qualityPrompts[0], "STRICTNESS OVERRIDE") {
+		t.Errorf("first quality review (cycle=0) should not have strictness directive, got: %q", qualityPrompts[0])
+	}
+	// Second call (cycle=1, maxAttempts=3, not final) should have the narrowing directive.
+	if !strings.Contains(qualityPrompts[1], "STRICTNESS OVERRIDE") {
+		t.Errorf("second quality review (cycle=1) should have strictness directive, got: %q", qualityPrompts[1])
+	}
+	if !strings.Contains(qualityPrompts[1], "security vulnerabilities and correctness issues only") {
+		t.Errorf("second quality review (cycle=1) should narrow to security+correctness, got: %q", qualityPrompts[1])
+	}
+}
+
 func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 	agentCallCount := 0
 	setupLoopTest(t, nil, func(name string, args ...string) ([]byte, error) {
