@@ -189,7 +189,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		case "APPROVED":
 			if cfg.NoMerge {
 				// Skip merge — human will review and merge manually.
-				slog.Info("PR approved, skipping merge (--no-merge)", "pr_number", prNum)
+				logger.Info("PR approved, skipping merge (--no-merge)", "pr_number", prNum)
 				outcome.Status = "ready-to-merge"
 				outcome.Retries = attempt
 				return outcome
