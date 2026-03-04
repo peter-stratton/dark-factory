@@ -12,7 +12,7 @@ var vetRoadmapCmd = &cobra.Command{
 	Use:   "roadmap",
 	Short: "Validate planning docs against milestone issues",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repo, _ := cmd.Flags().GetString("repo")
+		repo := resolveRepo(cmd)
 		asJSON, _ := cmd.Flags().GetBool("json")
 		planningDir, _ := cmd.Flags().GetString("planning-dir")
 

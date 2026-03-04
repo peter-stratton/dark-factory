@@ -1,3 +1,3 @@
 repo: peter-stratton/dark-factory
-milestone: "Phase 1"
+milestone: "Phase 6"
 protected_paths: ["CLAUDE.md", "tests/scenarios/"]

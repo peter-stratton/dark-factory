@@ -1,7 +1,7 @@
 ---
 name: godark-create-issues
-description: Create GitHub issues from a planning doc
-argument-hint: "<planning-doc-path>"
+description: Create GitHub issues from a phase planning doc
+argument-hint: "<phase-number>"
 disable-model-invocation: true
 ---
 
@@ -15,9 +15,11 @@ consumption. Update the planning doc and roadmap with assigned issue numbers.
 1. **Read config** — Read `godark.yaml` to get the `repo`, `roadmap_path`
    (default: `docs/ROADMAP.md`), and `planning_dir` (default: `docs/planning/`).
 
-2. **Read the planning doc** — Parse the specified file to extract the milestone
-   name and each issue's title, description, acceptance criteria, test cases,
-   and dependencies.
+2. **Find the planning doc** — Use the phase number argument to locate the
+   planning doc by globbing `<planning_dir>/phase-<N>-*.md`. If no match is
+   found, report an error. Parse the file to extract the milestone name and
+   each issue's title, description, acceptance criteria, test cases, and
+   dependencies.
 
 3. **Check existing issues** — Run `gh issue list --milestone "<Milestone>"
    --repo <repo> --state all --limit 200` to see what already exists. Match by

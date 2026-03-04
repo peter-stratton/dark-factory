@@ -12,7 +12,7 @@ var vetScenariosCmd = &cobra.Command{
 	Use:   "scenarios",
 	Short: "Validate scenario spec files",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repo, _ := cmd.Flags().GetString("repo")
+		repo := resolveRepo(cmd)
 		asJSON, _ := cmd.Flags().GetBool("json")
 		scenarioDir, _ := cmd.Flags().GetString("scenario-dir")
 

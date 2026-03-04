@@ -10,7 +10,7 @@
 
 ---
 
-## Issue: Generic runtime config
+## Issue 50: Generic runtime config
 
 ### Description
 
@@ -73,9 +73,9 @@ already exist on `Config` and are language-agnostic — they stay as-is.
 
 ---
 
-## Issue: Auto-detect project type
+## Issue 52: Auto-detect project type
 
-**Blocked by**: Generic runtime config
+**Blocked by**: #50
 
 ### Description
 
@@ -151,9 +151,9 @@ explicit config always wins.
 
 ---
 
-## Issue: Pluggable Dockerfile generation
+## Issue 53: Pluggable Dockerfile generation
 
-**Blocked by**: Generic runtime config
+**Blocked by**: #50
 
 ### Description
 
@@ -221,7 +221,7 @@ runtime.
 
 ---
 
-## Issue: Language-agnostic prompts
+## Issue 51: Language-agnostic prompts
 
 ### Description
 
@@ -270,9 +270,9 @@ to whatever language and test framework it finds.
 
 ---
 
-## Issue: Integration and cleanup
+## Issue 54: Integration and cleanup
 
-**Blocked by**: Generic runtime config, Auto-detect project type, Pluggable Dockerfile generation, Language-agnostic prompts
+**Blocked by**: #50, #51, #52, #53
 
 ### Description
 

@@ -17,5 +17,6 @@ Use a subcommand to validate a specific aspect:
 }
 
 func init() {
+	vetCmd.PersistentFlags().String("config", "godark.yaml", "Path to configuration file")
 	rootCmd.AddCommand(vetCmd)
 }

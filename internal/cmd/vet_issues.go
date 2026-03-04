@@ -12,7 +12,7 @@ var vetIssuesCmd = &cobra.Command{
 	Use:   "issues",
 	Short: "Validate GitHub issue structure for agent consumption",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repo, _ := cmd.Flags().GetString("repo")
+		repo := resolveRepo(cmd)
 		asJSON, _ := cmd.Flags().GetBool("json")
 
 		milestone, err := resolveTag(cmd)

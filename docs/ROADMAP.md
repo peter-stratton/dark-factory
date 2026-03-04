@@ -212,6 +212,8 @@ auto-detected or configured explicitly.
 - Update `godark doctor` checklist references (Phase 8) to be runtime-aware
 - Update docs (`CONTEXT.md`, `README.md`) to reflect multi-language support
 
+**Issues**: #50–#54
+
 ---
 
 ## Phase 7: Run Review Dashboard
