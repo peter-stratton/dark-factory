@@ -13,10 +13,17 @@ import (
 func CollectAuthEnv(logger *slog.Logger) (map[string]string, error) {
 	env := make(map[string]string)
 
-	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
-		env["ANTHROPIC_API_KEY"] = v
-	} else {
-		return nil, fmt.Errorf("missing authentication: set ANTHROPIC_API_KEY")
+	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+
+	switch {
+	case oauthToken != "":
+		env["CLAUDE_CODE_OAUTH_TOKEN"] = oauthToken
+		logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth")
+	case apiKey != "":
+		env["ANTHROPIC_API_KEY"] = apiKey
+	default:
+		return nil, fmt.Errorf("missing authentication: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN")
 	}
 
 	// GitHub token: try env first, then gh CLI fallback.

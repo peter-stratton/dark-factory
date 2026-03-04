@@ -160,7 +160,9 @@ async def main() -> None:
     permissions = _ROLE_PERMISSIONS[role]
 
     env: dict = {}
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    elif os.environ.get("ANTHROPIC_API_KEY"):
         env["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
     if os.environ.get("GH_TOKEN"):
         env["GH_TOKEN"] = os.environ["GH_TOKEN"]
