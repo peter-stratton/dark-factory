@@ -10,6 +10,7 @@ import (
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/deps"
+	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
@@ -23,6 +24,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, dryRun bo
 		"milestone", cfg.Milestone,
 		"dry_run", dryRun,
 	)
+
+	// Auto-detect project type when no runtime/commands are explicitly configured.
+	detect.ApplyToConfig(cfg, ".", logger)
 
 	// Step 1: Fetch open issues for the milestone.
 	issues, err := github.FetchMilestoneIssues(cfg.Repo, cfg.Milestone)

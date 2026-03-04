@@ -10,6 +10,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
@@ -72,6 +73,9 @@ loop directly, without milestone or dependency resolution.`,
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
+
+		// Auto-detect project type when no runtime/commands are explicitly configured.
+		detect.ApplyToConfig(cfg, ".", logger)
 
 		authEnv, err := sandbox.CollectAuthEnv(logger)
 		if err != nil {
