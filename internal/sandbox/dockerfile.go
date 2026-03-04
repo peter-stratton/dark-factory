@@ -101,7 +101,17 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		if runtimeVersion == "" {
 			runtimeVersion = "stable"
 		}
-	case "node", "rust", "python", "elixir", "":
+	case "elixir":
+		// Enforce an allowlist for the version to prevent apt package injection.
+		// The version is embedded in a quoted apt package spec (e.g. "elixir=1.14.3*"),
+		// so characters like `"`, `$`, and backtick could break out of the argument.
+		if strings.IndexFunc(runtimeVersion, func(c rune) bool {
+			return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+				c == '.' || c == '~' || c == '+' || c == '-' || c == '>' || c == '<' || c == '=')
+		}) >= 0 {
+			return "", fmt.Errorf("Runtime.Version contains invalid character for Elixir: %q", runtimeVersion)
+		}
+	case "node", "rust", "python", "":
 		// no validation needed
 	default:
 		logger.Warn("unknown runtime, skipping toolchain install", "runtime", runtimeName)

@@ -160,9 +160,22 @@ func parseMixExs(data []byte) string {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		// Skip comment lines.
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
 		idx := strings.Index(line, "elixir:")
 		if idx < 0 {
 			continue
+		}
+		// Require a word boundary before "elixir:" to avoid matching longer atom
+		// keys such as "myelixir:".
+		if idx > 0 {
+			prev := line[idx-1]
+			if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
+				(prev >= '0' && prev <= '9') || prev == '_' {
+				continue
+			}
 		}
 		rest := line[idx+len("elixir:"):]
 		i := strings.Index(rest, `"`)

