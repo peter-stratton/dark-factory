@@ -571,6 +571,21 @@ func TestGenerateDockerfileElixirWithVersion(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileElixirWithConstraintVersion(t *testing.T) {
+	// "~> 1.14" is the idiomatic format returned by parseMixExs; spaces must not
+	// cause GenerateDockerfile to return an error.
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "elixir", Version: "~> 1.14"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("constraint-style Elixir version should not return error: %v", err)
+	}
+	if !strings.Contains(df, "esl-erlang") {
+		t.Error("Elixir Dockerfile missing esl-erlang")
+	}
+}
+
 func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 	runtimes := []config.Runtime{
 		{Name: "go", Version: "1.26.0"},

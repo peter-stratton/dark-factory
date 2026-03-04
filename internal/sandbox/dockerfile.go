@@ -102,6 +102,10 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 			runtimeVersion = "stable"
 		}
 	case "elixir":
+		// Strip spaces to normalise Elixir version constraints (e.g. "~> 1.14" → "~>1.14").
+		// mix.exs uses the pessimistic operator with a space, but apt package specs do not
+		// allow spaces, so we remove them before validation and template rendering.
+		runtimeVersion = strings.ReplaceAll(runtimeVersion, " ", "")
 		// Enforce an allowlist for the version to prevent apt package injection.
 		// The version is embedded in a quoted apt package spec (e.g. "elixir=1.14.3*"),
 		// so characters like `"`, `$`, and backtick could break out of the argument.
