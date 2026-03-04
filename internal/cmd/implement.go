@@ -47,6 +47,10 @@ loop directly, without milestone or dependency resolution.`,
 			v, _ := cmd.Flags().GetBool("no-sandbox")
 			flags.NoSandbox = &v
 		}
+		if cmd.Flags().Changed("no-merge") {
+			v, _ := cmd.Flags().GetBool("no-merge")
+			flags.NoMerge = &v
+		}
 
 		cfg, err := config.Load(configPath, flags)
 		if err != nil {
@@ -123,6 +127,7 @@ func init() {
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles")
 	f.Bool("dry-run", false, "Print issue details and exit")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
+	f.Bool("no-merge", false, "Skip PR merge after approval (human reviews and merges manually)")
 	f.String("config", "godark.yaml", "Path to configuration file")
 
 	rootCmd.AddCommand(implementCmd)
