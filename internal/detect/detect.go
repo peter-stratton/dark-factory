@@ -80,10 +80,10 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 	return nil, fmt.Errorf("could not detect project type: no known marker files found in %s", repoPath)
 }
 
-// ApplyToConfig runs detection if no runtime or commands are explicitly configured,
-// and applies the detected values to cfg, logging results to logger.
+// ApplyToConfig runs detection if no runtime is explicitly configured,
+// and applies detected values to cfg where not already set, logging results to logger.
 func ApplyToConfig(cfg *config.Config, repoPath string, logger *slog.Logger) {
-	if cfg.Runtime.Name != "" || cfg.BuildCommand != "" || cfg.TestCommand != "" {
+	if cfg.Runtime.Name != "" {
 		return
 	}
 	dp, err := DetectRuntime(repoPath)
@@ -92,13 +92,15 @@ func ApplyToConfig(cfg *config.Config, repoPath string, logger *slog.Logger) {
 		return
 	}
 	cfg.Runtime = dp.Runtime
-	cfg.BuildCommand = dp.BuildCommand
-	cfg.TestCommand = dp.TestCommand
-	logger.Info("auto-detected project type",
+	if cfg.BuildCommand == "" {
+		cfg.BuildCommand = dp.BuildCommand
+	}
+	if cfg.TestCommand == "" {
+		cfg.TestCommand = dp.TestCommand
+	}
+	logger.Info("detected project type",
 		"runtime", dp.Runtime.Name,
 		"version", dp.Runtime.Version,
-		"build_command", dp.BuildCommand,
-		"test_command", dp.TestCommand,
 	)
 }
 

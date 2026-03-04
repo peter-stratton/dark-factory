@@ -233,7 +233,8 @@ func TestApplyToConfig_DetectionApplied(t *testing.T) {
 }
 
 // TestApplyToConfig_ExplicitCommandsWin verifies that ApplyToConfig does not
-// overwrite an explicitly configured test_command or build_command.
+// overwrite an explicitly configured test_command or build_command, but does
+// still apply detected runtime and unset commands.
 func TestApplyToConfig_ExplicitCommandsWin(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n\ngo 1.26\n")
@@ -245,12 +246,17 @@ func TestApplyToConfig_ExplicitCommandsWin(t *testing.T) {
 
 	ApplyToConfig(cfg, dir, logger)
 
+	// Explicit test_command must not be overwritten.
 	if cfg.TestCommand != "make test" {
 		t.Errorf("TestCommand = %q, want %q (explicit command must not be overwritten)", cfg.TestCommand, "make test")
 	}
-	// Runtime should also not be applied when any command is set.
-	if cfg.Runtime.Name != "" {
-		t.Errorf("Runtime.Name = %q, want empty (should not apply when commands configured)", cfg.Runtime.Name)
+	// Runtime is detected because Runtime.Name was empty.
+	if cfg.Runtime.Name != "go" {
+		t.Errorf("Runtime.Name = %q, want %q (runtime detected from go.mod)", cfg.Runtime.Name, "go")
+	}
+	// BuildCommand is populated because it was not explicitly configured.
+	if cfg.BuildCommand != "go build ./..." {
+		t.Errorf("BuildCommand = %q, want %q (detected from go.mod)", cfg.BuildCommand, "go build ./...")
 	}
 }
 
