@@ -29,6 +29,19 @@ each unblocked issue through the implement → review → merge loop.`,
 			v, _ := cmd.Flags().GetString("repo")
 			flags.Repo = &v
 		}
+		if cmd.Flags().Changed("max-retries") {
+			v, _ := cmd.Flags().GetInt("max-retries")
+			flags.MaxRetries = &v
+		}
+		if cmd.Flags().Changed("no-sandbox") {
+			v, _ := cmd.Flags().GetBool("no-sandbox")
+			flags.NoSandbox = &v
+		}
+
+		// Parse milestone/issue locally — these are per-run params, not config.
+		var milestone string
+		var issue int
+
 		if cmd.Flags().Changed("tag") && cmd.Flags().Changed("milestone") {
 			return fmt.Errorf("--milestone and --tag are mutually exclusive")
 		}
@@ -46,26 +59,20 @@ each unblocked issue through the implement → review → merge loop.`,
 			if repo == nil || *repo == "" {
 				return fmt.Errorf("--repo is required when using --tag")
 			}
-			milestone, err := github.ResolveMilestoneByTag(*repo, tag)
+			resolved, err := github.ResolveMilestoneByTag(*repo, tag)
 			if err != nil {
 				return err
 			}
-			flags.Milestone = &milestone
+			milestone = resolved
 		} else if cmd.Flags().Changed("milestone") {
-			v, _ := cmd.Flags().GetString("milestone")
-			flags.Milestone = &v
+			milestone, _ = cmd.Flags().GetString("milestone")
 		}
 		if cmd.Flags().Changed("issue") {
-			v, _ := cmd.Flags().GetInt("issue")
-			flags.Issue = &v
+			issue, _ = cmd.Flags().GetInt("issue")
 		}
-		if cmd.Flags().Changed("max-retries") {
-			v, _ := cmd.Flags().GetInt("max-retries")
-			flags.MaxRetries = &v
-		}
-		if cmd.Flags().Changed("no-sandbox") {
-			v, _ := cmd.Flags().GetBool("no-sandbox")
-			flags.NoSandbox = &v
+
+		if milestone == "" && issue == 0 {
+			return fmt.Errorf("milestone or issue is required (pass --milestone, --tag, or --issue)")
 		}
 
 		cfg, err := config.Load(configPath, flags)
@@ -85,7 +92,7 @@ each unblocked issue through the implement → review → merge loop.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		return orchestrator.Run(ctx, cfg, logger, dryRun)
+		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun)
 	},
 }
 

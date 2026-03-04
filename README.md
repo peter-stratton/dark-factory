@@ -243,14 +243,11 @@ can be overridden by CLI flags where applicable.
 # Required — GitHub repository (owner/repo)
 repo: owner/repo
 
-# Required (one of) — target milestone or single issue
-milestone: "Phase 1"
-issue: 0
-
 # Retry and execution
 max_retries: 3            # review/fix cycles before escalating (default 3)
 agent_timeout: "30m"      # max wall-clock time per agent run
 no_sandbox: false         # run agents on host instead of Docker
+quality_strictness_decay: true  # use diminishing strictness on quality review retries
 
 # Build and test commands run inside the container (auto-detected if not set)
 build_command: ""
@@ -286,6 +283,7 @@ prompts:
   implementer: ""
   implementer_retry: ""
   reviewer: ""
+  quality_reviewer: ""
   spec_generator: ""
 ```
 

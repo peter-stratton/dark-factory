@@ -56,9 +56,8 @@ func setupFakeGH(t *testing.T, openIssues []ghIssue, closedNumbers []int) {
 
 func testConfig() *config.Config {
 	return &config.Config{
-		Repo:      "owner/repo",
-		Milestone: "Phase 1",
-		LogDir:    "",
+		Repo:   "owner/repo",
+		LogDir: "",
 	}
 }
 
@@ -97,7 +96,7 @@ func TestDryRun_ListsIssuesInOrder(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -123,7 +122,7 @@ func TestDryRun_BlockedIssuesShownSeparately(t *testing.T) {
 	setupFakeGH(t, openIssues, nil) // #99 not closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -149,7 +148,7 @@ func TestDryRun_SummaryCounts(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -173,7 +172,7 @@ func TestDryRun_LogFileCreated(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		if err := Run(context.Background(), testConfig(), logger, true); err != nil {
+		if err := Run(context.Background(), testConfig(), logger, "Phase 1", 0, true); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
@@ -191,7 +190,7 @@ func TestEmptyMilestone(t *testing.T) {
 	setupFakeGH(t, []ghIssue{}, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -210,7 +209,7 @@ func TestAllBlocked(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), false)
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, false)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -231,7 +230,7 @@ func TestDryRun_ClosedDepsUnblock(t *testing.T) {
 	setupFakeGH(t, openIssues, []int{3}) // #3 is closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -277,7 +276,7 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), true)
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -300,10 +299,9 @@ func TestSingleIssueMode_FiltersCorrectly(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	cfg := testConfig()
-	cfg.Issue = 2
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), true)
+		err := Run(context.Background(), cfg, testLogger(t), "Phase 1", 2, true)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -325,10 +323,9 @@ func TestSingleIssueMode_ErrorWhenBlocked(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	cfg := testConfig()
-	cfg.Issue = 1
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), true)
+		err := Run(context.Background(), cfg, testLogger(t), "Phase 1", 1, true)
 		if err == nil {
 			t.Fatal("expected error for blocked single issue")
 		}
@@ -345,10 +342,9 @@ func TestSingleIssueMode_ErrorWhenNotFound(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	cfg := testConfig()
-	cfg.Issue = 999
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), true)
+		err := Run(context.Background(), cfg, testLogger(t), "Phase 1", 999, true)
 		if err == nil {
 			t.Fatal("expected error for missing single issue")
 		}

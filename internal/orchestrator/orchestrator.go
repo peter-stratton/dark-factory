@@ -18,10 +18,10 @@ import (
 // Run is the main entry point for the orchestration loop.
 // It fetches issues, resolves dependencies, and either prints the execution
 // plan (dry-run) or iterates through processable issues.
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, dryRun bool) error {
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool) error {
 	logger.Info("starting orchestration",
 		"repo", cfg.Repo,
-		"milestone", cfg.Milestone,
+		"milestone", milestone,
 		"dry_run", dryRun,
 	)
 
@@ -29,13 +29,13 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, dryRun bo
 	detect.ApplyToConfig(cfg, ".", logger)
 
 	// Step 1: Fetch open issues for the milestone.
-	issues, err := github.FetchMilestoneIssues(cfg.Repo, cfg.Milestone)
+	issues, err := github.FetchMilestoneIssues(cfg.Repo, milestone)
 	if err != nil {
 		return fmt.Errorf("fetching milestone issues: %w", err)
 	}
 
 	if len(issues) == 0 {
-		logger.Info("no issues found", "milestone", cfg.Milestone)
+		logger.Info("no issues found", "milestone", milestone)
 		fmt.Println("No issues found in milestone.")
 		return nil
 	}
@@ -64,8 +64,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, dryRun bo
 	}
 
 	// Single-issue mode: filter processable to the requested issue.
-	if cfg.Issue != 0 {
-		processable, err = filterSingleIssue(processable, blocked, cfg.Issue)
+	if issue != 0 {
+		processable, err = filterSingleIssue(processable, blocked, issue)
 		if err != nil {
 			return err
 		}

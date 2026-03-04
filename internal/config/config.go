@@ -17,8 +17,6 @@ type Runtime struct {
 // Config holds all configuration for a godark run.
 type Config struct {
 	Repo       string `yaml:"repo"`
-	Milestone  string `yaml:"milestone"`
-	Issue      int    `yaml:"issue"`
 	MaxRetries int    `yaml:"max_retries"`
 
 	AgentTimeout string            `yaml:"agent_timeout"`
@@ -64,8 +62,6 @@ type Prompts struct {
 // Pointer fields distinguish "not set" (nil) from zero values.
 type CLIFlags struct {
 	Repo       *string
-	Milestone  *string
-	Issue      *int
 	MaxRetries *int
 	NoSandbox  *bool
 	Config     string
@@ -113,12 +109,6 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	if flags.Repo != nil {
 		cfg.Repo = *flags.Repo
 	}
-	if flags.Milestone != nil {
-		cfg.Milestone = *flags.Milestone
-	}
-	if flags.Issue != nil {
-		cfg.Issue = *flags.Issue
-	}
 	if flags.MaxRetries != nil {
 		cfg.MaxRetries = *flags.MaxRetries
 	}
@@ -130,9 +120,6 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 func validate(cfg *Config) error {
 	if cfg.Repo == "" {
 		return fmt.Errorf("repo is required (set in config file or pass --repo)")
-	}
-	if cfg.Milestone == "" && cfg.Issue == 0 {
-		return fmt.Errorf("milestone or issue is required (set in config file or pass --milestone / --issue)")
 	}
 	return nil
 }

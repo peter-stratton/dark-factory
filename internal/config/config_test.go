@@ -24,9 +24,7 @@ func TestFullConfigParse(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
 max_retries: 3
-issue: 5
 build_command: "go build -o bin/ ./cmd/..."
 test_command: "go test ./..."
 sandbox_env:
@@ -60,14 +58,8 @@ prompts:
 	if cfg.Repo != "owner/repo" {
 		t.Errorf("Repo = %q, want %q", cfg.Repo, "owner/repo")
 	}
-	if cfg.Milestone != "Phase 1" {
-		t.Errorf("Milestone = %q, want %q", cfg.Milestone, "Phase 1")
-	}
 	if cfg.MaxRetries != 3 {
 		t.Errorf("MaxRetries = %d, want 3", cfg.MaxRetries)
-	}
-	if cfg.Issue != 5 {
-		t.Errorf("Issue = %d, want 5", cfg.Issue)
 	}
 	if cfg.BuildCommand != "go build -o bin/ ./cmd/..." {
 		t.Errorf("BuildCommand = %q", cfg.BuildCommand)
@@ -108,7 +100,7 @@ func TestRuntimeFromYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 runtime:
   name: flutter
   version: "3.41"
@@ -130,7 +122,7 @@ func TestEmptyRuntimeIsZeroValued(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 `)
 
 	cfg, err := Load(path, CLIFlags{})
@@ -149,7 +141,7 @@ func TestSandboxEnvFromYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 sandbox_env:
   GOOS: linux
   GOARCH: arm64
@@ -171,7 +163,7 @@ func TestEmptySandboxEnvIsNil(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 `)
 
 	cfg, err := Load(path, CLIFlags{})
@@ -187,7 +179,7 @@ func TestFlagOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: original/repo
-milestone: "Phase 1"
+
 max_retries: 2
 `)
 
@@ -202,9 +194,6 @@ max_retries: 2
 	if cfg.Repo != "override/repo" {
 		t.Errorf("Repo = %q, want %q", cfg.Repo, "override/repo")
 	}
-	if cfg.Milestone != "Phase 1" {
-		t.Errorf("Milestone = %q, want %q (should be preserved from file)", cfg.Milestone, "Phase 1")
-	}
 	if cfg.MaxRetries != 5 {
 		t.Errorf("MaxRetries = %d, want 5", cfg.MaxRetries)
 	}
@@ -214,8 +203,7 @@ func TestMissingFileFlagsSufficient(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nonexistent.yaml")
 
 	cfg, err := Load(path, CLIFlags{
-		Repo:      strPtr("owner/repo"),
-		Milestone: strPtr("Phase 1"),
+		Repo: strPtr("owner/repo"),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -245,7 +233,7 @@ func TestMinimalConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 `)
 
 	cfg, err := Load(path, CLIFlags{})
@@ -280,37 +268,12 @@ func TestInvalidYAML(t *testing.T) {
 	}
 }
 
-func TestMissingMilestoneAndIssue(t *testing.T) {
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `repo: owner/repo`)
-
-	_, err := Load(path, CLIFlags{})
-	if err == nil {
-		t.Fatal("expected error for missing milestone/issue, got nil")
-	}
-	if !strings.Contains(err.Error(), "milestone") {
-		t.Errorf("error = %q, want mention of 'milestone'", err.Error())
-	}
-}
-
-func TestIssueAloneSuffices(t *testing.T) {
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `repo: owner/repo`)
-
-	cfg, err := Load(path, CLIFlags{Issue: intPtr(42)})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Issue != 42 {
-		t.Errorf("Issue = %d, want 42", cfg.Issue)
-	}
-}
 
 func TestNoSandboxDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 `)
 
 	cfg, err := Load(path, CLIFlags{})
@@ -326,7 +289,7 @@ func TestNoSandboxFromYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 no_sandbox: true
 `)
 
@@ -343,7 +306,7 @@ func TestNoSandboxFlagOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 no_sandbox: false
 `)
 
@@ -363,7 +326,7 @@ func TestClaudeFlagsIgnored(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-milestone: "Phase 1"
+
 claude_flags: ["-v"]
 `)
 
