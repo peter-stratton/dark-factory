@@ -290,6 +290,30 @@ func TestReviewerPrompt_StillReferencesReviewDir(t *testing.T) {
 	}
 }
 
+func TestReviewerPrompt_ExpandsProtectedPaths(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		Repo:           "owner/repo",
+		PRNumber:       10,
+		TestCommand:    "make test",
+		BuildCommand:   "make build",
+		ProtectedPaths: "CLAUDE.md,tests/scenarios/",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "CLAUDE.md,tests/scenarios/") {
+		t.Error("reviewer prompt must contain ProtectedPaths \"CLAUDE.md,tests/scenarios/\"")
+	}
+}
+
 func TestRetryPrompt_ExpandsTestCommandNoGoReferences(t *testing.T) {
 	p, err := LoadPrompts(&config.Config{})
 	if err != nil {
