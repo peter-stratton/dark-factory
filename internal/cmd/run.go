@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/spf13/cobra"
@@ -28,7 +29,29 @@ each unblocked issue through the implement → review → merge loop.`,
 			v, _ := cmd.Flags().GetString("repo")
 			flags.Repo = &v
 		}
-		if cmd.Flags().Changed("milestone") {
+		if cmd.Flags().Changed("tag") && cmd.Flags().Changed("milestone") {
+			return fmt.Errorf("--milestone and --tag are mutually exclusive")
+		}
+		if cmd.Flags().Changed("tag") {
+			tag, _ := cmd.Flags().GetString("tag")
+			// Need repo to resolve tag — check flag first, then fall back to config.
+			repo := flags.Repo
+			if repo == nil {
+				cfgOnly, err := config.Load(configPath, config.CLIFlags{Config: configPath})
+				if err == nil && cfgOnly.Repo != "" {
+					r := cfgOnly.Repo
+					repo = &r
+				}
+			}
+			if repo == nil || *repo == "" {
+				return fmt.Errorf("--repo is required when using --tag")
+			}
+			milestone, err := github.ResolveMilestoneByTag(*repo, tag)
+			if err != nil {
+				return err
+			}
+			flags.Milestone = &milestone
+		} else if cmd.Flags().Changed("milestone") {
 			v, _ := cmd.Flags().GetString("milestone")
 			flags.Milestone = &v
 		}
@@ -69,7 +92,8 @@ each unblocked issue through the implement → review → merge loop.`,
 func init() {
 	f := runCmd.Flags()
 	f.String("repo", "", "GitHub repository (owner/repo)")
-	f.String("milestone", "", "GitHub milestone to process")
+	f.String("milestone", "", "GitHub milestone to process (exact title)")
+	f.String("tag", "", "Milestone tag (e.g., phase-3) — resolved to full milestone title")
 	f.Int("issue", 0, "Single issue number to process (instead of milestone)")
 	f.Int("max-retries", 2, "Maximum review/fix retry cycles per issue")
 	f.Bool("dry-run", false, "Print execution plan without taking action")
