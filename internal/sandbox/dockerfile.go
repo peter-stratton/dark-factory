@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     gnupg \
+    python3 \
+    python3-pip \
 {{- range .ExtraPackages}}
     {{.}} \
 {{- end}}
@@ -39,6 +41,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
 
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code
+
+# Install Python agent runner dependencies
+RUN pip install claude-agent-sdk
+
+# Copy agent runner
+COPY agent_runner.py /usr/local/bin/agent_runner.py
 
 # Create non-root user
 RUN useradd -m -s /bin/bash {{.User}}

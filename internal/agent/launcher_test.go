@@ -6,47 +6,146 @@ import (
 	"testing"
 )
 
-func TestRun_NoSandbox_DispatchesToRunner(t *testing.T) {
-	var capturedArgs []string
-	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
-		capturedArgs = append([]string{name}, args...)
-		return []byte("out"), []byte("err"), 0, nil
+func TestRun_NoSandbox_InvokesPython3(t *testing.T) {
+	var capturedName string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedName = name
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	opts := RunOpts{
-		Prompt:      "test prompt",
-		ClaudeFlags: []string{"--model", "opus"},
-	}
+	opts := RunOpts{Prompt: "test prompt"}
 	result, err := Run(context.Background(), opts, true, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
+	if capturedName != "python3" {
+		t.Errorf("expected command 'python3', got %q", capturedName)
+	}
 	if result.ExitCode != 0 {
 		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
 	}
-	if result.Stdout != "out" {
-		t.Errorf("Stdout = %q, want %q", result.Stdout, "out")
+}
+
+func TestRun_NoSandbox_ScriptPathAsArg(t *testing.T) {
+	var capturedArgs []string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedArgs = args
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	_, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
 
-	// Check claude was called with correct args
-	if capturedArgs[0] != "claude" {
-		t.Errorf("expected command 'claude', got %q", capturedArgs[0])
+	if len(capturedArgs) == 0 {
+		t.Fatal("expected at least one arg (script path)")
 	}
-	joined := strings.Join(capturedArgs, " ")
-	if !strings.Contains(joined, "test prompt") {
-		t.Error("expected prompt in args")
+	if !strings.HasSuffix(capturedArgs[0], ".py") {
+		t.Errorf("first arg should be .py file, got %q", capturedArgs[0])
 	}
-	if !strings.Contains(joined, "--model") {
-		t.Error("expected ClaudeFlags in args")
+}
+
+func TestRun_NoSandbox_PromptInEnv(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	opts := RunOpts{Prompt: "my special prompt"}
+	_, err := Run(context.Background(), opts, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
-	if !strings.Contains(joined, "--dangerously-skip-permissions") {
-		t.Error("expected --dangerously-skip-permissions in args")
+
+	if capturedEnv["GODARK_PROMPT"] != "my special prompt" {
+		t.Errorf("GODARK_PROMPT = %q, want %q", capturedEnv["GODARK_PROMPT"], "my special prompt")
+	}
+}
+
+func TestRun_NoSandbox_RoleInEnv(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	opts := RunOpts{Prompt: "test", Role: "implementer"}
+	_, err := Run(context.Background(), opts, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if capturedEnv["GODARK_ROLE"] != "implementer" {
+		t.Errorf("GODARK_ROLE = %q, want %q", capturedEnv["GODARK_ROLE"], "implementer")
+	}
+}
+
+func TestRun_NoSandbox_AuthEnvForwarded(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	opts := RunOpts{
+		Prompt: "test",
+		Env:    map[string]string{"GH_TOKEN": "tok-abc"},
+	}
+	_, err := Run(context.Background(), opts, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if capturedEnv["GH_TOKEN"] != "tok-abc" {
+		t.Errorf("GH_TOKEN = %q, want %q", capturedEnv["GH_TOKEN"], "tok-abc")
+	}
+}
+
+func TestRun_NoSandbox_ParsesStructuredResult(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := "some message line\n" + `{"session_id":"sess-123","result":"Implementation complete","cost_usd":0.42,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	opts := RunOpts{Prompt: "test"}
+	result, err := Run(context.Background(), opts, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if result.SessionID != "sess-123" {
+		t.Errorf("SessionID = %q, want %q", result.SessionID, "sess-123")
+	}
+	if result.CostUSD != 0.42 {
+		t.Errorf("CostUSD = %v, want 0.42", result.CostUSD)
+	}
+}
+
+func TestRun_NoSandbox_ErrorResult(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"sess-456","result":"error","cost_usd":0,"is_error":true}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	opts := RunOpts{Prompt: "test"}
+	result, err := Run(context.Background(), opts, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if result.ExitCode != 1 {
+		t.Errorf("ExitCode = %d, want 1 for is_error=true", result.ExitCode)
+	}
+	if result.SessionID != "sess-456" {
+		t.Errorf("SessionID = %q, want %q", result.SessionID, "sess-456")
 	}
 }
 
 func TestRun_NoSandbox_NonZeroExit(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		return []byte("out"), []byte("err"), 1, nil
 	})
 
@@ -60,7 +159,7 @@ func TestRun_NoSandbox_NonZeroExit(t *testing.T) {
 }
 
 func TestRun_NoSandbox_Timeout(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		<-ctx.Done()
 		return []byte("partial"), []byte(""), 0, ctx.Err()
 	})
@@ -74,5 +173,42 @@ func TestRun_NoSandbox_Timeout(t *testing.T) {
 	}
 	if !result.TimedOut {
 		t.Error("expected TimedOut = true")
+	}
+}
+
+func TestRun_NoSandbox_NoDangerouslySkipPermissions(t *testing.T) {
+	var capturedArgs []string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedArgs = append([]string{name}, args...)
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	_, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if strings.Contains(joined, "--dangerously-skip-permissions") {
+		t.Error("should not contain --dangerously-skip-permissions")
+	}
+}
+
+func TestRun_NoSandbox_PromptNotInArgs(t *testing.T) {
+	var capturedArgs []string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedArgs = append([]string{name}, args...)
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	const prompt = "my unique prompt text"
+	_, err := Run(context.Background(), RunOpts{Prompt: prompt}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if strings.Contains(joined, prompt) {
+		t.Error("prompt should not appear in CLI args (it is passed via env var)")
 	}
 }

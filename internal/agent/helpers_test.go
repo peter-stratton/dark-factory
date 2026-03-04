@@ -16,24 +16,26 @@ func testLogger(t *testing.T) *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
-// stubRunner replaces Runner with a stub that returns "ok" and captures the
-// command-line arguments. Returns a pointer to the captured args slice.
+// stubRunner replaces Runner with a stub that returns a minimal JSON result and
+// captures the command-line arguments. Returns a pointer to the captured args slice.
 func stubRunner(t *testing.T) *[]string {
 	t.Helper()
 	orig := Runner
 	t.Cleanup(func() { Runner = orig })
 
 	var captured []string
-	Runner = func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		captured = append([]string{name}, args...)
-		return []byte("ok"), []byte(""), 0, nil
+		// Return a valid final JSON line so parseRunnerOutput succeeds.
+		out := env["GODARK_PROMPT"] + "\n" + `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
 	}
 	return &captured
 }
 
 // stubRunnerFunc replaces Runner with a custom function for tests that need
 // to control the return values.
-func stubRunnerFunc(t *testing.T, fn func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error)) {
+func stubRunnerFunc(t *testing.T, fn func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error)) {
 	t.Helper()
 	orig := Runner
 	t.Cleanup(func() { Runner = orig })

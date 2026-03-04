@@ -29,7 +29,7 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 		return nil, fmt.Errorf("rendering implementer prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv)
+	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer")
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, cfg *config.Co
 		return nil, fmt.Errorf("rendering implementer_retry prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv)
+	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer")
 	if err != nil {
 		return nil, err
 	}
@@ -88,22 +88,22 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 	}
 }
 
-// newRunOpts builds a RunOpts from a rendered prompt and config. This
+// newRunOpts builds a RunOpts from a rendered prompt, config, and role. This
 // consolidates the repeated timeout-parsing + opts-construction that every
 // agent function needs.
-func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string) (RunOpts, error) {
+func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, role string) (RunOpts, error) {
 	timeout, err := parseTimeout(cfg.AgentTimeout)
 	if err != nil {
 		return RunOpts{}, fmt.Errorf("parsing agent_timeout: %w", err)
 	}
 	return RunOpts{
-		Prompt:      rendered,
-		Env:         authEnv,
-		Image:       cfg.Docker.Image,
-		Repo:        cfg.Repo,
-		WorkDir:     "/workspace",
-		ClaudeFlags: cfg.ClaudeFlags,
-		Timeout:     timeout,
+		Prompt:  rendered,
+		Role:    role,
+		Env:     authEnv,
+		Image:   cfg.Docker.Image,
+		Repo:    cfg.Repo,
+		WorkDir: "/workspace",
+		Timeout: timeout,
 	}, nil
 }
 

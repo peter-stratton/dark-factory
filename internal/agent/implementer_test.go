@@ -17,18 +17,39 @@ func TestImplement_RendersPromptAndCallsRun(t *testing.T) {
 		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
 	}
 
-	// Verify the rendered prompt was passed to claude
+	// Verify the rendered prompt was set in GODARK_PROMPT (captured via stubRunner's output).
+	// stubRunner includes GODARK_PROMPT in its output for easy assertion.
 	joined := strings.Join(*captured, " ")
-	if !strings.Contains(joined, "Implement #42") {
-		t.Errorf("expected rendered prompt with issue number, got: %s", joined)
+	_ = joined // command is python3 <path>, prompt is in env not args
+}
+
+func TestImplement_PromptContainsIssueDetails(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
 	}
-	if !strings.Contains(joined, "add-widget-support") {
-		t.Errorf("expected slug in prompt, got: %s", joined)
+
+	prompt := capturedEnv["GODARK_PROMPT"]
+	if !strings.Contains(prompt, "Implement #42") {
+		t.Errorf("expected rendered prompt with issue number, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "add-widget-support") {
+		t.Errorf("expected slug in prompt, got: %s", prompt)
 	}
 }
 
 func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
-	captured := stubRunner(t)
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
 
 	result, err := Retry(context.Background(), testIssue(), 7, testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
@@ -38,12 +59,12 @@ func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
 	}
 
-	joined := strings.Join(*captured, " ")
-	if !strings.Contains(joined, "Retry PR #7") {
-		t.Errorf("expected retry prompt with PR number, got: %s", joined)
+	prompt := capturedEnv["GODARK_PROMPT"]
+	if !strings.Contains(prompt, "Retry PR #7") {
+		t.Errorf("expected retry prompt with PR number, got: %s", prompt)
 	}
-	if !strings.Contains(joined, "#42") {
-		t.Errorf("expected issue number in retry prompt, got: %s", joined)
+	if !strings.Contains(prompt, "#42") {
+		t.Errorf("expected issue number in retry prompt, got: %s", prompt)
 	}
 }
 
@@ -81,12 +102,15 @@ func TestBranchName(t *testing.T) {
 func TestNewRunOpts_SetsAllFields(t *testing.T) {
 	cfg := testConfig()
 	env := map[string]string{"FOO": "bar"}
-	opts, err := newRunOpts("prompt text", cfg, env)
+	opts, err := newRunOpts("prompt text", cfg, env, "implementer")
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
 	if opts.Prompt != "prompt text" {
 		t.Errorf("Prompt = %q, want %q", opts.Prompt, "prompt text")
+	}
+	if opts.Role != "implementer" {
+		t.Errorf("Role = %q, want %q", opts.Role, "implementer")
 	}
 	if opts.Image != cfg.Docker.Image {
 		t.Errorf("Image = %q, want %q", opts.Image, cfg.Docker.Image)
@@ -105,7 +129,7 @@ func TestNewRunOpts_SetsAllFields(t *testing.T) {
 func TestNewRunOpts_InvalidTimeout(t *testing.T) {
 	cfg := testConfig()
 	cfg.AgentTimeout = "bad"
-	_, err := newRunOpts("prompt", cfg, nil)
+	_, err := newRunOpts("prompt", cfg, nil, "implementer")
 	if err == nil {
 		t.Fatal("expected error for invalid timeout")
 	}
@@ -113,13 +137,10 @@ func TestNewRunOpts_InvalidTimeout(t *testing.T) {
 
 func TestImplement_BranchExistsDetection(t *testing.T) {
 	// Stub Runner (agent call) and GuardRunner (git ls-remote).
-	var capturedPrompt string
-	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
-		// The prompt is the 3rd argument: claude -p --dangerously-skip-permissions <prompt>
-		if len(args) >= 3 {
-			capturedPrompt = args[2]
-		}
-		return []byte("ok"), []byte(""), 0, nil
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
@@ -139,13 +160,15 @@ func TestImplement_BranchExistsDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
-	if !strings.Contains(capturedPrompt, "EXISTING") {
-		t.Errorf("expected BranchExists=true in prompt, got: %s", capturedPrompt)
+	// The prompt is passed via GODARK_PROMPT env var, not args.
+	prompt := capturedEnv["GODARK_PROMPT"]
+	if !strings.Contains(prompt, "EXISTING") {
+		t.Errorf("expected BranchExists=true in prompt, got: %s", prompt)
 	}
 }
 
 func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		return []byte("fail output"), []byte(""), 1, nil
 	})
 

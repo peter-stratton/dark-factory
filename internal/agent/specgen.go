@@ -20,7 +20,7 @@ func GenerateSpec(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return nil, fmt.Errorf("rendering spec_generator prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv)
+	opts, err := newRunOpts(rendered, cfg, authEnv, "spec_generator")
 	if err != nil {
 		return nil, err
 	}

@@ -25,7 +25,7 @@ func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Conf
 		return nil, fmt.Errorf("rendering reviewer prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv)
+	opts, err := newRunOpts(rendered, cfg, authEnv, "reviewer")
 	if err != nil {
 		return nil, err
 	}

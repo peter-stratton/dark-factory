@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/phs/dark-factory/internal/agent/runner"
 )
 
 // CommandRunner executes a command and returns its combined output.
@@ -35,6 +37,17 @@ func BuildImage(ctx context.Context, cfg DockerConfig, logger *slog.Logger) (str
 	dfPath := filepath.Join(tmpDir, "Dockerfile")
 	if err := os.WriteFile(dfPath, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("writing Dockerfile: %w", err)
+	}
+
+	// Write embedded agent_runner.py to the build context so the COPY
+	// directive in the Dockerfile can find it.
+	pyContent, err := runner.FS.ReadFile("agent_runner.py")
+	if err != nil {
+		return "", fmt.Errorf("reading embedded agent_runner.py: %w", err)
+	}
+	pyPath := filepath.Join(tmpDir, "agent_runner.py")
+	if err := os.WriteFile(pyPath, pyContent, 0o644); err != nil {
+		return "", fmt.Errorf("writing agent_runner.py to build context: %w", err)
 	}
 
 	out, err := CommandRunner("docker", "build", "-t", tag, "-f", dfPath, tmpDir)
