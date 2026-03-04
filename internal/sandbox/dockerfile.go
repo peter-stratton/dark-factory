@@ -58,7 +58,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 {{range .SandboxEnv}}
-ENV {{.Key}}={{.Value}}
+ENV {{.Key}}="{{.Value}}"
 {{- end}}
 
 # Install Python agent runner dependencies
@@ -80,7 +80,7 @@ type envVar struct {
 }
 
 // GenerateDockerfile renders a Dockerfile from the given DockerConfig.
-func GenerateDockerfile(cfg DockerConfig) (string, error) {
+func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 	runtimeName := cfg.Runtime.Name
 	runtimeVersion := cfg.Runtime.Version
 
@@ -96,13 +96,16 @@ func GenerateDockerfile(cfg DockerConfig) (string, error) {
 	case "node", "rust", "python", "":
 		// no validation needed
 	default:
-		slog.Warn("unknown runtime, skipping toolchain install", "runtime", runtimeName)
+		logger.Warn("unknown runtime, skipping toolchain install", "runtime", runtimeName)
 		runtimeName = ""
 	}
 
 	// Sort SandboxEnv keys for deterministic Dockerfile output.
 	sortedEnv := make([]envVar, 0, len(cfg.SandboxEnv))
 	for k, v := range cfg.SandboxEnv {
+		if strings.ContainsAny(k, "\n\r") || strings.ContainsAny(v, "\n\r") {
+			return "", fmt.Errorf("SandboxEnv key/value must not contain newlines: %q=%q", k, v)
+		}
 		sortedEnv = append(sortedEnv, envVar{Key: k, Value: v})
 	}
 	sort.Slice(sortedEnv, func(i, j int) bool {

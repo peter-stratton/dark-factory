@@ -80,7 +80,7 @@ func TestDockerConfigFromConfigDefaults(t *testing.T) {
 }
 
 func TestGenerateDockerfileDefault(t *testing.T) {
-	df, err := GenerateDockerfile(DefaultDockerConfig())
+	df, err := GenerateDockerfile(DefaultDockerConfig(), slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestGenerateDockerfileCustomImage(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Image = "debian:bookworm"
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestGenerateDockerfileCustomGoVersion(t *testing.T) {
 	cfg.Runtime.Name = "go"
 	cfg.Runtime.Version = "1.22"
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestGenerateDockerfileExtraPackages(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.ExtraPackages = []string{"vim", "jq"}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestGenerateDockerfileNonRootUser(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.User = "myuser"
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestBuildImageWritesAgentRunner(t *testing.T) {
 }
 
 func TestGenerateDockerfileIncludesPython3(t *testing.T) {
-	df, err := GenerateDockerfile(DefaultDockerConfig())
+	df, err := GenerateDockerfile(DefaultDockerConfig(), slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestGenerateDockerfileIncludesPython3(t *testing.T) {
 }
 
 func TestGenerateDockerfileIncludesPipInstall(t *testing.T) {
-	df, err := GenerateDockerfile(DefaultDockerConfig())
+	df, err := GenerateDockerfile(DefaultDockerConfig(), slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestGenerateDockerfileIncludesPipInstall(t *testing.T) {
 }
 
 func TestGenerateDockerfileCopiesAgentRunner(t *testing.T) {
-	df, err := GenerateDockerfile(DefaultDockerConfig())
+	df, err := GenerateDockerfile(DefaultDockerConfig(), slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestGenerateDockerfileGoRuntime(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "go", Version: "1.26.0"}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestGenerateDockerfileFlutterRuntime(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "flutter"}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestGenerateDockerfileNodeRuntime(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "node"}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestGenerateDockerfileRustRuntime(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "rust"}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestGenerateDockerfilePythonRuntime(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "python"}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestGenerateDockerfileEmptyRuntime(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: ""}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("empty runtime should not return error: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestGenerateDockerfileGoRequiresVersion(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "go", Version: ""}
 
-	_, err := GenerateDockerfile(cfg)
+	_, err := GenerateDockerfile(cfg, slog.Default())
 	if err == nil {
 		t.Fatal("expected error for Go runtime without version, got nil")
 	}
@@ -391,7 +391,7 @@ func TestGenerateDockerfileFlutterNoVersionUsesStable(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "flutter", Version: ""}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -404,12 +404,35 @@ func TestGenerateDockerfileSandboxEnv(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.SandboxEnv = map[string]string{"GOOS": "linux"}
 
-	df, err := GenerateDockerfile(cfg)
+	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(df, "ENV GOOS=linux") {
-		t.Error("Dockerfile missing ENV GOOS=linux from SandboxEnv")
+	if !strings.Contains(df, `ENV GOOS="linux"`) {
+		t.Error(`Dockerfile missing ENV GOOS="linux" from SandboxEnv`)
+	}
+}
+
+func TestGenerateDockerfileSandboxEnvValueWithSpaces(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.SandboxEnv = map[string]string{"FOO": "bar baz"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, `ENV FOO="bar baz"`) {
+		t.Error(`Dockerfile missing ENV FOO="bar baz" — value with spaces must be quoted`)
+	}
+}
+
+func TestGenerateDockerfileSandboxEnvNewlineRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.SandboxEnv = map[string]string{"FOO": "bar\nbaz"}
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for SandboxEnv value containing newline, got nil")
 	}
 }
 
@@ -425,7 +448,7 @@ func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 	for _, rt := range runtimes {
 		cfg := DefaultDockerConfig()
 		cfg.Runtime = rt
-		df, err := GenerateDockerfile(cfg)
+		df, err := GenerateDockerfile(cfg, slog.Default())
 		if err != nil {
 			t.Fatalf("runtime %q: unexpected error: %v", rt.Name, err)
 		}
@@ -438,14 +461,14 @@ func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 func TestImageTagChangesWithRuntime(t *testing.T) {
 	cfgGo := DefaultDockerConfig()
 	cfgGo.Runtime = config.Runtime{Name: "go", Version: "1.26.0"}
-	dfGo, err := GenerateDockerfile(cfgGo)
+	dfGo, err := GenerateDockerfile(cfgGo, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	cfgNode := DefaultDockerConfig()
 	cfgNode.Runtime = config.Runtime{Name: "node"}
-	dfNode, err := GenerateDockerfile(cfgNode)
+	dfNode, err := GenerateDockerfile(cfgNode, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
