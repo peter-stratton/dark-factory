@@ -33,6 +33,7 @@ type Config struct {
 	LogDir         string   `yaml:"log_dir"`
 
 	NoSandbox              bool `yaml:"no_sandbox"`
+	NoMerge                bool `yaml:"no_merge"`
 	QualityStrictnessDecay bool `yaml:"quality_strictness_decay"`
 
 	Docker  Docker  `yaml:"docker"`
@@ -64,6 +65,7 @@ type CLIFlags struct {
 	Repo       *string
 	MaxRetries *int
 	NoSandbox  *bool
+	NoMerge    *bool
 	Config     string
 }
 
@@ -114,6 +116,9 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.NoSandbox != nil {
 		cfg.NoSandbox = *flags.NoSandbox
+	}
+	if flags.NoMerge != nil {
+		cfg.NoMerge = *flags.NoMerge
 	}
 }
 

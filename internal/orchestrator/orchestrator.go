@@ -181,6 +181,7 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 	// Process each issue.
 	var stats struct {
 		implemented      int
+		readyToMerge     int
 		needsHumanReview int
 		failed           int
 	}
@@ -201,6 +202,9 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 				logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
 				break
 			}
+		case "ready-to-merge":
+			stats.readyToMerge++
+			fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
 		case "needs-human-review":
 			stats.needsHumanReview++
 			fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
@@ -223,8 +227,8 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 	}
 
 	fmt.Println()
-	fmt.Printf("Results: %d implemented, %d needs-human-review, %d failed, %d skipped (blocked)\n",
-		stats.implemented, stats.needsHumanReview, stats.failed, len(blocked))
+	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
+		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, len(blocked))
 
 	return nil
 }

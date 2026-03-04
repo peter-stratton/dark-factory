@@ -12,7 +12,7 @@ import (
 // IssueOutcome records the result of processing a single issue.
 type IssueOutcome struct {
 	IssueNumber int
-	Status      string // "implemented", "failed", "needs-human-review"
+	Status      string // "implemented", "ready-to-merge", "failed", "needs-human-review"
 	PRNumber    int
 	Retries     int
 	Err         error
@@ -187,6 +187,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 		switch reviewResult.Verdict {
 		case "APPROVED":
+			if cfg.NoMerge {
+				// Skip merge — human will review and merge manually.
+				slog.Info("PR approved, skipping merge (--no-merge)", "pr_number", prNum)
+				outcome.Status = "ready-to-merge"
+				outcome.Retries = attempt
+				return outcome
+			}
 			// Merge the PR.
 			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
 				outcome.Status = "failed"
