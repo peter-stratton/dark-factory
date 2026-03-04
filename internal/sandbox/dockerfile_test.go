@@ -14,8 +14,8 @@ func TestDefaultConfig(t *testing.T) {
 	if dc.Image != "ubuntu:22.04" {
 		t.Errorf("Image = %q, want ubuntu:22.04", dc.Image)
 	}
-	if dc.GoVersion != "1.23" {
-		t.Errorf("GoVersion = %q, want 1.23", dc.GoVersion)
+	if dc.GoVersion != "1.26.0" {
+		t.Errorf("GoVersion = %q, want 1.26.0", dc.GoVersion)
 	}
 	if dc.NodeVersion != "20" {
 		t.Errorf("NodeVersion = %q, want 20", dc.NodeVersion)
@@ -82,7 +82,7 @@ func TestGenerateDockerfileDefault(t *testing.T) {
 		{"claude-code", "npm install -g @anthropic-ai/claude-code"},
 		{"user directive", "USER devloop"},
 		{"workdir", "WORKDIR /workspace"},
-		{"go install", "go1.23.linux-amd64.tar.gz"},
+		{"go install", "go1.26.0.linux-amd64.tar.gz"},
 		{"node install", "setup_20.x"},
 		{"useradd", "useradd -m -s /bin/bash devloop"},
 	}
