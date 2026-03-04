@@ -59,9 +59,13 @@ async def main() -> None:
     permissions = _ROLE_PERMISSIONS[role]
 
     env: dict = {}
-    for key in ("GH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
-        if key in os.environ:
-            env[key] = os.environ[key]
+    # Prefer OAuth token over API key so the SDK uses OAuth when available.
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    elif os.environ.get("ANTHROPIC_API_KEY"):
+        env["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
+    if os.environ.get("GH_TOKEN"):
+        env["GH_TOKEN"] = os.environ["GH_TOKEN"]
 
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
@@ -83,10 +87,10 @@ async def main() -> None:
 
     async for message in claude_agent_sdk.query(prompt=prompt, options=options):
         try:
-            msg_dict = message.model_dump() if hasattr(message, "model_dump") else vars(message)
+            msg_dict = message.model_dump(mode="json") if hasattr(message, "model_dump") else vars(message)
         except Exception:
             msg_dict = {"type": type(message).__name__, "raw": str(message)}
-        print(json.dumps(msg_dict), flush=True)
+        print(json.dumps(msg_dict, default=str), flush=True)
 
         if isinstance(message, ResultMessage):
             result_session_id = getattr(message, "session_id", "") or ""
