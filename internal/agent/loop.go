@@ -61,6 +61,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return outcome
 	}
 
+	// Capture session ID so retries can resume the agent's context.
+	sessionID := implResult.SessionID
+
 	// Step 2: Find PR.
 	prNum, err := FindPR(cfg.Repo, branch)
 	if err != nil {
@@ -128,7 +131,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				"retries_left", retriesLeft,
 			)
 
-			retryResult, err := Retry(ctx, issue, prNum, cfg, prompts, authEnv, logger)
+			retryResult, err := Retry(ctx, issue, prNum, sessionID, cfg, prompts, authEnv, logger)
 			if err != nil {
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("retry agent: %w", err)
@@ -139,6 +142,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Err = fmt.Errorf("retry agent timed out")
 				return outcome
 			}
+
+			// Update session ID so the next retry can resume this session's context.
+			sessionID = retryResult.SessionID
 
 			// Re-check drift after retry.
 			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {

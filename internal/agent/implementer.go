@@ -45,7 +45,9 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 
 // Retry runs the implementer agent in retry mode for an existing PR.
 // It renders the retry prompt with the PR number and invokes Run.
-func Retry(ctx context.Context, issue github.Issue, prNumber int, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+// prevSessionID, if non-empty, is passed as GODARK_SESSION_ID so the agent
+// can resume its previous session context.
+func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
 	data := newPromptData(issue, cfg, slug)
 	data.PRNumber = prNumber
@@ -60,9 +62,14 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, cfg *config.Co
 		return nil, err
 	}
 
+	if prevSessionID != "" {
+		opts.Env["GODARK_SESSION_ID"] = prevSessionID
+	}
+
 	logger.Info("starting implementer retry agent",
 		"issue_number", issue.Number,
 		"pr_number", prNumber,
+		"resume_session", prevSessionID != "",
 	)
 
 	return Run(ctx, opts, cfg.NoSandbox, logger)

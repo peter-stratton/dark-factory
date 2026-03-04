@@ -402,3 +402,153 @@ func TestProcessIssue_SkipsSpecGenWhenNoPrompt(t *testing.T) {
 		t.Errorf("expected 2 agent calls (implement + review), got %d", agentCallCount)
 	}
 }
+
+// loopGuardFn returns a GuardRunner stub for standard loop tests (rev-parse, PR view, diff).
+func loopGuardFn(name string, args ...string) ([]byte, error) {
+	joined := strings.Join(args, " ")
+	if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+		return []byte("abc123\n"), nil
+	}
+	if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+		return []byte(`{"number": 10}`), nil
+	}
+	if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+		return []byte(`{"body": "Closes #5"}`), nil
+	}
+	if name == "git" && strings.Contains(joined, "diff --name-only") {
+		return []byte("src/main.go\n"), nil
+	}
+	return []byte(""), nil
+}
+
+func TestProcessIssue_PassesSessionIDToFirstRetry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var retryEnv map[string]string
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer — returns a session ID
+			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // reviewer — requests changes
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 3: // first retry — capture env
+			retryEnv = make(map[string]string, len(env))
+			for k, v := range env {
+				retryEnv[k] = v
+			}
+			out := `{"session_id":"sess-retry-002","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		default: // reviewer after retry — approve
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+
+	if retryEnv == nil {
+		t.Fatal("retry was never called")
+	}
+	if retryEnv["GODARK_SESSION_ID"] != "sess-impl-001" {
+		t.Errorf("GODARK_SESSION_ID passed to first retry = %q, want %q", retryEnv["GODARK_SESSION_ID"], "sess-impl-001")
+	}
+}
+
+func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var secondRetryEnv map[string]string
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // reviewer — changes requested
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 3: // first retry — returns its own session ID
+			out := `{"session_id":"sess-retry-1","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 4: // reviewer — changes requested again
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 5: // second retry — capture env
+			secondRetryEnv = make(map[string]string, len(env))
+			for k, v := range env {
+				secondRetryEnv[k] = v
+			}
+			out := `{"session_id":"sess-retry-2","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		default: // reviewer after second retry — approve
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+
+	if secondRetryEnv == nil {
+		t.Fatal("second retry was never called")
+	}
+	if secondRetryEnv["GODARK_SESSION_ID"] != "sess-retry-1" {
+		t.Errorf("GODARK_SESSION_ID passed to second retry = %q, want %q", secondRetryEnv["GODARK_SESSION_ID"], "sess-retry-1")
+	}
+}
+
+func TestProcessIssue_ReviewerHasNoSessionID(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var reviewerEnvs []map[string]string
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer — returns a session ID
+			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		default: // reviewer calls — capture env
+			captured := make(map[string]string, len(env))
+			for k, v := range env {
+				captured[k] = v
+			}
+			reviewerEnvs = append(reviewerEnvs, captured)
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+
+	if len(reviewerEnvs) == 0 {
+		t.Fatal("reviewer was never called")
+	}
+	for i, env := range reviewerEnvs {
+		if _, ok := env["GODARK_SESSION_ID"]; ok {
+			t.Errorf("reviewer call %d should not receive GODARK_SESSION_ID, got %q", i+1, env["GODARK_SESSION_ID"])
+		}
+	}
+}
