@@ -105,12 +105,17 @@ func ClosePR(repo string, prNum int, reason string) error {
 // ParseReviewResult scans the agent stdout for a REVIEW_RESULT line and
 // returns "APPROVED", "CHANGES_REQUESTED", or "" if not found.
 func ParseReviewResult(stdout string) string {
-	for _, line := range strings.Split(stdout, "\n") {
+	upper := strings.ToUpper(stdout)
+	for _, line := range strings.Split(upper, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "REVIEW_RESULT=APPROVED" {
+		// Accept both "REVIEW_RESULT=APPROVED" and "REVIEW RESULT: APPROVED" etc.
+		if strings.Contains(line, "APPROVED") && strings.Contains(line, "REVIEW") && strings.Contains(line, "RESULT") {
+			if strings.Contains(line, "CHANGES") {
+				return "CHANGES_REQUESTED"
+			}
 			return "APPROVED"
 		}
-		if line == "REVIEW_RESULT=CHANGES_REQUESTED" {
+		if strings.Contains(line, "CHANGES_REQUESTED") && strings.Contains(line, "REVIEW") {
 			return "CHANGES_REQUESTED"
 		}
 	}

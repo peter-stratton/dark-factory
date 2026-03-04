@@ -222,6 +222,15 @@ improve overall code quality in the dev loop.
 - Gives early notice that a new major/minor SDK version is available and may
   require migration work before the pin can be bumped
 
+### `godark doctor` command
+- Pre-flight check that verifies all system dependencies and environment
+  variables are in place before running the dev loop
+- Check for: Docker daemon running, `gh` CLI installed and authenticated,
+  `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` set, Go toolchain
+  available, Node.js available, Python 3 available
+- Print a pass/fail checklist with actionable fix instructions for each failure
+- Exit non-zero if any required check fails
+
 ### Configurable lint gate
 - Run a configurable lint command (e.g., `golangci-lint run`) as an additional
   quality gate after the implementer finishes, before review

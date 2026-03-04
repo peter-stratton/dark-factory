@@ -28,12 +28,13 @@ type RunOpts struct {
 
 // Result holds the outcome of an agent run.
 type Result struct {
-	ExitCode  int
-	Stdout    string
-	Stderr    string
-	TimedOut  bool
-	SessionID string
-	CostUSD   float64
+	ExitCode   int
+	Stdout     string
+	Stderr     string
+	TimedOut   bool
+	SessionID  string
+	CostUSD    float64
+	ResultText string // agent's final text output (from SDK result message)
 }
 
 // Runner executes a command on the host with the given environment. Replaceable for testing.
@@ -134,6 +135,7 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 	if parsed := parseRunnerOutput(string(stdout)); parsed != nil {
 		res.SessionID = parsed.SessionID
 		res.CostUSD = parsed.CostUSD
+		res.ResultText = parsed.Result
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}
@@ -195,6 +197,7 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {
 		res.SessionID = parsed.SessionID
 		res.CostUSD = parsed.CostUSD
+		res.ResultText = parsed.Result
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}

@@ -40,7 +40,7 @@ func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Conf
 		return nil, fmt.Errorf("running reviewer agent: %w", err)
 	}
 
-	verdict := ParseReviewResult(result.Stdout)
+	verdict := ParseReviewResult(result.ResultText)
 	logger.Info("reviewer finished",
 		"issue_number", issue.Number,
 		"pr_number", prNum,

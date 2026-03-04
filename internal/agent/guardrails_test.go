@@ -286,6 +286,30 @@ func TestParseReviewResult_WhitespaceHandling(t *testing.T) {
 	}
 }
 
+func TestParseReviewResult_ColonFormat(t *testing.T) {
+	stdout := "REVIEW RESULT: APPROVED\n"
+	got := ParseReviewResult(stdout)
+	if got != "APPROVED" {
+		t.Errorf("ParseReviewResult() = %q, want %q", got, "APPROVED")
+	}
+}
+
+func TestParseReviewResult_ColonFormatChanges(t *testing.T) {
+	stdout := "REVIEW RESULT: CHANGES_REQUESTED\n"
+	got := ParseReviewResult(stdout)
+	if got != "CHANGES_REQUESTED" {
+		t.Errorf("ParseReviewResult() = %q, want %q", got, "CHANGES_REQUESTED")
+	}
+}
+
+func TestParseReviewResult_CaseInsensitive(t *testing.T) {
+	stdout := "Review Result: Approved\n"
+	got := ParseReviewResult(stdout)
+	if got != "APPROVED" {
+		t.Errorf("ParseReviewResult() = %q, want %q", got, "APPROVED")
+	}
+}
+
 func TestHasScenarioSpec_SkipsNonMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("Relates to: Issue #5\n"), 0o644); err != nil {

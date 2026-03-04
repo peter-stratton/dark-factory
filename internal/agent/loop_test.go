@@ -44,7 +44,7 @@ func setupLoopTest(t *testing.T, agentOutputs []string, guardFn func(name string
 
 	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		out := stubs.nextAgentOutput()
-		return []byte(out), []byte(""), 0, nil
+		return []byte(wrapRunnerJSON(out)), []byte(""), 0, nil
 	}
 
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
@@ -386,9 +386,9 @@ func TestProcessIssue_SkipsSpecGenWhenNoPrompt(t *testing.T) {
 	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		agentCallCount++
 		if agentCallCount == 2 {
-			return []byte("reviewer output\nREVIEW_RESULT=APPROVED\n"), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("reviewer output\nREVIEW_RESULT=APPROVED\n")), []byte(""), 0, nil
 		}
-		return []byte("implementer output"), []byte(""), 0, nil
+		return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 	}
 
 	// No SpecGenerator prompt → should only have 2 agent calls (implement + review).

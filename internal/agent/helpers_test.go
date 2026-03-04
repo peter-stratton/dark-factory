@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"testing"
@@ -9,6 +10,14 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
 )
+
+// wrapRunnerJSON wraps agent text output in the ndjson final result line
+// that parseRunnerOutput expects from agent_runner.py.
+func wrapRunnerJSON(text string) string {
+	final := runnerFinalResult{Result: text}
+	b, _ := json.Marshal(final)
+	return string(b)
+}
 
 // testLogger returns a logger that only emits errors, suitable for tests.
 func testLogger(t *testing.T) *slog.Logger {
