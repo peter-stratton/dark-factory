@@ -111,6 +111,42 @@ class TestProtectedPathHook(unittest.TestCase):
         self.assertNotEqual(result.get("decision"), "block")
 
 
+class TestProtectedPathHookBash(unittest.TestCase):
+    """Tests for the Bash tool handling in make_protected_path_hook."""
+
+    def _call_bash(self, hook, command: str) -> dict:
+        hook_input = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "tool_use_id": "tu_003",
+            "session_id": "sess_001",
+            "transcript_path": "/tmp/transcript",
+            "cwd": "/workspace",
+        }
+        return run(hook(hook_input, "Write|Edit|Bash", None))
+
+    def test_bash_referencing_protected_file_blocked(self):
+        hook = make_protected_path_hook(["CLAUDE.md", "tests/scenarios/"])
+        result = self._call_bash(hook, "echo 'hi' > CLAUDE.md")
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_bash_referencing_protected_dir_blocked(self):
+        hook = make_protected_path_hook(["CLAUDE.md", "tests/scenarios/"])
+        result = self._call_bash(hook, "rm tests/scenarios/foo.md")
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_bash_safe_command_allowed(self):
+        hook = make_protected_path_hook(["CLAUDE.md", "tests/scenarios/"])
+        result = self._call_bash(hook, "go test ./...")
+        self.assertNotEqual(result.get("decision"), "block")
+
+    def test_bash_empty_command_allowed(self):
+        hook = make_protected_path_hook(["CLAUDE.md"])
+        result = self._call_bash(hook, "")
+        self.assertNotEqual(result.get("decision"), "block")
+
+
 class TestAuditHook(unittest.TestCase):
     """Tests for the make_audit_hook PostToolUse hook."""
 

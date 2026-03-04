@@ -86,8 +86,17 @@ func CheckProtectedDrift(baseSHA string, protectedPaths []string) ([]string, err
 
 	var touched []string
 	for _, p := range protectedPaths {
-		if changed[p] {
-			touched = append(touched, p)
+		if strings.HasSuffix(p, "/") {
+			// Directory prefix: find any changed file under this directory.
+			for f := range changed {
+				if strings.HasPrefix(f, p) {
+					touched = append(touched, f)
+				}
+			}
+		} else {
+			if changed[p] {
+				touched = append(touched, p)
+			}
 		}
 	}
 	return touched, nil

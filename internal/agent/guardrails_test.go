@@ -135,6 +135,23 @@ func TestCheckProtectedDrift_EmptyWhenClean(t *testing.T) {
 	}
 }
 
+func TestCheckProtectedDrift_DirectoryPrefix(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte("tests/scenarios/new-spec.md\nsrc/main.go\n"), nil
+	})
+
+	touched, err := CheckProtectedDrift("abc123", []string{"tests/scenarios/"})
+	if err != nil {
+		t.Fatalf("CheckProtectedDrift() error = %v", err)
+	}
+	if len(touched) != 1 {
+		t.Fatalf("expected 1 touched file, got %d: %v", len(touched), touched)
+	}
+	if touched[0] != "tests/scenarios/new-spec.md" {
+		t.Errorf("expected 'tests/scenarios/new-spec.md', got %q", touched[0])
+	}
+}
+
 func TestHasScenarioSpec_Found(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("Relates to: Issue #5\n"), 0o644); err != nil {

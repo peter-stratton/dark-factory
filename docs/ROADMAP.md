@@ -165,29 +165,89 @@ inside the container image.
 
 ---
 
-## Phase 6: Run Review Dashboard
+## Phase 6: Multi-Language Support
+
+**Goal**: `godark` can orchestrate agents against non-Go projects. The
+Dockerfile, config, and prompts are language-agnostic; project type is
+auto-detected or configured explicitly.
+
+**Milestone**: `Phase 6` | **Label**: `phase-6`
+
+### Auto-detect project type
+- Scan target repo for language markers: `go.mod` (Go), `pubspec.yaml`
+  (Flutter/Dart), `package.json` (Node), `Cargo.toml` (Rust),
+  `requirements.txt`/`pyproject.toml` (Python)
+- Set sensible default `build_command` and `test_command` per detected type
+- Allow explicit override in `godark.yaml` (config always wins over detection)
+- Subsumes issue #33 (auto-detect Go version) into broader auto-detect
+
+### Generic runtime config
+- Replace `GoVersion` and `CrossCompile{GOOS, GOARCH}` with a `runtime:` block:
+  ```yaml
+  runtime:
+    name: flutter    # go | flutter | node | rust | python
+    version: "3.41"  # optional — auto-detected if omitted
+  ```
+- Preserve backwards compatibility: if `go_version` is set in existing configs,
+  treat it as `runtime: {name: go, version: "<value>"}`
+- Move `CrossCompile` env vars into a generic `sandbox_env:` map
+
+### Pluggable Dockerfile generation
+- Refactor `dockerfile.go` to select a toolchain install stanza based on
+  `runtime.name` instead of hardcoding the Go tarball download
+- Supported runtimes at launch: Go, Flutter/Dart, Node
+- Each runtime provides: base packages, SDK install commands, PATH setup
+- Runtime stanzas are Go templates, not external files (keep it simple)
+
+### Language-aware reviewer prompt
+- Replace hardcoded `go test ./{{.ReviewDir}} -v` in `reviewer.txt` with
+  `{{.TestCommand}}` (already used by the implementer prompt)
+- Make review test generation language-aware: reviewer prompt should reference
+  the detected language so it generates tests in the right framework
+  (Go tests, Dart tests, Jest, etc.)
+
+### Cleanup
+- Remove `GoVersion` field from `DockerConfig` and `Config` structs
+- Remove `CrossCompile` struct; replace with `SandboxEnv map[string]string`
+- Update `godark doctor` checklist references (Phase 8) to be runtime-aware
+- Update docs (`CONTEXT.md`, `README.md`) to reflect multi-language support
+
+---
+
+## Phase 7: Run Review Dashboard
 
 **Goal**: `godark status` serves a local web UI for reviewing dev-loop runs,
 making it easy for humans to spot-check agent work.
 
-**Milestone**: `Phase 6` | **Label**: `phase-6`
+**Milestone**: `Phase 7` | **Label**: `phase-7`
 
 - Local web server serving a review dashboard
 - Homepage: list of dev-loop runs with summary stats (issues processed, pass/fail counts)
 - Run detail view: per-issue outcomes (implemented, skipped, failed, retry count)
 - GitHub diff links for each PR (easy human spot-checking)
-- Manual test punchlist generation at end of each dev-loop run
 - Log viewer (parsed JSON structured logs with filtering)
+
+### Manual testing punchlist
+- At the end of each `godark run` or `godark implement` call, generate a
+  human-readable punchlist of manual verification steps for each merged PR
+- Derive punchlist items from the issue body, scenario specs, and the PR diff
+  (e.g., "Verify the new button appears on the settings page")
+- Output to stdout as a numbered checklist and optionally write to a file
+  (`--punchlist <path>`)
+- Include PR links and relevant file paths so the user can jump straight to
+  what needs manual verification
+- Focus on things automated tests can't catch: UI appearance, UX flows,
+  integration with external services, deployment behavior
 
 ---
 
-## Phase 7: Review Quality & Code Quality Gates
+## Phase 8: Review Quality & Code Quality Gates
 
 **Goal**: Ensure the reviewer agent is doing genuine, thorough work — not
 rubberstamping. Add automated quality gates that catch shallow reviews and
 improve overall code quality in the dev loop.
 
-**Milestone**: `Phase 7` | **Label**: `phase-7`
+**Milestone**: `Phase 8` | **Label**: `phase-8`
 
 ### Review depth validation
 - Tool trace floor: reject reviews where the reviewer didn't read the PR diff,
@@ -201,7 +261,7 @@ improve overall code quality in the dev loop.
 - Hard gate: reviewer must create and run ephemeral tests in `tests/review/`
   for the review to count — no tests means automatic `CHANGES_REQUESTED`
 - Verify via PostToolUse audit trace: scan for Write to `tests/review/` and
-  Bash with `go test ./tests/review/`
+  Bash with the configured `test_command`
 
 ### Canary defect injection
 - Before review, inject a known trivial bug into the PR (e.g., a syntax error
@@ -226,8 +286,8 @@ improve overall code quality in the dev loop.
 - Pre-flight check that verifies all system dependencies and environment
   variables are in place before running the dev loop
 - Check for: Docker daemon running, `gh` CLI installed and authenticated,
-  `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` set, Go toolchain
-  available, Node.js available, Python 3 available
+  `ANTHROPIC_API_KEY` set, detected runtime toolchain available,
+  Python 3 available
 - Print a pass/fail checklist with actionable fix instructions for each failure
 - Exit non-zero if any required check fails
 

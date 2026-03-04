@@ -67,24 +67,53 @@ def _is_protected(file_path: str, protected_paths: list[str]) -> str | None:
 
 
 def make_protected_path_hook(protected_paths: list[str]):
-    """Return an async PreToolUse hook that blocks writes to protected paths."""
+    """Return an async PreToolUse hook that blocks writes to protected paths.
+
+    For Write/Edit tools: checks tool_input.file_path against protected paths.
+    For Bash tool: heuristically checks if the command string references any
+    protected path (catches direct references like ``echo > CLAUDE.md``).
+    """
 
     async def hook(hook_input: PreToolUseHookInput, matcher: str | None, ctx) -> dict:
-        file_path = hook_input.get("tool_input", {}).get("file_path", "")
-        if not file_path:
+        tool_name = hook_input.get("tool_name", "")
+        tool_input = hook_input.get("tool_input", {})
+
+        if tool_name in ("Write", "Edit"):
+            file_path = tool_input.get("file_path", "")
+            if not file_path:
+                return {}
+            matched = _is_protected(file_path, protected_paths)
+            if matched is None:
+                return {}
+            return {
+                "decision": "block",
+                "systemMessage": (
+                    f"Cannot modify protected path: {file_path}. "
+                    f"This path is listed in GODARK_PROTECTED_PATHS ({matched!r}) "
+                    "and must not be modified by implementing agents. "
+                    "Please adjust your approach to avoid writing to this path."
+                ),
+            }
+
+        if tool_name == "Bash":
+            command = tool_input.get("command", "")
+            if not command:
+                return {}
+            for p in protected_paths:
+                prefix = p.rstrip("/")
+                if prefix in command:
+                    return {
+                        "decision": "block",
+                        "systemMessage": (
+                            f"Cannot run Bash command referencing protected path: {p!r}. "
+                            f"The command contains a reference to a protected path "
+                            "and must not be used to modify protected files. "
+                            "Please adjust your approach."
+                        ),
+                    }
             return {}
-        matched = _is_protected(file_path, protected_paths)
-        if matched is None:
-            return {}
-        return {
-            "decision": "block",
-            "systemMessage": (
-                f"Cannot modify protected path: {file_path}. "
-                f"This path is listed in GODARK_PROTECTED_PATHS ({matched!r}) "
-                "and must not be modified by implementing agents. "
-                "Please adjust your approach to avoid writing to this path."
-            ),
-        }
+
+        return {}
 
     return hook
 
@@ -143,7 +172,7 @@ async def main() -> None:
     if protected_paths:
         hooks["PreToolUse"] = [
             HookMatcher(
-                matcher="Write|Edit",
+                matcher="Write|Edit|Bash",
                 hooks=[make_protected_path_hook(protected_paths)],
             )
         ]
