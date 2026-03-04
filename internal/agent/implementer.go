@@ -55,7 +55,7 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, cfg *config.Co
 		return nil, fmt.Errorf("rendering implementer_retry prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer_retry")
 	if err != nil {
 		return nil, err
 	}

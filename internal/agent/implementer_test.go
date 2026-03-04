@@ -167,6 +167,40 @@ func TestImplement_BranchExistsDetection(t *testing.T) {
 	}
 }
 
+func TestImplement_SetsImplementerRole(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
+	}
+
+	if capturedEnv["GODARK_ROLE"] != "implementer" {
+		t.Errorf("GODARK_ROLE = %q, want %q", capturedEnv["GODARK_ROLE"], "implementer")
+	}
+}
+
+func TestRetry_SetsImplementerRetryRole(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	_, err := Retry(context.Background(), testIssue(), 7, testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Retry() error = %v", err)
+	}
+
+	if capturedEnv["GODARK_ROLE"] != "implementer_retry" {
+		t.Errorf("GODARK_ROLE = %q, want %q", capturedEnv["GODARK_ROLE"], "implementer_retry")
+	}
+}
+
 func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		return []byte("fail output"), []byte(""), 1, nil

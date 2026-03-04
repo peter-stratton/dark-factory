@@ -34,6 +34,27 @@ func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 	}
 }
 
+func TestGenerateSpec_SetsSpecGeneratorRole(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	prompts := &Prompts{
+		SpecGenerator: "Generate spec for #{{.IssueNumber}}",
+	}
+
+	_, err := GenerateSpec(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("GenerateSpec() error = %v", err)
+	}
+
+	if capturedEnv["GODARK_ROLE"] != "spec_generator" {
+		t.Errorf("GODARK_ROLE = %q, want %q", capturedEnv["GODARK_ROLE"], "spec_generator")
+	}
+}
+
 func TestGenerateSpec_InvalidTimeout(t *testing.T) {
 	stubRunner(t)
 
