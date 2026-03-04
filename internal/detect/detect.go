@@ -2,8 +2,10 @@ package detect
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,10 +80,32 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 	return nil, fmt.Errorf("could not detect project type: no known marker files found in %s", repoPath)
 }
 
+// ApplyToConfig runs detection if no runtime or commands are explicitly configured,
+// and applies the detected values to cfg, logging results to logger.
+func ApplyToConfig(cfg *config.Config, logger *slog.Logger) {
+	if cfg.Runtime.Name != "" || cfg.BuildCommand != "" || cfg.TestCommand != "" {
+		return
+	}
+	dp, err := DetectRuntime(".")
+	if err != nil {
+		logger.Info("project type detection failed, continuing without defaults", "error", err)
+		return
+	}
+	cfg.Runtime = dp.Runtime
+	cfg.BuildCommand = dp.BuildCommand
+	cfg.TestCommand = dp.TestCommand
+	logger.Info("auto-detected project type",
+		"runtime", dp.Runtime.Name,
+		"version", dp.Runtime.Version,
+		"build_command", dp.BuildCommand,
+		"test_command", dp.TestCommand,
+	)
+}
+
 // parseGoMod extracts the Go version from go.mod content.
 // Returns an empty string if no "go <version>" directive is found.
 func parseGoMod(data []byte) string {
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "go ") {

@@ -75,21 +75,7 @@ loop directly, without milestone or dependency resolution.`,
 		}
 
 		// Auto-detect project type when no runtime/commands are explicitly configured.
-		if cfg.Runtime.Name == "" && cfg.BuildCommand == "" && cfg.TestCommand == "" {
-			if dp, err := detect.DetectRuntime("."); err != nil {
-				logger.Info("project type detection failed, continuing without defaults", "error", err)
-			} else {
-				cfg.Runtime = dp.Runtime
-				cfg.BuildCommand = dp.BuildCommand
-				cfg.TestCommand = dp.TestCommand
-				logger.Info("auto-detected project type",
-					"runtime", dp.Runtime.Name,
-					"version", dp.Runtime.Version,
-					"build_command", dp.BuildCommand,
-					"test_command", dp.TestCommand,
-				)
-			}
-		}
+		detect.ApplyToConfig(cfg, logger)
 
 		authEnv, err := sandbox.CollectAuthEnv(logger)
 		if err != nil {
