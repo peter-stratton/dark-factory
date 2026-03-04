@@ -69,10 +69,10 @@ func (r *Report) ExitCode() int {
 }
 
 // Print writes a human-readable table of findings to w.
-// If there are no findings, it prints "No issues found."
+// If there are no findings, it prints "All checks passed."
 func (r *Report) Print(w io.Writer) {
 	if len(r.findings) == 0 {
-		fmt.Fprintln(w, "No issues found.")
+		fmt.Fprintln(w, "All checks passed.")
 		return
 	}
 

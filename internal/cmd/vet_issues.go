@@ -24,6 +24,9 @@ var vetIssuesCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("fetching milestone issues: %w", err)
 		}
+		if len(issues) == 0 {
+			return fmt.Errorf("no open issues found for milestone %q — check that the milestone exists and has open issues", milestone)
+		}
 
 		allNums, err := github.FetchAllIssueNumbers(repo)
 		if err != nil {

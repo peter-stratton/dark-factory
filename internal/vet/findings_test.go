@@ -52,8 +52,8 @@ func TestReportPrint_Empty(t *testing.T) {
 	r := &Report{}
 	var buf bytes.Buffer
 	r.Print(&buf)
-	if got := buf.String(); !strings.Contains(got, "No issues found.") {
-		t.Errorf("Print() = %q, want 'No issues found.'", got)
+	if got := buf.String(); !strings.Contains(got, "All checks passed.") {
+		t.Errorf("Print() = %q, want 'All checks passed.'", got)
 	}
 }
 
