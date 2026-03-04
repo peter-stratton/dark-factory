@@ -8,3 +8,4 @@ build:
 
 install: build
 	cp bin/godark ~/bin/godark
+	codesign --force --sign - ~/bin/godark
