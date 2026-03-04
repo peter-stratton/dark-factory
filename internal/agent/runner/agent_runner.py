@@ -7,7 +7,7 @@ structured result line.
 
 Environment variables:
   GODARK_PROMPT          The prompt text to send to the agent
-  GODARK_ROLE            Agent role: implementer, reviewer, or spec_generator
+  GODARK_ROLE            Agent role: implementer, implementer_retry, reviewer, or spec_generator
   GODARK_SESSION_ID      Session ID for resuming a previous session
   GODARK_WORKDIR         Working directory (default: /workspace)
   GH_TOKEN               GitHub token forwarded to the agent environment
@@ -21,11 +21,42 @@ import sys
 import claude_agent_sdk
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage
 
+# Role-scoped tool permissions. Each role maps to allowed_tools and optionally
+# disallowed_tools. disallowed_tools are hard-denied even if allowed_tools
+# would otherwise permit them.
+_ROLE_PERMISSIONS: dict[str, dict] = {
+    "implementer": {
+        "allowed_tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+    },
+    "implementer_retry": {
+        "allowed_tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+    },
+    "reviewer": {
+        "allowed_tools": ["Read", "Glob", "Grep", "Bash"],
+        "disallowed_tools": ["Write", "Edit"],
+    },
+    "spec_generator": {
+        "allowed_tools": ["Read", "Write", "Glob", "Grep"],
+        "disallowed_tools": ["Bash"],
+    },
+}
+
 
 async def main() -> None:
     prompt = os.environ.get("GODARK_PROMPT", "")
+    role = os.environ.get("GODARK_ROLE", "")
     session_id = os.environ.get("GODARK_SESSION_ID", "")
     work_dir = os.environ.get("GODARK_WORKDIR", "/workspace")
+
+    if role not in _ROLE_PERMISSIONS:
+        valid = ", ".join(sorted(_ROLE_PERMISSIONS.keys()))
+        print(
+            f"error: unknown GODARK_ROLE {role!r}; valid roles are: {valid}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    permissions = _ROLE_PERMISSIONS[role]
 
     env: dict = {}
     for key in ("GH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
@@ -38,6 +69,8 @@ async def main() -> None:
         system_prompt={"type": "preset", "preset": "claude_code"},
         cwd=work_dir,
         env=env if env else None,
+        allowed_tools=permissions.get("allowed_tools"),
+        disallowed_tools=permissions.get("disallowed_tools"),
     )
 
     if session_id:
