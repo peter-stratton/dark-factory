@@ -660,6 +660,143 @@ func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
 	}
 }
 
+func TestProcessIssue_NoMerge_SkipsMergeOnApproval(t *testing.T) {
+	var mergeCallCount int
+	cfg := loopConfig()
+	cfg.NoMerge = true
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			mergeCallCount++
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "ready-to-merge", outcome.Err)
+	}
+	if mergeCallCount != 0 {
+		t.Errorf("gh pr merge was called %d time(s), want 0 when NoMerge=true", mergeCallCount)
+	}
+	if outcome.PRNumber != 10 {
+		t.Errorf("PRNumber = %d, want 10", outcome.PRNumber)
+	}
+}
+
+func TestProcessIssue_NoMerge_OutcomeStatus(t *testing.T) {
+	cfg := loopConfig()
+	cfg.NoMerge = true
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q", outcome.Status, "ready-to-merge")
+	}
+}
+
+func TestProcessIssue_NoMerge_DefaultMerges(t *testing.T) {
+	// Without NoMerge, approved PR should still be merged.
+	var mergeCallCount int
+	cfg := loopConfig() // NoMerge defaults to false
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			mergeCallCount++
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if mergeCallCount != 1 {
+		t.Errorf("gh pr merge was called %d time(s), want 1 when NoMerge=false", mergeCallCount)
+	}
+}
+
+func TestProcessIssue_NoMerge_QualityReviewStillRuns(t *testing.T) {
+	// With NoMerge=true, quality review should still execute normally.
+	cfg := loopConfig()
+	cfg.NoMerge = true
+
+	agentCallCount := 0
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		agentCallCount++
+		switch agentCallCount {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer
+			if env["GODARK_ROLE"] != "quality_reviewer" {
+				return []byte(wrapRunnerJSON("unexpected role: " + env["GODARK_ROLE"])), []byte(""), 0, nil
+			}
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q", outcome.Status, "ready-to-merge")
+	}
+	if agentCallCount < 3 {
+		t.Errorf("expected at least 3 agent calls (implement + quality + review), got %d", agentCallCount)
+	}
+}
+
 func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 	agentCallCount := 0
 	setupLoopTest(t, nil, func(name string, args ...string) ([]byte, error) {

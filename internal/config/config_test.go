@@ -319,6 +319,56 @@ no_sandbox: false
 	}
 }
 
+func TestNoMergeDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NoMerge {
+		t.Error("NoMerge should default to false")
+	}
+}
+
+func TestNoMergeFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+
+no_merge: true
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.NoMerge {
+		t.Error("NoMerge = false, want true from YAML")
+	}
+}
+
+func TestNoMergeFlagOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+
+no_merge: false
+`)
+
+	cfg, err := Load(path, CLIFlags{NoMerge: boolPtr(true)})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.NoMerge {
+		t.Error("NoMerge = false, want true (flag should override)")
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

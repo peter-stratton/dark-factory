@@ -37,6 +37,10 @@ each unblocked issue through the implement → review → merge loop.`,
 			v, _ := cmd.Flags().GetBool("no-sandbox")
 			flags.NoSandbox = &v
 		}
+		if cmd.Flags().Changed("no-merge") {
+			v, _ := cmd.Flags().GetBool("no-merge")
+			flags.NoMerge = &v
+		}
 
 		// Parse milestone/issue locally — these are per-run params, not config.
 		var milestone string
@@ -105,6 +109,7 @@ func init() {
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles per issue")
 	f.Bool("dry-run", false, "Print execution plan without taking action")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
+	f.Bool("no-merge", false, "Skip PR merge after approval (human reviews and merges manually)")
 	f.String("config", "godark.yaml", "Path to configuration file")
 
 	rootCmd.AddCommand(runCmd)
