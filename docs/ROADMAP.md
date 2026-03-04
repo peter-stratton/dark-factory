@@ -65,7 +65,7 @@ confined environment.
 
 ---
 
-## Phase 4: Agent Execution
+## Phase 4: Agent Execution ✅
 
 **Goal**: `godark run --milestone "M" --repo owner/repo` autonomously implements,
 reviews, and merges GitHub issues using Claude Code agents inside Docker
@@ -108,11 +108,11 @@ before implementation begins.
 - `godark implement <issue-number>` — direct single-issue command (no milestone/deps)
 - Summary stats at end (implemented, skipped, failed)
 
-**Issues**: #29 (closed); remaining issues not yet created
+**Issues**: #29 (closed); remaining work completed without formal issue tracking
 
 ---
 
-## Phase 5: Agent SDK Migration
+## Phase 5: Agent SDK Migration ✅
 
 **Goal**: Replace the `claude -p` shell invocation layer with the Claude Agent
 SDK (`claude-agent-sdk`), running inside the existing Docker container. The Go
@@ -165,7 +165,7 @@ inside the container image.
 
 ---
 
-## Phase 6: Multi-Language Support
+## Phase 6: Multi-Language Support ✅
 
 **Goal**: `godark` can orchestrate agents against non-Go projects. The
 Dockerfile, config, and prompts are language-agnostic; project type is
@@ -216,92 +216,42 @@ auto-detected or configured explicitly.
 
 ---
 
-## Phase 7: Run Review Dashboard
+## Phase 7: Review Quality & Dashboard
 
-**Goal**: `godark status` serves a local web UI for reviewing dev-loop runs,
-making it easy for humans to spot-check agent work.
+**Goal**: Capture review telemetry, report on review quality metrics, and
+surface it all in a local web dashboard for human spot-checking.
 
 **Milestone**: `Phase 7` | **Label**: `phase-7`
 
-- Local web server serving a review dashboard
-- Homepage: list of dev-loop runs with summary stats (issues processed, pass/fail counts)
-- Run detail view: per-issue outcomes (implemented, skipped, failed, retry count)
-- GitHub diff links for each PR (easy human spot-checking)
-- Log viewer (parsed JSON structured logs with filtering)
+### Run data
+- Structured JSON files written to `~/.godark/runs/<owner>/<repo>/<timestamp>/`
+- Per-run metadata (config, milestone, issue list, summary stats)
+- Per-issue outcome files with per-step telemetry (implement, QA review
+  cycles, retries, functional review)
+- Debug log (`debug.log`) co-located in the run directory (replaces `logs/`)
+- Both `godark run` and `godark implement` write the same format
 
-### Manual testing punchlist
-- At the end of each `godark run` or `godark implement` call, generate a
-  human-readable punchlist of manual verification steps for each merged PR
-- Derive punchlist items from the issue body, scenario specs, and the PR diff
-  (e.g., "Verify the new button appears on the settings page")
-- Output to stdout as a numbered checklist and optionally write to a file
-  (`--punchlist <path>`)
-- Include PR links and relevant file paths so the user can jump straight to
-  what needs manual verification
-- Focus on things automated tests can't catch: UI appearance, UX flows,
-  integration with external services, deployment behavior
+### Telemetry
+- Wall-clock duration per agent invocation (measured on Go side)
+- Cost, tool trace, verdict, and session ID (already captured in `Result`)
+- Quality review stores an array of results for multi-cycle reviews
 
----
+### Quality reporting
+- Flag reviews with low cost, short duration, missing diff reads, or missing
+  test runs — report only, no enforcement
+- Review test execution reporting: flag functional reviews that didn't create
+  or run tests in `tests/review/`
+- Configurable thresholds in `godark.yaml` (`quality:` block)
 
-## Phase 8: Review Quality & Code Quality Gates
+### Dashboard
+- `godark status` serves a local web UI (Go templates + htmx + Alpine.js)
+- Tech: embedded static assets, single binary, localhost only
+- Run list: all runs across all repos, filterable, with summary stats and
+  quality flag counts
+- Run detail: per-issue outcomes with status, PR links, retry count, cost
+- Issue detail: review chain timeline with expandable tool traces
+- Log viewer: parsed `debug.log` with level filtering and search
 
-**Goal**: Ensure the reviewer agent is doing genuine, thorough work — not
-rubberstamping. Add automated quality gates that catch shallow reviews and
-improve overall code quality in the dev loop.
+**Issues**: #74–#79
 
-**Milestone**: `Phase 8` | **Label**: `phase-8`
-
-### Review depth validation
-- Tool trace floor: reject reviews where the reviewer didn't read the PR diff,
-  run tests, or generate review tests in `tests/review/`
-- Token/cost floor: flag suspiciously cheap reviews (below a configurable
-  threshold) as likely rubberstamps
-- Review body quality check: verify the reviewer's PR review contains specific
-  file references and concrete observations (not generic "looks good")
-
-### Mandatory review test execution
-- Hard gate: reviewer must create and run ephemeral tests in `tests/review/`
-  for the review to count — no tests means automatic `CHANGES_REQUESTED`
-- Verify via PostToolUse audit trace: scan for Write to `tests/review/` and
-  Bash with the configured `test_command`
-
-### Canary defect injection
-- Before review, inject a known trivial bug into the PR (e.g., a syntax error
-  or failing test assertion) via a guard rail step
-- If the reviewer approves despite the canary, the review is invalid
-- Remove the canary before merge if the reviewer catches it
-- Configurable: `canary_defects: true` in `godark.yaml` (default off)
-
-### Dual-reviewer sampling
-- Configurable percentage of PRs get a second independent review
-- If the two reviewers disagree, escalate to `needs-human-review`
-- Provides ground truth for calibrating other quality gates
-- `dual_review_sample_rate: 0.1` in `godark.yaml` (default 0, disabled)
-
-### SDK version check
-- On startup, check PyPI for the latest `claude-agent-sdk` version and warn if
-  it exceeds the pinned range (`>=0.1.0,<0.2.0`) in the generated Dockerfile
-- Gives early notice that a new major/minor SDK version is available and may
-  require migration work before the pin can be bumped
-
-### `godark doctor` command
-- Pre-flight check that verifies all system dependencies and environment
-  variables are in place before running the dev loop
-- Check for: Docker daemon running, `gh` CLI installed and authenticated,
-  `ANTHROPIC_API_KEY` set, detected runtime toolchain available,
-  Python 3 available
-- Print a pass/fail checklist with actionable fix instructions for each failure
-- Exit non-zero if any required check fails
-
-### Configurable auth token preference
-- Allow `godark.yaml` to specify which auth token to prefer when both
-  `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` are set
-- Currently hardcoded to prefer OAuth; make it configurable for teams that
-  want to use API keys for cost tracking or rate-limit isolation
-- `auth_preference: oauth | api_key` in `godark.yaml` (default `oauth`)
-
-### Configurable lint gate
-- Run a configurable lint command (e.g., `golangci-lint run`) as an additional
-  quality gate after the implementer finishes, before review
-- Lint failures trigger a retry without consuming a review cycle
-- `lint_command` in `godark.yaml` (default empty, disabled)
+**Planning doc**: `docs/planning/phase-7-review-quality-and-dashboard.md`
