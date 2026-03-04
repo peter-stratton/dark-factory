@@ -62,6 +62,9 @@ func TestDockerConfigFromConfig(t *testing.T) {
 	if len(dc.ExtraPackages) != 2 {
 		t.Fatalf("ExtraPackages len = %d, want 2", len(dc.ExtraPackages))
 	}
+	if len(dc.SandboxEnv) != 1 || dc.SandboxEnv["GOOS"] != "linux" {
+		t.Errorf("SandboxEnv = %v, want map[GOOS:linux]", dc.SandboxEnv)
+	}
 }
 
 func TestDockerConfigFromConfigDefaults(t *testing.T) {
@@ -443,6 +446,56 @@ func TestGenerateDockerfileSandboxEnvDoubleQuoteRejected(t *testing.T) {
 	_, err := GenerateDockerfile(cfg, slog.Default())
 	if err == nil {
 		t.Fatal("expected error for SandboxEnv value containing double quote, got nil")
+	}
+}
+
+func TestGenerateDockerfileSandboxEnvKeyDoubleQuoteRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.SandboxEnv = map[string]string{`FO"O`: "val"}
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for SandboxEnv key containing double quote, got nil")
+	}
+}
+
+func TestGenerateDockerfileImageNewlineRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Image = "ubuntu:22.04\nRUN evil"
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for Image containing newline, got nil")
+	}
+}
+
+func TestGenerateDockerfileUserNewlineRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.User = "devloop\nRUN evil"
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for User containing newline, got nil")
+	}
+}
+
+func TestGenerateDockerfileNodeVersionNewlineRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.NodeVersion = "20\nRUN evil"
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for NodeVersion containing newline, got nil")
+	}
+}
+
+func TestGenerateDockerfileExtraPackagesNewlineRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.ExtraPackages = []string{"vim\nRUN evil"}
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for ExtraPackages entry containing newline, got nil")
 	}
 }
 

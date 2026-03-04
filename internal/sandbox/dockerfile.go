@@ -105,11 +105,26 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		return "", fmt.Errorf("Runtime.Version must not contain newlines: %q", runtimeVersion)
 	}
 
+	// Validate config fields for newline injection.
+	for _, s := range []string{cfg.Image, cfg.User, cfg.NodeVersion} {
+		if strings.ContainsAny(s, "\n\r") {
+			return "", fmt.Errorf("config field must not contain newlines: %q", s)
+		}
+	}
+	for _, pkg := range cfg.ExtraPackages {
+		if strings.ContainsAny(pkg, "\n\r") {
+			return "", fmt.Errorf("ExtraPackages entry must not contain newlines: %q", pkg)
+		}
+	}
+
 	// Sort SandboxEnv keys for deterministic Dockerfile output.
 	sortedEnv := make([]envVar, 0, len(cfg.SandboxEnv))
 	for k, v := range cfg.SandboxEnv {
 		if strings.ContainsAny(k, "\n\r") || strings.ContainsAny(v, "\n\r") {
 			return "", fmt.Errorf("SandboxEnv key/value must not contain newlines: %q=%q", k, v)
+		}
+		if strings.ContainsRune(k, '"') {
+			return "", fmt.Errorf("SandboxEnv key must not contain double quotes: %q", k)
 		}
 		if strings.ContainsRune(v, '"') {
 			return "", fmt.Errorf("SandboxEnv value must not contain double quotes: %q=%q", k, v)
