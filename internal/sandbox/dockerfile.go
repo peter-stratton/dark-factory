@@ -43,7 +43,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
 RUN npm install -g @anthropic-ai/claude-code
 
 # Install Python agent runner dependencies
-RUN pip install claude-agent-sdk
+RUN pip install 'claude-agent-sdk>=0.1.0,<0.2.0'
 
 # Copy agent runner
 COPY agent_runner.py /usr/local/bin/agent_runner.py

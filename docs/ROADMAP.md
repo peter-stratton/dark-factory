@@ -216,6 +216,12 @@ improve overall code quality in the dev loop.
 - Provides ground truth for calibrating other quality gates
 - `dual_review_sample_rate: 0.1` in `godark.yaml` (default 0, disabled)
 
+### SDK version check
+- On startup, check PyPI for the latest `claude-agent-sdk` version and warn if
+  it exceeds the pinned range (`>=0.1.0,<0.2.0`) in the generated Dockerfile
+- Gives early notice that a new major/minor SDK version is available and may
+  require migration work before the pin can be bumped
+
 ### Configurable lint gate
 - Run a configurable lint command (e.g., `golangci-lint run`) as an additional
   quality gate after the implementer finishes, before review

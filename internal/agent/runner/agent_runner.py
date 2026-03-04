@@ -19,7 +19,7 @@ import os
 import sys
 
 import claude_agent_sdk
-from claude_agent_sdk import ClaudeCodeOptions, ResultMessage
+from claude_agent_sdk import ClaudeAgentOptions, ResultMessage
 
 
 async def main() -> None:
@@ -32,7 +32,7 @@ async def main() -> None:
         if key in os.environ:
             env[key] = os.environ[key]
 
-    options = ClaudeCodeOptions(
+    options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         setting_sources=["project"],
         system_prompt={"type": "preset", "preset": "claude_code"},
@@ -58,7 +58,7 @@ async def main() -> None:
         if isinstance(message, ResultMessage):
             result_session_id = getattr(message, "session_id", "") or ""
             result_text = getattr(message, "result", "") or ""
-            cost_usd = float(getattr(message, "cost_usd", 0.0) or 0.0)
+            cost_usd = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
             is_error = bool(getattr(message, "is_error", False))
 
     final = {
