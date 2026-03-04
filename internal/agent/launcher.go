@@ -2,37 +2,49 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 
+	"github.com/phs/dark-factory/internal/agent/runner"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
 // RunOpts configures an agent invocation.
 type RunOpts struct {
-	Prompt      string
-	Env         map[string]string
-	Image       string
-	Repo        string
-	Branch      string
-	WorkDir     string
-	ClaudeFlags []string
-	Timeout     time.Duration
+	Prompt  string
+	Role    string
+	Env     map[string]string
+	Image   string
+	Repo    string
+	Branch  string
+	WorkDir string
+	Timeout time.Duration
 }
 
 // Result holds the outcome of an agent run.
 type Result struct {
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	TimedOut bool
+	ExitCode  int
+	Stdout    string
+	Stderr    string
+	TimedOut  bool
+	SessionID string
+	CostUSD   float64
 }
 
-// Runner executes a command on the host. Replaceable for testing.
-var Runner = func(ctx context.Context, name string, args ...string) (stdout, stderr []byte, exitCode int, err error) {
+// Runner executes a command on the host with the given environment. Replaceable for testing.
+var Runner = func(ctx context.Context, env map[string]string, name string, args ...string) (stdout, stderr []byte, exitCode int, err error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	if len(env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
 	var outBuf, errBuf []byte
 	cmd.Stdout = &writerFunc{fn: func(p []byte) { outBuf = append(outBuf, p...) }}
 	cmd.Stderr = &writerFunc{fn: func(p []byte) { errBuf = append(errBuf, p...) }}
@@ -75,23 +87,60 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 		defer cancel()
 	}
 
-	args := []string{"-p", "--dangerously-skip-permissions", opts.Prompt}
-	args = append(args, opts.ClaudeFlags...)
+	// Write embedded agent_runner.py to a temp file.
+	pyContent, err := runner.FS.ReadFile("agent_runner.py")
+	if err != nil {
+		return nil, fmt.Errorf("reading embedded agent_runner.py: %w", err)
+	}
 
-	stdout, stderr, exitCode, err := Runner(ctx, "claude", args...)
+	tmpFile, err := os.CreateTemp("", "godark-agent-*.py")
+	if err != nil {
+		return nil, fmt.Errorf("creating temp file for agent runner: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(pyContent); err != nil {
+		tmpFile.Close()
+		return nil, fmt.Errorf("writing agent_runner.py to temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("closing temp agent runner file: %w", err)
+	}
+
+	// Build env vars: merge RunOpts.Env, then add GODARK_* vars.
+	env := make(map[string]string, len(opts.Env)+2)
+	for k, v := range opts.Env {
+		env[k] = v
+	}
+	env["GODARK_PROMPT"] = opts.Prompt
+	if opts.Role != "" {
+		env["GODARK_ROLE"] = opts.Role
+	}
+
+	stdout, stderr, exitCode, err := Runner(ctx, env, "python3", tmpFile.Name())
 	if ctx.Err() != nil {
 		return &Result{TimedOut: true, Stdout: string(stdout), Stderr: string(stderr)}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("running claude on host: %w", err)
+		return nil, fmt.Errorf("running agent runner on host: %w", err)
 	}
 
-	logger.Info("host agent finished", "exit_code", exitCode)
-	return &Result{
+	res := &Result{
 		ExitCode: exitCode,
 		Stdout:   string(stdout),
 		Stderr:   string(stderr),
-	}, nil
+	}
+
+	if parsed := parseRunnerOutput(string(stdout)); parsed != nil {
+		res.SessionID = parsed.SessionID
+		res.CostUSD = parsed.CostUSD
+		if parsed.IsError && res.ExitCode == 0 {
+			res.ExitCode = 1
+		}
+	}
+
+	logger.Info("host agent finished", "exit_code", res.ExitCode)
+	return res, nil
 }
 
 func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, error) {
@@ -102,20 +151,19 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		workDir = "/workspace"
 	}
 
-	// Pass the prompt via environment variable to avoid shell quoting issues.
-	env := make(map[string]string, len(opts.Env)+1)
+	// Pass the prompt and role via environment variables to avoid shell quoting issues.
+	env := make(map[string]string, len(opts.Env)+2)
 	for k, v := range opts.Env {
 		env[k] = v
 	}
 	env["GODARK_PROMPT"] = opts.Prompt
-
-	claudeArgs := "claude -p --dangerously-skip-permissions \"$GODARK_PROMPT\""
-	for _, f := range opts.ClaudeFlags {
-		claudeArgs += " " + fmt.Sprintf("%q", f)
+	if opts.Role != "" {
+		env["GODARK_ROLE"] = opts.Role
 	}
 
+	agentCmd := "cd " + workDir + " && python3 /usr/local/bin/agent_runner.py"
 	cloneScript := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
-	entrypoint := sandbox.EntrypointScript(cloneScript, "cd "+workDir+" && "+claudeArgs)
+	entrypoint := sandbox.EntrypointScript(cloneScript, agentCmd)
 
 	sandboxOpts := sandbox.RunOpts{
 		Image:   opts.Image,
@@ -137,12 +185,48 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		)
 	}
 
-	return &Result{
+	res := &Result{
 		ExitCode: result.ExitCode,
 		Stdout:   result.Stdout,
 		Stderr:   result.Stderr,
 		TimedOut: result.TimedOut,
-	}, nil
+	}
+
+	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {
+		res.SessionID = parsed.SessionID
+		res.CostUSD = parsed.CostUSD
+		if parsed.IsError && res.ExitCode == 0 {
+			res.ExitCode = 1
+		}
+	}
+
+	return res, nil
+}
+
+// runnerFinalResult is the structured JSON output printed as the last line by agent_runner.py.
+type runnerFinalResult struct {
+	SessionID string  `json:"session_id"`
+	Result    string  `json:"result"`
+	CostUSD   float64 `json:"cost_usd"`
+	IsError   bool    `json:"is_error"`
+}
+
+// parseRunnerOutput extracts the structured final result from runner stdout.
+// The runner prints a final JSON line with session_id, result, cost_usd, and is_error.
+func parseRunnerOutput(stdout string) *runnerFinalResult {
+	lines := strings.Split(stdout, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		var r runnerFinalResult
+		if err := json.Unmarshal([]byte(line), &r); err == nil {
+			return &r
+		}
+		break
+	}
+	return nil
 }
 
 // truncate returns the last n bytes of s.

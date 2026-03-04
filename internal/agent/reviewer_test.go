@@ -6,7 +6,7 @@ import (
 )
 
 func TestReview_ReturnsVerdict(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		return []byte("output\nREVIEW_RESULT=APPROVED\nmore output"), []byte(""), 0, nil
 	})
 
@@ -20,7 +20,7 @@ func TestReview_ReturnsVerdict(t *testing.T) {
 }
 
 func TestReview_ChangesRequested(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		return []byte("REVIEW_RESULT=CHANGES_REQUESTED\n"), []byte(""), 0, nil
 	})
 

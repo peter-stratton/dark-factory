@@ -3,6 +3,8 @@ package sandbox
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -85,6 +87,9 @@ func TestGenerateDockerfileDefault(t *testing.T) {
 		{"go install", "go1.26.0.linux-amd64.tar.gz"},
 		{"node install", "setup_20.x"},
 		{"useradd", "useradd -m -s /bin/bash devloop"},
+		{"python3 install", "python3"},
+		{"pip sdk install", "pip install claude-agent-sdk"},
+		{"copy agent runner", "COPY agent_runner.py /usr/local/bin/agent_runner.py"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(df, c.contain) {
@@ -212,5 +217,63 @@ func TestBuildImageStubbedCommandRunner(t *testing.T) {
 	}
 	if !foundTag {
 		t.Errorf("docker build missing -t %s in args: %v", tag, capturedArgs)
+	}
+}
+
+func TestBuildImageWritesAgentRunner(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	var agentRunnerFound bool
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		// During docker build, check that agent_runner.py is present in the build context.
+		if name == "docker" && len(args) > 0 && args[0] == "build" {
+			// The build context dir is the last argument.
+			buildDir := args[len(args)-1]
+			pyPath := filepath.Join(buildDir, "agent_runner.py")
+			if _, err := os.Stat(pyPath); err == nil {
+				agentRunnerFound = true
+			}
+		}
+		return []byte("Successfully built"), nil
+	}
+
+	_, err := BuildImage(context.Background(), DefaultDockerConfig(), slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !agentRunnerFound {
+		t.Error("agent_runner.py was not written to the build context before docker build")
+	}
+}
+
+func TestGenerateDockerfileIncludesPython3(t *testing.T) {
+	df, err := GenerateDockerfile(DefaultDockerConfig())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "python3") {
+		t.Error("Dockerfile missing python3 in apt-get install")
+	}
+}
+
+func TestGenerateDockerfileIncludesPipInstall(t *testing.T) {
+	df, err := GenerateDockerfile(DefaultDockerConfig())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "pip install claude-agent-sdk") {
+		t.Error("Dockerfile missing 'pip install claude-agent-sdk'")
+	}
+}
+
+func TestGenerateDockerfileCopiesAgentRunner(t *testing.T) {
+	df, err := GenerateDockerfile(DefaultDockerConfig())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "COPY agent_runner.py /usr/local/bin/agent_runner.py") {
+		t.Error("Dockerfile missing COPY agent_runner.py directive")
 	}
 }

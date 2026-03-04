@@ -7,7 +7,11 @@ import (
 )
 
 func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
-	captured := stubRunner(t)
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
 
 	prompts := &Prompts{
 		SpecGenerator: "Generate spec for #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} slug={{.Slug}}",
@@ -21,12 +25,12 @@ func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
 	}
 
-	joined := strings.Join(*captured, " ")
-	if !strings.Contains(joined, "Generate spec for #42") {
-		t.Errorf("expected rendered prompt with issue number, got: %s", joined)
+	prompt := capturedEnv["GODARK_PROMPT"]
+	if !strings.Contains(prompt, "Generate spec for #42") {
+		t.Errorf("expected rendered prompt with issue number, got: %s", prompt)
 	}
-	if !strings.Contains(joined, "add-widget-support") {
-		t.Errorf("expected slug in prompt, got: %s", joined)
+	if !strings.Contains(prompt, "add-widget-support") {
+		t.Errorf("expected slug in prompt, got: %s", prompt)
 	}
 }
 
