@@ -105,7 +105,11 @@
               <th>When</th>
             </tr>
           </thead>
-          <tbody id="runs-tbody">
+          <tbody id="runs-tbody"
+                 hx-get="/partials/runs-table"
+                 hx-trigger="every 5s"
+                 hx-swap="innerHTML"
+                 hx-include="[name='repo']">
             {{template "runs-rows" .Runs}}
           </tbody>
         </table>
