@@ -96,3 +96,27 @@ description, constraints, acceptance criteria, and test cases.
 - Do not modify the roadmap — that is handled by `/godark-create-roadmap`.
 - If a planning doc already exists for this phase, ask the user whether to
   replace it or update specific issues.
+
+## Task sizing
+
+Each issue must be small enough for an agent to implement in a single run
+(~15 minutes). An issue is too large if any of these apply:
+
+- **More than 5 acceptance criteria** — split into separate deliverables.
+- **Creates new code AND modifies existing code** — split "add new package" from
+  "wire it into existing code" from "remove/migrate old code."
+- **Touches more than 3 existing files** — the agent loses context and makes
+  mistakes on cross-cutting changes.
+- **Combines additive and destructive changes** — adding a new system and
+  removing the old one should be separate issues so each is independently
+  verifiable.
+
+When an issue is too large, split it along natural boundaries:
+
+1. **New package/module** — pure new code with its own tests, no existing files
+   modified.
+2. **Integration/wiring** — connect the new code to existing callers.
+3. **Migration/cleanup** — remove old code, update config, rename fields.
+
+Each sub-issue should be independently deployable and testable. Use `Blocked by`
+dependencies to enforce ordering.
