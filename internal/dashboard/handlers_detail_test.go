@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +17,7 @@ import (
 // writeIssueFiles creates the per-issue data files under the run directory.
 func writeIssueFiles(t *testing.T, runDir string, issueNum int, outcome rundata.Outcome, implement, qualityReview, funcReview rundata.StepResult) {
 	t.Helper()
-	issueDir := filepath.Join(runDir, "issues", strings.TrimSpace(strings.ReplaceAll(string(rune('0'+issueNum%10)), " ", "")))
-	// Use strconv for numeric dir name
-	issueDir = filepath.Join(runDir, "issues", formatInt(issueNum))
+	issueDir := filepath.Join(runDir, "issues", strconv.Itoa(issueNum))
 	if err := os.MkdirAll(issueDir, 0o755); err != nil {
 		t.Fatalf("creating issue dir: %v", err)
 	}
@@ -47,25 +46,6 @@ func writeJSON(t *testing.T, path string, v any) {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("writing %s: %v", path, err)
 	}
-}
-
-func formatInt(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	buf := make([]byte, 0, 10)
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	for n > 0 {
-		buf = append([]byte{byte('0' + n%10)}, buf...)
-		n /= 10
-	}
-	if neg {
-		buf = append([]byte{'-'}, buf...)
-	}
-	return string(buf)
 }
 
 // buildRunDir creates a run directory structure and returns the run directory path.
