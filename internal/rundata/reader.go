@@ -1,0 +1,270 @@
+package rundata
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+)
+
+// RetryDetail holds the step results for one retry attempt.
+type RetryDetail struct {
+	Attempt       int
+	Retry         StepResult
+	QualityReview StepResult
+}
+
+// IssueDetail aggregates all data for one issue within a run.
+type IssueDetail struct {
+	IssueNumber      int
+	Outcome          Outcome
+	Implement        StepResult
+	QualityReview    StepResult
+	FunctionalReview StepResult
+	Retries          []RetryDetail
+}
+
+// RunDetail holds the full data for one run, including per-issue details.
+type RunDetail struct {
+	RunMeta
+	Issues []IssueDetail
+}
+
+// Reader reads run data from a base directory (default: ~/.godark/runs/).
+type Reader struct {
+	logger  *slog.Logger
+	baseDir string
+}
+
+// NewReader creates a Reader using ~/.godark/runs/ as the base directory.
+// If logger is nil, slog.Default() is used.
+func NewReader(logger *slog.Logger) (*Reader, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("getting home dir: %w", err)
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Reader{
+		logger:  logger,
+		baseDir: filepath.Join(home, ".godark", "runs"),
+	}, nil
+}
+
+// ListRuns walks the base directory and returns all RunMeta entries sorted
+// most-recent-first by started_at. Missing or corrupt run.json files are
+// skipped with a warning log. Returns an empty slice (no error) if the base
+// directory does not exist.
+func (r *Reader) ListRuns() ([]RunMeta, error) {
+	ownerEntries, err := os.ReadDir(r.baseDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return []RunMeta{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading runs dir: %w", err)
+	}
+
+	var metas []RunMeta
+	for _, ownerEntry := range ownerEntries {
+		if !ownerEntry.IsDir() {
+			continue
+		}
+		owner := ownerEntry.Name()
+		ownerDir := filepath.Join(r.baseDir, owner)
+
+		repoEntries, err := os.ReadDir(ownerDir)
+		if err != nil {
+			r.logger.Warn("skipping owner dir", "owner", owner, "error", err)
+			continue
+		}
+
+		for _, repoEntry := range repoEntries {
+			if !repoEntry.IsDir() {
+				continue
+			}
+			repo := repoEntry.Name()
+			repoDir := filepath.Join(ownerDir, repo)
+
+			tsEntries, err := os.ReadDir(repoDir)
+			if err != nil {
+				r.logger.Warn("skipping repo dir", "repo", owner+"/"+repo, "error", err)
+				continue
+			}
+
+			for _, tsEntry := range tsEntries {
+				if !tsEntry.IsDir() {
+					continue
+				}
+				runDir := filepath.Join(repoDir, tsEntry.Name())
+				meta, ok := r.readRunMeta(runDir)
+				if !ok {
+					continue
+				}
+				metas = append(metas, meta)
+			}
+		}
+	}
+
+	sort.Slice(metas, func(i, j int) bool {
+		return metas[i].StartedAt.After(metas[j].StartedAt)
+	})
+
+	return metas, nil
+}
+
+// LoadRun reads the full run detail for the given owner, repo, and timestamp.
+// Returns an error if the run directory or run.json is missing or unreadable.
+func (r *Reader) LoadRun(owner, repo, timestamp string) (*RunDetail, error) {
+	runDir := filepath.Join(r.baseDir, owner, repo, timestamp)
+
+	metaData, err := os.ReadFile(filepath.Join(runDir, "run.json"))
+	if err != nil {
+		return nil, fmt.Errorf("reading run.json: %w", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		return nil, fmt.Errorf("parsing run.json: %w", err)
+	}
+
+	detail := &RunDetail{RunMeta: meta}
+
+	issuesDir := filepath.Join(runDir, "issues")
+	issueEntries, err := os.ReadDir(issuesDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return detail, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading issues dir: %w", err)
+	}
+
+	for _, issueEntry := range issueEntries {
+		if !issueEntry.IsDir() {
+			continue
+		}
+		issueNumStr := issueEntry.Name()
+		issueNum, err := strconv.Atoi(issueNumStr)
+		if err != nil {
+			r.logger.Warn("skipping non-numeric issue dir", "dir", issueNumStr)
+			continue
+		}
+		issueDir := filepath.Join(issuesDir, issueNumStr)
+		detail.Issues = append(detail.Issues, r.loadIssueDetail(issueDir, issueNum))
+	}
+
+	return detail, nil
+}
+
+// readRunMeta reads and parses run.json from runDir. Returns (meta, true) on
+// success, or (zero, false) with a logged warning on any error.
+func (r *Reader) readRunMeta(runDir string) (RunMeta, bool) {
+	path := filepath.Join(runDir, "run.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		r.logger.Warn("skipping run: cannot read run.json", "dir", runDir, "error", err)
+		return RunMeta{}, false
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		r.logger.Warn("skipping run: corrupt run.json", "dir", runDir, "error", err)
+		return RunMeta{}, false
+	}
+
+	return meta, true
+}
+
+// loadIssueDetail reads all files for one issue directory.
+// Missing optional files produce zero-value fields; corrupt files are warned and skipped.
+func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
+	return IssueDetail{
+		IssueNumber:      issueNum,
+		Implement:        r.readStep(filepath.Join(issueDir, "implement.json")),
+		QualityReview:    r.readStep(filepath.Join(issueDir, "quality-review.json")),
+		FunctionalReview: r.readStep(filepath.Join(issueDir, "functional-review.json")),
+		Outcome:          r.readOutcome(filepath.Join(issueDir, "outcome.json")),
+		Retries:          r.loadRetries(filepath.Join(issueDir, "retries")),
+	}
+}
+
+// readStep reads a StepResult from path. Returns zero value if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readStep(path string) StepResult {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return StepResult{}
+	}
+	if err != nil {
+		r.logger.Warn("skipping step file", "path", path, "error", err)
+		return StepResult{}
+	}
+
+	var step StepResult
+	if err := json.Unmarshal(data, &step); err != nil {
+		r.logger.Warn("corrupt step file, using zero value", "path", path, "error", err)
+		return StepResult{}
+	}
+	return step
+}
+
+// readOutcome reads an Outcome from path. Returns zero value if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readOutcome(path string) Outcome {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Outcome{}
+	}
+	if err != nil {
+		r.logger.Warn("skipping outcome file", "path", path, "error", err)
+		return Outcome{}
+	}
+
+	var outcome Outcome
+	if err := json.Unmarshal(data, &outcome); err != nil {
+		r.logger.Warn("corrupt outcome file, using zero value", "path", path, "error", err)
+		return Outcome{}
+	}
+	return outcome
+}
+
+// loadRetries reads all retry step results from retriesDir, sorted by attempt number.
+// Returns nil if the directory is absent.
+func (r *Reader) loadRetries(retriesDir string) []RetryDetail {
+	entries, err := os.ReadDir(retriesDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping retries dir", "dir", retriesDir, "error", err)
+		return nil
+	}
+
+	var retries []RetryDetail
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		attempt, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			r.logger.Warn("skipping non-numeric retry dir", "dir", entry.Name())
+			continue
+		}
+		retryDir := filepath.Join(retriesDir, entry.Name())
+		retries = append(retries, RetryDetail{
+			Attempt:       attempt,
+			Retry:         r.readStep(filepath.Join(retryDir, "retry.json")),
+			QualityReview: r.readStep(filepath.Join(retryDir, "quality-review.json")),
+		})
+	}
+
+	sort.Slice(retries, func(i, j int) bool {
+		return retries[i].Attempt < retries[j].Attempt
+	})
+
+	return retries
+}
