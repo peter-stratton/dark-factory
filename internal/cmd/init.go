@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/phs/dark-factory/internal/harness/templates"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/skills"
 	"github.com/spf13/cobra"
@@ -42,12 +43,16 @@ The config file is only created if it does not already exist.`,
 		if err := writeDefaultConfig(cmd); err != nil {
 			return err
 		}
+		if err := writeHarnessDocs(cmd); err != nil {
+			return err
+		}
 		return createLockLabel(cmd)
 	},
 }
 
 func init() {
 	initCmd.Flags().String("repo", "", "GitHub repository (owner/repo) — used to create the godark-in-progress label")
+	initCmd.Flags().Bool("reset-claude-md", false, "replace existing CLAUDE.md with the harness template")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -90,6 +95,64 @@ func writeDefaultConfig(cmd *cobra.Command) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", configPath)
+	return nil
+}
+
+// writeHarnessDocs scaffolds harness documentation files into the current
+// directory. Files are created only if they do not already exist, except for
+// CLAUDE.md which is only written when --reset-claude-md is set.
+func writeHarnessDocs(cmd *cobra.Command) error {
+	resetClaudeMD, _ := cmd.Flags().GetBool("reset-claude-md")
+
+	// Create directories unconditionally; MkdirAll is idempotent.
+	for _, dir := range []string{"docs/planning", "tests/scenarios"} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", dir, err)
+		}
+	}
+
+	docFiles := []struct{ src, dest string }{
+		{"architecture.md", "docs/architecture.md"},
+		{"architecture.json", "docs/architecture.json"},
+		{"conventions.md", "docs/conventions.md"},
+		{"roadmap.md", "docs/ROADMAP.md"},
+		{"prompts/implementer.txt", "prompts/implementer.txt"},
+		{"prompts/implementer_retry.txt", "prompts/implementer_retry.txt"},
+		{"prompts/reviewer.txt", "prompts/reviewer.txt"},
+	}
+
+	for _, f := range docFiles {
+		written, err := templates.WriteIfNotExists(f.src, f.dest)
+		if err != nil {
+			return err
+		}
+		if written {
+			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", f.dest)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "skipped %s (already exists)\n", f.dest)
+		}
+	}
+
+	claudeMDWritten := false
+	if resetClaudeMD {
+		if _, err := os.Stat("CLAUDE.md"); err == nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "replacing existing CLAUDE.md with harness template\n")
+		}
+		data, err := templates.FS.ReadFile("claude.md")
+		if err != nil {
+			return fmt.Errorf("reading embedded CLAUDE.md: %w", err)
+		}
+		if err := os.WriteFile("CLAUDE.md", data, 0o644); err != nil {
+			return fmt.Errorf("writing CLAUDE.md: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "wrote CLAUDE.md\n")
+		claudeMDWritten = true
+	}
+
+	if !claudeMDWritten {
+		fmt.Fprintf(cmd.OutOrStdout(), "hint: review your CLAUDE.md against the harness principles in docs/architecture.md (use --reset-claude-md to replace it)\n")
+	}
+
 	return nil
 }
 

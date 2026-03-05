@@ -103,3 +103,162 @@ func TestInitIdempotent(t *testing.T) {
 		t.Error("skill file missing after second init")
 	}
 }
+
+func TestInitWritesHarnessDocs(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	for _, path := range []string{
+		"docs/architecture.md",
+		"docs/architecture.json",
+		"docs/conventions.md",
+		"docs/ROADMAP.md",
+		"prompts/implementer.txt",
+		"prompts/implementer_retry.txt",
+		"prompts/reviewer.txt",
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("expected %s to exist: %v", path, err)
+		} else if len(data) == 0 {
+			t.Errorf("expected %s to have non-empty content", path)
+		}
+	}
+
+	for _, d := range []string{"docs/planning", "tests/scenarios"} {
+		info, err := os.Stat(d)
+		if err != nil {
+			t.Errorf("expected directory %s to exist: %v", d, err)
+		} else if !info.IsDir() {
+			t.Errorf("expected %s to be a directory", d)
+		}
+	}
+
+	if _, err := os.Stat("CLAUDE.md"); !os.IsNotExist(err) {
+		t.Error("CLAUDE.md should not be written without --reset-claude-md")
+	}
+}
+
+func TestInitHarnessDocsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	data1, err := os.ReadFile("docs/architecture.md")
+	if err != nil {
+		t.Fatalf("reading docs/architecture.md after first init: %v", err)
+	}
+
+	buf := runInit(t)
+
+	data2, _ := os.ReadFile("docs/architecture.md")
+	if string(data1) != string(data2) {
+		t.Error("docs/architecture.md was overwritten on second init")
+	}
+
+	if !strings.Contains(buf.String(), "skipped docs/architecture.md (already exists)") {
+		t.Error("expected skip message for docs/architecture.md on second init")
+	}
+}
+
+func TestInitPartialState(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	os.MkdirAll("docs", 0o755)
+	existing := "pre-existing content"
+	os.WriteFile("docs/architecture.md", []byte(existing), 0o644)
+
+	buf := runInit(t)
+
+	data, _ := os.ReadFile("docs/architecture.md")
+	if string(data) != existing {
+		t.Error("docs/architecture.md was overwritten")
+	}
+
+	if _, err := os.Stat("docs/conventions.md"); err != nil {
+		t.Error("docs/conventions.md should have been created")
+	}
+
+	if !strings.Contains(buf.String(), "skipped docs/architecture.md (already exists)") {
+		t.Error("expected skip message for pre-existing docs/architecture.md")
+	}
+
+	if !strings.Contains(buf.String(), "wrote docs/conventions.md") {
+		t.Error("expected write message for docs/conventions.md")
+	}
+}
+
+func TestInitResetClaudeMD(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	if err := initCmd.Flags().Set("reset-claude-md", "true"); err != nil {
+		t.Fatalf("setting flag: %v", err)
+	}
+	defer initCmd.Flags().Set("reset-claude-md", "false") //nolint:errcheck
+
+	buf := runInit(t)
+
+	if _, err := os.Stat("CLAUDE.md"); err != nil {
+		t.Error("CLAUDE.md should be written with --reset-claude-md")
+	}
+
+	if !strings.Contains(buf.String(), "wrote CLAUDE.md") {
+		t.Error("expected write message for CLAUDE.md")
+	}
+}
+
+func TestInitResetClaudeMDReplacesExisting(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	existing := "# Custom CLAUDE.md\n"
+	os.WriteFile("CLAUDE.md", []byte(existing), 0o644)
+
+	errBuf := new(bytes.Buffer)
+	initCmd.SetErr(errBuf)
+	defer initCmd.SetErr(nil) // reset to default os.Stderr
+
+	if err := initCmd.Flags().Set("reset-claude-md", "true"); err != nil {
+		t.Fatalf("setting flag: %v", err)
+	}
+	defer initCmd.Flags().Set("reset-claude-md", "false") //nolint:errcheck
+
+	runInit(t)
+
+	data, _ := os.ReadFile("CLAUDE.md")
+	if string(data) == existing {
+		t.Error("CLAUDE.md was not replaced by --reset-claude-md")
+	}
+
+	if !strings.Contains(errBuf.String(), "replacing existing CLAUDE.md with harness template") {
+		t.Error("expected warning about replacing existing CLAUDE.md on stderr")
+	}
+}
+
+func TestInitGuidanceWithoutResetFlag(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	buf := runInit(t)
+
+	if !strings.Contains(buf.String(), "hint: review your CLAUDE.md") {
+		t.Error("expected CLAUDE.md guidance hint in output when --reset-claude-md not used")
+	}
+}
