@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Runs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <span class="breadcrumbs__current">Runs</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Watching
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="index.html" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="logs.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2 1.75C2 .784 2.784 0 3.75 0h8.5C13.216 0 14 .784 14 1.75v12.5A1.75 1.75 0 0112.25 16h-8.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V1.75a.25.25 0 00-.25-.25h-8.5zM4.75 4h6.5v1.5h-6.5V4zm0 3h6.5v1.5h-6.5V7zm0 3h4v1.5h-4V10z"/>
+              </svg>
+              Logs
+            </a>
+          </li>
+          <li>
+            <a href="empty.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
+              </svg>
+              Empty States
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar__section">
+        <div class="sidebar__label">Recent Repos</div>
+        <ul class="sidebar__nav">
+          <li><a href="#" class="sidebar__link">phs/dark-factory</a></li>
+          <li><a href="#" class="sidebar__link">phs/widget-api</a></li>
+          <li><a href="#" class="sidebar__link">acme/payments</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Runs</h1>
+        <p class="page-header__subtitle">All orchestration runs across repositories</p>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="stats-row animate-in animate-in-1">
+        <div class="stat-block">
+          <div class="stat-block__label">Total Runs</div>
+          <div class="stat-block__value">47</div>
+          <div class="stat-block__detail">Last 30 days</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Pass Rate</div>
+          <div class="stat-block__value stat-block__value--success">78%</div>
+          <div class="stat-block__detail">37 passed / 10 failed</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Issues Processed</div>
+          <div class="stat-block__value">312</div>
+          <div class="stat-block__detail">Avg 6.6 per run</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Total Cost</div>
+          <div class="stat-block__value stat-block__value--accent">$184.50</div>
+          <div class="stat-block__detail">Avg $3.93/run</div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls animate-in animate-in-2">
+        <div class="control-group">
+          <select class="filter-select" aria-label="Filter by repository">
+            <option>All Repos</option>
+            <option>phs/dark-factory</option>
+            <option>phs/widget-api</option>
+            <option>acme/payments</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <span class="filter-chip filter-chip--active">All</span>
+          <span class="filter-chip">Passed</span>
+          <span class="filter-chip">Failed</span>
+          <span class="filter-chip">Running</span>
+        </div>
+        <div class="topbar__spacer"></div>
+        <input type="search" class="search-input" placeholder="Search runs..." aria-label="Search runs">
+      </div>
+
+      <!-- Runs Table -->
+      <!-- htmx: this table body would be a partial at /partials/runs-table
+           hx-get="/partials/runs-table" hx-trigger="load, filter-changed"
+           hx-target="#runs-tbody" hx-swap="innerHTML" -->
+      <div class="card animate-in animate-in-3">
+        <table class="data-table data-table--clickable">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Repository</th>
+              <th>Milestone</th>
+              <th>Issues</th>
+              <th>Result</th>
+              <th>Quality</th>
+              <th class="cell-num">Cost</th>
+              <th>When</th>
+            </tr>
+          </thead>
+          <tbody id="runs-tbody">
+            <!-- Row 1: Successful run -->
+            <tr onclick="location.href='run.html'">
+              <td>
+                <span style="color: var(--text-primary); font-weight: 500;">#47</span>
+                <span class="hover-reveal" style="margin-left: 4px;">View &rarr;</span>
+              </td>
+              <td class="text-secondary">phs/dark-factory</td>
+              <td>v0.9 — Dashboard</td>
+              <td>
+                <div class="pass-fail-bar">
+                  <span class="text-success">8</span>
+                  <span class="text-muted">/</span>
+                  <span class="text-danger">1</span>
+                  <div class="pass-fail-bar__bar">
+                    <div class="progress-bar__segment progress-bar__segment--success" style="width: 89%;"></div>
+                    <div class="progress-bar__segment progress-bar__segment--danger" style="width: 11%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="badge badge--success"><span class="badge__dot"></span> Passed</span></td>
+              <td>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Build: pass" title="Build: pass">B</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Test: pass" title="Test: pass">T</span>
+                  <span class="quality-flag quality-flag--warn" data-tooltip="Lint: 3 warnings" title="Lint: 3 warnings">L</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Vet: pass" title="Vet: pass">V</span>
+                </div>
+              </td>
+              <td class="cell-num"><span class="cost">4.23</span></td>
+              <td class="text-secondary">2 min ago</td>
+            </tr>
+
+            <!-- Row 2: Failed run -->
+            <tr onclick="location.href='run.html'">
+              <td>
+                <span style="color: var(--text-primary); font-weight: 500;">#46</span>
+                <span class="hover-reveal" style="margin-left: 4px;">View &rarr;</span>
+              </td>
+              <td class="text-secondary">phs/widget-api</td>
+              <td>v2.1 — Auth Refactor</td>
+              <td>
+                <div class="pass-fail-bar">
+                  <span class="text-success">3</span>
+                  <span class="text-muted">/</span>
+                  <span class="text-danger">4</span>
+                  <div class="pass-fail-bar__bar">
+                    <div class="progress-bar__segment progress-bar__segment--success" style="width: 43%;"></div>
+                    <div class="progress-bar__segment progress-bar__segment--danger" style="width: 57%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="badge badge--danger"><span class="badge__dot"></span> Failed</span></td>
+              <td>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--fail" data-tooltip="Build: fail" title="Build: fail">B</span>
+                  <span class="quality-flag quality-flag--fail" data-tooltip="Test: fail" title="Test: fail">T</span>
+                  <span class="quality-flag quality-flag--skip" data-tooltip="Lint: skipped" title="Lint: skipped">L</span>
+                  <span class="quality-flag quality-flag--skip" data-tooltip="Vet: skipped" title="Vet: skipped">V</span>
+                </div>
+              </td>
+              <td class="cell-num"><span class="cost">8.71</span></td>
+              <td class="text-secondary">43 min ago</td>
+            </tr>
+
+            <!-- Row 3: Needs review -->
+            <tr onclick="location.href='run.html'">
+              <td>
+                <span style="color: var(--text-primary); font-weight: 500;">#45</span>
+                <span class="hover-reveal" style="margin-left: 4px;">View &rarr;</span>
+              </td>
+              <td class="text-secondary">phs/dark-factory</td>
+              <td>v0.8 — Quality Flags</td>
+              <td>
+                <div class="pass-fail-bar">
+                  <span class="text-success">5</span>
+                  <span class="text-muted">/</span>
+                  <span class="text-warning">2</span>
+                  <div class="pass-fail-bar__bar">
+                    <div class="progress-bar__segment progress-bar__segment--success" style="width: 71%;"></div>
+                    <div class="progress-bar__segment progress-bar__segment--warning" style="width: 29%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="badge badge--warning"><span class="badge__dot"></span> Review</span></td>
+              <td>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Build: pass" title="Build: pass">B</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Test: pass" title="Test: pass">T</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Lint: pass" title="Lint: pass">L</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Vet: pass" title="Vet: pass">V</span>
+                </div>
+              </td>
+              <td class="cell-num"><span class="cost">3.12</span></td>
+              <td class="text-secondary">2 hours ago</td>
+            </tr>
+
+            <!-- Row 4 -->
+            <tr onclick="location.href='run.html'">
+              <td>
+                <span style="color: var(--text-primary); font-weight: 500;">#44</span>
+                <span class="hover-reveal" style="margin-left: 4px;">View &rarr;</span>
+              </td>
+              <td class="text-secondary">acme/payments</td>
+              <td>v1.3 — Stripe Webhooks</td>
+              <td>
+                <div class="pass-fail-bar">
+                  <span class="text-success">12</span>
+                  <span class="text-muted">/</span>
+                  <span class="text-danger">0</span>
+                  <div class="pass-fail-bar__bar">
+                    <div class="progress-bar__segment progress-bar__segment--success" style="width: 100%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="badge badge--success"><span class="badge__dot"></span> Passed</span></td>
+              <td>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Build: pass" title="Build: pass">B</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Test: pass" title="Test: pass">T</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Lint: pass" title="Lint: pass">L</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Vet: pass" title="Vet: pass">V</span>
+                </div>
+              </td>
+              <td class="cell-num"><span class="cost">5.44</span></td>
+              <td class="text-secondary">5 hours ago</td>
+            </tr>
+
+            <!-- Row 5 -->
+            <tr onclick="location.href='run.html'">
+              <td>
+                <span style="color: var(--text-primary); font-weight: 500;">#43</span>
+                <span class="hover-reveal" style="margin-left: 4px;">View &rarr;</span>
+              </td>
+              <td class="text-secondary">phs/dark-factory</td>
+              <td>v0.8 — Quality Flags</td>
+              <td>
+                <div class="pass-fail-bar">
+                  <span class="text-success">6</span>
+                  <span class="text-muted">/</span>
+                  <span class="text-danger">1</span>
+                  <div class="pass-fail-bar__bar">
+                    <div class="progress-bar__segment progress-bar__segment--success" style="width: 86%;"></div>
+                    <div class="progress-bar__segment progress-bar__segment--danger" style="width: 14%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="badge badge--success"><span class="badge__dot"></span> Passed</span></td>
+              <td>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Build: pass" title="Build: pass">B</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Test: pass" title="Test: pass">T</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Lint: pass" title="Lint: pass">L</span>
+                  <span class="quality-flag quality-flag--warn" data-tooltip="Vet: 1 warning" title="Vet: 1 warning">V</span>
+                </div>
+              </td>
+              <td class="cell-num"><span class="cost">2.89</span></td>
+              <td class="text-secondary">Yesterday</td>
+            </tr>
+
+            <!-- Row 6: Currently running -->
+            <tr onclick="location.href='run.html'" style="background: var(--accent-subtle);">
+              <td>
+                <span style="color: var(--accent); font-weight: 500;">#48</span>
+                <span style="font-size: var(--text-xs); color: var(--accent); margin-left: 4px;">LIVE</span>
+              </td>
+              <td class="text-secondary">phs/dark-factory</td>
+              <td>v0.9 — Dashboard</td>
+              <td>
+                <div class="pass-fail-bar">
+                  <span class="text-success">2</span>
+                  <span class="text-muted">/</span>
+                  <span class="text-muted">0</span>
+                  <div class="pass-fail-bar__bar">
+                    <div class="progress-bar__segment progress-bar__segment--success" style="width: 25%;"></div>
+                    <div class="progress-bar__segment progress-bar__segment--pending" style="width: 75%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="badge badge--info"><span class="badge__dot"></span> Running</span></td>
+              <td>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--skip" data-tooltip="Build: pending" title="Build: pending">B</span>
+                  <span class="quality-flag quality-flag--skip" data-tooltip="Test: pending" title="Test: pending">T</span>
+                  <span class="quality-flag quality-flag--skip" data-tooltip="Lint: pending" title="Lint: pending">L</span>
+                  <span class="quality-flag quality-flag--skip" data-tooltip="Vet: pending" title="Vet: pending">V</span>
+                </div>
+              </td>
+              <td class="cell-num"><span class="cost">1.02</span></td>
+              <td class="text-secondary">Just now</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Load More -->
+      <!-- htmx: hx-get="/partials/runs-table?page=2" hx-target="#runs-tbody" hx-swap="beforeend" -->
+      <div class="load-more animate-in animate-in-4">
+        <button class="btn btn--ghost btn--sm">Load more runs</button>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Logs</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .log-controls {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      margin-bottom: var(--space-4);
+      flex-wrap: wrap;
+    }
+    .log-count {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+    /* Highlight matched search text */
+    .log-highlight {
+      background: rgba(240, 136, 62, 0.25);
+      color: var(--accent);
+      border-radius: 2px;
+      padding: 0 2px;
+    }
+    /* Structured fields inline display */
+    .log-fields-inline {
+      margin-left: var(--space-3);
+      display: inline;
+    }
+    .log-fields-inline span {
+      margin-right: var(--space-2);
+    }
+    /* Expandable row detail */
+    .log-detail-row td {
+      padding: 0;
+      border-bottom: 1px solid var(--border-muted);
+    }
+    .log-detail-content {
+      padding: var(--space-3) var(--space-4);
+      padding-left: calc(var(--space-3) + 8ch);
+      background: var(--bg-surface-1);
+    }
+    .log-json {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      white-space: pre;
+      line-height: 1.6;
+    }
+    .log-json .json-key { color: var(--status-quality); }
+    .log-json .json-string { color: var(--status-success); }
+    .log-json .json-number { color: var(--accent); }
+    .log-json .json-bool { color: var(--status-info); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <a href="index.html">Runs</a>
+        <span class="breadcrumbs__sep">/</span>
+        <a href="run.html">Run #47</a>
+        <span class="breadcrumbs__sep">/</span>
+        <span class="breadcrumbs__current">Logs</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Watching
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="index.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="logs.html" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h8.5C13.216 0 14 .784 14 1.75v12.5A1.75 1.75 0 0112.25 16h-8.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V1.75a.25.25 0 00-.25-.25h-8.5zM4.75 4h6.5v1.5h-6.5V4zm0 3h6.5v1.5h-6.5V7zm0 3h4v1.5h-4V10z"/></svg>
+              Logs
+            </a>
+          </li>
+          <li>
+            <a href="empty.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+              Empty States
+            </a>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Logs</h1>
+        <p class="page-header__subtitle">Run #47 &middot; phs/dark-factory &middot; 247 log entries</p>
+      </div>
+
+      <!-- Log Controls -->
+      <!-- htmx: filter controls would trigger hx-get="/partials/logs?level=info&q=..."
+           hx-trigger="change, keyup changed delay:300ms" hx-target="#log-body" -->
+      <div class="log-controls animate-in animate-in-1">
+        <div class="control-group">
+          <span class="filter-chip filter-chip--active">All</span>
+          <span class="filter-chip">
+            <span style="color: var(--status-info);">&#9679;</span> Info
+          </span>
+          <span class="filter-chip">
+            <span style="color: var(--status-warning);">&#9679;</span> Warn
+          </span>
+          <span class="filter-chip">
+            <span style="color: var(--status-danger);">&#9679;</span> Error
+          </span>
+          <span class="filter-chip">
+            <span style="color: var(--text-muted);">&#9679;</span> Debug
+          </span>
+        </div>
+        <input type="search" class="search-input" placeholder="Search logs..." aria-label="Search log messages" style="width: 280px;">
+        <span class="log-count">Showing 25 of 247</span>
+      </div>
+
+      <!-- Log Table -->
+      <div class="card animate-in animate-in-2">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th style="width: 90px;">Time</th>
+              <th style="width: 50px;">Level</th>
+              <th>Message</th>
+              <th style="width: 200px;">Fields</th>
+            </tr>
+          </thead>
+          <tbody id="log-body">
+
+            <tr>
+              <td class="text-muted">14:23:00.001</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>orchestrator started</td>
+              <td>
+                <span class="log-field-key">repo</span>=<span class="log-field-value">phs/dark-factory</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:00.003</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>loading milestone issues</td>
+              <td>
+                <span class="log-field-key">milestone</span>=<span class="log-field-value">v0.9</span>
+                <span class="log-field-key">count</span>=<span class="log-field-value">9</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:00.015</td>
+              <td><span class="log-level log-level--debug">DBG</span></td>
+              <td>resolving dependency graph</td>
+              <td>
+                <span class="log-field-key">issues</span>=<span class="log-field-value">9</span>
+                <span class="log-field-key">edges</span>=<span class="log-field-value">4</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:00.018</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>dependency order resolved</td>
+              <td>
+                <span class="log-field-key">order</span>=<span class="log-field-value">[78,79,81,82,83,84,85,86,87]</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:00.020</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>processing issue</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">title</span>=<span class="log-field-value">Add dashboard HTTP server</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:00.022</td>
+              <td><span class="log-level log-level--debug">DBG</span></td>
+              <td>spawning implement agent</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">sandbox</span>=<span class="log-field-value">true</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:48.107</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>implement agent completed</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">duration</span>=<span class="log-field-value">48.085s</span>
+                <span class="log-field-key">cost</span>=<span class="log-field-value">0.24</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:48.110</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>running quality checks</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">checks</span>=<span class="log-field-value">[build,test,lint,vet]</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:52.340</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>quality checks passed</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">build</span>=<span class="log-field-value" style="color: var(--status-success);">pass</span>
+                <span class="log-field-key">test</span>=<span class="log-field-value" style="color: var(--status-success);">pass</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:23:52.345</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>spawning QA review agent</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">attempt</span>=<span class="log-field-value">1</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:24:14.220</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>QA review approved</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">verdict</span>=<span class="log-field-value" style="color: var(--status-success);">pass</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:24:14.225</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>issue completed successfully</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">78</span>
+                <span class="log-field-key">pr</span>=<span class="log-field-value">115</span>
+                <span class="log-field-key">cost</span>=<span class="log-field-value">0.52</span>
+              </td>
+            </tr>
+
+            <tr style="background: var(--accent-subtle);">
+              <td class="text-muted">14:24:14.230</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>processing issue</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">79</span>
+                <span class="log-field-key">title</span>=<span class="log-field-value">Implement run list page</span>
+              </td>
+            </tr>
+
+            <!-- Show a warning -->
+            <tr>
+              <td class="text-muted">14:24:50.112</td>
+              <td><span class="log-level log-level--warn">WARN</span></td>
+              <td>QA review rejected, scheduling retry</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">79</span>
+                <span class="log-field-key">attempt</span>=<span class="log-field-value">1</span>
+                <span class="log-field-key">issues_found</span>=<span class="log-field-value" style="color: var(--status-danger);">3</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:25:28.445</td>
+              <td><span class="log-level log-level--warn">WARN</span></td>
+              <td>QA review rejected, scheduling retry</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">79</span>
+                <span class="log-field-key">attempt</span>=<span class="log-field-value">2</span>
+                <span class="log-field-key">issues_found</span>=<span class="log-field-value" style="color: var(--status-danger);">1</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:26:08.890</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>issue completed successfully</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">79</span>
+                <span class="log-field-key">pr</span>=<span class="log-field-value">116</span>
+                <span class="log-field-key">retries</span>=<span class="log-field-value">2</span>
+                <span class="log-field-key">cost</span>=<span class="log-field-value">0.87</span>
+              </td>
+            </tr>
+
+            <!-- Show an error -->
+            <tr style="background: var(--status-danger-muted);">
+              <td class="text-muted">14:30:12.334</td>
+              <td><span class="log-level log-level--error">ERR</span></td>
+              <td>issue failed after max retries</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">81</span>
+                <span class="log-field-key">retries</span>=<span class="log-field-value">3</span>
+                <span class="log-field-key">reason</span>=<span class="log-field-value">QA rejected</span>
+              </td>
+            </tr>
+
+            <!-- Expanded row example (shows what clicking a row looks like) -->
+            <tr style="background: var(--bg-surface-2); cursor: pointer;">
+              <td class="text-muted">14:30:12.340</td>
+              <td><span class="log-level log-level--debug">DBG</span></td>
+              <td>agent session details</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">81</span>
+              </td>
+            </tr>
+            <!-- This shows the expanded structured JSON view -->
+            <tr class="log-detail-row">
+              <td colspan="4">
+                <div class="log-detail-content">
+                  <div class="log-json">{
+  <span class="json-key">"time"</span>: <span class="json-string">"2026-03-05T14:30:12.340Z"</span>,
+  <span class="json-key">"level"</span>: <span class="json-string">"DEBUG"</span>,
+  <span class="json-key">"msg"</span>: <span class="json-string">"agent session details"</span>,
+  <span class="json-key">"issue"</span>: <span class="json-number">81</span>,
+  <span class="json-key">"agent"</span>: <span class="json-string">"implement"</span>,
+  <span class="json-key">"session_id"</span>: <span class="json-string">"a3f8c2d1-9e4b-4f7a-b6c8-1d2e3f4a5b6c"</span>,
+  <span class="json-key">"tool_calls"</span>: <span class="json-number">24</span>,
+  <span class="json-key">"tokens_in"</span>: <span class="json-number">48231</span>,
+  <span class="json-key">"tokens_out"</span>: <span class="json-number">12847</span>,
+  <span class="json-key">"sandbox"</span>: <span class="json-bool">true</span>,
+  <span class="json-key">"exit_code"</span>: <span class="json-number">1</span>
+}</div>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:30:15.001</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>processing issue</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">82</span>
+                <span class="log-field-key">title</span>=<span class="log-field-value">Implement log viewer</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:32:46.789</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>issue completed with review needed</td>
+              <td>
+                <span class="log-field-key">issue</span>=<span class="log-field-value">82</span>
+                <span class="log-field-key">pr</span>=<span class="log-field-value">117</span>
+                <span class="log-field-key">verdict</span>=<span class="log-field-value" style="color: var(--status-warning);">needs-review</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-muted">14:41:42.003</td>
+              <td><span class="log-level log-level--info">INFO</span></td>
+              <td>orchestrator finished</td>
+              <td>
+                <span class="log-field-key">total_issues</span>=<span class="log-field-value">9</span>
+                <span class="log-field-key">passed</span>=<span class="log-field-value" style="color: var(--status-success);">8</span>
+                <span class="log-field-key">failed</span>=<span class="log-field-value" style="color: var(--status-danger);">1</span>
+                <span class="log-field-key">cost</span>=<span class="log-field-value">4.23</span>
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Load More -->
+      <!-- htmx: hx-get="/partials/logs?offset=25" hx-target="#log-body" hx-swap="beforeend" -->
+      <div class="load-more animate-in animate-in-3">
+        <button class="btn btn--ghost btn--sm">Load more (222 remaining)</button>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

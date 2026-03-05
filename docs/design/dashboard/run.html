@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Run #47</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .issue-row { display: grid; grid-template-columns: 1fr auto; gap: var(--space-4); align-items: start; }
+    .issue-row__main { display: flex; flex-direction: column; gap: var(--space-1); }
+    .issue-row__title { font-weight: 500; color: var(--text-primary); font-size: var(--text-md); }
+    .issue-row__meta { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-xs); color: var(--text-secondary); flex-wrap: wrap; }
+    .issue-row__right { display: flex; align-items: center; gap: var(--space-4); flex-shrink: 0; }
+    .issue-card { padding: var(--space-4); border-bottom: 1px solid var(--border-muted); transition: background var(--transition-fast); cursor: pointer; }
+    .issue-card:last-child { border-bottom: none; }
+    .issue-card:hover { background: var(--bg-surface-2); }
+    .retry-count { display: inline-flex; align-items: center; gap: 2px; font-size: var(--text-xs); color: var(--text-muted); }
+    .retry-count svg { width: 12px; height: 12px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <a href="index.html">Runs</a>
+        <span class="breadcrumbs__sep">/</span>
+        <span class="breadcrumbs__current">Run #47</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Watching
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="index.html" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="logs.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h8.5C13.216 0 14 .784 14 1.75v12.5A1.75 1.75 0 0112.25 16h-8.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V1.75a.25.25 0 00-.25-.25h-8.5zM4.75 4h6.5v1.5h-6.5V4zm0 3h6.5v1.5h-6.5V7zm0 3h4v1.5h-4V10z"/></svg>
+              Logs
+            </a>
+          </li>
+          <li>
+            <a href="empty.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+              Empty States
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar__section">
+        <div class="sidebar__label">This Run</div>
+        <ul class="sidebar__nav">
+          <li><span class="sidebar__link" style="color: var(--text-muted);">phs/dark-factory</span></li>
+          <li><span class="sidebar__link" style="color: var(--text-muted);">v0.9 — Dashboard</span></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <div class="flex items-center gap-3" style="margin-bottom: var(--space-2);">
+          <h1 class="page-header__title">Run #47</h1>
+          <span class="badge badge--success"><span class="badge__dot"></span> Passed</span>
+        </div>
+        <p class="page-header__subtitle">
+          phs/dark-factory &middot; v0.9 — Dashboard &middot; Started Mar 5, 2026 at 14:23
+        </p>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="stats-row animate-in animate-in-1">
+        <div class="stat-block">
+          <div class="stat-block__label">Issues</div>
+          <div class="stat-block__value">9</div>
+          <div class="stat-block__detail">8 passed, 1 failed</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Duration</div>
+          <div class="stat-block__value">18m 42s</div>
+          <div class="stat-block__detail">Sequential processing</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Retries</div>
+          <div class="stat-block__value stat-block__value--warning">3</div>
+          <div class="stat-block__detail">On 2 issues</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Total Cost</div>
+          <div class="stat-block__value stat-block__value--accent">$4.23</div>
+          <div class="stat-block__detail">Avg $0.47/issue</div>
+        </div>
+      </div>
+
+      <!-- Quality Summary -->
+      <div class="card animate-in animate-in-2" style="margin-bottom: var(--space-6);">
+        <div class="card__header">
+          <span class="card__title">Quality Flags</span>
+          <div class="quality-flags">
+            <span class="quality-flag quality-flag--pass" data-tooltip="Build: pass" title="Build: pass">B</span>
+            <span class="quality-flag quality-flag--pass" data-tooltip="Test: pass" title="Test: pass">T</span>
+            <span class="quality-flag quality-flag--warn" data-tooltip="Lint: 3 warnings" title="Lint: 3 warnings">L</span>
+            <span class="quality-flag quality-flag--pass" data-tooltip="Vet: pass" title="Vet: pass">V</span>
+          </div>
+        </div>
+        <div class="card__body" style="padding: var(--space-3) var(--space-4);">
+          <div style="display: flex; gap: var(--space-8); font-size: var(--text-sm);">
+            <div>
+              <span class="text-muted">Build</span>
+              <span class="text-success" style="margin-left: var(--space-2);">PASS</span>
+              <span class="text-muted" style="margin-left: var(--space-2);">0 errors</span>
+            </div>
+            <div>
+              <span class="text-muted">Test</span>
+              <span class="text-success" style="margin-left: var(--space-2);">PASS</span>
+              <span class="text-muted" style="margin-left: var(--space-2);">47/47 passed</span>
+            </div>
+            <div>
+              <span class="text-muted">Lint</span>
+              <span class="text-warning" style="margin-left: var(--space-2);">WARN</span>
+              <span class="text-muted" style="margin-left: var(--space-2);">3 warnings</span>
+            </div>
+            <div>
+              <span class="text-muted">Vet</span>
+              <span class="text-success" style="margin-left: var(--space-2);">PASS</span>
+              <span class="text-muted" style="margin-left: var(--space-2);">0 findings</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Issues List -->
+      <div class="card animate-in animate-in-3">
+        <div class="card__header">
+          <span class="card__title">Issues (9)</span>
+          <div class="control-group">
+            <span class="filter-chip filter-chip--active">All</span>
+            <span class="filter-chip">Passed</span>
+            <span class="filter-chip">Failed</span>
+            <span class="filter-chip">Review</span>
+          </div>
+        </div>
+
+        <!-- Issue 1: Success -->
+        <div class="issue-card" onclick="location.href='issue.html'">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title">
+                <a href="issue.html" style="color: inherit;">#78 Add dashboard HTTP server with basic routing</a>
+              </div>
+              <div class="issue-row__meta">
+                <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+                <a href="#" class="pr-link">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg>
+                  PR #115
+                </a>
+                <span>2m 14s</span>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Build: pass" title="Build: pass" style="width: 16px; height: 16px; font-size: 9px;">B</span>
+                  <span class="quality-flag quality-flag--pass" data-tooltip="Test: pass" title="Test: pass" style="width: 16px; height: 16px; font-size: 9px;">T</span>
+                </div>
+              </div>
+            </div>
+            <div class="issue-row__right">
+              <span class="cost">0.52</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Issue 2: Success with retries -->
+        <div class="issue-card" onclick="location.href='issue.html'">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title">
+                <a href="issue.html" style="color: inherit;">#79 Implement run list page with htmx partials</a>
+              </div>
+              <div class="issue-row__meta">
+                <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+                <a href="#" class="pr-link">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg>
+                  PR #116
+                </a>
+                <span>3m 08s</span>
+                <span class="retry-count">
+                  <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.029 2.217a6.5 6.5 0 019.437 5.11c.106.636-.54.886-.92.395l-.148-.19a6.5 6.5 0 01-.537-.753.25.25 0 00-.331-.08 5 5 0 11-7.19-3.682.25.25 0 00.105-.337L5.108 2.2a.25.25 0 00-.079-.083z"/></svg>
+                  2 retries
+                </span>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--pass" style="width: 16px; height: 16px; font-size: 9px;">B</span>
+                  <span class="quality-flag quality-flag--pass" style="width: 16px; height: 16px; font-size: 9px;">T</span>
+                </div>
+              </div>
+            </div>
+            <div class="issue-row__right">
+              <span class="cost">0.87</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Issue 3: Failed -->
+        <div class="issue-card" onclick="location.href='issue.html'" style="border-left: 3px solid var(--status-danger);">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title">
+                <a href="issue.html" style="color: inherit;">#81 Add WebSocket live-update connection</a>
+              </div>
+              <div class="issue-row__meta">
+                <span class="badge badge--danger"><span class="badge__dot"></span> Failed</span>
+                <span class="text-danger" style="font-size: var(--text-xs);">QA review rejected after 3 attempts</span>
+                <span>4m 52s</span>
+                <span class="retry-count">
+                  <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.029 2.217a6.5 6.5 0 019.437 5.11c.106.636-.54.886-.92.395l-.148-.19a6.5 6.5 0 01-.537-.753.25.25 0 00-.331-.08 5 5 0 11-7.19-3.682.25.25 0 00.105-.337L5.108 2.2a.25.25 0 00-.079-.083z"/></svg>
+                  3 retries (max)
+                </span>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--fail" style="width: 16px; height: 16px; font-size: 9px;">B</span>
+                  <span class="quality-flag quality-flag--fail" style="width: 16px; height: 16px; font-size: 9px;">T</span>
+                </div>
+              </div>
+            </div>
+            <div class="issue-row__right">
+              <span class="cost">1.23</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Issue 4: Needs review -->
+        <div class="issue-card" onclick="location.href='issue.html'" style="border-left: 3px solid var(--status-warning);">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title">
+                <a href="issue.html" style="color: inherit;">#82 Implement log viewer with JSON parsing</a>
+              </div>
+              <div class="issue-row__meta">
+                <span class="badge badge--warning"><span class="badge__dot"></span> Review</span>
+                <a href="#" class="pr-link">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg>
+                  PR #117
+                </a>
+                <span>2m 31s</span>
+                <div class="quality-flags">
+                  <span class="quality-flag quality-flag--pass" style="width: 16px; height: 16px; font-size: 9px;">B</span>
+                  <span class="quality-flag quality-flag--warn" style="width: 16px; height: 16px; font-size: 9px;">T</span>
+                </div>
+              </div>
+            </div>
+            <div class="issue-row__right">
+              <span class="cost">0.64</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Issues 5-9: more successes -->
+        <div class="issue-card" onclick="location.href='issue.html'">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title"><a href="issue.html" style="color: inherit;">#83 Add breadcrumb navigation component</a></div>
+              <div class="issue-row__meta">
+                <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+                <a href="#" class="pr-link"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg> PR #118</a>
+                <span>1m 03s</span>
+              </div>
+            </div>
+            <div class="issue-row__right"><span class="cost">0.21</span></div>
+          </div>
+        </div>
+
+        <div class="issue-card" onclick="location.href='issue.html'">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title"><a href="issue.html" style="color: inherit;">#84 Implement filter controls for run list</a></div>
+              <div class="issue-row__meta">
+                <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+                <a href="#" class="pr-link"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg> PR #119</a>
+                <span>1m 47s</span>
+              </div>
+            </div>
+            <div class="issue-row__right"><span class="cost">0.31</span></div>
+          </div>
+        </div>
+
+        <div class="issue-card" onclick="location.href='issue.html'">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title"><a href="issue.html" style="color: inherit;">#85 Add status badge component</a></div>
+              <div class="issue-row__meta">
+                <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+                <a href="#" class="pr-link"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg> PR #120</a>
+                <span>0m 54s</span>
+              </div>
+            </div>
+            <div class="issue-row__right"><span class="cost">0.18</span></div>
+          </div>
+        </div>
+
+        <div class="issue-card" onclick="location.href='issue.html'">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title"><a href="issue.html" style="color: inherit;">#86 Implement run detail page template</a></div>
+              <div class="issue-row__meta">
+                <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+                <a href="#" class="pr-link"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg> PR #121</a>
+                <span>1m 22s</span>
+              </div>
+            </div>
+            <div class="issue-row__right"><span class="cost">0.27</span></div>
+          </div>
+        </div>
+
+        <div class="issue-card" onclick="location.href='issue.html'">
+          <div class="issue-row">
+            <div class="issue-row__main">
+              <div class="issue-row__title"><a href="issue.html" style="color: inherit;">#87 Add cost tracking to dashboard views</a></div>
+              <div class="issue-row__meta">
+                <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+                <a href="#" class="pr-link"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg> PR #122</a>
+                <span>1m 11s</span>
+              </div>
+            </div>
+            <div class="issue-row__right"><span class="cost">0.24</span></div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</body>
+</html>

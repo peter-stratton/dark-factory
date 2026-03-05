@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Issue #79</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .issue-header { display: flex; align-items: start; gap: var(--space-4); margin-bottom: var(--space-6); }
+    .issue-header__main { flex: 1; }
+    .issue-header__number { font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--space-1); }
+    .issue-header__title { font-family: var(--font-sans); font-size: var(--text-xl); font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-2); }
+    .issue-header__meta { display: flex; align-items: center; gap: var(--space-4); font-size: var(--text-sm); color: var(--text-secondary); flex-wrap: wrap; }
+
+    .step-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); font-size: var(--text-xs); }
+    .step-detail { display: flex; flex-direction: column; gap: 2px; }
+    .step-detail__label { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .step-detail__value { color: var(--text-primary); font-weight: 500; }
+
+    .verdict-box { margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); line-height: 1.6; }
+    .verdict-box--pass { background: var(--status-success-muted); border: 1px solid rgba(63, 185, 80, 0.2); color: var(--text-secondary); }
+    .verdict-box--fail { background: var(--status-danger-muted); border: 1px solid rgba(248, 81, 73, 0.2); color: var(--text-secondary); }
+    .verdict-box--info { background: var(--status-info-muted); border: 1px solid rgba(88, 166, 255, 0.2); color: var(--text-secondary); }
+
+    .quality-detail { display: flex; gap: var(--space-4); margin-top: var(--space-3); flex-wrap: wrap; }
+    .quality-detail__item { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <a href="index.html">Runs</a>
+        <span class="breadcrumbs__sep">/</span>
+        <a href="run.html">Run #47</a>
+        <span class="breadcrumbs__sep">/</span>
+        <span class="breadcrumbs__current">Issue #79</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Watching
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="index.html" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="logs.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h8.5C13.216 0 14 .784 14 1.75v12.5A1.75 1.75 0 0112.25 16h-8.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V1.75a.25.25 0 00-.25-.25h-8.5zM4.75 4h6.5v1.5h-6.5V4zm0 3h6.5v1.5h-6.5V7zm0 3h4v1.5h-4V10z"/></svg>
+              Logs
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar__section">
+        <div class="sidebar__label">This Issue</div>
+        <ul class="sidebar__nav">
+          <li><span class="sidebar__link text-muted">Run #47</span></li>
+          <li><span class="sidebar__link text-muted">phs/dark-factory</span></li>
+          <li><span class="sidebar__link text-muted">2 retries</span></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+
+      <!-- Issue Header -->
+      <div class="issue-header animate-in">
+        <div class="issue-header__main">
+          <div class="issue-header__number">Issue #79 &middot; Run #47</div>
+          <h1 class="issue-header__title">Implement run list page with htmx partials</h1>
+          <div class="issue-header__meta">
+            <span class="badge badge--success"><span class="badge__dot"></span> Success</span>
+            <a href="#" class="pr-link">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg>
+              PR #116
+            </a>
+            <span>Total: 3m 08s</span>
+            <span>Cost: <span class="cost">0.87</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary Stats -->
+      <div class="stats-row animate-in animate-in-1">
+        <div class="stat-block">
+          <div class="stat-block__label">Attempts</div>
+          <div class="stat-block__value">3</div>
+          <div class="stat-block__detail">1 initial + 2 retries</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Total Duration</div>
+          <div class="stat-block__value">3m 08s</div>
+          <div class="stat-block__detail">Implement + QA cycles</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Quality Flags</div>
+          <div class="stat-block__value" style="display: flex; gap: var(--space-2);">
+            <span class="quality-flag quality-flag--pass" data-tooltip="Build: pass" title="Build: pass">B</span>
+            <span class="quality-flag quality-flag--pass" data-tooltip="Test: pass" title="Test: pass">T</span>
+            <span class="quality-flag quality-flag--pass" data-tooltip="Lint: pass" title="Lint: pass">L</span>
+            <span class="quality-flag quality-flag--pass" data-tooltip="Vet: pass" title="Vet: pass">V</span>
+          </div>
+          <div class="stat-block__detail">All passing on final attempt</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-block__label">Total Cost</div>
+          <div class="stat-block__value stat-block__value--accent">$0.87</div>
+          <div class="stat-block__detail">Across all attempts</div>
+        </div>
+      </div>
+
+      <!-- Review Chain Timeline -->
+      <h2 style="font-family: var(--font-sans); font-size: var(--text-lg); font-weight: 600; margin-bottom: var(--space-4);" class="animate-in animate-in-2">Review Chain</h2>
+
+      <div class="timeline animate-in animate-in-3">
+
+        <!-- Step 1: Implementation (attempt 1) -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--info"></div>
+          <div class="timeline__content">
+            <div class="timeline__header">
+              <span class="timeline__title">Implementation — Attempt 1</span>
+              <div class="timeline__meta">
+                <span>14:23:00</span>
+                <span class="cost">0.24</span>
+              </div>
+            </div>
+            <div class="timeline__body">
+              Agent created initial implementation with run list template, htmx partial endpoint, and Alpine.js filter controls.
+            </div>
+            <div class="step-details">
+              <div class="step-detail">
+                <span class="step-detail__label">Duration</span>
+                <span class="step-detail__value">48s</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Files Changed</span>
+                <span class="step-detail__value">4</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Lines Added</span>
+                <span class="step-detail__value">+187</span>
+              </div>
+            </div>
+
+            <!-- Expandable tool trace -->
+            <!-- Alpine.js: x-data="{ open: false }" on parent, @click="open = !open" on trigger, x-show="open" on content -->
+            <div class="expandable">
+              <input type="checkbox" id="trace-1" class="expandable__toggle">
+              <label for="trace-1" class="expandable__trigger">
+                <span class="expandable__arrow">&#9654;</span>
+                Tool trace (12 calls)
+              </label>
+              <div class="expandable__content">
+                <div class="code-block">
+                  <div><span class="line-num">1</span><span class="text-info">Read</span> internal/dashboard/server.go</div>
+                  <div><span class="line-num">2</span><span class="text-info">Read</span> internal/dashboard/templates/layout.html</div>
+                  <div><span class="line-num">3</span><span class="text-quality">Write</span> internal/dashboard/handlers/runs.go <span class="text-muted">+67 lines</span></div>
+                  <div><span class="line-num">4</span><span class="text-quality">Write</span> internal/dashboard/templates/runs.html <span class="text-muted">+52 lines</span></div>
+                  <div><span class="line-num">5</span><span class="text-quality">Write</span> internal/dashboard/templates/partials/runs-table.html <span class="text-muted">+38 lines</span></div>
+                  <div><span class="line-num">6</span><span class="text-quality">Write</span> internal/dashboard/handlers/runs_test.go <span class="text-muted">+30 lines</span></div>
+                  <div><span class="line-num">7</span><span class="text-accent">Bash</span> go build ./... <span class="text-success">OK</span></div>
+                  <div><span class="line-num">8</span><span class="text-accent">Bash</span> go test ./internal/dashboard/... <span class="text-success">PASS</span></div>
+                  <div><span class="line-num">9</span><span class="text-accent">Bash</span> go vet ./... <span class="text-success">OK</span></div>
+                  <div><span class="line-num">10</span><span class="text-info">Read</span> internal/dashboard/handlers/runs.go</div>
+                  <div><span class="line-num">11</span><span class="text-accent">Bash</span> git add -A &amp;&amp; git commit <span class="text-success">OK</span></div>
+                  <div><span class="line-num">12</span><span class="text-accent">Bash</span> gh pr create <span class="text-success">PR #116</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: QA Review 1 — Rejected -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--danger"></div>
+          <div class="timeline__content">
+            <div class="timeline__header">
+              <span class="timeline__title">QA Review — Cycle 1</span>
+              <div class="timeline__meta">
+                <span>14:23:48</span>
+                <span class="badge badge--danger" style="font-size: 10px;">Rejected</span>
+              </div>
+            </div>
+            <div class="verdict-box verdict-box--fail">
+              <strong>Verdict: FAIL</strong> — Missing error handling in runs handler. Template doesn't escape user-provided milestone names. Filter partial doesn't preserve query params across htmx swaps.
+            </div>
+            <div class="step-details">
+              <div class="step-detail">
+                <span class="step-detail__label">Duration</span>
+                <span class="step-detail__value">22s</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Issues Found</span>
+                <span class="step-detail__value text-danger">3</span>
+              </div>
+            </div>
+
+            <div class="expandable">
+              <input type="checkbox" id="trace-2" class="expandable__toggle">
+              <label for="trace-2" class="expandable__trigger">
+                <span class="expandable__arrow">&#9654;</span>
+                Tool trace (6 calls)
+              </label>
+              <div class="expandable__content">
+                <div class="code-block">
+                  <div><span class="line-num">1</span><span class="text-info">Read</span> internal/dashboard/handlers/runs.go</div>
+                  <div><span class="line-num">2</span><span class="text-info">Read</span> internal/dashboard/templates/runs.html</div>
+                  <div><span class="line-num">3</span><span class="text-info">Read</span> internal/dashboard/templates/partials/runs-table.html</div>
+                  <div><span class="line-num">4</span><span class="text-info">Read</span> internal/dashboard/handlers/runs_test.go</div>
+                  <div><span class="line-num">5</span><span class="text-accent">Bash</span> go test -race ./internal/dashboard/... <span class="text-success">PASS</span></div>
+                  <div><span class="line-num">6</span><span class="text-warning">Review</span> Verdict: FAIL (3 issues)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Implementation retry 1 -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--info"></div>
+          <div class="timeline__content">
+            <div class="timeline__header">
+              <span class="timeline__title">Implementation — Retry 1</span>
+              <div class="timeline__meta">
+                <span>14:24:10</span>
+                <span class="cost">0.19</span>
+              </div>
+            </div>
+            <div class="timeline__body">
+              Fixed error handling, added template escaping, preserved query params in htmx partial responses.
+            </div>
+            <div class="step-details">
+              <div class="step-detail">
+                <span class="step-detail__label">Duration</span>
+                <span class="step-detail__value">35s</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Files Changed</span>
+                <span class="step-detail__value">3</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Lines Changed</span>
+                <span class="step-detail__value">+24 / -8</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: QA Review 2 — Rejected (minor) -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--danger"></div>
+          <div class="timeline__content">
+            <div class="timeline__header">
+              <span class="timeline__title">QA Review — Cycle 2</span>
+              <div class="timeline__meta">
+                <span>14:24:45</span>
+                <span class="badge badge--danger" style="font-size: 10px;">Rejected</span>
+              </div>
+            </div>
+            <div class="verdict-box verdict-box--fail">
+              <strong>Verdict: FAIL</strong> — Test coverage missing for the new error handling path. Previous issues resolved.
+            </div>
+            <div class="step-details">
+              <div class="step-detail">
+                <span class="step-detail__label">Duration</span>
+                <span class="step-detail__value">18s</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Issues Found</span>
+                <span class="step-detail__value text-danger">1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 5: Implementation retry 2 -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--info"></div>
+          <div class="timeline__content">
+            <div class="timeline__header">
+              <span class="timeline__title">Implementation — Retry 2</span>
+              <div class="timeline__meta">
+                <span>14:25:03</span>
+                <span class="cost">0.14</span>
+              </div>
+            </div>
+            <div class="timeline__body">
+              Added test cases for error handling path. All tests passing.
+            </div>
+            <div class="step-details">
+              <div class="step-detail">
+                <span class="step-detail__label">Duration</span>
+                <span class="step-detail__value">28s</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Files Changed</span>
+                <span class="step-detail__value">1</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Lines Added</span>
+                <span class="step-detail__value">+18</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 6: QA Review 3 — Passed -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--success"></div>
+          <div class="timeline__content">
+            <div class="timeline__header">
+              <span class="timeline__title">QA Review — Cycle 3</span>
+              <div class="timeline__meta">
+                <span>14:25:31</span>
+                <span class="badge badge--success" style="font-size: 10px;">Approved</span>
+              </div>
+            </div>
+            <div class="verdict-box verdict-box--pass">
+              <strong>Verdict: PASS</strong> — All previous issues resolved. Error handling is correct, templates properly escape user input, htmx partials preserve state. Test coverage adequate.
+            </div>
+            <div class="step-details">
+              <div class="step-detail">
+                <span class="step-detail__label">Duration</span>
+                <span class="step-detail__value">15s</span>
+              </div>
+              <div class="step-detail">
+                <span class="step-detail__label">Issues Found</span>
+                <span class="step-detail__value text-success">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 7: Functional Review — Passed -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--success"></div>
+          <div class="timeline__content">
+            <div class="timeline__header">
+              <span class="timeline__title">Functional Review</span>
+              <div class="timeline__meta">
+                <span>14:25:46</span>
+                <span class="badge badge--success" style="font-size: 10px;">Approved</span>
+              </div>
+            </div>
+            <div class="verdict-box verdict-box--pass">
+              <strong>Verdict: PASS</strong> — Implementation satisfies issue requirements. Run list displays correctly, pagination works via htmx, filter controls update table content.
+            </div>
+            <div class="quality-detail">
+              <div class="quality-detail__item">
+                <span class="quality-flag quality-flag--pass" style="width: 16px; height: 16px; font-size: 9px;">B</span>
+                <span>Build: <span class="text-success">pass</span></span>
+              </div>
+              <div class="quality-detail__item">
+                <span class="quality-flag quality-flag--pass" style="width: 16px; height: 16px; font-size: 9px;">T</span>
+                <span>Test: <span class="text-success">12/12 pass</span></span>
+              </div>
+              <div class="quality-detail__item">
+                <span class="quality-flag quality-flag--pass" style="width: 16px; height: 16px; font-size: 9px;">L</span>
+                <span>Lint: <span class="text-success">0 issues</span></span>
+              </div>
+              <div class="quality-detail__item">
+                <span class="quality-flag quality-flag--pass" style="width: 16px; height: 16px; font-size: 9px;">V</span>
+                <span>Vet: <span class="text-success">0 findings</span></span>
+              </div>
+            </div>
+            <div class="step-details">
+              <div class="step-detail">
+                <span class="step-detail__label">Duration</span>
+                <span class="step-detail__value">12s</span>
+              </div>
+            </div>
+
+            <div class="expandable">
+              <input type="checkbox" id="trace-7" class="expandable__toggle">
+              <label for="trace-7" class="expandable__trigger">
+                <span class="expandable__arrow">&#9654;</span>
+                Tool trace (8 calls)
+              </label>
+              <div class="expandable__content">
+                <div class="code-block">
+                  <div><span class="line-num">1</span><span class="text-info">Read</span> GitHub issue #79</div>
+                  <div><span class="line-num">2</span><span class="text-info">Read</span> internal/dashboard/handlers/runs.go</div>
+                  <div><span class="line-num">3</span><span class="text-info">Read</span> internal/dashboard/templates/runs.html</div>
+                  <div><span class="line-num">4</span><span class="text-info">Read</span> internal/dashboard/templates/partials/runs-table.html</div>
+                  <div><span class="line-num">5</span><span class="text-accent">Bash</span> go build ./... <span class="text-success">OK</span></div>
+                  <div><span class="line-num">6</span><span class="text-accent">Bash</span> go test ./internal/dashboard/... <span class="text-success">12/12 PASS</span></div>
+                  <div><span class="line-num">7</span><span class="text-accent">Bash</span> go vet ./... <span class="text-success">OK</span></div>
+                  <div><span class="line-num">8</span><span class="text-success">Review</span> Verdict: PASS</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 8: Complete -->
+        <div class="timeline__item">
+          <div class="timeline__marker timeline__marker--active"></div>
+          <div class="timeline__content" style="border-color: var(--accent); background: var(--accent-subtle);">
+            <div class="timeline__header">
+              <span class="timeline__title" style="color: var(--accent);">Complete</span>
+              <div class="timeline__meta">
+                <span>14:26:08</span>
+              </div>
+            </div>
+            <div class="timeline__body">
+              Issue #79 resolved. PR #116 ready for merge. Total cost: $0.87 across 3 attempts.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</body>
+</html>
