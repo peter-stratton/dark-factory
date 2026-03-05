@@ -86,7 +86,11 @@ func runNew(cmd *cobra.Command, projectName, repo string) error {
 	if err := os.Chdir(absProjectDir); err != nil {
 		return fmt.Errorf("changing to project directory: %w", err)
 	}
-	defer os.Chdir(origDir) //nolint:errcheck
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not restore working directory: %v\n", err)
+		}
+	}()
 
 	// Write skill files (reuses the shared helper from init.go).
 	if err := writeSkillFiles(cmd); err != nil {
@@ -117,7 +121,8 @@ func runNew(cmd *cobra.Command, projectName, repo string) error {
 func writeNewProjectConfig(cmd *cobra.Command, repo string) error {
 	config := defaultConfig
 	if repo != "" {
-		config = strings.Replace(config, `repo: ""`, fmt.Sprintf("repo: %s", repo), 1)
+		safe := strings.ReplaceAll(repo, `"`, `\"`)
+		config = strings.Replace(config, `repo: ""`, fmt.Sprintf(`repo: "%s"`, safe), 1)
 	}
 	if err := os.WriteFile("godark.yaml", []byte(config), 0o644); err != nil {
 		return fmt.Errorf("writing godark.yaml: %w", err)

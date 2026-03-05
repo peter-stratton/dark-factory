@@ -165,8 +165,8 @@ func TestNewRepoFlag(t *testing.T) {
 		t.Fatalf("reading testproject/godark.yaml: %v", err)
 	}
 
-	if !strings.Contains(string(data), "repo: owner/repo") {
-		t.Errorf("godark.yaml missing repo: owner/repo; got:\n%s", data)
+	if !strings.Contains(string(data), `repo: "owner/repo"`) {
+		t.Errorf(`godark.yaml missing repo: "owner/repo"; got:\n%s`, data)
 	}
 }
 
