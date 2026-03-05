@@ -117,45 +117,58 @@ func TestCheckDuration(t *testing.T) {
 
 func TestCheckToolTrace(t *testing.T) {
 	tests := []struct {
-		name      string
-		trace     []string
-		wantCodes []string
+		name        string
+		trace       []string
+		testCommand string
+		wantCodes   []string
 	}{
 		{
-			name:      "no diff read",
-			trace:     []string{"Bash: go build ./...", "Bash: go test ./..."},
-			wantCodes: []string{"no_diff_read"},
+			name:        "no diff read",
+			trace:       []string{"Bash: go build ./...", "Bash: go test ./..."},
+			testCommand: "go test",
+			wantCodes:   []string{"no_diff_read"},
 		},
 		{
-			name:      "no tests run",
-			trace:     []string{"Read: main.go", "gh pr diff 42"},
-			wantCodes: []string{"no_tests_run"},
+			name:        "no tests run",
+			trace:       []string{"Read: main.go", "gh pr diff 42"},
+			testCommand: "go test",
+			wantCodes:   []string{"no_tests_run"},
 		},
 		{
-			name:      "normal trace with Read and go test",
-			trace:     []string{"Read: main.go", "Bash: go test ./..."},
-			wantCodes: nil,
+			name:        "normal trace with Read and go test",
+			trace:       []string{"Read: main.go", "Bash: go test ./..."},
+			testCommand: "go test",
+			wantCodes:   nil,
 		},
 		{
-			name:      "normal trace with gh pr diff and npm test",
-			trace:     []string{"Bash: gh pr diff 42", "Bash: npm test"},
-			wantCodes: nil,
+			name:        "normal trace with gh pr diff and npm test",
+			trace:       []string{"Bash: gh pr diff 42", "Bash: npm test"},
+			testCommand: "npm test",
+			wantCodes:   nil,
 		},
 		{
-			name:      "empty trace produces both flags",
-			trace:     []string{},
-			wantCodes: []string{"no_diff_read", "no_tests_run"},
+			name:        "empty trace produces both flags",
+			trace:       []string{},
+			testCommand: "go test",
+			wantCodes:   []string{"no_diff_read", "no_tests_run"},
 		},
 		{
-			name:      "nil trace produces both flags",
-			trace:     nil,
-			wantCodes: []string{"no_diff_read", "no_tests_run"},
+			name:        "nil trace produces both flags",
+			trace:       nil,
+			testCommand: "go test",
+			wantCodes:   []string{"no_diff_read", "no_tests_run"},
+		},
+		{
+			name:        "empty test command skips test check",
+			trace:       []string{"Read: main.go"},
+			testCommand: "",
+			wantCodes:   nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckToolTrace(tt.trace)
+			got := CheckToolTrace(tt.trace, tt.testCommand)
 			gotCodes := flagCodes(got)
 			if !codesEqual(gotCodes, tt.wantCodes) {
 				t.Errorf("got flags %v, want %v", gotCodes, tt.wantCodes)

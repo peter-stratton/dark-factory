@@ -361,7 +361,7 @@ func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution b
 		flags = append(flags, *f)
 	}
 
-	flags = append(flags, quality.CheckToolTrace(result.ToolTrace)...)
+	flags = append(flags, quality.CheckToolTrace(result.ToolTrace, cfg.TestCommand)...)
 
 	if checkTestExecution {
 		flags = append(flags, quality.CheckReviewTestExecution(result.ToolTrace, cfg.ReviewDir, cfg.TestCommand)...)

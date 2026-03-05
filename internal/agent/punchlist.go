@@ -68,6 +68,7 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 		Prompt:  buf.String(),
 		Role:    "punchlist",
 		Env:     authEnv,
+		Image:   cfg.Docker.Image,
 		Timeout: timeout,
 	}
 
