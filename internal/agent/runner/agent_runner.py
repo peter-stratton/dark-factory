@@ -51,7 +51,6 @@ _ROLE_PERMISSIONS: dict[str, dict] = {
         "disallowed_tools": ["Bash"],
     },
     "punchlist": {
-        "allowed_tools": [],
         "disallowed_tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
     },
 }
@@ -199,8 +198,8 @@ async def main() -> None:
         system_prompt={"type": "preset", "preset": "claude_code"},
         cwd=work_dir,
         env=env if env else None,
-        allowed_tools=permissions.get("allowed_tools"),
-        disallowed_tools=permissions.get("disallowed_tools"),
+        allowed_tools=permissions.get("allowed_tools") or None,
+        disallowed_tools=permissions.get("disallowed_tools") or None,
         hooks=hooks,
     )
 
