@@ -17,10 +17,10 @@ func TestResultToStep_TimingFields(t *testing.T) {
 
 	step := ResultToStep(r)
 
-	if step.StartedAt != started {
+	if step.StartedAt == nil || *step.StartedAt != started {
 		t.Errorf("StartedAt = %v, want %v", step.StartedAt, started)
 	}
-	if step.FinishedAt != finished {
+	if step.FinishedAt == nil || *step.FinishedAt != finished {
 		t.Errorf("FinishedAt = %v, want %v", step.FinishedAt, finished)
 	}
 	if step.DurationSeconds != 30.0 {
