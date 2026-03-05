@@ -18,7 +18,7 @@ Help the user define a phased roadmap for their project and write it to
    and coding conventions. Read `godark.yaml` to find the `repo` and
    `roadmap_path` (default: `docs/ROADMAP.md`).
 
-   If `docs/architecture.md` is empty or missing, note this and suggest running
+   If `docs/architecture.json` is empty or missing, note this and suggest running
    `/godark-define-architecture` before or after creating the roadmap so that
    structural decisions are captured in a machine-readable form.
 

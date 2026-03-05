@@ -36,7 +36,7 @@ func TestCreatePlanningDocSkillStep4PromptsArchitectureUpdate(t *testing.T) {
 	if !strings.Contains(content, "docs/architecture.json") {
 		t.Error("step 4 does not mention updating docs/architecture.json when layers don't fit")
 	}
-	if !strings.Contains(content, "don't fit") && !strings.Contains(content, "don't fit") {
+	if !strings.Contains(content, "don't fit") && !strings.Contains(content, "don\u2019t fit") {
 		t.Error("step 4 does not describe the case where packages don't fit current layers")
 	}
 }
