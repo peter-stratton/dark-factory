@@ -13,6 +13,7 @@ import (
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
+	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
@@ -207,6 +208,12 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		logger.Warn("failed to create run data writer, run data will not be recorded", "error", err)
 	} else {
 		hook = writer
+		// Switch the logger to write debug.log into the run directory.
+		if runLogger, logErr := logging.NewLogger(writer.Dir()); logErr == nil {
+			logger = runLogger
+		} else {
+			logger.Warn("failed to create run-dir logger, continuing with bootstrap logger", "error", logErr)
+		}
 	}
 
 	// Track stats across all waves.

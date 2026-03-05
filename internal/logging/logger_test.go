@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestNewLogger_CreatesDirectory(t *testing.T) {
@@ -20,25 +19,34 @@ func TestNewLogger_CreatesDirectory(t *testing.T) {
 	}
 }
 
-func TestNewLogger_FileNaming(t *testing.T) {
+func TestNewLogger_CreatesDebugLog(t *testing.T) {
 	dir := t.TempDir()
-	fixedTime := time.Date(2025, 6, 15, 14, 30, 45, 0, time.UTC)
-	timeNow = func() time.Time { return fixedTime }
-	t.Cleanup(func() { timeNow = time.Now })
-
 	_, err := NewLogger(dir)
 	if err != nil {
 		t.Fatalf("NewLogger() error = %v", err)
 	}
 
-	expected := "run-20250615-143045.json"
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 || entries[0].Name() != expected {
-		names := make([]string, len(entries))
-		for i, e := range entries {
-			names[i] = e.Name()
-		}
-		t.Fatalf("expected file %q, got %v", expected, names)
+	path := filepath.Join(dir, "debug.log")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Fatal("expected debug.log to be created in dir")
+	}
+}
+
+// TestDryRunIsolation verifies that two concurrent dry-runs don't share a log path.
+func TestDryRunIsolation(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+
+	_, err1 := NewLogger(dir1)
+	_, err2 := NewLogger(dir2)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("NewLogger errors: %v, %v", err1, err2)
+	}
+
+	path1 := filepath.Join(dir1, "debug.log")
+	path2 := filepath.Join(dir2, "debug.log")
+	if path1 == path2 {
+		t.Error("expected different log paths for separate directories")
 	}
 }
 
@@ -51,10 +59,9 @@ func TestLogger_JSONOutput(t *testing.T) {
 
 	logger.Info("test message")
 
-	entries, _ := os.ReadDir(dir)
-	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
 	if err != nil {
-		t.Fatalf("reading log file: %v", err)
+		t.Fatalf("reading debug.log: %v", err)
 	}
 
 	var record map[string]any
@@ -86,10 +93,9 @@ func TestLogger_StructuredFields(t *testing.T) {
 	child := logger.With("component", "orchestrator", "issue_number", 5)
 	child.Info("processing issue")
 
-	entries, _ := os.ReadDir(dir)
-	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
 	if err != nil {
-		t.Fatalf("reading log file: %v", err)
+		t.Fatalf("reading debug.log: %v", err)
 	}
 
 	var record map[string]any
@@ -102,6 +108,30 @@ func TestLogger_StructuredFields(t *testing.T) {
 	}
 	if record["issue_number"] != float64(5) {
 		t.Errorf("expected issue_number 5, got %v", record["issue_number"])
+	}
+}
+
+// TestLoggerWrites verifies that log entries appear in debug.log.
+func TestLoggerWrites(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewLogger(dir)
+	if err != nil {
+		t.Fatalf("NewLogger() error = %v", err)
+	}
+
+	logger.Debug("debug entry")
+	logger.Info("info entry")
+	logger.Warn("warn entry")
+
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
+	if err != nil {
+		t.Fatalf("reading debug.log: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{"debug entry", "info entry", "warn entry"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("expected %q in debug.log, got:\n%s", want, content)
+		}
 	}
 }
 

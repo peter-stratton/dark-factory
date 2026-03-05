@@ -59,8 +59,7 @@ func setupFakeGH(t *testing.T, openIssues []ghIssue, closedNumbers []int) {
 
 func testConfig() *config.Config {
 	return &config.Config{
-		Repo:   "owner/repo",
-		LogDir: "",
+		Repo: "owner/repo",
 	}
 }
 
@@ -180,12 +179,9 @@ func TestDryRun_LogFileCreated(t *testing.T) {
 		}
 	})
 
-	entries, _ := os.ReadDir(dir)
-	if len(entries) == 0 {
-		t.Fatal("expected log file to be created")
-	}
-	if !strings.HasSuffix(entries[0].Name(), ".json") {
-		t.Errorf("expected JSON log file, got %s", entries[0].Name())
+	debugLog := filepath.Join(dir, "debug.log")
+	if _, err := os.Stat(debugLog); os.IsNotExist(err) {
+		t.Fatal("expected debug.log to be created")
 	}
 }
 

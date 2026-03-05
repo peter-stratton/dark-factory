@@ -90,7 +90,13 @@ each unblocked issue through the implement → review → merge loop.`,
 			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}
 
-		logger, err := logging.NewLogger(cfg.LogDir)
+		// Use a private temp directory for bootstrap logging. The orchestrator will
+		// create a logger in the run directory once the RunDataWriter is set up.
+		logDir, err := os.MkdirTemp("", "godark-log-*")
+		if err != nil {
+			return fmt.Errorf("creating temp log dir: %w", err)
+		}
+		logger, err := logging.NewLogger(logDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}

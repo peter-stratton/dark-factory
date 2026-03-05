@@ -13,9 +13,6 @@ vendor/
 # Python
 __pycache__/
 
-# Logs
-logs/
-
 # IDE
 .idea/
 .vscode/
