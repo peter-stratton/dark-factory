@@ -57,7 +57,8 @@ Given a GitHub repo and a milestone, `godark` runs a three-agent development loo
 6. **Functional reviewer** — another Claude Code instance reviews the PR against human-authored scenario specs, generates ephemeral integration tests, and approves or requests changes
 7. **Retry loop** — if either reviewer rejects, the implementer reads the review comments and pushes fixes (max N retries per gate)
 8. **Merge or escalate** — approved PRs are squash-merged; failed PRs are labeled `needs-human-review`
-9. **Repeat** — move to the next unblocked issue
+9. **Punchlist** — for each merged PR, a tool-less punchlist agent generates 3-5 concrete manual acceptance tests (specific config values, commands, expected outcomes) rendered as checkboxes alongside the existing punchlist output
+10. **Repeat** — move to the next unblocked issue
 
 ## Pre-run checklist
 
@@ -148,11 +149,13 @@ Usage:
   godark implement <issue-number> [flags]
 
 Flags:
-      --config string     Path to configuration file (default "godark.yaml")
-      --dry-run           Print issue details and exit
-      --max-retries int   Maximum review/fix retry cycles (default 3)
-      --no-sandbox        Run agents on host instead of in Docker
-      --repo string       GitHub repository (owner/repo)
+      --config string      Path to configuration file (default "godark.yaml")
+      --dry-run            Print issue details and exit
+      --max-retries int    Maximum review/fix retry cycles (default 3)
+      --no-merge           Skip PR merge after approval (human reviews and merges manually)
+      --no-sandbox         Run agents on host instead of in Docker
+      --punchlist string   Write manual testing punchlist to this file (always printed to stdout)
+      --repo string        GitHub repository (owner/repo)
 ```
 
 ### godark vet
@@ -286,6 +289,7 @@ prompts:
   reviewer: ""
   quality_reviewer: ""
   spec_generator: ""
+  punchlist: ""
 ```
 
 ## Building
