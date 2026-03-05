@@ -17,6 +17,7 @@ import (
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/pypi"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -121,7 +122,35 @@ loop directly, without milestone or dependency resolution.`,
 			}
 		}()
 
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger)
+		// Create a RunDataWriter for this single-issue run. Failure is non-fatal.
+		var hook agent.RunDataHook
+		writer, writerErr := rundata.New(cfg.Repo, "", []int{issueNumber})
+		if writerErr != nil {
+			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
+		} else {
+			hook = writer
+		}
+
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
+
+		// Finalize run data regardless of outcome.
+		if writer != nil {
+			implemented := 0
+			failed := 0
+			if outcome.Status == "implemented" {
+				implemented = 1
+			} else if outcome.Status == "failed" {
+				failed = 1
+			}
+			if err := writer.FinalizeRun(rundata.RunSummary{
+				Total:       1,
+				Implemented: implemented,
+				Failed:      failed,
+			}); err != nil {
+				logger.Warn("failed to finalize run data", "error", err)
+			}
+		}
+
 		if outcome.Err != nil {
 			return fmt.Errorf("issue #%d failed: %w", issueNumber, outcome.Err)
 		}

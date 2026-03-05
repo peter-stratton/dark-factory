@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/rundata"
 )
 
 // ghIssue mirrors the JSON shape for test fixtures.
@@ -378,13 +380,20 @@ func TestCategorizeIssues(t *testing.T) {
 // setupProcessMocks configures all the mocks needed to test processIssues.
 // It returns a cleanup function. closedNumbersFn is called each time
 // FetchClosedIssueNumbers is invoked (to simulate issues closing over time).
-func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) agent.IssueOutcome) {
+func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome) {
 	t.Helper()
 
 	// Mock processIssueFn.
 	origProcess := processIssueFn
 	t.Cleanup(func() { processIssueFn = origProcess })
 	processIssueFn = processFn
+
+	// Mock newRunDataWriterFn to avoid creating real files during tests.
+	origWriter := newRunDataWriterFn
+	t.Cleanup(func() { newRunDataWriterFn = origWriter })
+	newRunDataWriterFn = func(repo, milestone string, issueNums []int) (*rundata.Writer, error) {
+		return nil, fmt.Errorf("disabled in test")
+	}
 
 	// Mock orchestrator.CommandRunner (used by PullAfterMerge).
 	origCmdRunner := CommandRunner
@@ -437,7 +446,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	closedNumbers := []int{} // initially nothing closed
 	setupProcessMocks(t, func() []int {
 		return closedNumbers
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome {
 		callCount++
 		processedNumbers = append(processedNumbers, issue.Number)
 		if issue.Number == 1 {
@@ -462,7 +471,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "")
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "", "test-milestone")
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -495,7 +504,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	var processedNumbers []int
 	setupProcessMocks(t, func() []int {
 		return nil
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome {
 		processedNumbers = append(processedNumbers, issue.Number)
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
@@ -509,7 +518,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "")
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "", "")
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -526,6 +535,80 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	}
 	if !strings.Contains(output, "2 failed") {
 		t.Errorf("expected '2 failed' in output, got:\n%s", output)
+	}
+}
+
+func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 10, Title: "implemented issue"},
+		{Number: 11, Title: "failed issue"},
+	}
+
+	setupProcessMocks(t, func() []int {
+		return nil
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome {
+		if issue.Number == 10 {
+			return agent.IssueOutcome{IssueNumber: 10, Status: "implemented", PRNumber: 100}
+		}
+		return agent.IssueOutcome{IssueNumber: 11, Status: "failed", Err: fmt.Errorf("boom")}
+	})
+
+	// Use a real RunDataWriter in a temp HOME so we can verify FinalizeRun.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	origWriter := newRunDataWriterFn
+	t.Cleanup(func() { newRunDataWriterFn = origWriter })
+	newRunDataWriterFn = rundata.New // use real writer with temp HOME
+
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "", "test-milestone"); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	// Find the run.json and verify it has a finished_at timestamp and correct summary.
+	pattern := tmpHome + "/.godark/runs/owner/repo/*/run.json"
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		t.Fatalf("expected run.json to be created at %s, found: %v (err: %v)", pattern, matches, err)
+	}
+
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta struct {
+		FinishedAt *string `json:"finished_at"`
+		Summary    *struct {
+			Total       int `json:"total"`
+			Implemented int `json:"implemented"`
+			Failed      int `json:"failed"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.FinishedAt == nil {
+		t.Error("run.json missing finished_at — FinalizeRun was not called")
+	}
+	if meta.Summary == nil {
+		t.Fatal("run.json missing summary — FinalizeRun was not called")
+	}
+	if meta.Summary.Implemented != 1 {
+		t.Errorf("summary.implemented = %d, want 1", meta.Summary.Implemented)
+	}
+	if meta.Summary.Failed != 1 {
+		t.Errorf("summary.failed = %d, want 1", meta.Summary.Failed)
+	}
+	if meta.Summary.Total != 2 {
+		t.Errorf("summary.total = %d, want 2", meta.Summary.Total)
 	}
 }
 
