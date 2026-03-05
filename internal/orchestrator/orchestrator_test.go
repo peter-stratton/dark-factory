@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
@@ -352,6 +353,180 @@ func TestSingleIssueMode_ErrorWhenNotFound(t *testing.T) {
 			t.Errorf("expected 'not found' in error, got: %v", err)
 		}
 	})
+}
+
+func TestCategorizeIssues(t *testing.T) {
+	closedSet := map[int]bool{10: true}
+	issues := []github.Issue{
+		{Number: 1, Title: "free"},
+		{Number: 2, Title: "blocked by 10", Body: "**Blocked by**: #10"},
+		{Number: 3, Title: "blocked by 99", Body: "**Blocked by**: #99"},
+	}
+
+	processable, blocked := categorizeIssues(issues, closedSet)
+	if len(processable) != 2 {
+		t.Fatalf("expected 2 processable, got %d", len(processable))
+	}
+	if processable[0].Number != 1 || processable[1].Number != 2 {
+		t.Errorf("expected issues 1 and 2 processable, got %v", processable)
+	}
+	if len(blocked) != 1 || blocked[0].Issue.Number != 3 {
+		t.Errorf("expected issue 3 blocked, got %v", blocked)
+	}
+}
+
+// setupProcessMocks configures all the mocks needed to test processIssues.
+// It returns a cleanup function. closedNumbersFn is called each time
+// FetchClosedIssueNumbers is invoked (to simulate issues closing over time).
+func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) agent.IssueOutcome) {
+	t.Helper()
+
+	// Mock processIssueFn.
+	origProcess := processIssueFn
+	t.Cleanup(func() { processIssueFn = origProcess })
+	processIssueFn = processFn
+
+	// Mock orchestrator.CommandRunner (used by PullAfterMerge).
+	origCmdRunner := CommandRunner
+	t.Cleanup(func() { CommandRunner = origCmdRunner })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("ok"), nil
+	}
+
+	// Mock github.CommandRunner (used by lock, FetchClosedIssueNumbers).
+	origGHRunner := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origGHRunner })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		// FetchClosedIssueNumbers: state=closed query.
+		for i, a := range args {
+			if a == "--state" && i+1 < len(args) && args[i+1] == "closed" {
+				numbers := closedNumbersFn()
+				type num struct {
+					Number int `json:"number"`
+				}
+				items := make([]num, len(numbers))
+				for j, n := range numbers {
+					items[j] = num{Number: n}
+				}
+				return json.Marshal(items)
+			}
+		}
+		// EnsureLabel, AddIssueLabel, RemoveIssueLabel, FindIssuesWithLabel:
+		// return empty list / success.
+		return []byte("[]"), nil
+	}
+
+	// Auth env vars so CollectAuthEnv doesn't fail.
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("GH_TOKEN", "test-gh-token")
+}
+
+func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
+	// Issue 1: no deps (processable).
+	// Issue 2: blocked by #1. After #1 is "implemented" (merged & closed),
+	// #2 should become processable in wave 2.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first task"},
+		{Number: 2, Title: "second task", Body: "**Blocked by**: #1"},
+	}
+
+	// Track which issues were processed.
+	var processedNumbers []int
+	callCount := 0
+
+	closedNumbers := []int{} // initially nothing closed
+	setupProcessMocks(t, func() []int {
+		return closedNumbers
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) agent.IssueOutcome {
+		callCount++
+		processedNumbers = append(processedNumbers, issue.Number)
+		if issue.Number == 1 {
+			// Simulate merge: mark #1 as closed for re-resolution.
+			closedNumbers = []int{1}
+			return agent.IssueOutcome{
+				IssueNumber: 1,
+				Status:      "implemented",
+				PRNumber:    101,
+			}
+		}
+		// Issue 2: also succeeds.
+		return agent.IssueOutcome{
+			IssueNumber: 2,
+			Status:      "implemented",
+			PRNumber:    102,
+		}
+	})
+
+	closedSet := map[int]bool{} // initially empty
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	output := captureStdout(t, func() {
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "")
+		if err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	// Both issues should have been processed.
+	if len(processedNumbers) != 2 {
+		t.Fatalf("expected 2 issues processed, got %d: %v", len(processedNumbers), processedNumbers)
+	}
+	if processedNumbers[0] != 1 || processedNumbers[1] != 2 {
+		t.Errorf("expected issues processed in order [1, 2], got %v", processedNumbers)
+	}
+
+	// Output should mention wave 2.
+	if !strings.Contains(output, "Wave 2") {
+		t.Errorf("expected 'Wave 2' in output, got:\n%s", output)
+	}
+	// Both implemented.
+	if !strings.Contains(output, "2 implemented") {
+		t.Errorf("expected '2 implemented' in output, got:\n%s", output)
+	}
+}
+
+func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "will fail"},
+		{Number: 2, Title: "also fails"},
+	}
+
+	var processedNumbers []int
+	setupProcessMocks(t, func() []int {
+		return nil
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) agent.IssueOutcome {
+		processedNumbers = append(processedNumbers, issue.Number)
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      "failed",
+			Err:         fmt.Errorf("test failure"),
+		}
+	})
+
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	output := captureStdout(t, func() {
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "")
+		if err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	// Each issue processed exactly once.
+	if len(processedNumbers) != 2 {
+		t.Fatalf("expected 2 issues processed, got %d: %v", len(processedNumbers), processedNumbers)
+	}
+
+	// No second wave.
+	if strings.Contains(output, "Wave 2") {
+		t.Errorf("expected no second wave when no merges, got:\n%s", output)
+	}
+	if !strings.Contains(output, "2 failed") {
+		t.Errorf("expected '2 failed' in output, got:\n%s", output)
+	}
 }
 
 // Suppress unused import warnings.

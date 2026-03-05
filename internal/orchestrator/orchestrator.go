@@ -19,7 +19,9 @@ import (
 
 // Run is the main entry point for the orchestration loop.
 // It fetches issues, resolves dependencies, and either prints the execution
-// plan (dry-run) or iterates through processable issues.
+// plan (dry-run) or iterates through processable issues. After each successful
+// merge, dependencies are re-resolved so newly unblocked issues can be
+// processed in the same run.
 //
 // force bypasses an existing run lock (useful to clear stale locks left by
 // crashed instances). punchlistPath is the optional file path to write the
@@ -56,18 +58,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 	closedSet := deps.ClosedSet(closedNumbers)
 
 	// Step 3: Categorize issues into blocked and processable.
-	var blocked []blockedIssue
-	var processable []github.Issue
-
-	for _, issue := range issues {
-		issueDeps := deps.ParseDeps(issue.Body)
-		openDeps := openDependencies(issueDeps, closedSet)
-		if len(openDeps) > 0 {
-			blocked = append(blocked, blockedIssue{Issue: issue, BlockedBy: openDeps})
-		} else {
-			processable = append(processable, issue)
-		}
-	}
+	processable, blocked := categorizeIssues(issues, closedSet)
 
 	// Single-issue mode: filter processable to the requested issue.
 	if issue != 0 {
@@ -89,21 +80,25 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		return nil
 	}
 
-	// Step 5: Acquire run lock to prevent concurrent godark executions.
-	if len(processable) > 0 {
-		locker := lock.New(cfg.Repo, logger)
-		issueNums := issueNumbers(processable)
-		if err := locker.Acquire(issueNums, force); err != nil {
-			return fmt.Errorf("acquiring run lock: %w", err)
-		}
-		defer func() {
-			if err := locker.Release(issueNums); err != nil {
-				logger.Warn("failed to release run lock", "error", err)
-			}
-		}()
-	}
+	return processIssues(ctx, issues, closedSet, cfg, logger, force, punchlistPath)
+}
 
-	return processIssues(ctx, processable, blocked, len(issues), cfg, logger, punchlistPath)
+// categorizeIssues splits issues into processable and blocked based on the
+// closed set. Returns (processable, blocked).
+func categorizeIssues(issues []github.Issue, closedSet map[int]bool) ([]github.Issue, []blockedIssue) {
+	var blocked []blockedIssue
+	var processable []github.Issue
+
+	for _, issue := range issues {
+		issueDeps := deps.ParseDeps(issue.Body)
+		openDeps := openDependencies(issueDeps, closedSet)
+		if len(openDeps) > 0 {
+			blocked = append(blocked, blockedIssue{Issue: issue, BlockedBy: openDeps})
+		} else {
+			processable = append(processable, issue)
+		}
+	}
+	return processable, blocked
 }
 
 // filterSingleIssue extracts a single issue from processable, returning an
@@ -167,12 +162,17 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 	printSummary(total, len(blocked), len(processable))
 }
 
-// processIssues runs each processable issue through the agent loop and prints
-// summary stats. punchlistPath is the optional file path to write the punchlist to.
-func processIssues(ctx context.Context, processable []github.Issue, blocked []blockedIssue, total int, cfg *config.Config, logger *slog.Logger, punchlistPath string) error {
+// processIssues runs processable issues through the agent loop with
+// re-resolution after each merge. When an issue is successfully merged,
+// the closed set is refreshed and dependencies re-resolved so that newly
+// unblocked issues can be processed in the same run.
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, force bool, punchlistPath string) error {
+	// Initial categorization.
+	processable, blocked := categorizeIssues(allIssues, closedSet)
+
 	if len(processable) == 0 {
 		fmt.Println("All issues are blocked — nothing to process.")
-		printSummary(total, len(blocked), 0)
+		printSummary(len(allIssues), len(blocked), 0)
 		return nil
 	}
 
@@ -198,12 +198,13 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 		cfg.Docker.Image = tag
 	}
 
-	// Process each issue.
+	// Track stats across all waves.
 	var stats struct {
 		implemented      int
 		readyToMerge     int
 		needsHumanReview int
 		failed           int
+		blocked          int
 	}
 
 	type processedItem struct {
@@ -212,53 +213,130 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 	}
 	var processed []processedItem
 
-	for _, issue := range processable {
-		if ctx.Err() != nil {
-			logger.Warn("context cancelled, stopping", "error", ctx.Err())
+	// Locking: create a locker and track all locked issue numbers across waves.
+	locker := lock.New(cfg.Repo, logger)
+	var allLockedNums []int
+	defer func() {
+		if len(allLockedNums) > 0 {
+			if err := locker.Release(allLockedNums); err != nil {
+				logger.Warn("failed to release run lock", "error", err)
+			}
+		}
+	}()
+
+	// Track which issues have been seen (processed or failed) to avoid reprocessing.
+	seen := make(map[int]bool)
+	wave := 0
+
+	for {
+		wave++
+
+		// Filter out already-seen issues from the current processable batch.
+		var batch []github.Issue
+		for _, issue := range processable {
+			if !seen[issue.Number] {
+				batch = append(batch, issue)
+			}
+		}
+
+		if len(batch) == 0 {
+			if wave == 1 {
+				fmt.Println("All issues are blocked — nothing to process.")
+				printSummary(len(allIssues), len(blocked), 0)
+			}
 			break
 		}
 
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger)
+		if wave > 1 {
+			logger.Info("re-resolving dependencies",
+				"wave", wave,
+				"newly_unblocked", len(batch),
+			)
+			fmt.Printf("\n--- Wave %d: %d newly unblocked issues ---\n", wave, len(batch))
+		}
 
-		switch outcome.Status {
-		case "implemented":
-			stats.implemented++
-			fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-			if err := PullAfterMerge(logger); err != nil {
-				logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
+		// Lock this wave's issues.
+		batchNums := issueNumbers(batch)
+		if err := locker.Acquire(batchNums, force); err != nil {
+			return fmt.Errorf("acquiring run lock (wave %d): %w", wave, err)
+		}
+		allLockedNums = append(allLockedNums, batchNums...)
+		// Only use force for the first wave; subsequent waves should not force.
+		force = false
+
+		// Process each issue in the batch.
+		merged := false
+		for _, issue := range batch {
+			if ctx.Err() != nil {
+				logger.Warn("context cancelled, stopping", "error", ctx.Err())
+				goto done
+			}
+
+			seen[issue.Number] = true
+			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger)
+
+			switch outcome.Status {
+			case "implemented":
+				stats.implemented++
+				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+				if err := PullAfterMerge(logger); err != nil {
+					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
+					goto done
+				}
+				merged = true
+			case "ready-to-merge":
+				stats.readyToMerge++
+				fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+			case "needs-human-review":
+				stats.needsHumanReview++
+				fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
+			default:
+				stats.failed++
+				errMsg := ""
+				if outcome.Err != nil {
+					errMsg = outcome.Err.Error()
+				}
+				fmt.Printf("  #%d %s — failed: %s\n", issue.Number, issue.Title, errMsg)
+			}
+
+			logger.Info("issue outcome",
+				"issue_number", outcome.IssueNumber,
+				"status", outcome.Status,
+				"pr_number", outcome.PRNumber,
+				"retries", outcome.Retries,
+				"error", outcome.Err,
+			)
+
+			if outcome.PRNumber > 0 {
+				processed = append(processed, processedItem{issue, outcome})
+			}
+
+			// After a merge, break out of the inner loop to re-resolve.
+			if outcome.Status == "implemented" {
 				break
 			}
-		case "ready-to-merge":
-			stats.readyToMerge++
-			fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-		case "needs-human-review":
-			stats.needsHumanReview++
-			fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
-		default:
-			stats.failed++
-			errMsg := ""
-			if outcome.Err != nil {
-				errMsg = outcome.Err.Error()
-			}
-			fmt.Printf("  #%d %s — failed: %s\n", issue.Number, issue.Title, errMsg)
 		}
 
-		logger.Info("issue outcome",
-			"issue_number", outcome.IssueNumber,
-			"status", outcome.Status,
-			"pr_number", outcome.PRNumber,
-			"retries", outcome.Retries,
-			"error", outcome.Err,
-		)
-
-		if outcome.PRNumber > 0 {
-			processed = append(processed, processedItem{issue, outcome})
+		if !merged {
+			// No merges in this wave — no point re-resolving.
+			break
 		}
+
+		// Re-fetch closed issues and re-categorize for the next wave.
+		closedNumbers, err := github.FetchClosedIssueNumbers(cfg.Repo)
+		if err != nil {
+			logger.Warn("failed to re-fetch closed issues, stopping re-resolution", "error", err)
+			break
+		}
+		closedSet = deps.ClosedSet(closedNumbers)
+		processable, blocked = categorizeIssues(allIssues, closedSet)
 	}
 
+done:
+	stats.blocked = len(blocked)
 	fmt.Println()
 	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
-		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, len(blocked))
+		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
 
 	if len(processed) > 0 {
 		entries := make([]punchlist.Entry, 0, len(processed))
@@ -298,6 +376,10 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 func printSummary(total, blocked, processable int) {
 	fmt.Printf("Summary: %d total, %d blocked, %d processable\n", total, blocked, processable)
 }
+
+// processIssueFn is the function called to process each issue.
+// Replaceable for testing.
+var processIssueFn = agent.ProcessIssue
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
