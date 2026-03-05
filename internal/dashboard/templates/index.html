@@ -134,7 +134,7 @@
 
 {{define "runs-rows"}}
 {{range .}}
-<tr>
+<tr data-href="{{.URL}}" onclick="location.href=this.dataset.href">
   <td class="text-secondary">{{.Repo}}</td>
   <td>{{.Milestone}}</td>
   <td>

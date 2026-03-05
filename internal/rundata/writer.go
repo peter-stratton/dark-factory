@@ -39,6 +39,7 @@ type StepResult struct {
 	StartedAt       *time.Time `json:"started_at,omitempty"`
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 	DurationSeconds float64    `json:"duration_seconds,omitempty"`
+	CostUSD         float64    `json:"cost_usd,omitempty"`
 	Flags           []Flag     `json:"flags,omitempty"`
 }
 
