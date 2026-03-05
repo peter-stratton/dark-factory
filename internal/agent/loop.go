@@ -11,17 +11,20 @@ import (
 
 // IssueOutcome records the result of processing a single issue.
 type IssueOutcome struct {
-	IssueNumber int
-	Status      string // "implemented", "ready-to-merge", "failed", "needs-human-review"
-	PRNumber    int
-	Retries     int
-	Err         error
+	IssueNumber  int
+	Status       string // "implemented", "ready-to-merge", "failed", "needs-human-review"
+	PRNumber     int
+	Retries      int
+	TotalCostUSD float64
+	Err          error
 }
 
 // ProcessIssue runs the full per-issue lifecycle:
 // implement → find PR → guard rails → review/retry loop → merge or label.
-func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) IssueOutcome {
+// rw is an optional hook for recording per-step results; pass nil to disable.
+func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, rw RunDataHook) IssueOutcome {
 	outcome := IssueOutcome{IssueNumber: issue.Number}
+	var totalCost float64
 
 	slug := Slugify(issue.Title)
 	branch := BranchName(issue.Number, slug)
@@ -55,9 +58,16 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		outcome.Err = fmt.Errorf("implementer agent: %w", err)
 		return outcome
 	}
+	totalCost += implResult.CostUSD
+	if rw != nil {
+		if err := rw.WriteImplementResult(issue.Number, implResult); err != nil {
+			logger.Warn("failed to write implement result", "error", err)
+		}
+	}
 	if implResult.TimedOut {
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("implementer agent timed out")
+		outcome.TotalCostUSD = totalCost
 		return outcome
 	}
 
@@ -69,11 +79,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if err != nil {
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("finding PR: %w", err)
+		outcome.TotalCostUSD = totalCost
 		return outcome
 	}
 	if prNum == 0 {
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("implementer agent did not create a PR")
+		outcome.TotalCostUSD = totalCost
 		return outcome
 	}
 	outcome.PRNumber = prNum
@@ -86,6 +98,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
 		outcome.Status = "failed"
 		outcome.Err = driftErr
+		outcome.TotalCostUSD = totalCost
 		return outcome
 	}
 
@@ -99,6 +112,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if ctx.Err() != nil {
 				outcome.Status = "failed"
 				outcome.Err = ctx.Err()
+				outcome.TotalCostUSD = totalCost
 				return outcome
 			}
 
@@ -106,7 +120,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if err != nil {
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("quality reviewer agent: %w", err)
+				outcome.TotalCostUSD = totalCost
 				return outcome
+			}
+			totalCost += qResult.AgentResult.CostUSD
+			if rw != nil {
+				if err := rw.WriteReviewResult(issue.Number, "quality", qAttempt, qResult.AgentResult); err != nil {
+					logger.Warn("failed to write quality review result", "error", err)
+				}
 			}
 
 			switch qResult.Verdict {
@@ -128,11 +149,19 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				if err != nil {
 					outcome.Status = "failed"
 					outcome.Err = fmt.Errorf("retry agent (quality): %w", err)
+					outcome.TotalCostUSD = totalCost
 					return outcome
+				}
+				totalCost += retryResult.CostUSD
+				if rw != nil {
+					if err := rw.WriteRetryResult(issue.Number, qAttempt+1, retryResult); err != nil {
+						logger.Warn("failed to write retry result", "error", err)
+					}
 				}
 				if retryResult.TimedOut {
 					outcome.Status = "failed"
 					outcome.Err = fmt.Errorf("retry agent (quality) timed out")
+					outcome.TotalCostUSD = totalCost
 					return outcome
 				}
 
@@ -141,12 +170,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
 					outcome.Status = "failed"
 					outcome.Err = driftErr
+					outcome.TotalCostUSD = totalCost
 					return outcome
 				}
 
 			default:
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("quality reviewer agent did not produce a verdict")
+				outcome.TotalCostUSD = totalCost
 				return outcome
 			}
 
@@ -165,6 +196,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			}
 			outcome.Status = "needs-human-review"
 			outcome.Retries = qualityMaxAttempts - 1
+			outcome.TotalCostUSD = totalCost
 			return outcome
 		}
 	}
@@ -175,6 +207,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		if ctx.Err() != nil {
 			outcome.Status = "failed"
 			outcome.Err = ctx.Err()
+			outcome.TotalCostUSD = totalCost
 			return outcome
 		}
 
@@ -182,7 +215,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		if err != nil {
 			outcome.Status = "failed"
 			outcome.Err = fmt.Errorf("reviewer agent: %w", err)
+			outcome.TotalCostUSD = totalCost
 			return outcome
+		}
+		totalCost += reviewResult.AgentResult.CostUSD
+		if rw != nil {
+			if err := rw.WriteReviewResult(issue.Number, "functional", attempt, reviewResult.AgentResult); err != nil {
+				logger.Warn("failed to write functional review result", "error", err)
+			}
 		}
 
 		switch reviewResult.Verdict {
@@ -192,16 +232,19 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				logger.Info("PR approved, skipping merge (--no-merge)", "pr_number", prNum)
 				outcome.Status = "ready-to-merge"
 				outcome.Retries = attempt
+				outcome.TotalCostUSD = totalCost
 				return outcome
 			}
 			// Merge the PR.
 			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("merging PR: %w", err)
+				outcome.TotalCostUSD = totalCost
 				return outcome
 			}
 			outcome.Status = "implemented"
 			outcome.Retries = attempt
+			outcome.TotalCostUSD = totalCost
 			return outcome
 
 		case "CHANGES_REQUESTED":
@@ -220,11 +263,19 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if err != nil {
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("retry agent: %w", err)
+				outcome.TotalCostUSD = totalCost
 				return outcome
+			}
+			totalCost += retryResult.CostUSD
+			if rw != nil {
+				if err := rw.WriteRetryResult(issue.Number, attempt+1, retryResult); err != nil {
+					logger.Warn("failed to write retry result", "error", err)
+				}
 			}
 			if retryResult.TimedOut {
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("retry agent timed out")
+				outcome.TotalCostUSD = totalCost
 				return outcome
 			}
 
@@ -235,6 +286,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
 				outcome.Status = "failed"
 				outcome.Err = driftErr
+				outcome.TotalCostUSD = totalCost
 				return outcome
 			}
 
@@ -242,6 +294,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			// No verdict found — treat as failure.
 			outcome.Status = "failed"
 			outcome.Err = fmt.Errorf("reviewer agent did not produce a verdict")
+			outcome.TotalCostUSD = totalCost
 			return outcome
 		}
 	}
@@ -257,6 +310,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 	outcome.Status = "needs-human-review"
 	outcome.Retries = maxAttempts - 1
+	outcome.TotalCostUSD = totalCost
 	return outcome
 }
 

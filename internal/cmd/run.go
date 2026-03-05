@@ -12,6 +12,7 @@ import (
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/pypi"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/spf13/cobra"
 )
 
@@ -90,7 +91,26 @@ each unblocked issue through the implement → review → merge loop.`,
 			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}
 
-		logger, err := logging.NewLogger(cfg.LogDir)
+		// Create run data writer to get the run directory for the logger.
+		// Issue numbers will be updated inside the orchestrator after resolution.
+		// Skip for dry-run since no data is written.
+		var rdw *rundata.RunDataWriter
+		if !dryRun {
+			issueNums := []int{}
+			if issue != 0 {
+				issueNums = []int{issue}
+			}
+			rdw, err = rundata.New(cfg.Repo, milestone, issueNums, cfg)
+			if err != nil {
+				return fmt.Errorf("creating run data writer: %w", err)
+			}
+		}
+
+		logDir := os.TempDir()
+		if rdw != nil {
+			logDir = rdw.Dir()
+		}
+		logger, err := logging.NewLogger(logDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
@@ -101,7 +121,7 @@ each unblocked issue through the implement → review → merge loop.`,
 		defer stop()
 
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
-		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun, force, punchlistPath)
+		return orchestrator.Run(ctx, cfg, logger, rdw, milestone, issue, dryRun, force, punchlistPath)
 	},
 }
 

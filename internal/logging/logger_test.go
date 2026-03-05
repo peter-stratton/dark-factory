@@ -6,39 +6,38 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestNewLogger_CreatesDirectory(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "nested", "logs")
+	dir := filepath.Join(t.TempDir(), "nested", "rundir")
 	_, err := NewLogger(dir)
 	if err != nil {
 		t.Fatalf("NewLogger() error = %v", err)
 	}
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Fatal("expected log directory to be created")
+		t.Fatal("expected run directory to be created")
 	}
 }
 
-func TestNewLogger_FileNaming(t *testing.T) {
+func TestNewLogger_CreatesDebugLog(t *testing.T) {
 	dir := t.TempDir()
-	fixedTime := time.Date(2025, 6, 15, 14, 30, 45, 0, time.UTC)
-	timeNow = func() time.Time { return fixedTime }
-	t.Cleanup(func() { timeNow = time.Now })
-
 	_, err := NewLogger(dir)
 	if err != nil {
 		t.Fatalf("NewLogger() error = %v", err)
 	}
 
-	expected := "run-20250615-143045.json"
+	debugLog := filepath.Join(dir, "debug.log")
+	if _, err := os.Stat(debugLog); os.IsNotExist(err) {
+		t.Fatal("expected debug.log to be created")
+	}
+
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 || entries[0].Name() != expected {
+	if len(entries) != 1 || entries[0].Name() != "debug.log" {
 		names := make([]string, len(entries))
 		for i, e := range entries {
 			names[i] = e.Name()
 		}
-		t.Fatalf("expected file %q, got %v", expected, names)
+		t.Fatalf("expected only debug.log, got %v", names)
 	}
 }
 
@@ -51,10 +50,9 @@ func TestLogger_JSONOutput(t *testing.T) {
 
 	logger.Info("test message")
 
-	entries, _ := os.ReadDir(dir)
-	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
 	if err != nil {
-		t.Fatalf("reading log file: %v", err)
+		t.Fatalf("reading debug.log: %v", err)
 	}
 
 	var record map[string]any
@@ -86,10 +84,9 @@ func TestLogger_StructuredFields(t *testing.T) {
 	child := logger.With("component", "orchestrator", "issue_number", 5)
 	child.Info("processing issue")
 
-	entries, _ := os.ReadDir(dir)
-	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
 	if err != nil {
-		t.Fatalf("reading log file: %v", err)
+		t.Fatalf("reading debug.log: %v", err)
 	}
 
 	var record map[string]any

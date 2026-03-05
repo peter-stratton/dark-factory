@@ -14,6 +14,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/punchlist"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
@@ -21,10 +22,11 @@ import (
 // It fetches issues, resolves dependencies, and either prints the execution
 // plan (dry-run) or iterates through processable issues.
 //
+// rdw is an optional RunDataWriter for recording run data files; pass nil to disable.
 // force bypasses an existing run lock (useful to clear stale locks left by
 // crashed instances). punchlistPath is the optional file path to write the
 // punchlist to (always printed to stdout as well).
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, rdw *rundata.RunDataWriter, milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
 	logger.Info("starting orchestration",
 		"repo", cfg.Repo,
 		"milestone", milestone,
@@ -103,7 +105,14 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		}()
 	}
 
-	return processIssues(ctx, processable, blocked, len(issues), cfg, logger, punchlistPath)
+	// Update issue numbers in run.json now that we know which issues will be processed.
+	if rdw != nil {
+		if err := rdw.UpdateIssueNumbers(issueNumbers(processable)); err != nil {
+			logger.Warn("failed to update issue numbers in run.json", "error", err)
+		}
+	}
+
+	return processIssues(ctx, processable, blocked, len(issues), cfg, logger, rdw, punchlistPath)
 }
 
 // filterSingleIssue extracts a single issue from processable, returning an
@@ -169,7 +178,7 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 
 // processIssues runs each processable issue through the agent loop and prints
 // summary stats. punchlistPath is the optional file path to write the punchlist to.
-func processIssues(ctx context.Context, processable []github.Issue, blocked []blockedIssue, total int, cfg *config.Config, logger *slog.Logger, punchlistPath string) error {
+func processIssues(ctx context.Context, processable []github.Issue, blocked []blockedIssue, total int, cfg *config.Config, logger *slog.Logger, rdw *rundata.RunDataWriter, punchlistPath string) error {
 	if len(processable) == 0 {
 		fmt.Println("All issues are blocked — nothing to process.")
 		printSummary(total, len(blocked), 0)
@@ -204,6 +213,7 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 		readyToMerge     int
 		needsHumanReview int
 		failed           int
+		totalCostUSD     float64
 	}
 
 	type processedItem struct {
@@ -218,7 +228,7 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 			break
 		}
 
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger)
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, rdw)
 
 		switch outcome.Status {
 		case "implemented":
@@ -243,6 +253,8 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 			fmt.Printf("  #%d %s — failed: %s\n", issue.Number, issue.Title, errMsg)
 		}
 
+		stats.totalCostUSD += outcome.TotalCostUSD
+
 		logger.Info("issue outcome",
 			"issue_number", outcome.IssueNumber,
 			"status", outcome.Status,
@@ -250,6 +262,26 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 			"retries", outcome.Retries,
 			"error", outcome.Err,
 		)
+
+		// Write per-issue outcome file.
+		if rdw != nil {
+			var errMsg *string
+			if outcome.Err != nil {
+				s := outcome.Err.Error()
+				errMsg = &s
+			}
+			if err := rdw.WriteOutcome(rundata.Outcome{
+				IssueNumber:  outcome.IssueNumber,
+				IssueTitle:   issue.Title,
+				Status:       outcome.Status,
+				PRNumber:     outcome.PRNumber,
+				Retries:      outcome.Retries,
+				TotalCostUSD: outcome.TotalCostUSD,
+				Error:        errMsg,
+			}); err != nil {
+				logger.Warn("failed to write outcome", "issue_number", outcome.IssueNumber, "error", err)
+			}
+		}
 
 		if outcome.PRNumber > 0 {
 			processed = append(processed, processedItem{issue, outcome})
@@ -288,6 +320,20 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 		fmt.Println()
 		if err := punchlist.Write(text, punchlistPath); err != nil {
 			logger.Warn("failed to write punchlist", "error", err)
+		}
+	}
+
+	// Finalize run data.
+	if rdw != nil {
+		summary := rundata.RunSummary{
+			Total:        total,
+			Implemented:  stats.implemented,
+			Failed:       stats.failed,
+			Skipped:      len(blocked),
+			TotalCostUSD: stats.totalCostUSD,
+		}
+		if err := rdw.FinalizeRun(summary); err != nil {
+			logger.Warn("failed to finalize run data", "error", err)
 		}
 	}
 

@@ -16,6 +16,7 @@ import (
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/pypi"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -75,7 +76,11 @@ loop directly, without milestone or dependency resolution.`,
 			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}
 
-		logger, err := logging.NewLogger(cfg.LogDir)
+		rdw, err := rundata.New(cfg.Repo, "", []int{issueNumber}, cfg)
+		if err != nil {
+			return fmt.Errorf("creating run data writer: %w", err)
+		}
+		logger, err := logging.NewLogger(rdw.Dir())
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
@@ -107,7 +112,44 @@ loop directly, without milestone or dependency resolution.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger)
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, rdw)
+
+		// Write per-issue outcome and finalize run data (best-effort).
+		{
+			var errMsg *string
+			if outcome.Err != nil {
+				s := outcome.Err.Error()
+				errMsg = &s
+			}
+			if werr := rdw.WriteOutcome(rundata.Outcome{
+				IssueNumber:  outcome.IssueNumber,
+				IssueTitle:   issue.Title,
+				Status:       outcome.Status,
+				PRNumber:     outcome.PRNumber,
+				Retries:      outcome.Retries,
+				TotalCostUSD: outcome.TotalCostUSD,
+				Error:        errMsg,
+			}); werr != nil {
+				logger.Warn("failed to write outcome", "issue_number", outcome.IssueNumber, "error", werr)
+			}
+			implemented := 0
+			failed := 0
+			switch outcome.Status {
+			case "implemented":
+				implemented = 1
+			case "failed":
+				failed = 1
+			}
+			if ferr := rdw.FinalizeRun(rundata.RunSummary{
+				Total:        1,
+				Implemented:  implemented,
+				Failed:       failed,
+				TotalCostUSD: outcome.TotalCostUSD,
+			}); ferr != nil {
+				logger.Warn("failed to finalize run data", "error", ferr)
+			}
+		}
+
 		if outcome.Err != nil {
 			return fmt.Errorf("issue #%d failed: %w", issueNumber, outcome.Err)
 		}

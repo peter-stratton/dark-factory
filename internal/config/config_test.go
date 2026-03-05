@@ -38,7 +38,6 @@ protected_paths:
   - CLAUDE.md
 scenario_dir: tests/scenarios/
 review_dir: tests/review/
-log_dir: logs/
 docker:
   image: dark-factory-runner
   dockerfile: Dockerfile.devloop
@@ -249,9 +248,6 @@ repo: owner/repo
 	}
 	if cfg.ReviewDir != "tests/review/" {
 		t.Errorf("ReviewDir = %q, want default", cfg.ReviewDir)
-	}
-	if cfg.LogDir != "logs/" {
-		t.Errorf("LogDir = %q, want default", cfg.LogDir)
 	}
 }
 

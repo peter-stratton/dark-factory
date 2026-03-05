@@ -6,22 +6,20 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"time"
 )
 
-// NewLogger creates a logger that writes structured JSON to a file in logDir
-// and human-readable text to stdout. The log file is named run-YYYYMMDD-HHMMSS.json.
-func NewLogger(logDir string) (*slog.Logger, error) {
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create log directory: %w", err)
+// NewLogger creates a logger that writes structured JSON to debug.log in runDir
+// and human-readable text to stdout.
+func NewLogger(runDir string) (*slog.Logger, error) {
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create run directory: %w", err)
 	}
 
-	filename := fmt.Sprintf("run-%s.json", timeNow().Format("20060102-150405"))
-	path := filepath.Join(logDir, filename)
+	path := filepath.Join(runDir, "debug.log")
 
 	f, err := os.Create(path)
 	if err != nil {
-		return nil, fmt.Errorf("create log file: %w", err)
+		return nil, fmt.Errorf("create debug log: %w", err)
 	}
 
 	jsonHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -29,9 +27,6 @@ func NewLogger(logDir string) (*slog.Logger, error) {
 
 	return slog.New(&multiHandler{json: jsonHandler, text: textHandler}), nil
 }
-
-// timeNow is a variable so tests can override it.
-var timeNow = time.Now
 
 // multiHandler fans out log records to multiple handlers.
 type multiHandler struct {
