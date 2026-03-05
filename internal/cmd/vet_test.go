@@ -7,7 +7,7 @@ func TestVetCommandHasSubcommands(t *testing.T) {
 	for _, sub := range vetCmd.Commands() {
 		names[sub.Name()] = true
 	}
-	for _, want := range []string{"issues", "scenarios", "roadmap"} {
+	for _, want := range []string{"issues", "scenarios", "roadmap", "architecture"} {
 		if !names[want] {
 			t.Errorf("vet missing subcommand %q", want)
 		}
@@ -34,6 +34,14 @@ func TestVetRoadmapFlags(t *testing.T) {
 	for _, name := range []string{"repo", "milestone", "json", "planning-dir"} {
 		if vetRoadmapCmd.Flags().Lookup(name) == nil {
 			t.Errorf("vet roadmap missing flag --%s", name)
+		}
+	}
+}
+
+func TestVetArchitectureFlags(t *testing.T) {
+	for _, name := range []string{"architecture-file", "json"} {
+		if vetArchitectureCmd.Flags().Lookup(name) == nil {
+			t.Errorf("vet architecture missing flag --%s", name)
 		}
 	}
 }
