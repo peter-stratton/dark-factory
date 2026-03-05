@@ -78,9 +78,29 @@ loop directly, without milestone or dependency resolution.`,
 			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}
 
-		logger, err := logging.NewLogger(cfg.LogDir)
+		// Create RunDataWriter first to get the run directory for the log file.
+		var hook agent.RunDataHook
+		writer, writerErr := rundata.New(cfg.Repo, "", []int{issueNumber})
+		var logDir string
+		if writerErr != nil {
+			// Fall back to a private temp directory so each run is isolated.
+			tmp, tmpErr := os.MkdirTemp("", "godark-log-*")
+			if tmpErr != nil {
+				return fmt.Errorf("creating temp log dir: %w", tmpErr)
+			}
+			logDir = tmp
+		} else {
+			hook = writer
+			logDir = writer.Dir()
+		}
+
+		logger, err := logging.NewLogger(logDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
+		}
+
+		if writerErr != nil {
+			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
 		}
 
 		pypi.WarnIfSDKOutdated(os.Stderr, logger)
@@ -121,15 +141,6 @@ loop directly, without milestone or dependency resolution.`,
 				logger.Warn("failed to release run lock", "error", err)
 			}
 		}()
-
-		// Create a RunDataWriter for this single-issue run. Failure is non-fatal.
-		var hook agent.RunDataHook
-		writer, writerErr := rundata.New(cfg.Repo, "", []int{issueNumber})
-		if writerErr != nil {
-			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
-		} else {
-			hook = writer
-		}
 
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
 

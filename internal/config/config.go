@@ -30,7 +30,6 @@ type Config struct {
 	PlanningDir    string   `yaml:"planning_dir"`
 	ScenarioDir    string   `yaml:"scenario_dir"`
 	ReviewDir      string   `yaml:"review_dir"`
-	LogDir         string   `yaml:"log_dir"`
 
 	NoSandbox              bool `yaml:"no_sandbox"`
 	NoMerge                bool `yaml:"no_merge"`
@@ -108,7 +107,6 @@ func defaults() *Config {
 		PlanningDir:            "docs/planning/",
 		ScenarioDir:            "tests/scenarios/",
 		ReviewDir:              "tests/review/",
-		LogDir:                 "logs/",
 		QualityStrictnessDecay: true,
 		AuthPreference:         "oauth",
 	}

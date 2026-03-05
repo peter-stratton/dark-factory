@@ -13,6 +13,7 @@ import (
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
+	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
@@ -28,12 +29,6 @@ import (
 // crashed instances). punchlistPath is the optional file path to write the
 // punchlist to (always printed to stdout as well).
 func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
-	logger.Info("starting orchestration",
-		"repo", cfg.Repo,
-		"milestone", milestone,
-		"dry_run", dryRun,
-	)
-
 	// Auto-detect project type when no runtime/commands are explicitly configured.
 	detect.ApplyToConfig(cfg, ".", logger)
 
@@ -48,8 +43,6 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		fmt.Println("No issues found in milestone.")
 		return nil
 	}
-
-	logger.Info("fetched issues", "count", len(issues))
 
 	// Step 2: Fetch closed issues for dependency resolution.
 	closedNumbers, err := github.FetchClosedIssueNumbers(cfg.Repo)
@@ -69,19 +62,43 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		}
 	}
 
+	// Step 4: Switch logger to run directory before any orchestration logging.
+	// Creating the RunDataWriter here (with actual issue numbers) ensures that
+	// all subsequent log entries — including "starting orchestration" — are
+	// written to <run-dir>/debug.log rather than the bootstrap temp directory.
+	var writer *rundata.Writer
+	if !dryRun {
+		issueNums := issueNumbers(issues)
+		var writerErr error
+		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums)
+		if writerErr != nil {
+			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
+		} else if runLogger, logErr := logging.NewLogger(writer.Dir()); logErr == nil {
+			logger = runLogger
+		} else {
+			logger.Warn("failed to create run-dir logger, continuing with bootstrap logger", "error", logErr)
+		}
+	}
+
+	logger.Info("starting orchestration",
+		"repo", cfg.Repo,
+		"milestone", milestone,
+		"dry_run", dryRun,
+	)
+	logger.Info("fetched issues", "count", len(issues))
 	logger.Info("dependency resolution complete",
 		"total", len(issues),
 		"blocked", len(blocked),
 		"processable", len(processable),
 	)
 
-	// Step 4: Print or process.
+	// Step 5: Print or process.
 	if dryRun {
 		printDryRun(processable, blocked, len(issues))
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, cfg, logger, force, punchlistPath, milestone)
+	return processIssues(ctx, issues, closedSet, cfg, logger, writer, force, punchlistPath, milestone)
 }
 
 // categorizeIssues splits issues into processable and blocked based on the
@@ -167,7 +184,7 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // re-resolution after each merge. When an issue is successfully merged,
 // the closed set is refreshed and dependencies re-resolved so that newly
 // unblocked issues can be processed in the same run.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, force bool, punchlistPath string, milestone string) error {
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, writer *rundata.Writer, force bool, punchlistPath string, milestone string) error {
 	// Initial categorization.
 	processable, blocked := categorizeIssues(allIssues, closedSet)
 
@@ -199,13 +216,9 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		cfg.Docker.Image = tag
 	}
 
-	// Create a RunDataWriter for this run. Failures are non-fatal.
-	issueNums := issueNumbers(allIssues)
+	// Wire up the RunDataHook from the pre-created writer (may be nil).
 	var hook agent.RunDataHook
-	writer, err := newRunDataWriterFn(cfg.Repo, milestone, issueNums)
-	if err != nil {
-		logger.Warn("failed to create run data writer, run data will not be recorded", "error", err)
-	} else {
+	if writer != nil {
 		hook = writer
 	}
 

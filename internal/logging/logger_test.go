@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 )
 
 func TestNewLogger_CreatesDirectory(t *testing.T) {
@@ -20,25 +20,58 @@ func TestNewLogger_CreatesDirectory(t *testing.T) {
 	}
 }
 
-func TestNewLogger_FileNaming(t *testing.T) {
+func TestNewLogger_CreatesDebugLog(t *testing.T) {
 	dir := t.TempDir()
-	fixedTime := time.Date(2025, 6, 15, 14, 30, 45, 0, time.UTC)
-	timeNow = func() time.Time { return fixedTime }
-	t.Cleanup(func() { timeNow = time.Now })
-
 	_, err := NewLogger(dir)
 	if err != nil {
 		t.Fatalf("NewLogger() error = %v", err)
 	}
 
-	expected := "run-20250615-143045.json"
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 || entries[0].Name() != expected {
-		names := make([]string, len(entries))
-		for i, e := range entries {
-			names[i] = e.Name()
+	path := filepath.Join(dir, "debug.log")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Fatal("expected debug.log to be created in dir")
+	}
+}
+
+// TestDryRunIsolation verifies that two concurrent dry-runs using os.MkdirTemp
+// each get their own private log path with no shared state.
+func TestDryRunIsolation(t *testing.T) {
+	type result struct {
+		path string
+		err  error
+	}
+
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dir, err := os.MkdirTemp("", "godark-log-*")
+			if err != nil {
+				results <- result{err: err}
+				return
+			}
+			t.Cleanup(func() { os.RemoveAll(dir) })
+			_, logErr := NewLogger(dir)
+			results <- result{path: filepath.Join(dir, "debug.log"), err: logErr}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	var paths []string
+	for r := range results {
+		if r.err != nil {
+			t.Fatalf("unexpected error in concurrent dry-run: %v", r.err)
 		}
-		t.Fatalf("expected file %q, got %v", expected, names)
+		paths = append(paths, r.path)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 log paths, got %d", len(paths))
+	}
+	if paths[0] == paths[1] {
+		t.Error("concurrent dry-runs share a log path — os.MkdirTemp must return unique directories")
 	}
 }
 
@@ -51,10 +84,9 @@ func TestLogger_JSONOutput(t *testing.T) {
 
 	logger.Info("test message")
 
-	entries, _ := os.ReadDir(dir)
-	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
 	if err != nil {
-		t.Fatalf("reading log file: %v", err)
+		t.Fatalf("reading debug.log: %v", err)
 	}
 
 	var record map[string]any
@@ -86,10 +118,9 @@ func TestLogger_StructuredFields(t *testing.T) {
 	child := logger.With("component", "orchestrator", "issue_number", 5)
 	child.Info("processing issue")
 
-	entries, _ := os.ReadDir(dir)
-	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
 	if err != nil {
-		t.Fatalf("reading log file: %v", err)
+		t.Fatalf("reading debug.log: %v", err)
 	}
 
 	var record map[string]any
@@ -102,6 +133,30 @@ func TestLogger_StructuredFields(t *testing.T) {
 	}
 	if record["issue_number"] != float64(5) {
 		t.Errorf("expected issue_number 5, got %v", record["issue_number"])
+	}
+}
+
+// TestLoggerWrites verifies that log entries appear in debug.log.
+func TestLoggerWrites(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewLogger(dir)
+	if err != nil {
+		t.Fatalf("NewLogger() error = %v", err)
+	}
+
+	logger.Debug("debug entry")
+	logger.Info("info entry")
+	logger.Warn("warn entry")
+
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
+	if err != nil {
+		t.Fatalf("reading debug.log: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{"debug entry", "info entry", "warn entry"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("expected %q in debug.log, got:\n%s", want, content)
+		}
 	}
 }
 
