@@ -83,14 +83,16 @@ func CheckToolTrace(toolTrace []string) []Flag {
 func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string) []Flag {
 	var flags []Flag
 
-	testsWritten := false
-	testsRun := false
+	testsWritten := reviewDir == ""
+	testsRun := testCommand == ""
+
+	dir := strings.TrimRight(reviewDir, "/")
 
 	for _, entry := range toolTrace {
-		if reviewDir != "" && strings.Contains(entry, "Write") && strings.Contains(entry, reviewDir) {
+		if !testsWritten && strings.Contains(entry, "Write") && strings.Contains(entry, dir+"/") {
 			testsWritten = true
 		}
-		if testCommand != "" && strings.Contains(entry, testCommand) {
+		if !testsRun && strings.Contains(entry, testCommand) {
 			testsRun = true
 		}
 	}
