@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Logs: {{.Repo}} / {{.Timestamp}}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <a href="/">Runs</a>
+        <span class="breadcrumbs__sep">/</span>
+        <a href="{{.RunURL}}">{{.Repo}} / {{.Timestamp}}</a>
+        <span class="breadcrumbs__sep">/</span>
+        <a class="breadcrumbs__current" href="{{.LogsURL}}">Logs</a>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Dashboard
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="/" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="{{.RunURL}}" class="sidebar__link">
+              {{.Timestamp}}
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar__link sidebar__link--active">
+              Logs
+            </a>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Logs</h1>
+        <p class="page-header__subtitle">{{.Repo}} &middot; {{.Timestamp}}</p>
+      </div>
+
+      <!-- Filter Controls -->
+      <div class="controls animate-in animate-in-1">
+        <div class="control-group">
+          <select name="level" aria-label="Filter by log level"
+                  class="filter-select"
+                  hx-get="{{.LogsURL}}/entries"
+                  hx-target="#log-entries-tbody"
+                  hx-swap="innerHTML"
+                  hx-include="[name='search']"
+                  hx-trigger="change">
+            <option value="">All Levels</option>
+            <option value="DEBUG"{{if eq .Level "DEBUG"}} selected{{end}}>DEBUG</option>
+            <option value="INFO"{{if eq .Level "INFO"}} selected{{end}}>INFO</option>
+            <option value="WARN"{{if eq .Level "WARN"}} selected{{end}}>WARN</option>
+            <option value="ERROR"{{if eq .Level "ERROR"}} selected{{end}}>ERROR</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <input name="search" type="text" class="search-input"
+                 placeholder="Search messages and fields..."
+                 value="{{.Search}}"
+                 hx-get="{{.LogsURL}}/entries"
+                 hx-target="#log-entries-tbody"
+                 hx-swap="innerHTML"
+                 hx-include="[name='level']"
+                 hx-trigger="input changed delay:300ms">
+        </div>
+      </div>
+
+      <!-- Log Table -->
+      <div class="card animate-in animate-in-2">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 8em;">Time</th>
+              <th style="width: 6em;">Level</th>
+              <th>Message</th>
+              <th>Fields</th>
+            </tr>
+          </thead>
+          <tbody id="log-entries-tbody">
+            {{template "log-entries" .}}
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
+
+{{define "log-entries"}}
+{{if .Entries}}
+{{range .Entries}}
+<tr>
+  <td class="text-muted" style="white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs);">{{.Timestamp}}</td>
+  <td>
+    <span class="badge badge--{{.LevelClass}}">{{.Level}}</span>
+  </td>
+  <td>{{.Msg}}</td>
+  <td class="text-secondary" style="font-family: var(--font-mono); font-size: var(--text-xs); max-width: 30em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.Fields}}</td>
+</tr>
+{{end}}
+{{else}}
+<tr>
+  <td colspan="4" class="text-secondary" style="text-align: center; padding: 2rem;">
+    No log entries match the current filter.
+  </td>
+</tr>
+{{end}}
+{{if .HasMore}}
+<tr id="log-load-more">
+  <td colspan="4" style="text-align: center; padding: var(--space-3);">
+    <button class="btn btn--ghost btn--sm"
+            hx-get="{{.LogsURL}}/entries?page={{.NextPage}}"
+            hx-target="#log-load-more"
+            hx-swap="outerHTML"
+            hx-include="[name='level'], [name='search']">
+      Load more
+    </button>
+  </td>
+</tr>
+{{end}}
+{{end}}
