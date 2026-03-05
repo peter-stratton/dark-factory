@@ -265,6 +265,7 @@ func processIssues(ctx context.Context, processable []github.Issue, blocked []bl
 				ChangedFiles: files,
 			})
 		}
+		agent.EnrichPunchlistEntries(ctx, entries, prompts, cfg, authEnv, logger)
 		text := punchlist.Generate(entries)
 		fmt.Println()
 		if err := punchlist.Write(text, punchlistPath); err != nil {

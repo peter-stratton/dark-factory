@@ -16,13 +16,14 @@ var CommandRunner = func(name string, args ...string) ([]byte, error) {
 
 // Entry holds the data needed to generate one punchlist item.
 type Entry struct {
-	IssueNumber  int
-	IssueTitle   string
-	IssueBody    string
-	PRNumber     int
-	Repo         string
-	ScenarioSpec string // content of the scenario spec file, if any
-	ChangedFiles []string
+	IssueNumber     int
+	IssueTitle      string
+	IssueBody       string
+	PRNumber        int
+	Repo            string
+	ScenarioSpec    string // content of the scenario spec file, if any
+	ChangedFiles    []string
+	AcceptanceTests []string // LLM-generated acceptance test suggestions
 }
 
 // FetchChangedFiles returns the list of files changed in the given PR.
@@ -42,6 +43,22 @@ func FetchChangedFiles(repo string, prNum int) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+// FetchPRDiff returns the full diff for the given PR, truncated to maxLen bytes.
+func FetchPRDiff(repo string, prNum int, maxLen int) (string, error) {
+	out, err := CommandRunner("gh", "pr", "diff",
+		fmt.Sprintf("%d", prNum),
+		"--repo", repo,
+	)
+	if err != nil {
+		return "", fmt.Errorf("gh pr diff: %w", err)
+	}
+	s := string(out)
+	if maxLen > 0 && len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	return s, nil
 }
 
 // ReadScenarioSpec reads the content of the first scenario spec file in
@@ -102,6 +119,14 @@ func Generate(entries []Entry) string {
 				for _, c := range cases {
 					fmt.Fprintf(&sb, "   - [ ] %s\n", c)
 				}
+			}
+		}
+
+		// LLM-generated acceptance tests.
+		if len(e.AcceptanceTests) > 0 {
+			sb.WriteString("\n   Suggested acceptance tests:\n")
+			for _, t := range e.AcceptanceTests {
+				fmt.Fprintf(&sb, "   - [ ] %s\n", t)
 			}
 		}
 

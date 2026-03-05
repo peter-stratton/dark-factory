@@ -139,6 +139,7 @@ loop directly, without milestone or dependency resolution.`,
 				ScenarioSpec: spec,
 				ChangedFiles: files,
 			}}
+			agent.EnrichPunchlistEntries(ctx, entries, prompts, cfg, authEnv, logger)
 			text := punchlist.Generate(entries)
 			fmt.Println()
 			if err := punchlist.Write(text, punchlistPath); err != nil {
