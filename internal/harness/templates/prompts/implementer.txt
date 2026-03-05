@@ -8,10 +8,13 @@ Issue body:
 Before writing any code:
 1. Read the full issue body carefully, including any ## Test cases section
 {{- if .ArchitectureDoc}}
-2. Read the architecture document at {{.ArchitectureDoc}} to understand layer boundaries and dependency rules
+2. Read `{{.ArchitectureDoc}}` for dependency layer rules
 {{- end}}
-3. Identify every file you expect to create or modify
-4. Post a brief implementation plan as a comment on the issue
+{{- if .ConventionsDoc}}
+3. Read `{{.ConventionsDoc}}` for coding conventions
+{{- end}}
+4. Identify every file you expect to create or modify
+5. Post a brief implementation plan as a comment on the issue
 
 CRITICAL RULES:
 {{- if .BranchExists}}

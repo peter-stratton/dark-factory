@@ -37,6 +37,8 @@ type PromptData struct {
 	ReviewDir      string
 	BranchExists        bool
 	StrictnessDirective string
+	ArchitectureDoc     string
+	ConventionsDoc      string
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from
