@@ -369,6 +369,70 @@ no_merge: false
 	}
 }
 
+func TestAuthPreferenceDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AuthPreference != "oauth" {
+		t.Errorf("AuthPreference = %q, want %q", cfg.AuthPreference, "oauth")
+	}
+}
+
+func TestAuthPreferenceOAuthFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+auth_preference: oauth
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AuthPreference != "oauth" {
+		t.Errorf("AuthPreference = %q, want %q", cfg.AuthPreference, "oauth")
+	}
+}
+
+func TestAuthPreferenceAPIKeyFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+auth_preference: api_key
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AuthPreference != "api_key" {
+		t.Errorf("AuthPreference = %q, want %q", cfg.AuthPreference, "api_key")
+	}
+}
+
+func TestAuthPreferenceInvalidValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+auth_preference: token
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid auth_preference, got nil")
+	}
+	if !strings.Contains(err.Error(), "auth_preference") {
+		t.Errorf("error = %q, want mention of 'auth_preference'", err.Error())
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

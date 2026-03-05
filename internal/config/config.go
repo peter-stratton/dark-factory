@@ -36,6 +36,11 @@ type Config struct {
 	NoMerge                bool `yaml:"no_merge"`
 	QualityStrictnessDecay bool `yaml:"quality_strictness_decay"`
 
+	// AuthPreference controls which Anthropic auth token is preferred when both
+	// ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set.
+	// Valid values: "oauth" (default) or "api_key".
+	AuthPreference string `yaml:"auth_preference"`
+
 	Docker  Docker  `yaml:"docker"`
 	Prompts Prompts `yaml:"prompts"`
 }
@@ -104,6 +109,7 @@ func defaults() *Config {
 		ReviewDir:              "tests/review/",
 		LogDir:                 "logs/",
 		QualityStrictnessDecay: true,
+		AuthPreference:         "oauth",
 	}
 }
 
@@ -125,6 +131,12 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 func validate(cfg *Config) error {
 	if cfg.Repo == "" {
 		return fmt.Errorf("repo is required (set in config file or pass --repo)")
+	}
+	switch cfg.AuthPreference {
+	case "oauth", "api_key":
+		// valid
+	default:
+		return fmt.Errorf("auth_preference must be \"oauth\" or \"api_key\", got %q", cfg.AuthPreference)
 	}
 	return nil
 }
