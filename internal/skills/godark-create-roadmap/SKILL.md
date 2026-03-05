@@ -13,14 +13,22 @@ Help the user define a phased roadmap for their project and write it to
 ## Steps
 
 1. **Gather context** — Read `CLAUDE.md` and `docs/CONTEXT.md` (if they exist)
-   to understand the project. Read `godark.yaml` to find the `repo` and
+   to understand the project. Read `docs/architecture.json` and
+   `docs/conventions.md` if they exist to understand current architecture layers
+   and coding conventions. Read `godark.yaml` to find the `repo` and
    `roadmap_path` (default: `docs/ROADMAP.md`).
+
+   If `docs/architecture.md` is empty or missing, note this and suggest running
+   `/godark-define-architecture` before or after creating the roadmap so that
+   structural decisions are captured in a machine-readable form.
 
 2. **Discuss goals** — Ask the user about:
    - What the project does and who it's for
    - What a working MVP looks like
    - Key constraints or technical decisions already made
    - Rough features they have in mind
+   - Architecture layers if the conversation reveals structural decisions (e.g.
+     new packages, service boundaries, or layer responsibilities)
 
 3. **Propose phases** — Based on the discussion, propose a phased breakdown.
    Each phase should have:
