@@ -12,7 +12,7 @@
 
 ---
 
-## Issue: Harness document templates package
+## Issue 121: Harness document templates package
 
 ### Description
 
@@ -79,7 +79,7 @@ This is pure new code — no existing files are modified.
 
 ---
 
-## Issue: Expand godark init to scaffold harness docs
+## Issue 126: Expand godark init to scaffold harness docs
 
 **Blocked by**: Harness document templates package
 
@@ -141,7 +141,7 @@ the user review their CLAUDE.md.
 
 ---
 
-## Issue: godark new command
+## Issue 127: godark new command
 
 **Blocked by**: Expand godark init to scaffold harness docs
 
@@ -193,7 +193,7 @@ not create), then runs the equivalent of `godark init` internally.
 
 ---
 
-## Issue: Architecture layer parser
+## Issue 124: Architecture layer parser
 
 **Blocked by**: Harness document templates package
 
@@ -258,7 +258,7 @@ layer dependencies. JSON-only — no markdown table parsing.
 
 ---
 
-## Issue: godark vet architecture subcommand
+## Issue 128: godark vet architecture subcommand
 
 **Blocked by**: Architecture layer parser
 
@@ -307,7 +307,7 @@ import distance) are better handled by project-specific linting.
 
 ---
 
-## Issue: Agent dialogue and architecture reference prompt templates
+## Issue 125: Agent dialogue and architecture reference prompt templates
 
 **Blocked by**: Harness document templates package
 
@@ -363,7 +363,7 @@ prompt templates in the dark-factory `prompts/` directory to match.
 
 ---
 
-## Issue: /godark-define-architecture skill
+## Issue 122: /godark-define-architecture skill
 
 ### Description
 
@@ -416,7 +416,7 @@ and proposes idiomatic layers. Writes `docs/architecture.json` and
 
 ---
 
-## Issue: /godark-define-conventions skill
+## Issue 123: /godark-define-conventions skill
 
 ### Description
 
@@ -472,7 +472,7 @@ agent-friendliness. Writes `docs/conventions.md`.
 
 ---
 
-## Issue: Update planning skills and embed new skills
+## Issue 129: Update planning skills and embed new skills
 
 **Blocked by**: /godark-define-architecture skill, /godark-define-conventions skill
 

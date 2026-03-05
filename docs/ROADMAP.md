@@ -299,6 +299,10 @@ comments. Architecture constraints are validated before execution.
   architecture/conventions docs and prompt for updates; add new skills
   to `embed.go`
 
+**Issues**: #121–#129
+
+**Planning doc**: `docs/planning/phase-8-harness-engineering.md`
+
 **Design docs**: `docs/design/harnesses.md`, `docs/design/godark-new.md`
 
 ---
