@@ -107,7 +107,7 @@
           </thead>
           <tbody id="runs-tbody"
                  hx-get="/partials/runs-table"
-                 hx-trigger="every 5s"
+                 hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
                  hx-swap="innerHTML"
                  hx-include="[name='repo']">
             {{template "runs-rows" .Runs}}

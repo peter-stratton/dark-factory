@@ -80,7 +80,7 @@
           </thead>
           <tbody id="issues-tbody"
                  hx-get="{{.RunURL}}/issues-table"
-                 hx-trigger="every 5s"
+                 hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
                  hx-swap="innerHTML">
             {{template "issues-rows" .Issues}}
           </tbody>
