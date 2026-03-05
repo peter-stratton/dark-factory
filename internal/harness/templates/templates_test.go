@@ -126,6 +126,28 @@ func TestImplementerPromptHasArchitectureReference(t *testing.T) {
 	}
 }
 
+func TestImplementerPromptHasConventionsReference(t *testing.T) {
+	data, err := templates.FS.ReadFile("prompts/implementer.txt")
+	if err != nil {
+		t.Fatalf("reading implementer prompt: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "{{.ConventionsDoc}}") {
+		t.Error("implementer prompt does not reference conventions doc via {{.ConventionsDoc}} template variable")
+	}
+}
+
+func TestImplementerPromptHasArchitectureConditional(t *testing.T) {
+	data, err := templates.FS.ReadFile("prompts/implementer.txt")
+	if err != nil {
+		t.Fatalf("reading implementer prompt: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "{{if .ArchitectureDoc}}") && !strings.Contains(content, "{{- if .ArchitectureDoc}}") {
+		t.Error("implementer prompt does not guard {{.ArchitectureDoc}} with a conditional")
+	}
+}
+
 func TestRetryPromptReferencesImplementationNotes(t *testing.T) {
 	data, err := templates.FS.ReadFile("prompts/implementer_retry.txt")
 	if err != nil {
