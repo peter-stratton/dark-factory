@@ -11,6 +11,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
+	"github.com/phs/dark-factory/internal/pypi"
 	"github.com/spf13/cobra"
 )
 
@@ -92,6 +93,8 @@ each unblocked issue through the implement → review → merge loop.`,
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
+
+		pypi.WarnIfSDKOutdated(os.Stderr, logger)
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

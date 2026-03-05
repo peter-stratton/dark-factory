@@ -15,6 +15,7 @@ import (
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/punchlist"
+	"github.com/phs/dark-factory/internal/pypi"
 	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -78,6 +79,8 @@ loop directly, without milestone or dependency resolution.`,
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
+
+		pypi.WarnIfSDKOutdated(os.Stderr, logger)
 
 		// Auto-detect project type when no runtime/commands are explicitly configured.
 		detect.ApplyToConfig(cfg, ".", logger)
