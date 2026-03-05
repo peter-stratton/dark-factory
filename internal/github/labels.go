@@ -21,7 +21,10 @@ func EnsureLabel(repo, name, color, description string) error {
 	var labels []struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(out, &labels); err != nil {
+	if len(out) == 0 {
+		// gh returns empty output (not "[]") when no labels match.
+		labels = nil
+	} else if err := json.Unmarshal(out, &labels); err != nil {
 		return fmt.Errorf("parsing label list: %w", err)
 	}
 
