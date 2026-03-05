@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // RetryDetail holds the step results for one retry attempt.
@@ -120,6 +121,18 @@ func (r *Reader) ListRuns() ([]RunMeta, error) {
 // LoadRun reads the full run detail for the given owner, repo, and timestamp.
 // Returns an error if the run directory or run.json is missing or unreadable.
 func (r *Reader) LoadRun(owner, repo, timestamp string) (*RunDetail, error) {
+	// Reject components containing ".." or path separators (same guard as writer.go).
+	for _, part := range []string{owner, repo, timestamp} {
+		if part == "" {
+			return nil, fmt.Errorf("invalid path component: must not be empty")
+		}
+		if strings.Contains(part, "..") {
+			return nil, fmt.Errorf("invalid path component: must not contain ..: %q", part)
+		}
+		if strings.ContainsAny(part, `\/`) {
+			return nil, fmt.Errorf("invalid path component: must not contain path separators: %q", part)
+		}
+	}
 	runDir := filepath.Join(r.baseDir, owner, repo, timestamp)
 
 	metaData, err := os.ReadFile(filepath.Join(runDir, "run.json"))
