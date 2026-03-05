@@ -237,6 +237,37 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	_, _ = buf.WriteTo(w)
 }
 
+func (s *Server) handleIssuesTable(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	repo := r.PathValue("repo")
+	timestamp := r.PathValue("timestamp")
+
+	detail, err := s.reader.LoadRun(owner, repo, timestamp)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		s.cfg.Logger.Error("loading run for issues table", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	var rows []IssueRowView
+	for _, issue := range detail.Issues {
+		rows = append(rows, issueToRowView(issue, owner, repo, timestamp))
+	}
+
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "issues-rows", rows); err != nil {
+		s.cfg.Logger.Error("rendering issues-rows template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
 func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repo := r.PathValue("repo")
@@ -378,11 +409,24 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 	verdictClass := "neutral"
 	markerClass := "neutral"
 
+	approved := strings.Contains(step.Output, "QUALITY_RESULT=APPROVED") ||
+		strings.Contains(step.Output, "REVIEW_RESULT=APPROVED")
+	changesRequested := strings.Contains(step.Output, "QUALITY_RESULT=CHANGES_REQUESTED") ||
+		strings.Contains(step.Output, "REVIEW_RESULT=CHANGES_REQUESTED")
+
 	switch {
 	case step.Error != "":
 		verdict = "Error"
 		verdictClass = "danger"
 		markerClass = "danger"
+	case changesRequested:
+		verdict = "Changes Requested"
+		verdictClass = "danger"
+		markerClass = "danger"
+	case approved:
+		verdict = "Passed"
+		verdictClass = "success"
+		markerClass = "success"
 	case len(step.Flags) > 0:
 		verdict = "Flagged"
 		verdictClass = "warning"

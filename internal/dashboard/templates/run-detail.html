@@ -78,42 +78,11 @@
               <th class="cell-num">Cost</th>
             </tr>
           </thead>
-          <tbody>
-            {{range .Issues}}
-            <tr data-href="{{.URL}}" onclick="location.href=this.dataset.href">
-              <td class="text-secondary">#{{.IssueNumber}}</td>
-              <td>
-                <span class="badge badge--{{.StatusClass}}">
-                  <span class="badge__dot"></span>
-                  {{.Status}}
-                </span>
-              </td>
-              <td>
-                {{if .PRNumber}}
-                <a class="pr-link" href="{{.PRLink}}" target="_blank" rel="noopener" onclick="event.stopPropagation()">#{{.PRNumber}}</a>
-                {{else}}
-                <span class="text-muted">—</span>
-                {{end}}
-              </td>
-              <td class="cell-num text-secondary">
-                {{if .RetryCount}}{{.RetryCount}}{{else}}<span class="text-muted">—</span>{{end}}
-              </td>
-              <td>
-                {{if .FlagCount}}
-                <span class="badge badge--warning">{{.FlagCount}}</span>
-                {{else}}
-                <span class="text-muted">—</span>
-                {{end}}
-              </td>
-              <td class="cell-num text-secondary">{{.Cost}}</td>
-            </tr>
-            {{else}}
-            <tr>
-              <td colspan="6" class="text-secondary" style="text-align: center; padding: 2rem;">
-                No issues recorded for this run.
-              </td>
-            </tr>
-            {{end}}
+          <tbody id="issues-tbody"
+                 hx-get="{{.RunURL}}/issues-table"
+                 hx-trigger="every 5s"
+                 hx-swap="innerHTML">
+            {{template "issues-rows" .Issues}}
           </tbody>
         </table>
       </div>
@@ -121,3 +90,41 @@
   </div>
 </body>
 </html>
+
+{{define "issues-rows"}}
+{{range .}}
+<tr data-href="{{.URL}}" onclick="location.href=this.dataset.href">
+  <td class="text-secondary">#{{.IssueNumber}}</td>
+  <td>
+    <span class="badge badge--{{.StatusClass}}">
+      <span class="badge__dot"></span>
+      {{.Status}}
+    </span>
+  </td>
+  <td>
+    {{if .PRNumber}}
+    <a class="pr-link" href="{{.PRLink}}" target="_blank" rel="noopener" onclick="event.stopPropagation()">#{{.PRNumber}}</a>
+    {{else}}
+    <span class="text-muted">—</span>
+    {{end}}
+  </td>
+  <td class="cell-num text-secondary">
+    {{if .RetryCount}}{{.RetryCount}}{{else}}<span class="text-muted">—</span>{{end}}
+  </td>
+  <td>
+    {{if .FlagCount}}
+    <span class="badge badge--warning">{{.FlagCount}}</span>
+    {{else}}
+    <span class="text-muted">—</span>
+    {{end}}
+  </td>
+  <td class="cell-num text-secondary">{{.Cost}}</td>
+</tr>
+{{else}}
+<tr>
+  <td colspan="6" class="text-secondary" style="text-align: center; padding: 2rem;">
+    No issues recorded for this run.
+  </td>
+</tr>
+{{end}}
+{{end}}

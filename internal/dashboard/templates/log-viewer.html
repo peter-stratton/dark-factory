@@ -105,7 +105,11 @@
               <th>Fields</th>
             </tr>
           </thead>
-          <tbody id="log-entries-tbody">
+          <tbody id="log-entries-tbody"
+                 hx-get="{{.LogsURL}}/entries"
+                 hx-trigger="every 5s"
+                 hx-swap="innerHTML"
+                 hx-include="[name='level'], [name='search']">
             {{template "log-entries" .}}
           </tbody>
         </table>
