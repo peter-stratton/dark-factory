@@ -36,10 +36,16 @@ implementer agent can find your challenges:
 
 ## Review Notes
 
-- List each specific issue that must be fixed
-- For each issue: describe what is wrong, what the correct behavior should be,
-  and which acceptance criterion or scenario it violates
-- Include any architecture compliance violations found in {{.ArchitectureDoc}}
+### Approved / Changes Requested
+State whether the PR is approved or changes are requested, with a brief summary.
+
+### Architecture Compliance
+Describe any architecture compliance violations found{{if .ArchitectureDoc}} (checked against {{.ArchitectureDoc}}){{end}},
+or confirm that no violations were found.
+
+List each specific issue that must be fixed. For each issue: describe what is
+wrong, what the correct behavior should be, and which acceptance criterion or
+scenario it violates.
 
 CRITICAL: You MUST print exactly one of these lines:
   REVIEW_RESULT=APPROVED
