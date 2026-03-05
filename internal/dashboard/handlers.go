@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"sort"
@@ -39,24 +40,33 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "index.html", data); err != nil {
 		s.cfg.Logger.Error("rendering index template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 func (s *Server) handleRunsTable(w http.ResponseWriter, r *http.Request) {
 	repo := r.URL.Query().Get("repo")
-	runs, err := s.filteredRuns(repo)
+	metas, err := s.reader.ListRuns()
 	if err != nil {
 		s.cfg.Logger.Error("building run rows", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "runs-rows", runs); err != nil {
+	runs := filteredRuns(metas, repo)
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "runs-rows", runs); err != nil {
 		s.cfg.Logger.Error("rendering runs-rows template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
@@ -75,10 +85,7 @@ func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
 	}
 	sort.Strings(repos)
 
-	runs, err := s.filteredRuns(repoFilter)
-	if err != nil {
-		return nil, err
-	}
+	runs := filteredRuns(allMetas, repoFilter)
 
 	return &IndexData{
 		Runs:       runs,
@@ -87,11 +94,7 @@ func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
 	}, nil
 }
 
-func (s *Server) filteredRuns(repoFilter string) ([]RunView, error) {
-	metas, err := s.reader.ListRuns()
-	if err != nil {
-		return nil, err
-	}
+func filteredRuns(metas []rundata.RunMeta, repoFilter string) []RunView {
 	views := make([]RunView, 0, len(metas))
 	for _, m := range metas {
 		if repoFilter != "" && m.Repo != repoFilter {
@@ -99,7 +102,7 @@ func (s *Server) filteredRuns(repoFilter string) ([]RunView, error) {
 		}
 		views = append(views, metaToView(m))
 	}
-	return views, nil
+	return views
 }
 
 func metaToView(m rundata.RunMeta) RunView {

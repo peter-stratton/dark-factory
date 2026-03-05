@@ -20,7 +20,10 @@ The homepage lists all runs from ~/.godark/runs/, most recent first.
 
 Press Ctrl-C to stop the server.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		port, _ := cmd.Flags().GetInt("port")
+		port, err := cmd.Flags().GetInt("port")
+		if err != nil {
+			return fmt.Errorf("getting port flag: %w", err)
+		}
 
 		logger := slog.Default()
 
