@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Empty States</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .empty-gallery {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-8);
+    }
+    .empty-section {
+      border: 1px dashed var(--border-default);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .empty-section__label {
+      padding: var(--space-2) var(--space-4);
+      background: var(--bg-surface-2);
+      border-bottom: 1px dashed var(--border-default);
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+    }
+    .empty-section__content {
+      min-height: 300px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Geometric empty state icons (CSS-only) */
+    .empty-icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: var(--space-6);
+      position: relative;
+    }
+    .empty-icon--hexagons {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-icon--hexagons::before {
+      content: "";
+      width: 40px;
+      height: 40px;
+      background: var(--bg-surface-3);
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+      opacity: 0.4;
+    }
+    .empty-icon--hexagons::after {
+      content: "";
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      background: var(--border-default);
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.6;
+    }
+
+    .empty-icon--doc {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-icon--doc::before {
+      content: "";
+      width: 32px;
+      height: 40px;
+      border: 2px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      opacity: 0.3;
+    }
+    .empty-icon--doc::after {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 2px;
+      background: var(--border-default);
+      opacity: 0.4;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 -6px 0 var(--border-default), 0 6px 0 var(--border-default);
+    }
+
+    .empty-icon--search {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-icon--search::before {
+      content: "";
+      width: 28px;
+      height: 28px;
+      border: 2px solid var(--border-default);
+      border-radius: 50%;
+      opacity: 0.3;
+    }
+    .empty-icon--search::after {
+      content: "";
+      position: absolute;
+      width: 12px;
+      height: 2px;
+      background: var(--border-default);
+      opacity: 0.4;
+      bottom: 12px;
+      right: 10px;
+      transform: rotate(45deg);
+    }
+
+    .empty-icon--list {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .empty-icon--list::before {
+      content: "";
+      width: 36px;
+      height: 2px;
+      background: var(--border-default);
+      opacity: 0.3;
+      box-shadow: 0 8px 0 var(--border-default), 0 16px 0 var(--border-default);
+    }
+
+    .empty-icon--terminal {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-icon--terminal::before {
+      content: "";
+      width: 44px;
+      height: 32px;
+      border: 2px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      opacity: 0.3;
+    }
+    .empty-icon--terminal::after {
+      content: ">";
+      position: absolute;
+      color: var(--border-default);
+      font-family: var(--font-mono);
+      font-size: var(--text-lg);
+      opacity: 0.4;
+    }
+
+    /* First-run welcome variant */
+    .welcome-state {
+      text-align: center;
+      padding: var(--space-16) var(--space-8);
+    }
+    .welcome-state__logo {
+      width: 48px;
+      height: 48px;
+      background: var(--accent);
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+      margin: 0 auto var(--space-6);
+      opacity: 0.8;
+    }
+    .welcome-state__title {
+      font-family: var(--font-sans);
+      font-size: var(--text-xl);
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: var(--space-2);
+    }
+    .welcome-state__body {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      max-width: 440px;
+      margin: 0 auto;
+      line-height: 1.7;
+    }
+    .welcome-state__cmd {
+      display: inline-block;
+      margin-top: var(--space-6);
+      padding: var(--space-3) var(--space-5);
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      font-family: var(--font-mono);
+      font-size: var(--text-sm);
+      color: var(--text-primary);
+    }
+    .welcome-state__cmd .text-accent { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <span class="breadcrumbs__current">Empty States</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot" style="background: var(--text-muted); box-shadow: none; animation: none;"></span>
+        Idle
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="index.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="logs.html" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h8.5C13.216 0 14 .784 14 1.75v12.5A1.75 1.75 0 0112.25 16h-8.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V1.75a.25.25 0 00-.25-.25h-8.5zM4.75 4h6.5v1.5h-6.5V4zm0 3h6.5v1.5h-6.5V7zm0 3h4v1.5h-4V10z"/></svg>
+              Logs
+            </a>
+          </li>
+          <li>
+            <a href="empty.html" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+              Empty States
+            </a>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Empty States</h1>
+        <p class="page-header__subtitle">What the dashboard looks like with no data</p>
+      </div>
+
+      <div class="empty-gallery">
+
+        <!-- 1. First Run / Welcome -->
+        <div class="empty-section animate-in animate-in-1">
+          <div class="empty-section__label">First Run — No Runs Yet</div>
+          <div class="empty-section__content">
+            <div class="welcome-state">
+              <div class="welcome-state__logo"></div>
+              <h2 class="welcome-state__title">Welcome to godark</h2>
+              <p class="welcome-state__body">
+                No orchestration runs yet. Start your first run to see results here.
+                The dashboard will update in real-time as issues are processed.
+              </p>
+              <div class="welcome-state__cmd">
+                <span class="text-accent">$</span> godark run --milestone v1.0 --repo owner/repo
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. No Issues in Run -->
+        <div class="empty-section animate-in animate-in-2">
+          <div class="empty-section__label">Run Detail — No Issues</div>
+          <div class="empty-section__content">
+            <div class="empty-state">
+              <div class="empty-icon empty-icon--list"></div>
+              <h3 class="empty-state__title">No issues in this run</h3>
+              <p class="empty-state__description">
+                This milestone has no open issues matching the configured labels.
+                Check your config to make sure the right labels are set.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. No Logs -->
+        <div class="empty-section animate-in animate-in-3">
+          <div class="empty-section__label">Log Viewer — No Logs</div>
+          <div class="empty-section__content">
+            <div class="empty-state">
+              <div class="empty-icon empty-icon--terminal"></div>
+              <h3 class="empty-state__title">No log entries</h3>
+              <p class="empty-state__description">
+                Log output will appear here as the run progresses.
+                If the run has completed, check that the log file exists in the run directory.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Filtered to Nothing -->
+        <div class="empty-section animate-in animate-in-4">
+          <div class="empty-section__label">Runs List — Filter Returns Nothing</div>
+          <div class="empty-section__content">
+            <div class="empty-state">
+              <div class="empty-icon empty-icon--search"></div>
+              <h3 class="empty-state__title">No matching runs</h3>
+              <p class="empty-state__description">
+                No runs match the current filters. Try adjusting the repository filter
+                or clearing the search query.
+              </p>
+              <div class="empty-state__action">
+                <button class="btn btn--ghost btn--sm">Clear filters</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. No Logs Match Filter -->
+        <div class="empty-section animate-in animate-in-5">
+          <div class="empty-section__label">Log Viewer — Search Returns Nothing</div>
+          <div class="empty-section__content">
+            <div class="empty-state">
+              <div class="empty-icon empty-icon--doc"></div>
+              <h3 class="empty-state__title">No matching log entries</h3>
+              <p class="empty-state__description">
+                No log entries match the current level filter or search query.
+                Try broadening your search or selecting a different log level.
+              </p>
+              <div class="empty-state__action">
+                <button class="btn btn--ghost btn--sm">Show all levels</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</body>
+</html>
