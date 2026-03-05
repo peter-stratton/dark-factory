@@ -51,7 +51,8 @@ _ROLE_PERMISSIONS: dict[str, dict] = {
         "disallowed_tools": ["Bash"],
     },
     "punchlist": {
-        "disallowed_tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+        "allowed_tools": ["Read", "Glob", "Grep"],
+        "disallowed_tools": ["Write", "Edit", "Bash"],
     },
 }
 
