@@ -94,10 +94,16 @@ func (l *Locker) Acquire(issueNumbers []int, force bool) error {
 	}
 
 	// Apply the lock label to all issues being processed.
+	var successCount int
 	for _, n := range issueNumbers {
 		if err := github.AddIssueLabel(l.repo, n, l.label); err != nil {
 			l.logger.Warn("failed to apply lock label to issue", "issue", n, "error", err)
+		} else {
+			successCount++
 		}
+	}
+	if len(issueNumbers) > 0 && successCount == 0 {
+		return fmt.Errorf("failed to apply lock label to any issue: lock not acquired")
 	}
 
 	// Write local metadata for stale-lock detection.
@@ -125,7 +131,7 @@ func (l *Locker) Release(issueNumbers []int) error {
 // ReleaseAll finds all open issues with the lock label in the repo and removes
 // the label from each of them. It also deletes the local lock file.
 // Used by `godark unlock` for manual cleanup of stale locks.
-// Returns the number of issues unlocked.
+// Returns the number of issues found with the lock label.
 func (l *Locker) ReleaseAll() (int, error) {
 	issues, err := github.FindIssuesWithLabel(l.repo, l.label)
 	if err != nil {

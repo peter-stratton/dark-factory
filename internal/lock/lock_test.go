@@ -2,6 +2,7 @@ package lock
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -190,6 +191,24 @@ func TestAcquire_ForceOverridesLock(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.Acquire([]int{1}, true); err != nil {
 		t.Fatalf("Acquire(force=true) error: %v", err)
+	}
+}
+
+func TestAcquire_FailsWhenAllLabelsFail(t *testing.T) {
+	stubCommandRunner(t, func(name string, args ...string) ([]byte, error) {
+		for _, a := range args {
+			if a == "--add-label" {
+				return nil, fmt.Errorf("permission denied")
+			}
+		}
+		// FindIssuesWithLabel and EnsureLabel calls succeed with empty list.
+		return emptyJSON(), nil
+	})
+
+	l := newTestLocker(t)
+	err := l.Acquire([]int{1, 2}, false)
+	if err == nil {
+		t.Fatal("expected error when all label applications fail")
 	}
 }
 

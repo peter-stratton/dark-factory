@@ -11,11 +11,11 @@ import (
 func EnsureLabel(repo, name, color, description string) error {
 	out, err := CommandRunner("gh", "label", "list",
 		"--repo", repo,
+		"--search", name,
 		"--json", "name",
-		"--limit", "200",
 	)
 	if err != nil {
-		return fmt.Errorf("listing labels: %w", err)
+		return fmt.Errorf("searching for label: %w", err)
 	}
 
 	var labels []struct {

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/spf13/cobra"
@@ -25,7 +26,8 @@ lock before starting a new run.`,
 			return fmt.Errorf("--repo is required")
 		}
 
-		locker := lock.New(repo, slog.Default())
+		logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		locker := lock.New(repo, logger)
 		count, err := locker.ReleaseAll()
 		if err != nil {
 			return fmt.Errorf("releasing lock: %w", err)
