@@ -257,6 +257,74 @@ func TestOutcomeWritten(t *testing.T) {
 	}
 }
 
+func TestFlagsWrittenToReviewJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	flags := []Flag{
+		{Code: "low_cost", Message: "review cost $0.0001 is below threshold $0.1000"},
+		{Code: "short_duration", Message: "review duration 1s is below threshold 30s"},
+	}
+	step := StepResult{Output: "review output", Flags: flags}
+	if err := w.WriteReviewResult(42, "quality", step); err != nil {
+		t.Fatalf("WriteReviewResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "quality-review.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading quality-review.json: %v", err)
+	}
+
+	var written StepResult
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing quality-review.json: %v", err)
+	}
+
+	if len(written.Flags) != 2 {
+		t.Fatalf("Flags: got %d, want 2", len(written.Flags))
+	}
+	if written.Flags[0].Code != "low_cost" {
+		t.Errorf("Flags[0].Code = %q, want %q", written.Flags[0].Code, "low_cost")
+	}
+	if written.Flags[1].Code != "short_duration" {
+		t.Errorf("Flags[1].Code = %q, want %q", written.Flags[1].Code, "short_duration")
+	}
+}
+
+func TestNoFlagsOmittedFromJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{Output: "review output"}
+	if err := w.WriteReviewResult(42, "functional", step); err != nil {
+		t.Fatalf("WriteReviewResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "functional-review.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading functional-review.json: %v", err)
+	}
+
+	// flags field should be omitted (omitempty) when empty
+	if string(data) != "" {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(data, &raw); err != nil {
+			t.Fatalf("parsing JSON: %v", err)
+		}
+		if _, ok := raw["flags"]; ok {
+			t.Error("flags key should be omitted from JSON when empty")
+		}
+	}
+}
+
 func TestPathTraversalRejected(t *testing.T) {
 	cases := []string{
 		"../evil/../../path",
