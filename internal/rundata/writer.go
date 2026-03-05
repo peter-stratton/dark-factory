@@ -21,9 +21,9 @@ type RunMeta struct {
 
 // RunSummary holds the outcome summary written by FinalizeRun.
 type RunSummary struct {
-	IssuesProcessed int    `json:"issues_processed"`
-	IssuesFailed    int    `json:"issues_failed"`
-	Notes           string `json:"notes,omitempty"`
+	Total       int `json:"total"`
+	Implemented int `json:"implemented"`
+	Failed      int `json:"failed"`
 }
 
 // StepResult holds the output of a single agent step.
@@ -36,8 +36,8 @@ type StepResult struct {
 // Outcome records the final result for a single issue.
 type Outcome struct {
 	IssueNumber int    `json:"issue_number"`
-	Result      string `json:"result"`
-	Summary     string `json:"summary,omitempty"`
+	Status      string `json:"status"`
+	PRNumber    int    `json:"pr_number"`
 }
 
 // Writer manages a per-run directory and writes JSON files for each agent loop step.
@@ -122,15 +122,11 @@ func (w *Writer) WriteRetryResult(issueNum, retryNum int, step StepResult) error
 	return writeJSONMkdirs(path, step)
 }
 
-// WriteRetryReviewResult writes a review result for a retry step.
-// kind must be "quality" or "functional".
-// Path: issues/<issueNum>/retries/<retryNum>/<kind>-review.json
-func (w *Writer) WriteRetryReviewResult(issueNum, retryNum int, kind string, step StepResult) error {
-	if kind != "quality" && kind != "functional" {
-		return fmt.Errorf("review kind must be %q or %q, got %q", "quality", "functional", kind)
-	}
+// WriteRetryReviewResult writes a quality review result for a retry step.
+// Path: issues/<issueNum>/retries/<retryNum>/quality-review.json
+func (w *Writer) WriteRetryReviewResult(issueNum, retryNum int, step StepResult) error {
 	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum),
-		"retries", fmt.Sprintf("%d", retryNum), kind+"-review.json")
+		"retries", fmt.Sprintf("%d", retryNum), "quality-review.json")
 	return writeJSONMkdirs(path, step)
 }
 

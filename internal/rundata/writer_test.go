@@ -99,7 +99,7 @@ func TestRunJSONFinalized(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	summary := RunSummary{IssuesProcessed: 3, IssuesFailed: 1, Notes: "all done"}
+	summary := RunSummary{Total: 2, Implemented: 1, Failed: 1}
 	beforeFinalize := time.Now().UTC().Truncate(time.Second)
 	if err := w.FinalizeRun(summary); err != nil {
 		t.Fatalf("FinalizeRun() error: %v", err)
@@ -124,11 +124,14 @@ func TestRunJSONFinalized(t *testing.T) {
 	if meta.Summary == nil {
 		t.Fatal("summary should be set after FinalizeRun")
 	}
-	if meta.Summary.IssuesProcessed != 3 {
-		t.Errorf("summary.issues_processed: got %d, want 3", meta.Summary.IssuesProcessed)
+	if meta.Summary.Total != 2 {
+		t.Errorf("summary.total: got %d, want 2", meta.Summary.Total)
 	}
-	if meta.Summary.IssuesFailed != 1 {
-		t.Errorf("summary.issues_failed: got %d, want 1", meta.Summary.IssuesFailed)
+	if meta.Summary.Implemented != 1 {
+		t.Errorf("summary.implemented: got %d, want 1", meta.Summary.Implemented)
+	}
+	if meta.Summary.Failed != 1 {
+		t.Errorf("summary.failed: got %d, want 1", meta.Summary.Failed)
 	}
 }
 
@@ -218,6 +221,24 @@ func TestRetryWritten(t *testing.T) {
 	}
 }
 
+func TestRetryReviewWritten(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{Output: "retry review output"}
+	if err := w.WriteRetryReviewResult(42, 2, step); err != nil {
+		t.Fatalf("WriteRetryReviewResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "retries", "2", "quality-review.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected file at %s, got: %v", path, err)
+	}
+}
+
 func TestOutcomeWritten(t *testing.T) {
 	base := t.TempDir()
 	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
@@ -225,7 +246,7 @@ func TestOutcomeWritten(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	outcome := Outcome{IssueNumber: 42, Result: "success"}
+	outcome := Outcome{IssueNumber: 42, Status: "implemented", PRNumber: 57}
 	if err := w.WriteOutcome(outcome); err != nil {
 		t.Fatalf("WriteOutcome() error: %v", err)
 	}
