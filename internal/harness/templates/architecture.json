@@ -1,0 +1,11 @@
+{
+  "layers": [
+    {
+      "name": "example-layer",
+      "description": "Replace this with a real layer description.",
+      "paths": ["internal/example/"],
+      "may_depend_on": [],
+      "must_not_depend_on": []
+    }
+  ]
+}

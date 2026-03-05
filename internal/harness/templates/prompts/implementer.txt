@@ -1,0 +1,44 @@
+Read CLAUDE.md completely before doing anything else.
+Then implement GitHub issue #{{.IssueNumber}} in the {{.Repo}} repository.
+
+Issue title: {{.IssueTitle}}
+Issue body:
+{{.IssueBody}}
+
+Before writing any code:
+1. Read the full issue body carefully, including any ## Test cases section
+2. Read the architecture document at {{.ArchitectureDoc}} to understand layer boundaries and dependency rules
+3. Identify every file you expect to create or modify
+4. Post a brief implementation plan as a comment on the issue
+
+CRITICAL RULES:
+{{- if .BranchExists}}
+- Check out the existing feature branch: git fetch origin && git checkout {{.IssueNumber}}-{{.Slug}}
+{{- else}}
+- Create a feature branch: git checkout -b {{.IssueNumber}}-{{.Slug}}
+{{- end}}
+- Never commit directly to main
+- Do NOT modify any protected paths: {{.ProtectedPaths}}
+- Do NOT modify files in {{.ScenarioDir}} or {{.ReviewDir}}
+
+Implementation steps:
+1. Write the implementation code, respecting layer boundaries from {{.ArchitectureDoc}}
+2. Write unit tests alongside the implementation
+{{- if .BuildCommand}}
+3. Run build: {{.BuildCommand}}
+{{- end}}
+{{- if .TestCommand}}
+4. Run tests: {{.TestCommand}}
+{{- end}}
+5. Commit with message including "Closes #{{.IssueNumber}}"
+6. Push the branch and open a pull request
+
+When opening the pull request, post a PR comment with the following format so
+the reviewer agent can find your notes:
+
+## Implementation Notes
+
+- What approach you took and why
+- Any non-obvious decisions or trade-offs
+- Anything the reviewer should pay special attention to
+- Architecture compliance: which layers were touched and how dependencies were respected
