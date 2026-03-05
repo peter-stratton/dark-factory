@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/skills"
 	"github.com/spf13/cobra"
 )
@@ -38,11 +39,15 @@ The config file is only created if it does not already exist.`,
 		if err := writeSkillFiles(cmd); err != nil {
 			return err
 		}
-		return writeDefaultConfig(cmd)
+		if err := writeDefaultConfig(cmd); err != nil {
+			return err
+		}
+		return createLockLabel(cmd)
 	},
 }
 
 func init() {
+	initCmd.Flags().String("repo", "", "GitHub repository (owner/repo) — used to create the godark-in-progress label")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -85,5 +90,21 @@ func writeDefaultConfig(cmd *cobra.Command) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", configPath)
+	return nil
+}
+
+// createLockLabel creates the godark-in-progress label in the repo if --repo
+// is provided. If no repo is available, this step is silently skipped.
+func createLockLabel(cmd *cobra.Command) error {
+	repo, _ := cmd.Flags().GetString("repo")
+	if repo == "" {
+		return nil
+	}
+	if err := lock.EnsureLabelExists(repo); err != nil {
+		// Warn but do not fail init — the label will be created lazily on first run.
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create lock label: %v\n", err)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "ensured label %q in %s\n", lock.LockLabel, repo)
 	return nil
 }
