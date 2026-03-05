@@ -44,18 +44,19 @@ func CheckDuration(duration time.Duration, threshold time.Duration) *Flag {
 
 // CheckToolTrace inspects the tool trace for evidence of a diff read and test run.
 // Returns no_diff_read if no Read or "gh pr diff" call is found.
-// Returns no_tests_run if no "go test" or "npm test" call is found.
-func CheckToolTrace(toolTrace []string) []Flag {
+// Returns no_tests_run if testCommand is not found in the trace.
+// If testCommand is empty, the test run check is skipped.
+func CheckToolTrace(toolTrace []string, testCommand string) []Flag {
 	var flags []Flag
 
 	diffRead := false
-	testsRun := false
+	testsRun := testCommand == ""
 
 	for _, entry := range toolTrace {
 		if strings.Contains(entry, "Read") || strings.Contains(entry, "gh pr diff") {
 			diffRead = true
 		}
-		if strings.Contains(entry, "go test") || strings.Contains(entry, "npm test") {
+		if !testsRun && strings.Contains(entry, testCommand) {
 			testsRun = true
 		}
 	}
@@ -69,7 +70,7 @@ func CheckToolTrace(toolTrace []string) []Flag {
 	if !testsRun {
 		flags = append(flags, Flag{
 			Code:    "no_tests_run",
-			Message: "no test run detected in tool trace (expected go test or npm test)",
+			Message: fmt.Sprintf("no test run detected in tool trace (expected %q)", testCommand),
 		})
 	}
 
