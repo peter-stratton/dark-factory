@@ -7,6 +7,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/rundata"
 )
 
 // IssueOutcome records the result of processing a single issue.
@@ -20,8 +21,23 @@ type IssueOutcome struct {
 
 // ProcessIssue runs the full per-issue lifecycle:
 // implement → find PR → guard rails → review/retry loop → merge or label.
-func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) IssueOutcome {
+// hook is optional; if non-nil, it is called after each agent step to record
+// run data. Hook errors are logged as warnings and do not abort processing.
+func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook) IssueOutcome {
 	outcome := IssueOutcome{IssueNumber: issue.Number}
+
+	// Write outcome data on every return path.
+	defer func() {
+		if hook != nil {
+			if err := hook.WriteOutcome(rundata.Outcome{
+				IssueNumber: outcome.IssueNumber,
+				Status:      outcome.Status,
+				PRNumber:    outcome.PRNumber,
+			}); err != nil {
+				logger.Warn("failed to write outcome", "error", err)
+			}
+		}
+	}()
 
 	slug := Slugify(issue.Title)
 	branch := BranchName(issue.Number, slug)
@@ -59,6 +75,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("implementer agent timed out")
 		return outcome
+	}
+	if hook != nil {
+		if err := hook.WriteImplementResult(issue.Number, ResultToStep(implResult)); err != nil {
+			logger.Warn("failed to write implement result", "error", err)
+		}
 	}
 
 	// Capture session ID so retries can resume the agent's context.
@@ -108,6 +129,17 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Err = fmt.Errorf("quality reviewer agent: %w", err)
 				return outcome
 			}
+			if hook != nil {
+				if qAttempt == 0 {
+					if err := hook.WriteReviewResult(issue.Number, "quality", ResultToStep(qResult.AgentResult)); err != nil {
+						logger.Warn("failed to write quality review result", "error", err)
+					}
+				} else {
+					if err := hook.WriteRetryReviewResult(issue.Number, qAttempt-1, ResultToStep(qResult.AgentResult)); err != nil {
+						logger.Warn("failed to write retry review result", "error", err)
+					}
+				}
+			}
 
 			switch qResult.Verdict {
 			case "APPROVED":
@@ -134,6 +166,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					outcome.Status = "failed"
 					outcome.Err = fmt.Errorf("retry agent (quality) timed out")
 					return outcome
+				}
+				if hook != nil {
+					if err := hook.WriteRetryResult(issue.Number, qAttempt, ResultToStep(retryResult)); err != nil {
+						logger.Warn("failed to write retry result", "error", err)
+					}
 				}
 
 				sessionID = retryResult.SessionID
@@ -184,6 +221,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			outcome.Err = fmt.Errorf("reviewer agent: %w", err)
 			return outcome
 		}
+		if hook != nil {
+			if err := hook.WriteReviewResult(issue.Number, "functional", ResultToStep(reviewResult.AgentResult)); err != nil {
+				logger.Warn("failed to write functional review result", "error", err)
+			}
+		}
 
 		switch reviewResult.Verdict {
 		case "APPROVED":
@@ -226,6 +268,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("retry agent timed out")
 				return outcome
+			}
+			if hook != nil {
+				if err := hook.WriteRetryResult(issue.Number, attempt, ResultToStep(retryResult)); err != nil {
+					logger.Warn("failed to write retry result", "error", err)
+				}
 			}
 
 			// Update session ID so the next retry can resume this session's context.

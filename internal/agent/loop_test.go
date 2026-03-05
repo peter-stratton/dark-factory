@@ -8,6 +8,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/rundata"
 )
 
 // loopTestSetup stubs both Runner (for agent invocations) and GuardRunner
@@ -97,7 +98,7 @@ func TestProcessIssue_ImplementedOnFirstApproval(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -137,7 +138,7 @@ func TestProcessIssue_RetriesOnChangesRequested(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -175,7 +176,7 @@ func TestProcessIssue_NeedsHumanReviewAfterMaxRetries(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "needs-human-review" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
@@ -194,7 +195,7 @@ func TestProcessIssue_FailedWhenNoPRFound(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "failed" {
 		t.Errorf("Status = %q, want %q", outcome.Status, "failed")
@@ -222,7 +223,7 @@ func TestProcessIssue_FailedOnProtectedDrift(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "failed" {
 		t.Errorf("Status = %q, want %q", outcome.Status, "failed")
@@ -261,7 +262,7 @@ func TestProcessIssue_RechecksProtectedDriftAfterRetry(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "failed" {
 		t.Errorf("Status = %q, want %q", outcome.Status, "failed")
@@ -303,7 +304,7 @@ func TestProcessIssue_MergeOnApproval(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -402,7 +403,7 @@ func TestProcessIssue_SkipsSpecGenWhenNoPrompt(t *testing.T) {
 
 	// No SpecGenerator prompt → should only have 3 agent calls (implement + quality + review).
 	prompts := testPrompts(t)
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -464,7 +465,7 @@ func TestProcessIssue_PassesSessionIDToFirstRetry(t *testing.T) {
 		}
 	}
 
-	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if retryEnv == nil {
 		t.Fatal("retry was never called")
@@ -516,7 +517,7 @@ func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
 		}
 	}
 
-	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
 
 	if secondRetryEnv == nil {
 		t.Fatal("second retry was never called")
@@ -556,7 +557,7 @@ func TestProcessIssue_ReviewerHasNoSessionID(t *testing.T) {
 		}
 	}
 
-	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if len(reviewerEnvs) == 0 {
 		t.Fatal("reviewer was never called")
@@ -593,7 +594,7 @@ func TestProcessIssue_QualityReviewChangesRequestedTriggersRetry(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -642,7 +643,7 @@ func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
 		}
 	}
 
-	ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t))
+	ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
 
 	if len(qualityPrompts) != 2 {
 		t.Fatalf("expected 2 quality review calls, got %d", len(qualityPrompts))
@@ -689,7 +690,7 @@ func TestProcessIssue_NoMerge_SkipsMergeOnApproval(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "ready-to-merge" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "ready-to-merge", outcome.Err)
@@ -712,7 +713,7 @@ func TestProcessIssue_NoMerge_OutcomeStatus(t *testing.T) {
 		"REVIEW_RESULT=APPROVED",
 	}, loopGuardFn)
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "ready-to-merge" {
 		t.Errorf("Status = %q, want %q", outcome.Status, "ready-to-merge")
@@ -748,7 +749,7 @@ func TestProcessIssue_NoMerge_DefaultMerges(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -787,7 +788,7 @@ func TestProcessIssue_NoMerge_QualityReviewStillRuns(t *testing.T) {
 		}
 	}
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
 
 	if outcome.Status != "ready-to-merge" {
 		t.Errorf("Status = %q, want %q", outcome.Status, "ready-to-merge")
@@ -830,12 +831,124 @@ func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 
 	prompts := testPrompts(t)
 	prompts.QualityReviewer = "" // disable quality reviewer
-	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t))
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
 	}
 	if agentCallCount != 2 {
 		t.Errorf("expected 2 agent calls (implement + review), got %d", agentCallCount)
+	}
+}
+
+// testRunDataHook is a simple RunDataHook implementation for unit tests.
+type testRunDataHook struct {
+	implementCalls   int
+	reviewKinds      []string
+	retryCalls       int
+	retryReviewCalls int
+	outcomes         []rundata.Outcome
+}
+
+func (h *testRunDataHook) WriteImplementResult(_ int, _ rundata.StepResult) error {
+	h.implementCalls++
+	return nil
+}
+func (h *testRunDataHook) WriteReviewResult(_ int, kind string, _ rundata.StepResult) error {
+	h.reviewKinds = append(h.reviewKinds, kind)
+	return nil
+}
+func (h *testRunDataHook) WriteRetryResult(_ int, _ int, _ rundata.StepResult) error {
+	h.retryCalls++
+	return nil
+}
+func (h *testRunDataHook) WriteRetryReviewResult(_ int, _ int, _ rundata.StepResult) error {
+	h.retryReviewCalls++
+	return nil
+}
+func (h *testRunDataHook) WriteOutcome(o rundata.Outcome) error {
+	h.outcomes = append(h.outcomes, o)
+	return nil
+}
+
+func TestProcessIssue_HookCalledOnImplement(t *testing.T) {
+	hook := &testRunDataHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
+
+	if hook.implementCalls != 1 {
+		t.Errorf("WriteImplementResult called %d times, want 1", hook.implementCalls)
+	}
+}
+
+func TestProcessIssue_HookCalledOnReview(t *testing.T) {
+	hook := &testRunDataHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
+
+	if len(hook.reviewKinds) == 0 {
+		t.Fatal("WriteReviewResult was never called")
+	}
+	// Quality review then functional review both expected.
+	foundQuality := false
+	foundFunctional := false
+	for _, k := range hook.reviewKinds {
+		if k == "quality" {
+			foundQuality = true
+		}
+		if k == "functional" {
+			foundFunctional = true
+		}
+	}
+	if !foundQuality {
+		t.Errorf("WriteReviewResult(\"quality\") not called; calls: %v", hook.reviewKinds)
+	}
+	if !foundFunctional {
+		t.Errorf("WriteReviewResult(\"functional\") not called; calls: %v", hook.reviewKinds)
+	}
+}
+
+func TestProcessIssue_HookCalledOnOutcome(t *testing.T) {
+	hook := &testRunDataHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
+
+	if len(hook.outcomes) != 1 {
+		t.Fatalf("WriteOutcome called %d times, want 1", len(hook.outcomes))
+	}
+	if hook.outcomes[0].Status != outcome.Status {
+		t.Errorf("WriteOutcome status = %q, want %q", hook.outcomes[0].Status, outcome.Status)
+	}
+	if hook.outcomes[0].IssueNumber != loopIssue().Number {
+		t.Errorf("WriteOutcome issue_number = %d, want %d", hook.outcomes[0].IssueNumber, loopIssue().Number)
+	}
+}
+
+func TestProcessIssue_NilHookSafe(t *testing.T) {
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	// Should not panic with nil hook.
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
 	}
 }

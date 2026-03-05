@@ -14,6 +14,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/punchlist"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
@@ -80,7 +81,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, cfg, logger, force, punchlistPath)
+	return processIssues(ctx, issues, closedSet, cfg, logger, force, punchlistPath, milestone)
 }
 
 // categorizeIssues splits issues into processable and blocked based on the
@@ -166,7 +167,7 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // re-resolution after each merge. When an issue is successfully merged,
 // the closed set is refreshed and dependencies re-resolved so that newly
 // unblocked issues can be processed in the same run.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, force bool, punchlistPath string) error {
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, force bool, punchlistPath string, milestone string) error {
 	// Initial categorization.
 	processable, blocked := categorizeIssues(allIssues, closedSet)
 
@@ -196,6 +197,16 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			return fmt.Errorf("building Docker image: %w", err)
 		}
 		cfg.Docker.Image = tag
+	}
+
+	// Create a RunDataWriter for this run. Failures are non-fatal.
+	issueNums := issueNumbers(allIssues)
+	var hook agent.RunDataHook
+	writer, err := newRunDataWriterFn(cfg.Repo, milestone, issueNums)
+	if err != nil {
+		logger.Warn("failed to create run data writer, run data will not be recorded", "error", err)
+	} else {
+		hook = writer
 	}
 
 	// Track stats across all waves.
@@ -273,7 +284,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 
 			seen[issue.Number] = true
-			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger)
+			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook)
 
 			switch outcome.Status {
 			case "implemented":
@@ -338,6 +349,18 @@ done:
 	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
 		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
 
+	// Finalize run data.
+	if writer != nil {
+		summary := rundata.RunSummary{
+			Total:       stats.implemented + stats.readyToMerge + stats.needsHumanReview + stats.failed,
+			Implemented: stats.implemented,
+			Failed:      stats.failed,
+		}
+		if err := writer.FinalizeRun(summary); err != nil {
+			logger.Warn("failed to finalize run data", "error", err)
+		}
+	}
+
 	if len(processed) > 0 {
 		entries := make([]punchlist.Entry, 0, len(processed))
 		for _, p := range processed {
@@ -380,6 +403,11 @@ func printSummary(total, blocked, processable int) {
 // processIssueFn is the function called to process each issue.
 // Replaceable for testing.
 var processIssueFn = agent.ProcessIssue
+
+// newRunDataWriterFn creates a new RunDataWriter. Replaceable for testing.
+var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int) (*rundata.Writer, error) {
+	return rundata.New(repo, milestone, issueNumbers)
+}
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
