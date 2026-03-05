@@ -268,12 +268,20 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 		// Lock this wave's issues.
 		batchNums := issueNumbers(batch)
-		if err := locker.Acquire(batchNums, force); err != nil {
-			return fmt.Errorf("acquiring run lock (wave %d): %w", wave, err)
+		if wave == 1 {
+			// First wave: full acquire (checks for existing locks).
+			if err := locker.Acquire(batchNums, force); err != nil {
+				return fmt.Errorf("acquiring run lock: %w", err)
+			}
+		} else {
+			// Subsequent waves: we already hold the lock, just label new issues.
+			for _, n := range batchNums {
+				if err := github.AddIssueLabel(cfg.Repo, n, lock.LockLabel); err != nil {
+					logger.Warn("failed to apply lock label to newly unblocked issue", "issue", n, "error", err)
+				}
+			}
 		}
 		allLockedNums = append(allLockedNums, batchNums...)
-		// Only use force for the first wave; subsequent waves should not force.
-		force = false
 
 		// Process each issue in the batch.
 		merged := false
