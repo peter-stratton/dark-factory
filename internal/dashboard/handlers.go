@@ -2,9 +2,13 @@ package dashboard
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/phs/dark-factory/internal/rundata"
@@ -23,6 +27,54 @@ type RunView struct {
 	StatusLabel string // "Passed", "Failed", or "Running"
 	When        string // human-readable relative time
 	StartedAt   time.Time
+	URL         string // link to run detail page, e.g. /runs/owner/repo/20260305-123456
+}
+
+// RunDetailData is the data passed to the run-detail template.
+type RunDetailData struct {
+	Owner     string
+	Repo      string
+	Timestamp string
+	Meta      rundata.RunMeta
+	Issues    []IssueRowView
+	RunURL    string // canonical URL for this run detail page
+}
+
+// IssueRowView is the view model for one issue row in the run detail table.
+type IssueRowView struct {
+	IssueNumber int
+	Status      string // "Implemented", "Failed", "Running"
+	StatusClass string // "success", "danger", "info"
+	PRNumber    int
+	PRLink      string // GitHub PR URL, empty if no PR
+	RetryCount  int
+	FlagCount   int // total quality flags across all steps
+	URL         string // link to issue detail page
+}
+
+// IssueDetailData is the data passed to the issue-detail template.
+type IssueDetailData struct {
+	Owner       string
+	Repo        string
+	Timestamp   string
+	IssueNumber int
+	PRNumber    int
+	PRLink      string
+	IssueLink   string
+	RunURL      string // link back to run detail page
+	Timeline    []TimelineStepView
+}
+
+// TimelineStepView is the view model for one step in the issue timeline.
+type TimelineStepView struct {
+	Name        string
+	MarkerClass string // "success", "danger", "warning", "info", "neutral"
+	Duration    string // formatted duration, e.g. "42s" or "—"
+	Verdict     string // "Passed", "Failed", "Flagged", "Error", "—"
+	VerdictClass string // badge class suffix
+	Flags       []rundata.Flag
+	HasOutput   bool
+	Output      string
 }
 
 // IndexData is the data passed to the index template.
@@ -114,6 +166,7 @@ func metaToView(m rundata.RunMeta) RunView {
 		When:        humanizeAge(m.StartedAt),
 		StatusClass: "info",
 		StatusLabel: "Running",
+		URL:         runDetailURL(m.Repo, m.StartedAt),
 	}
 	if m.FinishedAt != nil && m.Summary != nil {
 		v.Passed = m.Summary.Implemented
@@ -132,6 +185,233 @@ func metaToView(m rundata.RunMeta) RunView {
 		}
 	}
 	return v
+}
+
+// runDetailURL constructs the URL for a run detail page from repo ("owner/name") and start time.
+func runDetailURL(repo string, startedAt time.Time) string {
+	parts := strings.SplitN(repo, "/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	timestamp := startedAt.UTC().Format("20060102-150405")
+	return fmt.Sprintf("/runs/%s/%s/%s", parts[0], parts[1], timestamp)
+}
+
+func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	repo := r.PathValue("repo")
+	timestamp := r.PathValue("timestamp")
+
+	detail, err := s.reader.LoadRun(owner, repo, timestamp)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		s.cfg.Logger.Error("loading run detail", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	runURL := fmt.Sprintf("/runs/%s/%s/%s", owner, repo, timestamp)
+	data := RunDetailData{
+		Owner:     owner,
+		Repo:      repo,
+		Timestamp: timestamp,
+		Meta:      detail.RunMeta,
+		RunURL:    runURL,
+	}
+	for _, issue := range detail.Issues {
+		data.Issues = append(data.Issues, issueToRowView(issue, owner, repo, timestamp))
+	}
+
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "run-detail.html", data); err != nil {
+		s.cfg.Logger.Error("rendering run-detail template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	repo := r.PathValue("repo")
+	timestamp := r.PathValue("timestamp")
+	numberStr := r.PathValue("number")
+
+	issueNum, err := strconv.Atoi(numberStr)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	detail, err := s.reader.LoadRun(owner, repo, timestamp)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		s.cfg.Logger.Error("loading run for issue detail", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	var found *rundata.IssueDetail
+	for i := range detail.Issues {
+		if detail.Issues[i].IssueNumber == issueNum {
+			found = &detail.Issues[i]
+			break
+		}
+	}
+	if found == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	runURL := fmt.Sprintf("/runs/%s/%s/%s", owner, repo, timestamp)
+	prLink := ""
+	if found.Outcome.PRNumber > 0 {
+		prLink = fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, found.Outcome.PRNumber)
+	}
+	issueLink := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, issueNum)
+
+	data := IssueDetailData{
+		Owner:       owner,
+		Repo:        repo,
+		Timestamp:   timestamp,
+		IssueNumber: issueNum,
+		PRNumber:    found.Outcome.PRNumber,
+		PRLink:      prLink,
+		IssueLink:   issueLink,
+		RunURL:      runURL,
+		Timeline:    buildTimeline(*found),
+	}
+
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "issue-detail.html", data); err != nil {
+		s.cfg.Logger.Error("rendering issue-detail template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+// issueToRowView converts an IssueDetail to the view model for the run detail table.
+func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) IssueRowView {
+	flagCount := len(issue.Implement.Flags) + len(issue.QualityReview.Flags) + len(issue.FunctionalReview.Flags)
+	for _, retry := range issue.Retries {
+		flagCount += len(retry.Retry.Flags) + len(retry.QualityReview.Flags)
+	}
+
+	statusLabel := "Running"
+	statusClass := "info"
+	switch issue.Outcome.Status {
+	case "implemented":
+		statusLabel = "Implemented"
+		statusClass = "success"
+	case "failed":
+		statusLabel = "Failed"
+		statusClass = "danger"
+	}
+
+	prLink := ""
+	if issue.Outcome.PRNumber > 0 {
+		prLink = fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, issue.Outcome.PRNumber)
+	}
+
+	issueURL := fmt.Sprintf("/runs/%s/%s/%s/issues/%d", owner, repo, timestamp, issue.IssueNumber)
+
+	return IssueRowView{
+		IssueNumber: issue.IssueNumber,
+		Status:      statusLabel,
+		StatusClass: statusClass,
+		PRNumber:    issue.Outcome.PRNumber,
+		PRLink:      prLink,
+		RetryCount:  len(issue.Retries),
+		FlagCount:   flagCount,
+		URL:         issueURL,
+	}
+}
+
+// buildTimeline constructs the ordered list of timeline steps for one issue.
+// Steps with no recorded data (no output, no error, no timing) are omitted.
+func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
+	var steps []TimelineStepView
+
+	if hasStepData(issue.Implement) {
+		steps = append(steps, stepToView("Implement", issue.Implement))
+	}
+	if hasStepData(issue.QualityReview) {
+		steps = append(steps, stepToView("Quality Review", issue.QualityReview))
+	}
+	for _, retry := range issue.Retries {
+		if hasStepData(retry.Retry) {
+			steps = append(steps, stepToView(fmt.Sprintf("Retry %d", retry.Attempt), retry.Retry))
+		}
+		if hasStepData(retry.QualityReview) {
+			steps = append(steps, stepToView(fmt.Sprintf("Quality Review (Retry %d)", retry.Attempt), retry.QualityReview))
+		}
+	}
+	if hasStepData(issue.FunctionalReview) {
+		steps = append(steps, stepToView("Functional Review", issue.FunctionalReview))
+	}
+
+	return steps
+}
+
+// hasStepData reports whether a StepResult contains any recorded data.
+func hasStepData(s rundata.StepResult) bool {
+	return s.Output != "" || s.Error != "" || s.StartedAt != nil || s.DurationSeconds > 0
+}
+
+// stepToView converts a StepResult to a TimelineStepView.
+func stepToView(name string, step rundata.StepResult) TimelineStepView {
+	verdict := "—"
+	verdictClass := "neutral"
+	markerClass := "neutral"
+
+	switch {
+	case step.Error != "":
+		verdict = "Error"
+		verdictClass = "danger"
+		markerClass = "danger"
+	case len(step.Flags) > 0:
+		verdict = "Flagged"
+		verdictClass = "warning"
+		markerClass = "warning"
+	case step.Output != "" || step.DurationSeconds > 0:
+		verdict = "Passed"
+		verdictClass = "success"
+		markerClass = "success"
+	}
+
+	return TimelineStepView{
+		Name:         name,
+		MarkerClass:  markerClass,
+		Duration:     formatDuration(step.DurationSeconds),
+		Verdict:      verdict,
+		VerdictClass: verdictClass,
+		Flags:        step.Flags,
+		HasOutput:    step.Output != "",
+		Output:       step.Output,
+	}
+}
+
+// formatDuration formats a duration in seconds as a human-readable string.
+func formatDuration(seconds float64) string {
+	if seconds == 0 {
+		return "—"
+	}
+	d := time.Duration(seconds * float64(time.Second))
+	if d < time.Minute {
+		return fmt.Sprintf("%.0fs", seconds)
+	}
+	mins := int(d.Minutes())
+	secs := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm%ds", mins, secs)
 }
 
 func humanizeAge(t time.Time) string {

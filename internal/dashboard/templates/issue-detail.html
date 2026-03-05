@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Issue #{{.IssueNumber}}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/alpine.min.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <a href="/">Runs</a>
+        <span class="breadcrumbs__sep">/</span>
+        <a href="{{.RunURL}}">{{.Repo}} / {{.Timestamp}}</a>
+        <span class="breadcrumbs__sep">/</span>
+        <span class="breadcrumbs__current">#{{.IssueNumber}}</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Dashboard
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="/" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="{{.RunURL}}" class="sidebar__link">
+              {{.Timestamp}}
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar__link sidebar__link--active">
+              #{{.IssueNumber}}
+            </a>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Issue #{{.IssueNumber}}</h1>
+        <p class="page-header__subtitle">
+          {{.Repo}}
+          {{if .PRNumber}}&nbsp;&middot;&nbsp;<a class="pr-link" href="{{.PRLink}}" target="_blank" rel="noopener">PR #{{.PRNumber}}</a>{{end}}
+          &nbsp;&middot;&nbsp;<a href="{{.IssueLink}}" target="_blank" rel="noopener">View on GitHub</a>
+        </p>
+      </div>
+
+      <!-- Review Chain Timeline -->
+      <div class="card animate-in animate-in-1">
+        <div class="card__header">
+          <span class="card__title">Review Chain</span>
+        </div>
+        <div class="card__body">
+          {{if .Timeline}}
+          <div class="timeline">
+            {{range .Timeline}}
+            <div class="timeline__item">
+              <div class="timeline__marker timeline__marker--{{.MarkerClass}}"></div>
+              <div class="timeline__content" x-data="{ open: false }">
+                <div class="timeline__header">
+                  <span class="timeline__title">{{.Name}}</span>
+                  <div class="flex gap-2 items-center">
+                    {{if .Flags}}
+                    <div class="quality-flags">
+                      {{range .Flags}}
+                      <span class="quality-flag quality-flag--fail" data-tooltip="{{.Code}}: {{.Message}}">F</span>
+                      {{end}}
+                    </div>
+                    {{end}}
+                    <span class="badge badge--{{.VerdictClass}}">
+                      <span class="badge__dot"></span>
+                      {{.Verdict}}
+                    </span>
+                  </div>
+                </div>
+                <div class="timeline__meta">
+                  <span>{{.Duration}}</span>
+                </div>
+                {{if .HasOutput}}
+                <div class="expandable mt-2">
+                  <button class="expandable__trigger" @click="open = !open">
+                    <span class="expandable__arrow" :style="open ? 'transform: rotate(90deg)' : ''">&#9658;</span>
+                    Tool Trace
+                  </button>
+                  <div x-show="open" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
+                    <pre class="code-block" style="white-space: pre-wrap; word-break: break-word;">{{.Output}}</pre>
+                  </div>
+                </div>
+                {{end}}
+              </div>
+            </div>
+            {{end}}
+          </div>
+          {{else}}
+          <div class="empty-state" style="padding: var(--space-10) var(--space-8);">
+            <p class="empty-state__description">No review chain data recorded for this issue.</p>
+          </div>
+          {{end}}
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

@@ -92,6 +92,8 @@ func (s *Server) Serve(ctx context.Context) error {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("GET /partials/runs-table", s.handleRunsTable)
+	s.mux.HandleFunc("GET /runs/{owner}/{repo}/{timestamp}", s.handleRunDetail)
+	s.mux.HandleFunc("GET /runs/{owner}/{repo}/{timestamp}/issues/{number}", s.handleIssueDetail)
 	s.mux.Handle("GET /static/", http.FileServer(http.FS(content)))
 }
 
