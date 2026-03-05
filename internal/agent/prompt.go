@@ -19,6 +19,7 @@ type Prompts struct {
 	Reviewer         string
 	QualityReviewer  string
 	SpecGenerator    string
+	Punchlist        string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -94,6 +95,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		p.SpecGenerator = ""
 	} else {
 		p.SpecGenerator = specGen
+	}
+
+	// Punchlist is optional — load from config or embedded default.
+	pl, err := loadPromptFile(cfg.Prompts.Punchlist, "punchlist.txt")
+	if err != nil {
+		p.Punchlist = ""
+	} else {
+		p.Punchlist = pl
 	}
 
 	return p, nil

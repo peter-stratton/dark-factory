@@ -357,6 +357,126 @@ func TestFetchChangedFiles_EmptyOutput(t *testing.T) {
 	}
 }
 
+func TestGenerate_WithAcceptanceTests(t *testing.T) {
+	entries := []Entry{
+		{
+			IssueNumber: 42,
+			IssueTitle:  "Add widget",
+			PRNumber:    99,
+			Repo:        "owner/repo",
+			AcceptanceTests: []string{
+				"Run godark with --no-sandbox, verify widget appears",
+				"Set widget_count to 0 in config, verify graceful handling",
+			},
+		},
+	}
+
+	result := Generate(entries)
+
+	if !strings.Contains(result, "Suggested acceptance tests:") {
+		t.Errorf("missing acceptance tests header: %q", result)
+	}
+	if !strings.Contains(result, "- [ ] Run godark with --no-sandbox") {
+		t.Errorf("missing acceptance test checkbox: %q", result)
+	}
+	if !strings.Contains(result, "- [ ] Set widget_count to 0") {
+		t.Errorf("missing second acceptance test: %q", result)
+	}
+}
+
+func TestGenerate_NoAcceptanceTestsSection(t *testing.T) {
+	entries := []Entry{
+		{IssueNumber: 1, IssueTitle: "No tests", PRNumber: 5, Repo: "owner/repo"},
+	}
+	result := Generate(entries)
+	if strings.Contains(result, "Suggested acceptance tests:") {
+		t.Errorf("should not have acceptance tests section when empty: %q", result)
+	}
+}
+
+func TestFetchPRDiff_Success(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("diff --git a/foo.go b/foo.go\n+added line\n"), nil
+	}
+
+	diff, err := FetchPRDiff("owner/repo", 42, 10000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(diff, "+added line") {
+		t.Errorf("expected diff content, got %q", diff)
+	}
+}
+
+func TestFetchPRDiff_Error(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh error")
+	}
+
+	_, err := FetchPRDiff("owner/repo", 42, 10000)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestFetchPRDiff_Truncation(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+	longDiff := strings.Repeat("x", 1000)
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(longDiff), nil
+	}
+
+	diff, err := FetchPRDiff("owner/repo", 42, 100)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(diff) != 100 {
+		t.Errorf("expected truncated diff of 100 bytes, got %d", len(diff))
+	}
+}
+
+func TestFetchPRDiff_NoTruncationWhenUnderLimit(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("short"), nil
+	}
+
+	diff, err := FetchPRDiff("owner/repo", 42, 10000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if diff != "short" {
+		t.Errorf("expected %q, got %q", "short", diff)
+	}
+}
+
+func TestFetchPRDiff_PassesCorrectArgs(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	var capturedArgs []string
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		capturedArgs = append([]string{name}, args...)
+		return []byte(""), nil
+	}
+
+	_, _ = FetchPRDiff("owner/repo", 42, 1000)
+
+	joined := strings.Join(capturedArgs, " ")
+	if strings.Contains(joined, "--name-only") {
+		t.Errorf("FetchPRDiff should NOT pass --name-only, got: %v", capturedArgs)
+	}
+	if !strings.Contains(joined, "42") {
+		t.Errorf("expected PR number in args, got: %v", capturedArgs)
+	}
+}
+
 func TestWrite_EmptyText(t *testing.T) {
 	err := Write("", "")
 	if err != nil {

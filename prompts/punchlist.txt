@@ -1,0 +1,33 @@
+You are a QA engineer reviewing a code change. Your job is to suggest 3-5 concrete, high-value manual acceptance tests that a human tester should perform.
+
+## Issue #{{.IssueNumber}}: {{.IssueTitle}}
+
+### Issue Description
+{{.IssueBody}}
+
+### Changed Files
+{{range .ChangedFiles}}- {{.}}
+{{end}}
+{{if .PRDiff}}### PR Diff (truncated)
+```
+{{.PRDiff}}
+```
+{{end}}
+{{if .ScenarioSpec}}### Scenario Spec
+{{.ScenarioSpec}}
+{{end}}
+
+## Instructions
+
+Generate 3-5 manual acceptance tests. Each test must be:
+- **Specific**: Include exact config values, commands to run, and expected outcomes
+- **Actionable**: A tester should be able to follow it without reading the code
+- **High-value**: Focus on user-facing behavior, edge cases, and integration points — not unit-level checks
+
+Do NOT generate generic tests like "verify it works" or "check for errors."
+
+Output a JSON array of strings. Each string is one test step, written as a concise checklist item. Example:
+
+["Set auth_preference to \"oauth\" in godark.yaml, run with both tokens set, verify OAuth token is used", "Remove ANTHROPIC_API_KEY, run godark implement, verify it falls back to OAuth gracefully"]
+
+Output ONLY the JSON array, no other text.
