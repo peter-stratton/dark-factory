@@ -1,6 +1,7 @@
 package pypi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -22,10 +24,18 @@ const (
 	SDKPinnedRange = ">=0.1.0,<0.2.0"
 )
 
+const maxResponseBytes = 1 << 20 // 1 MiB
+
 // HTTPGet fetches a URL and returns the response body.
 // Replaceable for testing.
 var HTTPGet = func(url string) ([]byte, error) {
-	resp, err := http.Get(url) //nolint:noctx
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +43,7 @@ var HTTPGet = func(url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
 	}
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 }
 
 type pypiResponse struct {
