@@ -442,6 +442,65 @@ auth_preference: token
 	}
 }
 
+func TestQualityConfigParsed(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+quality:
+  min_review_cost_usd: 0.10
+  min_review_duration_seconds: 30
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Quality.MinReviewCostUSD != 0.10 {
+		t.Errorf("Quality.MinReviewCostUSD = %v, want 0.10", cfg.Quality.MinReviewCostUSD)
+	}
+	if cfg.Quality.MinReviewDurationSeconds != 30 {
+		t.Errorf("Quality.MinReviewDurationSeconds = %d, want 30", cfg.Quality.MinReviewDurationSeconds)
+	}
+}
+
+func TestQualityConfigDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Quality.MinReviewCostUSD != 0 {
+		t.Errorf("Quality.MinReviewCostUSD = %v, want 0 (default/disabled)", cfg.Quality.MinReviewCostUSD)
+	}
+	if cfg.Quality.MinReviewDurationSeconds != 0 {
+		t.Errorf("Quality.MinReviewDurationSeconds = %d, want 0 (default/disabled)", cfg.Quality.MinReviewDurationSeconds)
+	}
+}
+
+func TestQualityConfigPartial(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+quality:
+  min_review_cost_usd: 0.10
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Quality.MinReviewCostUSD != 0.10 {
+		t.Errorf("Quality.MinReviewCostUSD = %v, want 0.10", cfg.Quality.MinReviewCostUSD)
+	}
+	if cfg.Quality.MinReviewDurationSeconds != 0 {
+		t.Errorf("Quality.MinReviewDurationSeconds = %d, want 0 (unset)", cfg.Quality.MinReviewDurationSeconds)
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

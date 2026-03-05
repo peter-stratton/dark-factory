@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/quality"
 	"github.com/phs/dark-factory/internal/rundata"
 )
 
@@ -129,13 +131,18 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Err = fmt.Errorf("quality reviewer agent: %w", err)
 				return outcome
 			}
+			// Quality reviewer is exempt from CheckReviewTestExecution.
+			qFlags := computeReviewFlags(qResult.AgentResult, cfg, false)
+			qRDFlags := logAndRecordFlags(qFlags, logger, issue.Number)
 			if hook != nil {
+				qStep := ResultToStep(qResult.AgentResult)
+				qStep.Flags = qRDFlags
 				if qAttempt == 0 {
-					if err := hook.WriteReviewResult(issue.Number, "quality", ResultToStep(qResult.AgentResult)); err != nil {
+					if err := hook.WriteReviewResult(issue.Number, "quality", qStep); err != nil {
 						logger.Warn("failed to write quality review result", "error", err)
 					}
 				} else {
-					if err := hook.WriteRetryReviewResult(issue.Number, qAttempt-1, ResultToStep(qResult.AgentResult)); err != nil {
+					if err := hook.WriteRetryReviewResult(issue.Number, qAttempt-1, qStep); err != nil {
 						logger.Warn("failed to write retry review result", "error", err)
 					}
 				}
@@ -221,8 +228,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			outcome.Err = fmt.Errorf("reviewer agent: %w", err)
 			return outcome
 		}
+		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
+		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true)
+		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
 		if hook != nil {
-			if err := hook.WriteReviewResult(issue.Number, "functional", ResultToStep(reviewResult.AgentResult)); err != nil {
+			fStep := ResultToStep(reviewResult.AgentResult)
+			fStep.Flags = fRDFlags
+			if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
 				logger.Warn("failed to write functional review result", "error", err)
 			}
 		}
@@ -331,4 +343,46 @@ func trimOutput(b []byte) string {
 		return s[:idx]
 	}
 	return s
+}
+
+// computeReviewFlags runs quality analysis on an agent Result and returns any flags found.
+// If checkTestExecution is false, CheckReviewTestExecution is skipped (used for the
+// quality reviewer, which is exempt from that check).
+func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution bool) []quality.Flag {
+	var flags []quality.Flag
+
+	if f := quality.CheckCostFloor(result.CostUSD, cfg.Quality.MinReviewCostUSD); f != nil {
+		flags = append(flags, *f)
+	}
+
+	duration := result.FinishedAt.Sub(result.StartedAt)
+	threshold := time.Duration(cfg.Quality.MinReviewDurationSeconds) * time.Second
+	if f := quality.CheckDuration(duration, threshold); f != nil {
+		flags = append(flags, *f)
+	}
+
+	flags = append(flags, quality.CheckToolTrace(result.ToolTrace)...)
+
+	if checkTestExecution {
+		flags = append(flags, quality.CheckReviewTestExecution(result.ToolTrace, cfg.ReviewDir, cfg.TestCommand)...)
+	}
+
+	return flags
+}
+
+// logAndRecordFlags logs each flag as a warning and returns a []rundata.Flag for storage.
+func logAndRecordFlags(flags []quality.Flag, logger *slog.Logger, issueNum int) []rundata.Flag {
+	if len(flags) == 0 {
+		return nil
+	}
+	rdFlags := make([]rundata.Flag, len(flags))
+	for i, f := range flags {
+		logger.Warn("quality flag detected",
+			"issue_number", issueNum,
+			"code", f.Code,
+			"message", f.Message,
+		)
+		rdFlags[i] = rundata.Flag{Code: f.Code, Message: f.Message}
+	}
+	return rdFlags
 }

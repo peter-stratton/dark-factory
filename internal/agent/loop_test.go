@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -950,5 +952,199 @@ func TestProcessIssue_NilHookSafe(t *testing.T) {
 	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+}
+
+// --- Quality flag tests ---
+
+// captureRunDataHook captures review steps (including flags) for inspection.
+type captureRunDataHook struct {
+	testRunDataHook
+	reviewSteps map[string]rundata.StepResult // keyed by "quality" or "functional"
+}
+
+func newCaptureHook() *captureRunDataHook {
+	return &captureRunDataHook{reviewSteps: make(map[string]rundata.StepResult)}
+}
+
+func (h *captureRunDataHook) WriteReviewResult(issueNum int, kind string, step rundata.StepResult) error {
+	h.reviewKinds = append(h.reviewKinds, kind)
+	h.reviewSteps[kind] = step
+	return nil
+}
+
+// bufferLogger returns a logger that captures all log records into buf.
+func bufferLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+func TestComputeReviewFlags_QualityReviewerExemptFromTestExecution(t *testing.T) {
+	// A result with no tool trace entries — would normally trigger no_diff_read,
+	// no_tests_run, no_review_tests_written, and no_review_tests_run for the functional reviewer.
+	result := &Result{ToolTrace: nil}
+	cfg := &config.Config{
+		TestCommand: "go test ./...",
+		ReviewDir:   "tests/review/",
+	}
+
+	// Quality reviewer (checkTestExecution=false): should NOT produce test-execution flags.
+	qFlags := computeReviewFlags(result, cfg, false)
+	for _, f := range qFlags {
+		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
+			t.Errorf("quality reviewer should be exempt from %q, got flag: %+v", f.Code, f)
+		}
+	}
+
+	// Functional reviewer (checkTestExecution=true): SHOULD produce test-execution flags.
+	fFlags := computeReviewFlags(result, cfg, true)
+	var hasTestFlag bool
+	for _, f := range fFlags {
+		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
+			hasTestFlag = true
+			break
+		}
+	}
+	if !hasTestFlag {
+		t.Error("functional reviewer should produce test-execution flags when tests not found in trace")
+	}
+}
+
+func TestComputeReviewFlags_CostFloorFlag(t *testing.T) {
+	result := &Result{
+		CostUSD:   0.001, // below threshold
+		ToolTrace: []string{"Read file", "go test ./..."},
+	}
+	cfg := &config.Config{
+		Quality: config.Quality{MinReviewCostUSD: 0.10},
+	}
+
+	flags := computeReviewFlags(result, cfg, false)
+
+	var found bool
+	for _, f := range flags {
+		if f.Code == "low_cost" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected low_cost flag when cost $0.001 < threshold $0.10, got flags: %+v", flags)
+	}
+}
+
+func TestComputeReviewFlags_DisabledWhenZeroThreshold(t *testing.T) {
+	result := &Result{
+		CostUSD:   0.0001,
+		ToolTrace: nil,
+	}
+	cfg := &config.Config{
+		// Zero thresholds = disabled
+		Quality: config.Quality{MinReviewCostUSD: 0, MinReviewDurationSeconds: 0},
+	}
+
+	flags := computeReviewFlags(result, cfg, false)
+	for _, f := range flags {
+		if f.Code == "low_cost" || f.Code == "short_duration" {
+			t.Errorf("cost/duration flags should be disabled when threshold is 0, got: %+v", f)
+		}
+	}
+}
+
+func TestProcessIssue_QualityFlagsLoggedAsWarnings(t *testing.T) {
+	// Set a high cost threshold so the mock agent's $0 cost triggers a low_cost flag.
+	cfg := loopConfig()
+	cfg.Quality.MinReviewCostUSD = 0.10
+
+	var logBuf bytes.Buffer
+	logger := bufferLogger(&logBuf)
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, logger, nil)
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "quality flag detected") {
+		t.Errorf("expected 'quality flag detected' warning in log output, got:\n%s", logOutput)
+	}
+	if !strings.Contains(logOutput, "low_cost") {
+		t.Errorf("expected 'low_cost' code in log output, got:\n%s", logOutput)
+	}
+}
+
+func TestProcessIssue_FlagsIncludedInHookStepResult(t *testing.T) {
+	// Set a high cost threshold so flags are generated.
+	cfg := loopConfig()
+	cfg.Quality.MinReviewCostUSD = 0.10
+
+	hook := newCaptureHook()
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+
+	qStep, ok := hook.reviewSteps["quality"]
+	if !ok {
+		t.Fatal("quality review step not found in hook")
+	}
+	var hasLowCost bool
+	for _, f := range qStep.Flags {
+		if f.Code == "low_cost" {
+			hasLowCost = true
+			break
+		}
+	}
+	if !hasLowCost {
+		t.Errorf("expected low_cost flag in quality review step, got flags: %+v", qStep.Flags)
+	}
+}
+
+func TestProcessIssue_QualityReviewerExemptInLoop(t *testing.T) {
+	// Set a non-empty TestCommand and ReviewDir so CheckReviewTestExecution would
+	// produce flags — but only for the functional reviewer, not the quality reviewer.
+	cfg := loopConfig()
+	cfg.TestCommand = "go test ./..."
+	cfg.ReviewDir = "tests/review/"
+
+	hook := newCaptureHook()
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
+
+	qStep := hook.reviewSteps["quality"]
+	for _, f := range qStep.Flags {
+		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
+			t.Errorf("quality reviewer should be exempt from test-execution flags, got: %+v", f)
+		}
+	}
+
+	fStep := hook.reviewSteps["functional"]
+	var hasTestFlag bool
+	for _, f := range fStep.Flags {
+		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
+			hasTestFlag = true
+			break
+		}
+	}
+	if !hasTestFlag {
+		t.Errorf("functional reviewer should have test-execution flags, got flags: %+v", fStep.Flags)
 	}
 }

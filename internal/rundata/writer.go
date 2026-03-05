@@ -26,13 +26,20 @@ type RunSummary struct {
 	Failed      int `json:"failed"`
 }
 
+// Flag records a quality issue detected in a review step.
+type Flag struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // StepResult holds the output of a single agent step.
 type StepResult struct {
-	Output          string    `json:"output,omitempty"`
-	Error           string    `json:"error,omitempty"`
+	Output          string     `json:"output,omitempty"`
+	Error           string     `json:"error,omitempty"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
-	DurationSeconds float64   `json:"duration_seconds,omitempty"`
+	DurationSeconds float64    `json:"duration_seconds,omitempty"`
+	Flags           []Flag     `json:"flags,omitempty"`
 }
 
 // Outcome records the final result for a single issue.

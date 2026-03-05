@@ -14,6 +14,13 @@ type Runtime struct {
 	Version string `yaml:"version"` // optional — auto-detected if empty
 }
 
+// Quality holds quality-gate thresholds for review steps.
+// A threshold of 0 disables that check.
+type Quality struct {
+	MinReviewCostUSD         float64 `yaml:"min_review_cost_usd"`
+	MinReviewDurationSeconds int     `yaml:"min_review_duration_seconds"`
+}
+
 // Config holds all configuration for a godark run.
 type Config struct {
 	Repo       string `yaml:"repo"`
@@ -42,6 +49,7 @@ type Config struct {
 
 	Docker  Docker  `yaml:"docker"`
 	Prompts Prompts `yaml:"prompts"`
+	Quality Quality `yaml:"quality"`
 }
 
 // Docker holds Docker sandbox configuration.
