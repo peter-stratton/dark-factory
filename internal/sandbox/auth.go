@@ -10,13 +10,23 @@ import (
 
 // CollectAuthEnv reads authentication tokens from the host environment
 // and returns a map suitable for passing as container environment variables.
-func CollectAuthEnv(logger *slog.Logger) (map[string]string, error) {
+// authPreference controls which token is preferred when both are set:
+// "oauth" (default) prefers CLAUDE_CODE_OAUTH_TOKEN; "api_key" prefers ANTHROPIC_API_KEY.
+func CollectAuthEnv(logger *slog.Logger, authPreference string) (map[string]string, error) {
 	env := make(map[string]string)
 
 	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 
+	preferAPIKey := authPreference == "api_key"
+
 	switch {
+	case preferAPIKey && apiKey != "":
+		env["ANTHROPIC_API_KEY"] = apiKey
+		logger.Info("using ANTHROPIC_API_KEY for Anthropic auth")
+	case preferAPIKey && oauthToken != "":
+		env["CLAUDE_CODE_OAUTH_TOKEN"] = oauthToken
+		logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth (api_key preferred but not set)")
 	case oauthToken != "":
 		env["CLAUDE_CODE_OAUTH_TOKEN"] = oauthToken
 		logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth")
