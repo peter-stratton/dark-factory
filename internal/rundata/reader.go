@@ -57,6 +57,12 @@ func NewReader(logger *slog.Logger) (*Reader, error) {
 	}, nil
 }
 
+// RunDir returns the filesystem path to the directory for the given run.
+// It does not validate path components; callers are responsible for validation.
+func (r *Reader) RunDir(owner, repo, timestamp string) string {
+	return filepath.Join(r.baseDir, owner, repo, timestamp)
+}
+
 // ListRuns walks the base directory and returns all RunMeta entries sorted
 // most-recent-first by started_at. Missing or corrupt run.json files are
 // skipped with a warning log. Returns an empty slice (no error) if the base
