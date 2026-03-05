@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -32,21 +33,45 @@ func TestNewLogger_CreatesDebugLog(t *testing.T) {
 	}
 }
 
-// TestDryRunIsolation verifies that two concurrent dry-runs don't share a log path.
+// TestDryRunIsolation verifies that two concurrent dry-runs using os.MkdirTemp
+// each get their own private log path with no shared state.
 func TestDryRunIsolation(t *testing.T) {
-	dir1 := t.TempDir()
-	dir2 := t.TempDir()
-
-	_, err1 := NewLogger(dir1)
-	_, err2 := NewLogger(dir2)
-	if err1 != nil || err2 != nil {
-		t.Fatalf("NewLogger errors: %v, %v", err1, err2)
+	type result struct {
+		path string
+		err  error
 	}
 
-	path1 := filepath.Join(dir1, "debug.log")
-	path2 := filepath.Join(dir2, "debug.log")
-	if path1 == path2 {
-		t.Error("expected different log paths for separate directories")
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dir, err := os.MkdirTemp("", "godark-log-*")
+			if err != nil {
+				results <- result{err: err}
+				return
+			}
+			t.Cleanup(func() { os.RemoveAll(dir) })
+			_, logErr := NewLogger(dir)
+			results <- result{path: filepath.Join(dir, "debug.log"), err: logErr}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	var paths []string
+	for r := range results {
+		if r.err != nil {
+			t.Fatalf("unexpected error in concurrent dry-run: %v", r.err)
+		}
+		paths = append(paths, r.path)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 log paths, got %d", len(paths))
+	}
+	if paths[0] == paths[1] {
+		t.Error("concurrent dry-runs share a log path — os.MkdirTemp must return unique directories")
 	}
 }
 

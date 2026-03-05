@@ -207,6 +207,13 @@ func TestAllBlocked(t *testing.T) {
 	}
 	setupFakeGH(t, openIssues, nil)
 
+	// Run creates a RunDataWriter when dryRun=false; disable it for this test.
+	origWriter := newRunDataWriterFn
+	t.Cleanup(func() { newRunDataWriterFn = origWriter })
+	newRunDataWriterFn = func(repo, milestone string, issueNums []int) (*rundata.Writer, error) {
+		return nil, fmt.Errorf("disabled in test")
+	}
+
 	output := captureStdout(t, func() {
 		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, false, false, "")
 		if err != nil {
@@ -384,13 +391,6 @@ func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn fun
 	t.Cleanup(func() { processIssueFn = origProcess })
 	processIssueFn = processFn
 
-	// Mock newRunDataWriterFn to avoid creating real files during tests.
-	origWriter := newRunDataWriterFn
-	t.Cleanup(func() { newRunDataWriterFn = origWriter })
-	newRunDataWriterFn = func(repo, milestone string, issueNums []int) (*rundata.Writer, error) {
-		return nil, fmt.Errorf("disabled in test")
-	}
-
 	// Mock orchestrator.CommandRunner (used by PullAfterMerge).
 	origCmdRunner := CommandRunner
 	t.Cleanup(func() { CommandRunner = origCmdRunner })
@@ -467,7 +467,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "", "test-milestone")
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone")
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -514,7 +514,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "", "")
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "")
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -549,32 +549,27 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 		return agent.IssueOutcome{IssueNumber: 11, Status: "failed", Err: fmt.Errorf("boom")}
 	})
 
-	// Use a real RunDataWriter in a temp HOME so we can verify FinalizeRun.
+	// Create a real RunDataWriter in a temp HOME so we can verify FinalizeRun.
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 
-	origWriter := newRunDataWriterFn
-	t.Cleanup(func() { newRunDataWriterFn = origWriter })
-	newRunDataWriterFn = rundata.New // use real writer with temp HOME
+	writer, err := rundata.New("owner/repo", "test-milestone", []int{10, 11})
+	if err != nil {
+		t.Fatalf("rundata.New: %v", err)
+	}
 
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), false, "", "test-milestone"); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone"); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
 
-	// Find the run.json and verify it has a finished_at timestamp and correct summary.
-	pattern := tmpHome + "/.godark/runs/owner/repo/*/run.json"
-	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
-		t.Fatalf("expected run.json to be created at %s, found: %v (err: %v)", pattern, matches, err)
-	}
-
-	data, err := os.ReadFile(matches[0])
+	// Read run.json directly from the writer's directory.
+	data, err := os.ReadFile(filepath.Join(writer.Dir(), "run.json"))
 	if err != nil {
 		t.Fatalf("reading run.json: %v", err)
 	}

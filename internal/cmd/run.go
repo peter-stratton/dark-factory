@@ -92,10 +92,12 @@ each unblocked issue through the implement → review → merge loop.`,
 
 		// Use a private temp directory for bootstrap logging. The orchestrator will
 		// create a logger in the run directory once the RunDataWriter is set up.
+		// Always remove the temp dir on exit so bootstrap logs don't accumulate.
 		logDir, err := os.MkdirTemp("", "godark-log-*")
 		if err != nil {
 			return fmt.Errorf("creating temp log dir: %w", err)
 		}
+		defer os.RemoveAll(logDir)
 		logger, err := logging.NewLogger(logDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
