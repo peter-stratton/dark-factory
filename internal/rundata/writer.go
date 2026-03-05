@@ -27,10 +27,12 @@ type RunSummary struct {
 }
 
 // StepResult holds the output of a single agent step.
-// Timing fields are not included here; they will be added in a future telemetry issue.
 type StepResult struct {
-	Output string `json:"output,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Output          string    `json:"output,omitempty"`
+	Error           string    `json:"error,omitempty"`
+	StartedAt       time.Time `json:"started_at,omitempty"`
+	FinishedAt      time.Time `json:"finished_at,omitempty"`
+	DurationSeconds float64   `json:"duration_seconds,omitempty"`
 }
 
 // Outcome records the final result for a single issue.
