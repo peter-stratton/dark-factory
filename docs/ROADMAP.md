@@ -255,3 +255,80 @@ surface it all in a local web dashboard for human spot-checking.
 **Issues**: #94–#103
 
 **Planning doc**: `docs/planning/phase-7-review-quality-and-dashboard.md`
+
+---
+
+## Phase 8: Harness Engineering
+
+**Goal**: Any project — new or existing — can adopt structured harness files
+that make agents dramatically more effective. `godark new` creates a
+harness-ready project from scratch. `godark init` scaffolds harness docs
+into existing projects. Agents communicate reasoning via structured PR
+comments. Architecture constraints are validated before execution.
+
+**Milestone**: `Phase 8` | **Label**: `phase-8`
+
+- Harness document templates package (`internal/harness/`) with embedded
+  Go templates for all harness docs (architecture.md, conventions.md,
+  ROADMAP.md, CLAUDE.md)
+- Expand `godark init` to scaffold harness docs (architecture.md,
+  conventions.md, ROADMAP.md, default prompt templates) using skip-if-exists
+  pattern; does not scaffold CLAUDE.md; prints guidance message
+- `godark new` command — creates project directory, runs `git init`,
+  scaffolds CLAUDE.md template, then runs `godark init` internally;
+  `--repo` flag; errors if directory exists
+- Architecture layer parser (`internal/harness/layers/`) — parses layer
+  definitions from markdown tables and optional JSON, returns directed
+  dependency graph
+- `godark vet architecture` subcommand — cycle detection, directory mapping
+  warnings, import smell detection, layer skip warnings; skips gracefully
+  if no architecture doc exists
+- Agent dialogue and architecture reference prompt templates — update
+  implementer, implementer_retry, and reviewer prompts with structured PR
+  comment instructions (Implementation Notes / Review Notes) and
+  architecture/conventions doc references via template variables
+- `/godark-define-architecture` skill — analyzes existing codebase or
+  recommends idiomatic layers for new projects; suggests
+  `/godark-create-roadmap` when discrepancies found between definition
+  and codebase
+- `/godark-define-conventions` skill — analyzes existing codebase or
+  recommends idiomatic conventions with agent-friendliness filter; suggests
+  `/godark-create-roadmap` for standardization phases
+- Update planning skills and embed new skills — update
+  `/godark-create-roadmap` and `/godark-create-planning-doc` to read
+  architecture/conventions docs and prompt for updates; add new skills
+  to `embed.go`
+
+**Design docs**: `docs/design/harnesses.md`, `docs/design/godark-new.md`
+
+---
+
+## Phase 9: Harness-Aware Agent Execution
+
+**Goal**: The harness files scaffolded and validated in Phase 8 are wired
+into actual agent runs. Agents read architecture and conventions docs,
+post structured dialogue on PRs, and the reviewer checks layer compliance
+— all driven by the orchestrator, not just prompt template text.
+
+**Milestone**: `Phase 9` | **Label**: `phase-9`
+
+### Wiring harness docs into agent launcher
+- Populate `{{.ArchitectureDoc}}` and `{{.ConventionsDoc}}` template
+  variables in the launcher from config or path defaults
+- Detect whether harness files exist and pass paths accordingly (graceful
+  degradation — empty variables when files are absent)
+
+### Agent dialogue integration
+- Parse structured Implementation Notes and Review Notes from PR comments
+  in the orchestrator for telemetry and quality reporting
+- Surface agent dialogue in the Phase 7 dashboard (issue detail view)
+
+### Architecture compliance in review loop
+- Wire architecture layer definitions into the reviewer's context so it
+  can mechanically check import compliance (not just prompt instructions)
+- Optionally fail reviews that introduce layer violations (configurable)
+
+### Future considerations (not yet scoped)
+- Linter config generation from `architecture.json` (per-language)
+- Daemon mode (`godark watch`) — continuous polling
+- Bounded concurrency — parallel agent execution for independent issues

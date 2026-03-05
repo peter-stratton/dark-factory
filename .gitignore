@@ -21,5 +21,8 @@ __pycache__/
 # OS
 .DS_Store
 
+# Logs
+logs/
+
 # Config with secrets
 *.local.yaml
