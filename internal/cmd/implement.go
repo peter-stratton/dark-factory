@@ -12,6 +12,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/punchlist"
@@ -34,6 +35,7 @@ loop directly, without milestone or dependency resolution.`,
 
 		configPath, _ := cmd.Flags().GetString("config")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		force, _ := cmd.Flags().GetBool("force")
 
 		flags := config.CLIFlags{Config: configPath}
 
@@ -107,6 +109,18 @@ loop directly, without milestone or dependency resolution.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
+		// Acquire run lock to prevent concurrent godark executions.
+		locker := lock.New(cfg.Repo, logger)
+		issueNums := []int{issueNumber}
+		if err := locker.Acquire(issueNums, force); err != nil {
+			return fmt.Errorf("acquiring run lock: %w", err)
+		}
+		defer func() {
+			if err := locker.Release(issueNums); err != nil {
+				logger.Warn("failed to release run lock", "error", err)
+			}
+		}()
+
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger)
 		if outcome.Err != nil {
 			return fmt.Errorf("issue #%d failed: %w", issueNumber, outcome.Err)
@@ -161,6 +175,7 @@ func init() {
 	f.Bool("dry-run", false, "Print issue details and exit")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-merge", false, "Skip PR merge after approval (human reviews and merges manually)")
+	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.String("config", "godark.yaml", "Path to configuration file")
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 
