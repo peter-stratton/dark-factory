@@ -107,7 +107,7 @@
           </thead>
           <tbody id="log-entries-tbody"
                  hx-get="{{.LogsURL}}/entries"
-                 hx-trigger="every 5s"
+                 hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
                  hx-swap="innerHTML"
                  hx-include="[name='level'], [name='search']">
             {{template "log-entries" .}}
