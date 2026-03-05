@@ -121,8 +121,11 @@ func TestInitWritesHarnessDocs(t *testing.T) {
 		"prompts/implementer_retry.txt",
 		"prompts/reviewer.txt",
 	} {
-		if _, err := os.Stat(path); err != nil {
+		data, err := os.ReadFile(path)
+		if err != nil {
 			t.Errorf("expected %s to exist: %v", path, err)
+		} else if len(data) == 0 {
+			t.Errorf("expected %s to have non-empty content", path)
 		}
 	}
 
@@ -228,6 +231,7 @@ func TestInitResetClaudeMDReplacesExisting(t *testing.T) {
 
 	errBuf := new(bytes.Buffer)
 	initCmd.SetErr(errBuf)
+	defer initCmd.SetErr(nil) // reset to default os.Stderr
 
 	if err := initCmd.Flags().Set("reset-claude-md", "true"); err != nil {
 		t.Fatalf("setting flag: %v", err)
