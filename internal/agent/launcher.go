@@ -34,9 +34,11 @@ type Result struct {
 	TimedOut   bool
 	SessionID  string
 	CostUSD    float64
-	ResultText string   // agent's final text output (from SDK result message)
-	Verdict    string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
-	ToolTrace  []string // summary of tool calls made by the agent
+	ResultText string    // agent's final text output (from SDK result message)
+	Verdict    string    // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
+	ToolTrace  []string  // summary of tool calls made by the agent
+	StartedAt  time.Time // when the agent invocation started
+	FinishedAt time.Time // when the agent invocation finished
 }
 
 // Runner executes a command on the host with the given environment. Replaceable for testing.
@@ -75,10 +77,19 @@ func (w *writerFunc) Write(p []byte) (int, error) {
 // Run invokes a Claude Code agent with the given prompt, either inside a
 // Docker container (sandbox mode) or directly on the host (no-sandbox mode).
 func Run(ctx context.Context, opts RunOpts, noSandbox bool, logger *slog.Logger) (*Result, error) {
+	start := time.Now()
+	var result *Result
+	var err error
 	if noSandbox {
-		return runHost(ctx, opts, logger)
+		result, err = runHost(ctx, opts, logger)
+	} else {
+		result, err = runSandbox(ctx, opts, logger)
 	}
-	return runSandbox(ctx, opts, logger)
+	if err == nil && result != nil {
+		result.StartedAt = start
+		result.FinishedAt = time.Now()
+	}
+	return result, err
 }
 
 func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, error) {

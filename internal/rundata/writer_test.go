@@ -340,6 +340,80 @@ func TestNew_InvalidRepoFormat(t *testing.T) {
 	}
 }
 
+func TestNew_RejectsDotDotInRepo(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cases := []string{
+		"../evil/repo",
+		"owner/../../../etc",
+		"owner/repo/../../../etc",
+	}
+	for _, repo := range cases {
+		_, err := New(repo, "", []int{}, testCfg())
+		if err == nil {
+			t.Errorf("New(%q) expected error for path traversal, got nil", repo)
+		}
+	}
+}
+
+func TestWriteReviewResult_InvalidKind(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	rdw, err := New("owner/repo", "", []int{42}, testCfg())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	err = rdw.WriteReviewResult(42, "invalid", 0, testResult())
+	if err == nil {
+		t.Fatal("WriteReviewResult with invalid kind expected error, got nil")
+	}
+}
+
+func TestResultToStep_UsesRealTimestamps(t *testing.T) {
+	start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	finish := start.Add(2*time.Minute + 30*time.Second)
+	result := &agent.Result{
+		CostUSD:    0.42,
+		SessionID:  "sess-xyz",
+		StartedAt:  start,
+		FinishedAt: finish,
+	}
+	step := resultToStep(result)
+
+	if step.StartedAt == nil {
+		t.Fatal("expected started_at to be set")
+	}
+	if step.FinishedAt == nil {
+		t.Fatal("expected finished_at to be set")
+	}
+	if *step.StartedAt != "2025-06-15T10:00:00Z" {
+		t.Errorf("started_at = %q, want 2025-06-15T10:00:00Z", *step.StartedAt)
+	}
+	if *step.FinishedAt != "2025-06-15T10:02:30Z" {
+		t.Errorf("finished_at = %q, want 2025-06-15T10:02:30Z", *step.FinishedAt)
+	}
+	if step.DurationSeconds != 150.0 {
+		t.Errorf("duration_seconds = %f, want 150.0", step.DurationSeconds)
+	}
+}
+
+func TestResultToStep_OmitsTimestampsWhenZero(t *testing.T) {
+	result := &agent.Result{CostUSD: 0.10}
+	step := resultToStep(result)
+	if step.StartedAt != nil {
+		t.Error("expected started_at to be nil when agent.Result has zero StartedAt")
+	}
+	if step.FinishedAt != nil {
+		t.Error("expected finished_at to be nil when agent.Result has zero FinishedAt")
+	}
+	if step.DurationSeconds != 0 {
+		t.Errorf("duration_seconds = %f, want 0 when timestamps are zero", step.DurationSeconds)
+	}
+}
+
 func TestUpdateIssueNumbers(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)

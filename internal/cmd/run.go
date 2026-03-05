@@ -106,9 +106,14 @@ each unblocked issue through the implement → review → merge loop.`,
 			}
 		}
 
-		logDir := os.TempDir()
+		var logDir string
 		if rdw != nil {
 			logDir = rdw.Dir()
+		} else {
+			logDir, err = os.MkdirTemp("", "godark-dry-run-*")
+			if err != nil {
+				return fmt.Errorf("creating dry-run log directory: %w", err)
+			}
 		}
 		logger, err := logging.NewLogger(logDir)
 		if err != nil {

@@ -44,8 +44,8 @@ type RunSummary struct {
 
 // StepResult is the per-step JSON schema used by implement.json, review files, and retry files.
 type StepResult struct {
-	StartedAt       string   `json:"started_at"`
-	FinishedAt      string   `json:"finished_at"`
+	StartedAt       *string  `json:"started_at,omitempty"`
+	FinishedAt      *string  `json:"finished_at,omitempty"`
 	DurationSeconds float64  `json:"duration_seconds"`
 	CostUSD         float64  `json:"cost_usd"`
 	SessionID       string   `json:"session_id"`
@@ -89,6 +89,10 @@ func New(repo, milestone string, issueNumbers []int, cfg *config.Config) (*RunDa
 		return nil, fmt.Errorf("invalid repo format %q, expected owner/repo", repo)
 	}
 	owner, repoName := parts[0], parts[1]
+	if strings.Contains(owner, "/") || strings.Contains(owner, "..") ||
+		strings.Contains(repoName, "..") {
+		return nil, fmt.Errorf("invalid repo format %q: components must not contain '..'", repo)
+	}
 
 	now := timeNow()
 	timestamp := now.Format("20060102-150405")
@@ -153,6 +157,9 @@ func (w *RunDataWriter) WriteImplementResult(issueNumber int, result *agent.Resu
 // If retry == 0, writes to issues/<n>/<kind>-review.json.
 // If retry > 0, writes to issues/<n>/retries/<retry>/<kind>-review.json.
 func (w *RunDataWriter) WriteReviewResult(issueNumber int, kind string, retry int, result *agent.Result) error {
+	if kind != "quality" && kind != "functional" {
+		return fmt.Errorf("invalid review kind %q: must be \"quality\" or \"functional\"", kind)
+	}
 	var path string
 	if retry == 0 {
 		path = filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNumber), kind+"-review.json")
@@ -201,22 +208,30 @@ func (w *RunDataWriter) buildRunData() runData {
 }
 
 func resultToStep(result *agent.Result) StepResult {
-	now := timeNow().UTC().Format(time.RFC3339)
 	toolTrace := result.ToolTrace
 	if toolTrace == nil {
 		toolTrace = []string{}
 	}
-	return StepResult{
-		StartedAt:       now,
-		FinishedAt:      now,
-		DurationSeconds: 0,
-		CostUSD:         result.CostUSD,
-		SessionID:       result.SessionID,
-		Verdict:         result.Verdict,
-		ToolTrace:       toolTrace,
-		TimedOut:        result.TimedOut,
-		ExitCode:        result.ExitCode,
+	step := StepResult{
+		CostUSD:   result.CostUSD,
+		SessionID: result.SessionID,
+		Verdict:   result.Verdict,
+		ToolTrace: toolTrace,
+		TimedOut:  result.TimedOut,
+		ExitCode:  result.ExitCode,
 	}
+	if !result.StartedAt.IsZero() {
+		s := result.StartedAt.UTC().Format(time.RFC3339)
+		step.StartedAt = &s
+	}
+	if !result.FinishedAt.IsZero() {
+		s := result.FinishedAt.UTC().Format(time.RFC3339)
+		step.FinishedAt = &s
+		if !result.StartedAt.IsZero() {
+			step.DurationSeconds = result.FinishedAt.Sub(result.StartedAt).Seconds()
+		}
+	}
+	return step
 }
 
 func writeJSON(path string, v any) error {
