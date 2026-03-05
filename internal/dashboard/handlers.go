@@ -48,7 +48,8 @@ type IssueRowView struct {
 	PRNumber    int
 	PRLink      string // GitHub PR URL, empty if no PR
 	RetryCount  int
-	FlagCount   int // total quality flags across all steps
+	FlagCount   int    // total quality flags across all steps
+	Cost        string // formatted total cost, e.g. "$0.0042" or "—"
 	URL         string // link to issue detail page
 }
 
@@ -67,14 +68,15 @@ type IssueDetailData struct {
 
 // TimelineStepView is the view model for one step in the issue timeline.
 type TimelineStepView struct {
-	Name        string
-	MarkerClass string // "success", "danger", "warning", "info", "neutral"
-	Duration    string // formatted duration, e.g. "42s" or "—"
-	Verdict     string // "Passed", "Failed", "Flagged", "Error", "—"
+	Name         string
+	MarkerClass  string // "success", "danger", "warning", "info", "neutral"
+	Duration     string // formatted duration, e.g. "42s" or "—"
+	Cost         string // formatted cost, e.g. "$0.0042" or "—"
+	Verdict      string // "Passed", "Failed", "Flagged", "Error", "—"
 	VerdictClass string // badge class suffix
-	Flags       []rundata.Flag
-	HasOutput   bool
-	Output      string
+	Flags        []rundata.Flag
+	HasOutput    bool
+	Output       string
 }
 
 // IndexData is the data passed to the index template.
@@ -302,8 +304,10 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 // issueToRowView converts an IssueDetail to the view model for the run detail table.
 func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) IssueRowView {
 	flagCount := len(issue.Implement.Flags) + len(issue.QualityReview.Flags) + len(issue.FunctionalReview.Flags)
+	totalCost := issue.Implement.CostUSD + issue.QualityReview.CostUSD + issue.FunctionalReview.CostUSD
 	for _, retry := range issue.Retries {
 		flagCount += len(retry.Retry.Flags) + len(retry.QualityReview.Flags)
+		totalCost += retry.Retry.CostUSD + retry.QualityReview.CostUSD
 	}
 
 	statusLabel := "Running"
@@ -332,6 +336,7 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 		PRLink:      prLink,
 		RetryCount:  len(issue.Retries),
 		FlagCount:   flagCount,
+		Cost:        formatCost(totalCost),
 		URL:         issueURL,
 	}
 }
@@ -392,12 +397,21 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 		Name:         name,
 		MarkerClass:  markerClass,
 		Duration:     formatDuration(step.DurationSeconds),
+		Cost:         formatCost(step.CostUSD),
 		Verdict:      verdict,
 		VerdictClass: verdictClass,
 		Flags:        step.Flags,
 		HasOutput:    step.Output != "",
 		Output:       step.Output,
 	}
+}
+
+// formatCost formats a USD cost as a human-readable string.
+func formatCost(usd float64) string {
+	if usd == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("$%.4f", usd)
 }
 
 // formatDuration formats a duration in seconds as a human-readable string.
