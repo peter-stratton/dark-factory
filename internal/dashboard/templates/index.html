@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Runs</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <span class="breadcrumbs__current">Runs</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Dashboard
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="/" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Runs
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      {{if .Repos}}
+      <div class="sidebar__section">
+        <div class="sidebar__label">Repositories</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="/" class="sidebar__link{{if eq $.RepoFilter ""}} sidebar__link--active{{end}}">
+              All repos
+            </a>
+          </li>
+          {{range .Repos}}
+          <li>
+            <a href="/?repo={{.}}" class="sidebar__link{{if eq . $.RepoFilter}} sidebar__link--active{{end}}">
+              {{.}}
+            </a>
+          </li>
+          {{end}}
+        </ul>
+      </div>
+      {{end}}
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Runs</h1>
+        <p class="page-header__subtitle">All orchestration runs across repositories</p>
+      </div>
+
+      {{if .Repos}}
+
+      <!-- Filter Controls -->
+      <div class="controls animate-in animate-in-1">
+        <div class="control-group">
+          <select class="filter-select"
+                  name="repo"
+                  aria-label="Filter by repository"
+                  hx-get="/partials/runs-table"
+                  hx-target="#runs-tbody"
+                  hx-trigger="change"
+                  hx-swap="innerHTML">
+            <option value="">All Repos</option>
+            {{range .Repos}}
+            <option value="{{.}}"{{if eq . $.RepoFilter}} selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+        </div>
+      </div>
+
+      <!-- Runs Table -->
+      <div class="card animate-in animate-in-2">
+        <table class="data-table data-table--clickable">
+          <thead>
+            <tr>
+              <th>Repository</th>
+              <th>Milestone</th>
+              <th>Issues</th>
+              <th>Result</th>
+              <th>Flags</th>
+              <th class="cell-num">Cost</th>
+              <th>When</th>
+            </tr>
+          </thead>
+          <tbody id="runs-tbody">
+            {{template "runs-rows" .Runs}}
+          </tbody>
+        </table>
+      </div>
+
+      {{else}}
+
+      <!-- Empty / Welcome State -->
+      <div class="empty-state animate-in animate-in-1">
+        <div class="welcome-state__logo"></div>
+        <h2 class="empty-state__title">Welcome to godark</h2>
+        <p class="empty-state__description">
+          No orchestration runs yet. Start your first run to see results here.
+          The dashboard will update as issues are processed.
+        </p>
+        <div class="empty-state__action">
+          <code>godark run --milestone v1.0 --repo owner/repo</code>
+        </div>
+      </div>
+
+      {{end}}
+    </main>
+  </div>
+</body>
+</html>
+
+{{define "runs-rows"}}
+{{range .}}
+<tr>
+  <td class="text-secondary">{{.Repo}}</td>
+  <td>{{.Milestone}}</td>
+  <td>
+    {{if ne .StatusLabel "Running"}}
+    <div class="pass-fail-bar">
+      <span class="text-success">{{.Passed}}</span>
+      <span class="text-muted">/</span>
+      <span class="text-danger">{{.Failed}}</span>
+      <div class="pass-fail-bar__bar">
+        <div class="progress-bar__segment progress-bar__segment--success" style="width: {{.PassPct}}%;"></div>
+        <div class="progress-bar__segment progress-bar__segment--danger" style="width: {{.FailPct}}%;"></div>
+      </div>
+    </div>
+    {{else}}
+    <span class="text-muted">{{.IssueCount}} pending</span>
+    {{end}}
+  </td>
+  <td>
+    <span class="badge badge--{{.StatusClass}}">
+      <span class="badge__dot"></span>
+      {{.StatusLabel}}
+    </span>
+  </td>
+  <td class="text-muted">—</td>
+  <td class="cell-num text-muted">—</td>
+  <td class="text-secondary">{{.When}}</td>
+</tr>
+{{else}}
+<tr>
+  <td colspan="7" class="text-secondary" style="text-align: center; padding: 2rem;">
+    No runs match the current filter.
+  </td>
+</tr>
+{{end}}
+{{end}}
