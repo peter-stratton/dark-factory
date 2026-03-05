@@ -276,6 +276,33 @@ func TestListRunsMultipleOwnerRepo(t *testing.T) {
 	}
 }
 
+func TestListRunsAcrossMultipleReposSameOwner(t *testing.T) {
+	base := t.TempDir()
+
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+
+	makeRunDir(t, base, "owner", "repo-a", "20260101-000000", RunMeta{Repo: "owner/repo-a", StartedAt: t1})
+	makeRunDir(t, base, "owner", "repo-b", "20260102-000000", RunMeta{Repo: "owner/repo-b", StartedAt: t2})
+
+	r := newReaderWithBase(base)
+	runs, err := r.ListRuns()
+	if err != nil {
+		t.Fatalf("ListRuns() error: %v", err)
+	}
+
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 runs, got %d", len(runs))
+	}
+	// Most recent first (interleaved by timestamp)
+	if runs[0].Repo != "owner/repo-b" {
+		t.Errorf("runs[0] repo: got %q, want %q", runs[0].Repo, "owner/repo-b")
+	}
+	if runs[1].Repo != "owner/repo-a" {
+		t.Errorf("runs[1] repo: got %q, want %q", runs[1].Repo, "owner/repo-a")
+	}
+}
+
 func TestLoadRunRetriesSortedByAttempt(t *testing.T) {
 	base := t.TempDir()
 	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
