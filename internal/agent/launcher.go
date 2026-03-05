@@ -37,6 +37,8 @@ type Result struct {
 	ResultText string   // agent's final text output (from SDK result message)
 	Verdict    string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
 	ToolTrace  []string // summary of tool calls made by the agent
+	StartedAt  time.Time
+	FinishedAt time.Time
 }
 
 // Runner executes a command on the host with the given environment. Replaceable for testing.
@@ -120,18 +122,22 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 		env["GODARK_ROLE"] = opts.Role
 	}
 
+	startedAt := time.Now()
 	stdout, stderr, exitCode, err := Runner(ctx, env, "python3", tmpFile.Name())
+	finishedAt := time.Now()
 	if ctx.Err() != nil {
-		return &Result{TimedOut: true, Stdout: string(stdout), Stderr: string(stderr)}, nil
+		return &Result{TimedOut: true, Stdout: string(stdout), Stderr: string(stderr), StartedAt: startedAt, FinishedAt: finishedAt}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("running agent runner on host: %w", err)
 	}
 
 	res := &Result{
-		ExitCode: exitCode,
-		Stdout:   string(stdout),
-		Stderr:   string(stderr),
+		ExitCode:   exitCode,
+		Stdout:     string(stdout),
+		Stderr:     string(stderr),
+		StartedAt:  startedAt,
+		FinishedAt: finishedAt,
 	}
 
 	if parsed := parseRunnerOutput(string(stdout)); parsed != nil {
@@ -178,7 +184,9 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		Timeout: opts.Timeout,
 	}
 
+	startedAt := time.Now()
 	result, err := sandbox.RunContainer(ctx, sandboxOpts, logger)
+	finishedAt := time.Now()
 	if err != nil {
 		return nil, fmt.Errorf("running sandbox container: %w", err)
 	}
@@ -192,10 +200,12 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	}
 
 	res := &Result{
-		ExitCode: result.ExitCode,
-		Stdout:   result.Stdout,
-		Stderr:   result.Stderr,
-		TimedOut: result.TimedOut,
+		ExitCode:   result.ExitCode,
+		Stdout:     result.Stdout,
+		Stderr:     result.Stderr,
+		TimedOut:   result.TimedOut,
+		StartedAt:  startedAt,
+		FinishedAt: finishedAt,
 	}
 
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {

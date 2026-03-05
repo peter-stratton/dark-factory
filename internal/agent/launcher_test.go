@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRun_NoSandbox_InvokesPython3(t *testing.T) {
@@ -262,5 +263,71 @@ func TestRun_NoSandbox_PromptNotInArgs(t *testing.T) {
 	joined := strings.Join(capturedArgs, " ")
 	if strings.Contains(joined, prompt) {
 		t.Error("prompt should not appear in CLI args (it is passed via env var)")
+	}
+}
+
+func TestRun_NoSandbox_TimingPopulated(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	before := time.Now()
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	after := time.Now()
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if result.StartedAt.IsZero() {
+		t.Error("StartedAt should be non-zero after Run()")
+	}
+	if result.FinishedAt.IsZero() {
+		t.Error("FinishedAt should be non-zero after Run()")
+	}
+	if result.StartedAt.Before(before) {
+		t.Errorf("StartedAt %v is before test start %v", result.StartedAt, before)
+	}
+	if result.FinishedAt.After(after) {
+		t.Errorf("FinishedAt %v is after test end %v", result.FinishedAt, after)
+	}
+}
+
+func TestRun_NoSandbox_DurationPositive(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	duration := result.FinishedAt.Sub(result.StartedAt)
+	if duration < 0 {
+		t.Errorf("FinishedAt.Sub(StartedAt) = %v, want non-negative", duration)
+	}
+}
+
+func TestRun_NoSandbox_TimedOut_HasTiming(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		<-ctx.Done()
+		return []byte("partial"), []byte(""), 0, ctx.Err()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Immediately cancel
+
+	result, err := Run(ctx, RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !result.TimedOut {
+		t.Error("expected TimedOut = true")
+	}
+	if result.StartedAt.IsZero() {
+		t.Error("StartedAt should be non-zero even for timed-out runs")
+	}
+	if result.FinishedAt.IsZero() {
+		t.Error("FinishedAt should be non-zero even for timed-out runs")
 	}
 }
