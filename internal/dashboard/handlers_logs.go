@@ -9,12 +9,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
-const logPageSize = 100
+const logPageSize = 50
 
 // LogEntry is the view model for one parsed debug.log line.
 type LogEntry struct {
@@ -45,7 +46,10 @@ func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
 	repo := r.PathValue("repo")
 	timestamp := r.PathValue("timestamp")
 	level := r.URL.Query().Get("level")
-	search := r.URL.Query().Get("search")
+	search := r.URL.Query().Get("q")
+	if search == "" {
+		search = r.URL.Query().Get("search")
+	}
 	page := 1
 	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
 		page = p
@@ -77,7 +81,10 @@ func (s *Server) handleRunLogsEntries(w http.ResponseWriter, r *http.Request) {
 	repo := r.PathValue("repo")
 	timestamp := r.PathValue("timestamp")
 	level := r.URL.Query().Get("level")
-	search := r.URL.Query().Get("search")
+	search := r.URL.Query().Get("q")
+	if search == "" {
+		search = r.URL.Query().Get("search")
+	}
 	page := 1
 	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
 		page = p
@@ -203,19 +210,20 @@ func parseLogLine(line []byte) (LogEntry, bool) {
 		_ = json.Unmarshal(v, &msg)
 	}
 
-	// Collect remaining structured fields.
-	extra := make(map[string]json.RawMessage)
+	// Collect remaining structured fields and render as key: value pairs.
+	var fieldParts []string
 	for k, v := range raw {
-		if k != "time" && k != "level" && k != "msg" {
-			extra[k] = v
+		if k == "time" || k == "level" || k == "msg" {
+			continue
+		}
+		// Unmarshal the raw value into a plain interface for human-readable display.
+		var val any
+		if err := json.Unmarshal(v, &val); err == nil {
+			fieldParts = append(fieldParts, fmt.Sprintf("%s: %v", k, val))
 		}
 	}
-	fieldsStr := ""
-	if len(extra) > 0 {
-		if b, err := json.Marshal(extra); err == nil {
-			fieldsStr = string(b)
-		}
-	}
+	sort.Strings(fieldParts)
+	fieldsStr := strings.Join(fieldParts, ", ")
 
 	// Format timestamp as HH:MM:SS.mmm for compact display.
 	formattedTime := timeStr

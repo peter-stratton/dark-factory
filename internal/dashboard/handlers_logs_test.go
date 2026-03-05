@@ -187,17 +187,14 @@ func TestServer_RunLogs_LogParsing_100Lines(t *testing.T) {
 	}
 	body := rr.Body.String()
 
-	// All 100 messages should be visible on the first page.
+	// First page messages should be visible.
 	if !strings.Contains(body, "message 0") {
 		t.Error("body missing first log entry")
 	}
-	if !strings.Contains(body, "message 99") {
-		t.Error("body missing last log entry (index 99)")
-	}
 
-	// With exactly 100 entries, no "load more" button.
-	if strings.Contains(body, "Load more") {
-		t.Error("should not show load more when exactly 100 entries")
+	// With 100 entries and page size 50, a "load more" button is present.
+	if !strings.Contains(body, "Load more") {
+		t.Error("should show load more when 100 entries exceed first page")
 	}
 }
 
@@ -402,16 +399,16 @@ func TestServer_RunLogs_Pagination_LoadMore(t *testing.T) {
 		StartedAt: now,
 	})
 
-	// Write 150 lines (more than one page).
-	lines := make([]string, 150)
-	for i := 0; i < 150; i++ {
+	// Write 100 lines (two pages of 50).
+	lines := make([]string, 100)
+	for i := 0; i < 100; i++ {
 		lines[i] = makeLogLine("INFO", fmt.Sprintf("entry %d", i))
 	}
 	writeDebugLog(t, runDir, lines)
 
 	srv := newServer(t, tmpDir)
 
-	// First page: should show entries 0-99 and a load more button.
+	// First page: should show entries 0-49 and a load more button.
 	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/logs", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -424,17 +421,17 @@ func TestServer_RunLogs_Pagination_LoadMore(t *testing.T) {
 	if !strings.Contains(body, "entry 0") {
 		t.Error("first page missing entry 0")
 	}
-	if !strings.Contains(body, "entry 99") {
-		t.Error("first page missing entry 99")
+	if !strings.Contains(body, "entry 49") {
+		t.Error("first page missing entry 49")
 	}
-	if strings.Contains(body, "entry 100") {
-		t.Error("first page should not contain entry 100 (second page)")
+	if strings.Contains(body, "entry 50") {
+		t.Error("first page should not contain entry 50 (second page)")
 	}
 	if !strings.Contains(body, "Load more") {
 		t.Error("first page missing load more button")
 	}
 
-	// Second page (htmx partial): should show entries 100-149 and no load more.
+	// Second page (htmx partial): should show entries 50-99 and no load more.
 	req2 := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/logs/entries?page=2", nil)
 	rr2 := httptest.NewRecorder()
 	srv.ServeHTTP(rr2, req2)
@@ -444,11 +441,11 @@ func TestServer_RunLogs_Pagination_LoadMore(t *testing.T) {
 	}
 	body2 := rr2.Body.String()
 
-	if !strings.Contains(body2, "entry 100") {
-		t.Error("second page missing entry 100")
+	if !strings.Contains(body2, "entry 50") {
+		t.Error("second page missing entry 50")
 	}
-	if !strings.Contains(body2, "entry 149") {
-		t.Error("second page missing entry 149")
+	if !strings.Contains(body2, "entry 99") {
+		t.Error("second page missing entry 99")
 	}
 	if strings.Contains(body2, "Load more") {
 		t.Error("second page should not show load more (no more entries)")
