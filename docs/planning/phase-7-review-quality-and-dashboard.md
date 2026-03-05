@@ -1,8 +1,7 @@
 # Phase 7: Review Quality & Dashboard
 
-> **Goal:** Capture review telemetry, report on review quality metrics, enforce
-> mandatory review test execution, and surface it all in a local web dashboard
-> for human spot-checking.
+> **Goal:** Capture review telemetry, report on review quality metrics, and
+> surface it all in a local web dashboard for human spot-checking.
 
 ## Milestone
 
@@ -10,424 +9,498 @@
 
 ---
 
-## Issue 74: Run data writer
+## Issue 94: RunDataWriter package
 
 ### Description
 
-The orchestrator writes structured JSON files to
-`~/.godark/runs/<owner>/<repo>/<timestamp>/` as it processes each issue. This
-is the foundation for the dashboard — every subsequent issue reads from this
-directory structure.
+Create the `internal/rundata/` package with types, directory creation, and all
+write methods. This is pure new code — no existing files are modified.
 
-Both `godark run` and `godark implement` write the same format. A run is a
-run regardless of how many issues it contains.
-
-The existing slog debug log moves into the run directory as `debug.log`,
-replacing the current `logs/` directory. The `log_dir` config field is
-removed.
+The package manages a per-run directory under
+`~/.godark/runs/<owner>/<repo>/<YYYYMMDD-HHMMSS>/` and provides methods to
+write JSON files for each step of the agent loop.
 
 ### Key constraints
 
-- New package: `internal/rundata/` — responsible for creating the run
-  directory, writing JSON files, and moving the debug log
+- New package: `internal/rundata/`
+- Exported types:
+  ```go
+  type Writer struct { ... }
+
+  type RunMeta struct {
+      StartedAt      time.Time         `json:"started_at"`
+      FinishedAt     *time.Time        `json:"finished_at"`
+      Repo           string            `json:"repo"`
+      Milestone      string            `json:"milestone"`
+      IssueNumbers   []int             `json:"issue_numbers"`
+      ConfigSnapshot map[string]any    `json:"config_snapshot"`
+      Summary        *RunSummary       `json:"summary"`
+  }
+
+  type RunSummary struct {
+      Total        int     `json:"total"`
+      Implemented  int     `json:"implemented"`
+      Failed       int     `json:"failed"`
+      Skipped      int     `json:"skipped"`
+      TotalCostUSD float64 `json:"total_cost_usd"`
+  }
+
+  type StepResult struct {
+      StartedAt       string   `json:"started_at"`
+      FinishedAt      string   `json:"finished_at"`
+      DurationSeconds float64  `json:"duration_seconds"`
+      CostUSD         float64  `json:"cost_usd"`
+      SessionID       string   `json:"session_id"`
+      Verdict         string   `json:"verdict,omitempty"`
+      ToolTrace       []string `json:"tool_trace,omitempty"`
+      TimedOut        bool     `json:"timed_out"`
+      ExitCode        int      `json:"exit_code"`
+  }
+
+  type Outcome struct {
+      IssueNumber  int     `json:"issue_number"`
+      IssueTitle   string  `json:"issue_title"`
+      Status       string  `json:"status"`
+      PRNumber     int     `json:"pr_number"`
+      Retries      int     `json:"retries"`
+      TotalCostUSD float64 `json:"total_cost_usd"`
+      Error        string  `json:"error,omitempty"`
+  }
+  ```
+- `New(repo, milestone string, issueNumbers []int) (*Writer, error)` —
+  creates the run directory, writes initial `run.json`, returns the writer.
+  Uses `os.UserHomeDir()` for the base path.
+- Repo string is validated: reject components containing `..` or path
+  separators to prevent directory traversal
+- `Dir() string` — returns the run directory path (needed by logger)
+- `WriteImplementResult(issueNumber int, step StepResult) error`
+- `WriteReviewResult(issueNumber int, kind string, step StepResult) error` —
+  `kind` must be `"quality"` or `"functional"`, returns error otherwise
+- `WriteRetryResult(issueNumber int, attempt int, step StepResult) error`
+- `WriteRetryReviewResult(issueNumber int, attempt int, step StepResult) error`
+- `WriteOutcome(outcome Outcome) error`
+- `FinalizeRun(summary RunSummary) error` — updates `run.json` with
+  `finished_at` and `summary`
 - Directory structure:
   ```
-  ~/.godark/runs/<owner>/<repo>/<timestamp>/
-    run.json              # written at start, updated at end
-    debug.log             # slog JSON stream (replaces logs/)
+  ~/.godark/runs/<owner>/<repo>/<YYYYMMDD-HHMMSS>/
+    run.json
     issues/
       <issue-number>/
-        outcome.json      # final status, PR number, retry count
-        implement.json    # Result fields: duration, cost, tool trace
-        quality-review.json    # per-cycle array of Result data
-        functional-review.json # Result data
+        outcome.json
+        implement.json
+        quality-review.json
+        functional-review.json
         retries/
           <n>/
-            retry.json           # Result fields for retry invocation
-            quality-review.json  # Result data for post-retry QA review
+            retry.json
+            quality-review.json
   ```
-- `run.json` schema:
-  ```json
-  {
-    "started_at": "RFC3339 timestamp",
-    "finished_at": "RFC3339 timestamp or null",
-    "repo": "owner/repo",
-    "milestone": "Phase N or empty for implement",
-    "issue_numbers": [42, 43],
-    "config_snapshot": { "max_retries": 3, "...": "..." },
-    "summary": {
-      "total": 2,
-      "implemented": 1,
-      "failed": 1,
-      "skipped": 0,
-      "total_cost_usd": 1.23
-    }
-  }
-  ```
-- Per-step JSON files (implement.json, review files, retry files) share a
-  common schema based on the existing `Result` struct:
-  ```json
-  {
-    "started_at": "RFC3339",
-    "finished_at": "RFC3339",
-    "duration_seconds": 120.5,
-    "cost_usd": 0.42,
-    "session_id": "sess-abc123",
-    "verdict": "APPROVED",
-    "tool_trace": ["Read foo.go", "Edit bar.go", "Bash: go test ./..."],
-    "timed_out": false,
-    "exit_code": 0
-  }
-  ```
-- `outcome.json` schema:
-  ```json
-  {
-    "issue_number": 42,
-    "issue_title": "Add widget support",
-    "status": "implemented",
-    "pr_number": 57,
-    "retries": 1,
-    "total_cost_usd": 1.85,
-    "error": null
-  }
-  ```
-- The `<timestamp>` directory name uses `YYYYMMDD-HHMMSS` format (no colons,
-  filesystem-safe)
-- `<owner>/<repo>` is derived from the `--repo` flag (already required)
-- `RunDataWriter` is created at the start of the orchestrator loop and passed
-  through to `ProcessIssue`. It exposes methods like `WriteImplementResult`,
-  `WriteReviewResult`, `WriteRetryResult`, `WriteOutcome`, `FinalizeRun`
-- Update `NewLogger` to accept the run directory path and write `debug.log`
-  there instead of `logs/`
-- Remove `LogDir` from `Config` and `log_dir` from YAML schema
-- The `RunDataWriter` must handle the case where `~/.godark/` doesn't exist
-  (create it)
+- `StepResult` does not include timing fields until the telemetry issue adds
+  `StartedAt`/`FinishedAt` to `agent.Result`. For now, the caller populates
+  `StepResult` manually — no dependency on `agent.Result` in this package.
 
 ### Acceptance criteria
 
-- [ ] `~/.godark/runs/<owner>/<repo>/<timestamp>/` is created at run start
-- [ ] `run.json` is written at start with config snapshot, updated at end with summary
-- [ ] Per-issue files are written as each step completes
-- [ ] Debug log is written to `debug.log` in the run directory
-- [ ] `LogDir` config field removed; `logs/` directory no longer used
-- [ ] `godark implement` writes the same directory structure as `godark run`
-- [ ] Directory creation handles missing `~/.godark/` gracefully
-- [ ] `go test ./...` passes
+- [ ] `New()` creates `~/.godark/runs/<owner>/<repo>/<timestamp>/` directory
+- [ ] `run.json` is written at creation with `started_at`, `repo`, `milestone`
+- [ ] `FinalizeRun()` updates `run.json` with `finished_at` and `summary`
+- [ ] All write methods create the correct file paths
+- [ ] Repo components with `..` are rejected
 
 ### Test cases
 
-- **Run directory created**: `RunDataWriter.New()` creates the expected directory path under `~/.godark/runs/`
-- **Run.json written at start**: After `New()`, `run.json` exists with `started_at`, `repo`, and `issue_numbers`
-- **Run.json updated at end**: After `FinalizeRun()`, `run.json` has `finished_at` and `summary`
-- **Implement result written**: `WriteImplementResult(42, result)` creates `issues/42/implement.json`
-- **Review result written**: `WriteReviewResult(42, "quality", 0, result)` creates `issues/42/quality-review.json`
-- **Retry result written**: `WriteRetryResult(42, 1, result)` creates `issues/42/retries/1/retry.json`
+- **Run directory created**: `New()` creates the expected directory under a temp base
+- **Run.json at start**: After `New()`, `run.json` has `started_at`, `repo`, `issue_numbers`
+- **Run.json finalized**: After `FinalizeRun()`, `run.json` has `finished_at` and `summary`
+- **Implement written**: `WriteImplementResult(42, step)` creates `issues/42/implement.json`
+- **Review written**: `WriteReviewResult(42, "quality", step)` creates `issues/42/quality-review.json`
+- **Review kind validated**: `WriteReviewResult(42, "bad", step)` returns error
+- **Retry written**: `WriteRetryResult(42, 1, step)` creates `issues/42/retries/1/retry.json`
 - **Outcome written**: `WriteOutcome(outcome)` creates `issues/42/outcome.json`
-- **Debug log location**: Logger writes to `<run-dir>/debug.log`
-- **Owner/repo path parsing**: `owner/repo` string is split correctly into directory components
+- **Path traversal rejected**: `New("../evil/../../path", ...)` returns error
 - **Timestamp format**: Directory name matches `YYYYMMDD-HHMMSS` pattern
 
 ---
 
-## Issue 75: Review telemetry capture
+## Issue 96: Wire RunDataWriter into agent loop
 
-**Blocked by**: #74
+**Blocked by**: #94
 
 ### Description
 
-Enrich the data written to the run directory with timing information that
-isn't currently tracked. The `Result` struct already captures cost, tool
-trace, verdict, and session ID from the agent runner. What's missing is
-wall-clock duration per agent invocation.
-
-Add start/end timestamps and duration tracking around each `agent.Run()` call
-in the orchestrator loop, and pass the timing data to the `RunDataWriter`
-alongside the `Result`.
+Integrate the `RunDataWriter` into the orchestrator and implement commands.
+Define a `RunDataHook` interface in the agent package so `ProcessIssue` can
+optionally record step results without a hard dependency on `rundata`.
 
 ### Key constraints
 
-- Add `StartedAt time.Time` and `FinishedAt time.Time` fields to the
-  `Result` struct, populated by `Run()` in `launcher.go` (wrap the actual
-  execution with `time.Now()` calls)
-- Duration is computed as `FinishedAt.Sub(StartedAt)` — not stored
-  separately, derived when writing JSON
-- The `RunDataWriter` methods accept `*Result` directly and serialize the
-  relevant fields
+- New interface in `internal/agent/runhook.go`:
+  ```go
+  type RunDataHook interface {
+      WriteImplementResult(issueNumber int, step rundata.StepResult) error
+      WriteReviewResult(issueNumber int, kind string, step rundata.StepResult) error
+      WriteRetryResult(issueNumber int, attempt int, step rundata.StepResult) error
+      WriteRetryReviewResult(issueNumber int, attempt int, step rundata.StepResult) error
+      WriteOutcome(outcome rundata.Outcome) error
+  }
+  ```
+- Add `Hook RunDataHook` field to the arguments passed to `ProcessIssue`
+  (nil-safe — all call sites check `if hook != nil` before writing)
+- In `ProcessIssue` (`loop.go`): after each agent step, build a `StepResult`
+  from the `agent.Result` and call the appropriate hook method
+- In `orchestrator.go`: create `RunDataWriter` before the processing loop,
+  pass it as the hook, call `FinalizeRun` at the end
+- In `implement.go`: same pattern for single-issue runs
+- Helper function `ResultToStep(r *Result) StepResult` converts an
+  `agent.Result` to a `rundata.StepResult` — timing fields are zero until
+  the telemetry issue adds them
+
+### Acceptance criteria
+
+- [ ] `RunDataHook` interface defined
+- [ ] `ProcessIssue` calls hook methods after each step (nil-safe)
+- [ ] `orchestrator.go` creates writer and passes it through
+- [ ] `implement.go` creates writer and passes it through
+- [ ] `FinalizeRun` is called at end of run
+
+### Test cases
+
+- **Hook called on implement**: Mock hook verifies `WriteImplementResult` called after implementer
+- **Hook called on review**: Mock hook verifies `WriteReviewResult` called after reviewer
+- **Hook called on outcome**: Mock hook verifies `WriteOutcome` called with correct status
+- **Nil hook safe**: `ProcessIssue` with nil hook does not panic
+- **FinalizeRun called**: Orchestrator calls `FinalizeRun` with correct summary counts
+
+---
+
+## Issue 97: Migrate debug log to run directory
+
+**Blocked by**: #96
+
+### Description
+
+Move the slog debug log from `logs/` into the run directory as `debug.log`.
+Remove the `LogDir` config field. Handle the dry-run case where no run
+directory exists.
+
+### Key constraints
+
+- Update `logging.NewLogger` to accept a directory path and create
+  `debug.log` there (instead of using `LogDir`)
+- In orchestrator and implement commands: pass `writer.Dir()` to `NewLogger`
+  after creating the `RunDataWriter`
+- Dry-run mode: use `os.MkdirTemp` for a private temp directory since no
+  `RunDataWriter` is created. Do not write to `/tmp/debug.log` (shared
+  path, race condition, security issue).
+- Remove `LogDir` field from `config.Config`
+- Remove `log_dir` from YAML schema and `defaults()`
+- Delete the `logs/` entry from `.gitignore` if present
+
+### Acceptance criteria
+
+- [ ] Debug log writes to `<run-dir>/debug.log`
+- [ ] `LogDir` removed from config
+- [ ] Dry-run uses a private temp directory for logging
+- [ ] `go test ./...` passes
+
+### Test cases
+
+- **Log in run dir**: After creating writer + logger, `debug.log` exists in `writer.Dir()`
+- **Dry-run isolation**: Two concurrent dry-runs don't share a log path
+- **Config without log_dir**: YAML without `log_dir` key loads without error
+- **Logger writes**: Log entries appear in the debug.log file
+
+---
+
+## Issue 95: Agent result timing
+
+### Description
+
+Add wall-clock timing to `agent.Result` so run data files contain accurate
+timestamps and durations. Currently `Result` has no timing fields.
+
+### Key constraints
+
+- Add `StartedAt time.Time` and `FinishedAt time.Time` fields to
+  `agent.Result` in `launcher.go`
+- Populate `StartedAt` with `time.Now()` before the agent invocation and
+  `FinishedAt` with `time.Now()` after, in both `runHost` and `runSandbox`
+- Update `ResultToStep` (from the wiring issue) to use these fields for
+  accurate `started_at`, `finished_at`, and `duration_seconds` in the JSON
 - No changes to `agent_runner.py` — timing is measured on the Go side
-  (which includes container startup overhead, giving a truer picture)
-- Quality review files store an array of review results (one per cycle) since
-  quality review can run multiple times before passing
+  (includes container startup, giving a truer wall-clock picture)
 
 ### Acceptance criteria
 
 - [ ] `Result` struct includes `StartedAt` and `FinishedAt` fields
-- [ ] `Run()` populates timing fields around agent execution
-- [ ] Duration is computed and written to JSON output files
-- [ ] Quality review JSON stores an array for multi-cycle reviews
-- [ ] `go test ./...` passes
+- [ ] `runHost` populates timing fields around execution
+- [ ] `runSandbox` populates timing fields around execution
+- [ ] `ResultToStep` computes accurate duration from timing fields
 
 ### Test cases
 
 - **Timing populated**: After `Run()`, `Result.StartedAt` and `Result.FinishedAt` are non-zero
 - **Duration positive**: `FinishedAt.Sub(StartedAt)` is positive
-- **Quality review array**: Multiple quality review results serialize as a JSON array
 - **Timed-out runs**: `Result.TimedOut == true` still has valid timing fields
+- **ResultToStep conversion**: `ResultToStep` with populated timing produces correct `duration_seconds`
 
 ---
 
-## Issue 76: Review quality reporting
+## Issue 99: Quality flag analysis package
 
-**Blocked by**: #75
+**Blocked by**: #95
 
 ### Description
 
-Analyze review telemetry data and produce quality assessments that the
-dashboard can display. This is a reporting layer — it flags potentially
-shallow reviews but does not reject them or fail the run.
-
-Quality signals to report on:
-
-- **Cost floor**: Flag reviews where `cost_usd` is below a configurable
-  threshold. Very cheap reviews may indicate the reviewer didn't do thorough
-  work.
-- **Tool trace analysis**: Flag reviews where the reviewer didn't read the PR
-  diff (no `Bash: gh pr diff` or `Read` calls), or didn't run tests (no
-  `Bash: go test` or equivalent).
-- **Review body quality**: Flag reviews where the reviewer's PR comment is
-  very short or lacks file path references.
-- **Duration floor**: Flag reviews that completed unusually fast.
-
-These flags are written to the review JSON files as a `quality_flags` array
-so the dashboard can highlight them.
+Create the `internal/quality/` package with analysis functions that inspect
+an `agent.Result` and return quality flags. Pure new code with no existing
+file modifications.
 
 ### Key constraints
 
-- New package: `internal/quality/` — contains analysis functions that take a
-  `Result` and return `[]QualityFlag`
-- `QualityFlag` struct:
+- New package: `internal/quality/`
+- Types:
   ```go
-  type QualityFlag struct {
-      Code    string // "low_cost", "no_diff_read", "no_tests_run", "short_duration", "shallow_review"
-      Message string // human-readable explanation
+  type Flag struct {
+      Code    string `json:"code"`
+      Message string `json:"message"`
   }
   ```
 - Analysis functions:
-  - `CheckCostFloor(result *agent.Result, threshold float64) *QualityFlag`
-  - `CheckToolTrace(result *agent.Result) []QualityFlag`
-  - `CheckDuration(result *agent.Result, threshold time.Duration) *QualityFlag`
-- Thresholds are configurable in `godark.yaml` under a new `quality:` block:
-  ```yaml
-  quality:
-    min_review_cost_usd: 0.10
-    min_review_duration_seconds: 60
-  ```
-  Defaults: `min_review_cost_usd: 0.0` (disabled), `min_review_duration_seconds: 0` (disabled).
-  When set to 0, the corresponding check is skipped.
-- Quality flags are computed after each review step in `ProcessIssue` and
-  passed to `RunDataWriter` to include in the review JSON files
-- Quality flags do NOT affect the run outcome — a flagged review still counts
-  as approved if the verdict is `APPROVED`
-- Log a warning when quality flags are raised so they appear in stdout
+  - `CheckCostFloor(costUSD, threshold float64) *Flag` — returns `low_cost`
+    flag if cost is below threshold. Returns nil if threshold is 0 (disabled).
+  - `CheckDuration(duration time.Duration, threshold time.Duration) *Flag` —
+    returns `short_duration` flag. Returns nil if threshold is 0.
+  - `CheckToolTrace(toolTrace []string) []Flag` — returns `no_diff_read`
+    and/or `no_tests_run` flags based on trace contents
+  - `CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string) []Flag`
+    — returns `no_review_tests_written` and/or `no_review_tests_run` flags
+- Functions take primitive values (not `*agent.Result`) to avoid a dependency
+  on the agent package from the quality package
 
 ### Acceptance criteria
 
-- [ ] `internal/quality/` package with analysis functions
-- [ ] Cost floor check flags reviews below configured threshold
-- [ ] Tool trace check flags reviews missing diff reads or test runs
-- [ ] Duration check flags reviews below configured threshold
-- [ ] Quality flags are written to review JSON files
-- [ ] Quality flags are logged as warnings to stdout
-- [ ] Flags do not affect run outcomes (no enforcement)
-- [ ] `quality:` config block with configurable thresholds
+- [ ] `CheckCostFloor` flags reviews below threshold
+- [ ] `CheckDuration` flags reviews below threshold
+- [ ] `CheckToolTrace` flags missing diff reads and test runs
+- [ ] `CheckReviewTestExecution` flags missing test creation and execution
 - [ ] Zero thresholds disable the corresponding check
-- [ ] `go test ./...` passes
 
 ### Test cases
 
-- **Low cost flagged**: Review with `cost_usd: 0.02` and threshold `0.10` produces `low_cost` flag
-- **Cost above threshold**: Review with `cost_usd: 0.50` and threshold `0.10` produces no flag
-- **No diff read**: Tool trace without any `Read` or `Bash: gh pr diff` produces `no_diff_read` flag
-- **No tests run**: Tool trace without any `Bash: go test` or `Bash: npm test` produces `no_tests_run` flag
-- **Normal trace**: Tool trace with diff reads and test runs produces no flags
-- **Short duration**: 30-second review with 60-second threshold produces `short_duration` flag
-- **Zero threshold disabled**: Threshold of `0.0` skips the check entirely
-- **Flags in JSON**: Quality flags serialize into review JSON `quality_flags` array
-- **Config parsing**: `quality:` block parsed from YAML with correct defaults
+- **Low cost flagged**: `cost=0.02, threshold=0.10` produces `low_cost` flag
+- **Cost above threshold**: `cost=0.50, threshold=0.10` produces no flag
+- **Cost check disabled**: `threshold=0.0` returns nil
+- **No diff read**: Trace without `Read` or `gh pr diff` produces `no_diff_read`
+- **No tests run**: Trace without `go test` or `npm test` produces `no_tests_run`
+- **Normal trace**: Trace with diff reads and test runs produces no flags
+- **Short duration**: 30s with 60s threshold produces `short_duration`
+- **Duration check disabled**: `threshold=0` returns nil
+- **Tests written and run**: Trace with Write to review dir and test command produces no flags
+- **Neither written nor run**: Empty trace produces both flags
 
 ---
 
-## Issue 77: Review test execution reporting
+## Issue 100: Wire quality flags into config and agent loop
 
-**Blocked by**: #75
+**Blocked by**: #99
 
 ### Description
 
-Report on whether the functional reviewer created and ran ephemeral tests in
-`tests/review/`. This is a quality flag — it highlights reviews that skipped
-test creation but does not override the verdict or fail the run.
-
-This is verified by inspecting the `ToolTrace` from the reviewer's `Result`.
-The trace is checked for evidence of writing to `tests/review/` and running
-the test command.
+Add the `quality:` config block and call the quality analysis functions after
+each review step in `ProcessIssue`. Log flags as warnings and include them
+in the run data.
 
 ### Key constraints
 
-- New function in `internal/quality/`:
-  `CheckReviewTestExecution(result *agent.Result, reviewDir, testCommand string) []QualityFlag`
-  Returns flags for missing test creation or missing test execution
-- Check for Write/Edit to a path under `reviewDir` in the tool trace
-- Check for Bash with `testCommand` substring in the tool trace
-- Called alongside the other quality checks after each review step
-- Produces `no_review_tests_written` and/or `no_review_tests_run` flags
-- The quality reviewer is exempt — only the functional reviewer is checked
-  (the quality reviewer focuses on code style, not behavioral verification)
-- Flags are written to the review JSON and logged as warnings, same as other
-  quality flags
+- Add to `config.Config`:
+  ```go
+  type Quality struct {
+      MinReviewCostUSD         float64 `yaml:"min_review_cost_usd"`
+      MinReviewDurationSeconds int     `yaml:"min_review_duration_seconds"`
+  }
+  ```
+- Defaults: both 0 (disabled)
+- In `ProcessIssue` after each review step: call the quality analysis
+  functions, log any flags as `slog.Warn`, and pass them to the
+  `RunDataHook` (extend the review write methods to accept `[]quality.Flag`)
+- Quality reviewer is exempt from `CheckReviewTestExecution` — only the
+  functional reviewer is checked
+- Flags do NOT affect run outcomes — a flagged review still counts as
+  approved
 
 ### Acceptance criteria
 
-- [ ] Tool trace is checked for Write/Edit to `tests/review/` paths
-- [ ] Tool trace is checked for Bash with test command execution
-- [ ] Missing test creation produces `no_review_tests_written` flag
-- [ ] Missing test execution produces `no_review_tests_run` flag
-- [ ] Quality flags are written to review JSON and logged as warnings
-- [ ] Quality reviewer is exempt from this check
-- [ ] Flags do not affect run outcomes (no enforcement)
-- [ ] `go test ./...` passes
+- [ ] `quality:` config block parsed from YAML with correct defaults
+- [ ] Quality flags computed after each review step
+- [ ] Flags logged as warnings
+- [ ] Flags included in run data review files
+- [ ] Quality reviewer exempt from test execution check
 
 ### Test cases
 
-- **Tests written and run**: Trace with `Write tests/review/foo_test.go` and `Bash: go test ./tests/review/...` produces no flags
-- **Tests written but not run**: Trace with `Write tests/review/foo_test.go` but no test command produces `no_review_tests_run` flag
-- **Tests run but not written**: Trace with `Bash: go test` but no Write to `tests/review/` produces `no_review_tests_written` flag
-- **Neither**: Empty trace produces both flags
-- **Quality reviewer exempt**: Quality reviewer with no test trace produces no flags
-- **Flags in JSON**: Flags serialize into review JSON `quality_flags` array alongside other quality flags
+- **Config parsing**: `quality: {min_review_cost_usd: 0.10}` parsed correctly
+- **Config defaults**: Missing `quality:` block uses zero defaults
+- **Flags logged**: Review below cost threshold produces warning log
+- **Flags in run data**: Review flags appear in written JSON
+- **QA reviewer exempt**: Quality reviewer skips test execution check
 
 ---
 
-## Issue 78: Dashboard server and run list
+## Issue 98: Run data reader
 
-**Blocked by**: #74
+**Blocked by**: #96
+
+### Description
+
+Create a reader that loads run data from `~/.godark/runs/` for the dashboard
+to consume. Walks the directory tree and deserializes JSON files into Go
+structs.
+
+### Key constraints
+
+- New file: `internal/rundata/reader.go`
+- `ListRuns() ([]RunMeta, error)` — walks `~/.godark/runs/`, reads each
+  `run.json`, returns sorted most-recent-first by `started_at`
+- `LoadRun(owner, repo, timestamp string) (*RunDetail, error)` — reads
+  `run.json` plus all issue subdirectories
+- `RunDetail` struct includes `RunMeta` plus `[]IssueDetail`
+- `IssueDetail` aggregates outcome, implement, reviews, retries for one issue
+- Graceful handling of missing or corrupt files (skip with warning, don't crash)
+
+### Acceptance criteria
+
+- [ ] `ListRuns` returns all runs sorted most-recent-first
+- [ ] `LoadRun` returns full run detail with all issue data
+- [ ] Missing files are skipped gracefully
+- [ ] Corrupt JSON is skipped with a logged warning
+
+### Test cases
+
+- **List runs**: Given 3 run directories, `ListRuns` returns 3 entries sorted by time
+- **Empty state**: No runs directory returns empty slice, no error
+- **Load run**: `LoadRun` with a complete run directory returns all issue data
+- **Missing outcome**: Issue directory without `outcome.json` is included with zero-value outcome
+- **Corrupt JSON**: Malformed `run.json` is skipped, other runs still returned
+
+---
+
+## Issue 101: Dashboard server and run list page
+
+**Blocked by**: #98
 
 ### Description
 
 `godark status` starts a local web server that serves a dashboard UI. The
-homepage shows a list of all runs across all repos, most recent first. Each
-run shows summary stats and review quality flags.
-
-The server reads from `~/.godark/runs/` — no database, no separate data
-store. It walks the directory tree and renders Go templates with htmx for
-interactivity and Alpine.js for client-side state where needed.
+homepage shows a list of all runs, most recent first.
 
 ### Key constraints
 
 - New package: `internal/dashboard/` — HTTP server, handlers, templates
-- New command: `internal/cmd/status.go` — `godark status` Cobra command
-- Templates and static assets (CSS, JS) embedded via `//go:embed` in
-  `internal/dashboard/assets/`
-- Dependencies: htmx and Alpine.js vendored as static files (no CDN, no npm)
-- Server binds to `localhost:8374` by default, configurable via
-  `--port` flag
-- Opens the browser automatically on start (best-effort, non-fatal if it fails)
-- Routes:
-  - `GET /` — run list (all repos)
-  - `GET /runs/<owner>/<repo>/<timestamp>` — run detail (per-issue outcomes)
-  - `GET /runs/<owner>/<repo>/<timestamp>/issues/<number>` — issue detail
-  - Static asset routes for CSS/JS
-- Run list page displays:
-  - Timestamp (human-readable, with relative time like "2 hours ago")
-  - Repo name
-  - Milestone or "single issue"
-  - Issue count
-  - Pass/fail/skip summary
-  - Total cost
-  - Quality flag count (if any reviews were flagged)
-- Sorting: most recent first (derived from directory name timestamp)
-- Filtering: by repo (htmx-driven, no full page reload)
+- Update existing `internal/cmd/status.go` — change from log-parsing to
+  starting the web server
+- Templates and static assets embedded via `//go:embed`
+- htmx and Alpine.js vendored as static files (no CDN)
+- Server binds to `localhost:8374`, configurable via `--port`
+- Opens browser on start (best-effort)
+- Routes: `GET /` (run list), static asset routes
+- Run list displays: timestamp, repo, milestone, issue count, pass/fail,
+  cost, quality flag count
+- Sorting: most recent first
+- Filtering by repo (htmx, no full page reload)
 - Graceful shutdown on SIGINT/SIGTERM
-- No authentication (localhost only)
 
 ### Acceptance criteria
 
-- [ ] `godark status` starts a local HTTP server
-- [ ] Homepage lists all runs from `~/.godark/runs/`
-- [ ] Runs are sorted most recent first
+- [ ] `godark status` starts HTTP server
+- [ ] Homepage lists runs from `~/.godark/runs/`
+- [ ] Runs sorted most recent first
 - [ ] Each run shows timestamp, repo, milestone, issue count, pass/fail, cost
-- [ ] Quality flags are surfaced in the run list
-- [ ] Filtering by repo works without page reload
-- [ ] Server shuts down gracefully on interrupt
-- [ ] Static assets are embedded in the binary
-- [ ] `go test ./...` passes
+- [ ] Static assets embedded in binary
 
 ### Test cases
 
-- **Server starts**: `godark status` binds to localhost and responds to HTTP requests
-- **Run list populated**: Given runs in `~/.godark/runs/`, GET `/` returns HTML with run entries
-- **Empty state**: No runs directory returns a helpful empty state message
-- **Run sorting**: Runs appear most recent first based on timestamp directory name
-- **Repo filter**: htmx request with repo filter returns filtered run list
-- **Static assets served**: CSS and JS files return correct content types
-- **Graceful shutdown**: SIGINT causes clean server shutdown
+- **Server starts**: `godark status` binds and responds to HTTP requests
+- **Run list populated**: GET `/` returns HTML with run entries
+- **Empty state**: No runs directory returns helpful empty state
+- **Run sorting**: Runs appear most recent first
+- **Static assets served**: CSS and JS return correct content types
 
 ---
 
-## Issue 79: Issue detail view and log viewer
+## Issue 102: Run detail and issue detail pages
 
-**Blocked by**: #78
+**Blocked by**: #101
 
 ### Description
 
-Add drill-down views to the dashboard: run detail shows per-issue outcomes,
-issue detail shows the full review chain with telemetry, and a log viewer
-shows parsed debug log entries with filtering.
+Add drill-down views: run detail shows per-issue outcomes, issue detail shows
+the full review chain with telemetry.
 
 ### Key constraints
 
 - Run detail page (`/runs/<owner>/<repo>/<timestamp>`):
-  - Lists all issues in the run with status, PR number, retry count, cost
-  - Color-coded status (green for implemented, red for failed, yellow for
-    needs-human-review)
-  - Link to GitHub PR for each issue (constructed from repo + PR number)
-  - Quality flag indicators per issue
+  - Per-issue list with status, PR number, retry count, cost
+  - Color-coded status (green/red/yellow)
+  - Links to GitHub PR
+  - Quality flag indicators
   - Click through to issue detail
 - Issue detail page (`/runs/<owner>/<repo>/<timestamp>/issues/<number>`):
-  - Timeline view of the review chain: implement → QA review (cycles) →
-    retries → functional review
-  - Each step shows: duration, cost, verdict, quality flags, tool trace
-    summary
-  - Expandable tool trace (collapsed by default, Alpine.js toggle)
+  - Timeline: implement → QA review cycles → retries → functional review
+  - Each step shows duration, cost, verdict, quality flags, tool trace
+  - Expandable tool trace (Alpine.js toggle)
   - Links to GitHub PR and issue
-- Log viewer (`/runs/<owner>/<repo>/<timestamp>/logs`):
-  - Parsed `debug.log` JSON lines displayed in a table
-  - Columns: timestamp, level, message, structured fields
-  - Filtering by log level (htmx-driven)
-  - Search within log messages
-  - Paginated (load more via htmx, not full page load)
-- All pages include breadcrumb navigation (runs → run → issue)
+- Breadcrumb navigation
 
 ### Acceptance criteria
 
-- [ ] Run detail page shows per-issue outcomes with status, PR, retries, cost
+- [ ] Run detail page shows per-issue outcomes
 - [ ] Issues link to GitHub PRs
-- [ ] Quality flags are visible per issue
-- [ ] Issue detail shows the full review chain as a timeline
-- [ ] Each step in the timeline shows duration, cost, verdict, tool trace
+- [ ] Issue detail shows review chain timeline
 - [ ] Tool trace is expandable/collapsible
-- [ ] Log viewer parses and displays debug.log entries
-- [ ] Log level filtering works
-- [ ] Log search works
-- [ ] Breadcrumb navigation works across all pages
-- [ ] `go test ./...` passes
+- [ ] Breadcrumb navigation works
 
 ### Test cases
 
-- **Run detail populated**: Given run data with 2 issues, GET run detail returns HTML with both issues
-- **Status color coding**: Implemented issues render with success styling, failed with error styling
-- **PR links**: Issue with PR #57 in repo `owner/repo` links to `https://github.com/owner/repo/pull/57`
-- **Issue timeline**: Issue with implement + 2 QA cycles + 1 retry + functional review shows all steps in order
-- **Tool trace toggle**: Alpine.js toggle shows/hides tool trace details
-- **Log parsing**: Debug log with 100 JSON lines renders as a table with correct columns
-- **Log level filter**: Filtering to "error" shows only error-level entries
-- **Log search**: Searching "issue_number" filters to matching log lines
-- **Breadcrumbs**: Issue detail page shows `Runs > owner/repo > 20260304-103000 > Issue #42`
+- **Run detail populated**: GET run detail returns HTML with issue entries
+- **Status color coding**: Implemented = success style, failed = error style
+- **PR links**: Issue with PR #57 links to correct GitHub URL
+- **Issue timeline**: All steps shown in order
+- **Tool trace toggle**: Alpine.js toggle shows/hides trace
+
+---
+
+## Issue 103: Log viewer
+
+**Blocked by**: #101
+
+### Description
+
+Add a log viewer page that displays parsed `debug.log` entries with filtering
+and search.
+
+### Key constraints
+
+- Route: `GET /runs/<owner>/<repo>/<timestamp>/logs`
+- Parse `debug.log` JSON lines into a table
+- Columns: timestamp, level, message, structured fields
+- Level filtering (htmx-driven)
+- Search within log messages
+- Paginated (load more via htmx)
+- Breadcrumb navigation
+
+### Acceptance criteria
+
+- [ ] Log viewer parses and displays debug.log entries
+- [ ] Log level filtering works
+- [ ] Log search works
+- [ ] Pagination loads more entries without full reload
+
+### Test cases
+
+- **Log parsing**: 100 JSON lines render as table with correct columns
+- **Level filter**: Filtering to "error" shows only error entries
+- **Search**: Searching "issue_number" filters to matching lines
+- **Pagination**: Initial load shows first page, "load more" fetches next batch
+- **Breadcrumbs**: Page shows correct breadcrumb trail

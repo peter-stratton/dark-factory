@@ -252,6 +252,6 @@ surface it all in a local web dashboard for human spot-checking.
 - Issue detail: review chain timeline with expandable tool traces
 - Log viewer: parsed `debug.log` with level filtering and search
 
-**Issues**: #74–#79
+**Issues**: #94–#103
 
 **Planning doc**: `docs/planning/phase-7-review-quality-and-dashboard.md`
