@@ -23,6 +23,7 @@ each unblocked issue through the implement → review → merge loop.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		configPath, _ := cmd.Flags().GetString("config")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		force, _ := cmd.Flags().GetBool("force")
 
 		flags := config.CLIFlags{Config: configPath}
 
@@ -100,7 +101,7 @@ each unblocked issue through the implement → review → merge loop.`,
 		defer stop()
 
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
-		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun, punchlistPath)
+		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun, force, punchlistPath)
 	},
 }
 
@@ -112,6 +113,7 @@ func init() {
 	f.Int("issue", 0, "Single issue number to process (instead of milestone)")
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles per issue")
 	f.Bool("dry-run", false, "Print execution plan without taking action")
+	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-merge", false, "Skip PR merge after approval (human reviews and merges manually)")
 	f.String("config", "godark.yaml", "Path to configuration file")

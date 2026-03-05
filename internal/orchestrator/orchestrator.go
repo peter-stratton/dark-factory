@@ -12,6 +12,7 @@ import (
 	"github.com/phs/dark-factory/internal/deps"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
@@ -19,8 +20,11 @@ import (
 // Run is the main entry point for the orchestration loop.
 // It fetches issues, resolves dependencies, and either prints the execution
 // plan (dry-run) or iterates through processable issues.
-// punchlistPath is the optional file path to write the punchlist to (stdout always receives it).
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool, punchlistPath string) error {
+//
+// force bypasses an existing run lock (useful to clear stale locks left by
+// crashed instances). punchlistPath is the optional file path to write the
+// punchlist to (always printed to stdout as well).
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
 	logger.Info("starting orchestration",
 		"repo", cfg.Repo,
 		"milestone", milestone,
@@ -83,6 +87,20 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 	if dryRun {
 		printDryRun(processable, blocked, len(issues))
 		return nil
+	}
+
+	// Step 5: Acquire run lock to prevent concurrent godark executions.
+	if len(processable) > 0 {
+		locker := lock.New(cfg.Repo, logger)
+		issueNums := issueNumbers(processable)
+		if err := locker.Acquire(issueNums, force); err != nil {
+			return fmt.Errorf("acquiring run lock: %w", err)
+		}
+		defer func() {
+			if err := locker.Release(issueNums); err != nil {
+				logger.Warn("failed to release run lock", "error", err)
+			}
+		}()
 	}
 
 	return processIssues(ctx, processable, blocked, len(issues), cfg, logger, punchlistPath)
@@ -316,6 +334,15 @@ func PullAfterMerge(logger *slog.Logger) error {
 
 	logger.Warn("failed to pull after merge", "error", err)
 	return fmt.Errorf("pull after merge failed: %w", err)
+}
+
+// issueNumbers extracts the issue numbers from a slice of issues.
+func issueNumbers(issues []github.Issue) []int {
+	nums := make([]int, len(issues))
+	for i, iss := range issues {
+		nums[i] = iss.Number
+	}
+	return nums
 }
 
 // formatIssueRefs formats a slice of issue numbers as "#1, #2, #3".
