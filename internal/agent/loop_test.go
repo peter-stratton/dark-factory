@@ -1277,6 +1277,134 @@ func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
 	}
 }
 
+// TestProcessIssue_FetchesSpecAfterSuccessfulGeneration verifies that after
+// GenerateSpec succeeds, loop.go issues git fetch and git checkout to pull the
+// spec file from the remote branch to the host ScenarioDir.
+func TestProcessIssue_FetchesSpecAfterSuccessfulGeneration(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	var guardCalls [][]string
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		call := append([]string{name}, args...)
+		guardCalls = append(guardCalls, call)
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // spec generator
+			return []byte(wrapRunnerJSON("spec generated")), []byte(""), 0, nil
+		case 2: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := loopConfig()
+	prompts := testPrompts(t)
+	prompts.SpecGenerator = "Generate spec for #{{.IssueNumber}}"
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
+
+	// Verify git fetch origin <branch> was called.
+	expectedBranch := BranchName(loopIssue().Number, Slugify(loopIssue().Title))
+	fetchFound := false
+	checkoutFound := false
+	for _, call := range guardCalls {
+		if len(call) == 4 && call[0] == "git" && call[1] == "fetch" && call[2] == "origin" && call[3] == expectedBranch {
+			fetchFound = true
+		}
+		if len(call) == 5 && call[0] == "git" && call[1] == "checkout" && call[2] == "FETCH_HEAD" && call[3] == "--" && call[4] == cfg.ScenarioDir {
+			checkoutFound = true
+		}
+	}
+	if !fetchFound {
+		t.Errorf("expected git fetch origin %s to be called, guard calls: %v", expectedBranch, guardCalls)
+	}
+	if !checkoutFound {
+		t.Errorf("expected git checkout FETCH_HEAD -- %s to be called, guard calls: %v", cfg.ScenarioDir, guardCalls)
+	}
+}
+
+// TestProcessIssue_ContinuesWhenSpecFetchFails verifies that a git fetch
+// failure after spec generation does not abort the issue processing.
+func TestProcessIssue_ContinuesWhenSpecFetchFails(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "git" && len(args) > 1 && args[0] == "fetch" {
+			return nil, fmt.Errorf("fetch failed: remote not found")
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // spec generator
+			return []byte(wrapRunnerJSON("spec generated")), []byte(""), 0, nil
+		case 2: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := testPrompts(t)
+	prompts.SpecGenerator = "Generate spec for #{{.IssueNumber}}"
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	// Fetch failure must not abort the run; processing should continue normally.
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+}
+
 // TestProcessIssue_PreMergeGuardAllowsApprovalWithTests verifies that when the
 // functional reviewer approves a PR and writes tests, the guard does not interfere.
 func TestProcessIssue_PreMergeGuardAllowsApprovalWithTests(t *testing.T) {
