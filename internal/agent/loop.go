@@ -72,6 +72,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				if _, checkoutErr := GuardRunner("git", "checkout", "FETCH_HEAD", "--", cfg.ScenarioDir); checkoutErr != nil {
 					logger.Warn("failed to checkout spec from remote branch", "branch", branch, "error", checkoutErr)
 				} else {
+					// Unstage the checked-out files so the working tree stays
+					// clean for subsequent git operations (pull --rebase after merge).
+					// The files remain on disk for HasScenarioSpec() to find.
+					if _, resetErr := GuardRunner("git", "reset", "HEAD", "--", cfg.ScenarioDir); resetErr != nil {
+						logger.Warn("failed to unstage spec files", "error", resetErr)
+					}
 					logger.Info("fetched spec from remote branch", "branch", branch, "scenario_dir", cfg.ScenarioDir)
 				}
 			} else {
