@@ -216,7 +216,7 @@ auto-detected or configured explicitly.
 
 ---
 
-## Phase 7: Review Quality & Dashboard
+## Phase 7: Review Quality & Dashboard ✅
 
 **Goal**: Capture review telemetry, report on review quality metrics, and
 surface it all in a local web dashboard for human spot-checking.
@@ -258,7 +258,7 @@ surface it all in a local web dashboard for human spot-checking.
 
 ---
 
-## Phase 8: Harness Engineering
+## Phase 8: Harness Engineering ✅
 
 **Goal**: Any project — new or existing — can adopt structured harness files
 that make agents dramatically more effective. `godark new` creates a
@@ -316,21 +316,31 @@ post structured dialogue on PRs, and the reviewer checks layer compliance
 
 **Milestone**: `Phase 9` | **Label**: `phase-9`
 
-### Wiring harness docs into agent launcher
-- Populate `{{.ArchitectureDoc}}` and `{{.ConventionsDoc}}` template
-  variables in the launcher from config or path defaults
-- Detect whether harness files exist and pass paths accordingly (graceful
-  degradation — empty variables when files are absent)
+- Update architecture.json for dialogue package — add `internal/dialogue/`
+  to domain layer paths
+- Populate harness template variables in launcher — add `architecture_doc`
+  and `conventions_doc` config fields with defaults; read file contents in
+  `newPromptData()`; empty string for missing files (graceful degradation)
+- Structured PR comment parser — new `internal/dialogue/` package; parse
+  Implementation Notes and Review Notes from PR comment text into typed
+  structs
+- Wire agent dialogue into run data — `DialogueEntry` struct in rundata;
+  orchestrator fetches PR comments after review cycles and writes
+  `dialogue.json` per issue
+- Surface agent dialogue in dashboard — dialogue timeline in issue detail
+  view with expandable entries styled by role
+- Architecture JSON context for reviewer — add `{{.ArchitectureJSON}}`
+  template variable; reviewer gets structured layer definitions for
+  compliance checking
+- Configurable architecture enforcement — `enforce_architecture` config
+  option; when enabled, reviewer must reject layer violations; when
+  disabled (default), violations are informational only
 
-### Agent dialogue integration
-- Parse structured Implementation Notes and Review Notes from PR comments
-  in the orchestrator for telemetry and quality reporting
-- Surface agent dialogue in the Phase 7 dashboard (issue detail view)
+**Issues**: #146–#152
 
-### Architecture compliance in review loop
-- Wire architecture layer definitions into the reviewer's context so it
-  can mechanically check import compliance (not just prompt instructions)
-- Optionally fail reviews that introduce layer violations (configurable)
+**Planning doc**: `docs/planning/phase-9-harness-aware-agent-execution.md`
+
+---
 
 ### Future considerations (not yet scoped)
 - Linter config generation from `architecture.json` (per-language)
