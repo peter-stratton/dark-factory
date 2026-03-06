@@ -182,52 +182,74 @@ func TestCheckReviewTestExecution(t *testing.T) {
 	testCmd := "go test ./tests/review/..."
 
 	tests := []struct {
-		name        string
-		trace       []string
-		reviewDir   string
-		testCommand string
-		wantCodes   []string
+		name            string
+		trace           []string
+		reviewDir       string
+		testCommand     string
+		hasScenarioSpec bool
+		wantCodes       []string
 	}{
 		{
-			name:        "tests written and run",
-			trace:       []string{"Write: tests/review/foo_test.go", "Bash: go test ./tests/review/..."},
-			reviewDir:   reviewDir,
-			testCommand: testCmd,
-			wantCodes:   nil,
+			name:            "tests written and run",
+			trace:           []string{"Write: tests/review/foo_test.go", "Bash: go test ./tests/review/..."},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: true,
+			wantCodes:       nil,
 		},
 		{
-			name:        "neither written nor run",
-			trace:       []string{},
-			reviewDir:   reviewDir,
-			testCommand: testCmd,
-			wantCodes:   []string{"no_review_tests_written", "no_review_tests_run"},
+			name:            "neither written nor run",
+			trace:           []string{},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: true,
+			wantCodes:       []string{"no_review_tests_written", "no_review_tests_run"},
 		},
 		{
-			name:        "written but not run",
-			trace:       []string{"Write: tests/review/foo_test.go"},
-			reviewDir:   reviewDir,
-			testCommand: testCmd,
-			wantCodes:   []string{"no_review_tests_run"},
+			name:            "written but not run",
+			trace:           []string{"Write: tests/review/foo_test.go"},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: true,
+			wantCodes:       []string{"no_review_tests_run"},
 		},
 		{
-			name:        "run but not written",
-			trace:       []string{"Bash: go test ./tests/review/..."},
-			reviewDir:   reviewDir,
-			testCommand: testCmd,
-			wantCodes:   []string{"no_review_tests_written"},
+			name:            "run but not written",
+			trace:           []string{"Bash: go test ./tests/review/..."},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: true,
+			wantCodes:       []string{"no_review_tests_written"},
 		},
 		{
-			name:        "write to different dir not counted",
-			trace:       []string{"Write: src/foo.go", "Bash: go test ./tests/review/..."},
-			reviewDir:   reviewDir,
-			testCommand: testCmd,
-			wantCodes:   []string{"no_review_tests_written"},
+			name:            "write to different dir not counted",
+			trace:           []string{"Write: src/foo.go", "Bash: go test ./tests/review/..."},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: true,
+			wantCodes:       []string{"no_review_tests_written"},
+		},
+		{
+			name:            "no scenario spec skips all checks",
+			trace:           []string{},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: false,
+			wantCodes:       nil,
+		},
+		{
+			name:            "no scenario spec skips checks even when tests not written",
+			trace:           []string{"Read: main.go"},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: false,
+			wantCodes:       nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckReviewTestExecution(tt.trace, tt.reviewDir, tt.testCommand)
+			got := CheckReviewTestExecution(tt.trace, tt.reviewDir, tt.testCommand, tt.hasScenarioSpec)
 			gotCodes := flagCodes(got)
 			if !codesEqual(gotCodes, tt.wantCodes) {
 				t.Errorf("got flags %v, want %v", gotCodes, tt.wantCodes)

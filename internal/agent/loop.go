@@ -115,6 +115,10 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 	_ = WarnMissingScenario(cfg.Repo, prNum, issue.Number, cfg.ScenarioDir, logger)
 
+	// Determine whether a scenario spec exists for this issue. Used by the
+	// functional reviewer's quality check: tests are only expected when a spec exists.
+	hasSpec := HasScenarioSpec(cfg.ScenarioDir, issue.Number)
+
 	// Step 4: Quality review gate (if prompt is configured).
 	if prompts.QualityReviewer != "" {
 		qualityMaxAttempts := cfg.MaxRetries + 1
@@ -133,7 +137,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				return outcome
 			}
 			// Quality reviewer is exempt from CheckReviewTestExecution.
-			qFlags := computeReviewFlags(qResult.AgentResult, cfg, false)
+			qFlags := computeReviewFlags(qResult.AgentResult, cfg, false, false)
 			qRDFlags := logAndRecordFlags(qFlags, logger, issue.Number)
 			if hook != nil {
 				qStep := ResultToStep(qResult.AgentResult)
@@ -230,7 +234,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			return outcome
 		}
 		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
-		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true)
+		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec)
 		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
 		if hook != nil {
 			fStep := ResultToStep(reviewResult.AgentResult)
@@ -349,7 +353,7 @@ func trimOutput(b []byte) string {
 // computeReviewFlags runs quality analysis on an agent Result and returns any flags found.
 // If checkTestExecution is false, CheckReviewTestExecution is skipped (used for the
 // quality reviewer, which is exempt from that check).
-func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution bool) []quality.Flag {
+func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution bool, hasScenarioSpec bool) []quality.Flag {
 	var flags []quality.Flag
 
 	if f := quality.CheckCostFloor(result.CostUSD, cfg.Quality.MinReviewCostUSD); f != nil {
@@ -365,7 +369,7 @@ func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution b
 	flags = append(flags, quality.CheckToolTrace(result.ToolTrace, cfg.TestCommand)...)
 
 	if checkTestExecution {
-		flags = append(flags, quality.CheckReviewTestExecution(result.ToolTrace, cfg.ReviewDir, cfg.TestCommand)...)
+		flags = append(flags, quality.CheckReviewTestExecution(result.ToolTrace, cfg.ReviewDir, cfg.TestCommand, hasScenarioSpec)...)
 	}
 
 	return flags

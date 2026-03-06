@@ -79,9 +79,14 @@ func CheckToolTrace(toolTrace []string, testCommand string) []Flag {
 
 // CheckReviewTestExecution inspects the tool trace for evidence that review tests
 // were written to reviewDir and executed via testCommand.
-// Returns no_review_tests_written if no Write to reviewDir is found.
-// Returns no_review_tests_run if testCommand is not found in the trace.
-func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string) []Flag {
+// Returns no_review_tests_written if no Write to reviewDir is found and hasScenarioSpec is true.
+// Returns no_review_tests_run if testCommand is not found in the trace and hasScenarioSpec is true.
+// When hasScenarioSpec is false, both checks are skipped (no scenario spec means no tests expected).
+func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string, hasScenarioSpec bool) []Flag {
+	if !hasScenarioSpec {
+		return nil
+	}
+
 	var flags []Flag
 
 	testsWritten := reviewDir == ""

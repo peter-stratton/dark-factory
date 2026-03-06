@@ -82,16 +82,17 @@ func BranchName(issueNumber int, slug string) string {
 
 func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptData {
 	return PromptData{
-		IssueNumber:    issue.Number,
-		IssueTitle:     issue.Title,
-		IssueBody:      issue.Body,
-		Slug:           slug,
-		Repo:           cfg.Repo,
-		BuildCommand:   cfg.BuildCommand,
-		TestCommand:    cfg.TestCommand,
-		ProtectedPaths: strings.Join(cfg.ProtectedPaths, ", "),
-		ScenarioDir:    cfg.ScenarioDir,
-		ReviewDir:      cfg.ReviewDir,
+		IssueNumber:     issue.Number,
+		IssueTitle:      issue.Title,
+		IssueBody:       issue.Body,
+		Slug:            slug,
+		Repo:            cfg.Repo,
+		BuildCommand:    cfg.BuildCommand,
+		TestCommand:     cfg.TestCommand,
+		ProtectedPaths:  strings.Join(cfg.ProtectedPaths, ", "),
+		ScenarioDir:     cfg.ScenarioDir,
+		ReviewDir:       cfg.ReviewDir,
+		HasScenarioSpec: HasScenarioSpec(cfg.ScenarioDir, issue.Number),
 	}
 }
 
