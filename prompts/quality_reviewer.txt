@@ -30,7 +30,18 @@ Based on your findings:
 - If the code has NO significant quality issues:
   Print QUALITY_RESULT=APPROVED
 - If the code has security, performance, or quality issues that should be fixed:
-  Request changes on the PR with specific feedback and print QUALITY_RESULT=CHANGES_REQUESTED
+  Post a PR comment with the following format so the implementer agent can find
+  your feedback, then print QUALITY_RESULT=CHANGES_REQUESTED
+
+## Review Notes
+
+### Changes Requested
+State that changes are requested, with a brief summary.
+
+### Issues Found
+List each specific issue that must be fixed. For each issue: describe what is
+wrong, what the correct behavior should be, and which quality criterion it
+violates (security, performance, idiom, or code craft).
 
 CRITICAL: You MUST print exactly one of these lines:
   QUALITY_RESULT=APPROVED
