@@ -38,6 +38,9 @@ type Config struct {
 	ScenarioDir    string   `yaml:"scenario_dir"`
 	ReviewDir      string   `yaml:"review_dir"`
 
+	ArchitectureDoc string `yaml:"architecture_doc"`
+	ConventionsDoc  string `yaml:"conventions_doc"`
+
 	NoSandbox              bool `yaml:"no_sandbox"`
 	NoMerge                bool `yaml:"no_merge"`
 	QualityStrictnessDecay bool `yaml:"quality_strictness_decay"`
@@ -115,6 +118,8 @@ func defaults() *Config {
 		PlanningDir:            "docs/planning/",
 		ScenarioDir:            "tests/scenarios/",
 		ReviewDir:              "tests/review/",
+		ArchitectureDoc:        "docs/architecture.md",
+		ConventionsDoc:         "docs/conventions.md",
 		QualityStrictnessDecay: true,
 		AuthPreference:         "oauth",
 	}

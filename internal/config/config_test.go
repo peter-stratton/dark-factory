@@ -501,6 +501,68 @@ quality:
 	}
 }
 
+func TestArchitectureDocDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ArchitectureDoc != "docs/architecture.md" {
+		t.Errorf("ArchitectureDoc = %q, want %q", cfg.ArchitectureDoc, "docs/architecture.md")
+	}
+}
+
+func TestConventionsDocDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ConventionsDoc != "docs/conventions.md" {
+		t.Errorf("ConventionsDoc = %q, want %q", cfg.ConventionsDoc, "docs/conventions.md")
+	}
+}
+
+func TestArchitectureDocOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+architecture_doc: custom/arch.md
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ArchitectureDoc != "custom/arch.md" {
+		t.Errorf("ArchitectureDoc = %q, want %q", cfg.ArchitectureDoc, "custom/arch.md")
+	}
+}
+
+func TestConventionsDocOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+conventions_doc: custom/conventions.md
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ConventionsDoc != "custom/conventions.md" {
+		t.Errorf("ConventionsDoc = %q, want %q", cfg.ConventionsDoc, "custom/conventions.md")
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

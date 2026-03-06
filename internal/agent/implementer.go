@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -93,7 +94,22 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ScenarioDir:     cfg.ScenarioDir,
 		ReviewDir:       cfg.ReviewDir,
 		HasScenarioSpec: HasScenarioSpec(cfg.ScenarioDir, issue.Number),
+		ArchitectureDoc: readFileOrEmpty(cfg.ArchitectureDoc),
+		ConventionsDoc:  readFileOrEmpty(cfg.ConventionsDoc),
 	}
+}
+
+// readFileOrEmpty reads the file at path and returns its contents as a string.
+// If the file does not exist or cannot be read, it returns an empty string.
+func readFileOrEmpty(path string) string {
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // newRunOpts builds a RunOpts from a rendered prompt, config, and role. This

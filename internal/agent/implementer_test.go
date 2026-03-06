@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -319,5 +321,74 @@ func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
 	}
 	if result.ExitCode != 1 {
 		t.Errorf("ExitCode = %d, want 1", result.ExitCode)
+	}
+}
+
+func TestNewPromptData_ArchitectureDocFileExists(t *testing.T) {
+	dir := t.TempDir()
+	archPath := filepath.Join(dir, "architecture.md")
+	content := "# Architecture\nSome content here."
+	if err := os.WriteFile(archPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testConfig()
+	cfg.ArchitectureDoc = archPath
+	cfg.ConventionsDoc = filepath.Join(dir, "nonexistent.md")
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.ArchitectureDoc != content {
+		t.Errorf("ArchitectureDoc = %q, want %q", data.ArchitectureDoc, content)
+	}
+}
+
+func TestNewPromptData_ArchitectureDocFileMissing(t *testing.T) {
+	cfg := testConfig()
+	cfg.ArchitectureDoc = "/nonexistent/path/architecture.md"
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.ArchitectureDoc != "" {
+		t.Errorf("ArchitectureDoc = %q, want empty string for missing file", data.ArchitectureDoc)
+	}
+}
+
+func TestNewPromptData_BothFilesExist(t *testing.T) {
+	dir := t.TempDir()
+	archPath := filepath.Join(dir, "architecture.md")
+	convPath := filepath.Join(dir, "conventions.md")
+	archContent := "# Architecture"
+	convContent := "# Conventions"
+
+	if err := os.WriteFile(archPath, []byte(archContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(convPath, []byte(convContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testConfig()
+	cfg.ArchitectureDoc = archPath
+	cfg.ConventionsDoc = convPath
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.ArchitectureDoc != archContent {
+		t.Errorf("ArchitectureDoc = %q, want %q", data.ArchitectureDoc, archContent)
+	}
+	if data.ConventionsDoc != convContent {
+		t.Errorf("ConventionsDoc = %q, want %q", data.ConventionsDoc, convContent)
+	}
+}
+
+func TestNewPromptData_ConventionsDocFileMissing(t *testing.T) {
+	cfg := testConfig()
+	cfg.ConventionsDoc = "/nonexistent/path/conventions.md"
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.ConventionsDoc != "" {
+		t.Errorf("ConventionsDoc = %q, want empty string for missing file", data.ConventionsDoc)
 	}
 }
