@@ -246,13 +246,8 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
 		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec)
 		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
-		if hook != nil {
-			fStep := ResultToStep(reviewResult.AgentResult)
-			fStep.Flags = fRDFlags
-			if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
-				logger.Warn("failed to write functional review result", "error", err)
-			}
-		}
+		fStep := ResultToStep(reviewResult.AgentResult)
+		fStep.Flags = fRDFlags
 
 		// Pre-merge guard: if the reviewer approved without writing tests to the
 		// review dir, re-run the reviewer. The reviewer is the agent responsible
@@ -268,6 +263,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 		switch reviewResult.Verdict {
 		case "APPROVED":
+			// Final result — write to top-level functional-review.json.
+			if hook != nil {
+				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
+			}
 			if cfg.NoMerge {
 				// Skip merge — human will review and merge manually.
 				logger.Info("PR approved, skipping merge (--no-merge)", "pr_number", prNum)
@@ -288,7 +289,20 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		case "CHANGES_REQUESTED":
 			retriesLeft := maxAttempts - attempt - 1
 			if retriesLeft <= 0 {
+				// Exhausted retries — write to top-level functional-review.json.
+				if hook != nil {
+					if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+						logger.Warn("failed to write functional review result", "error", err)
+					}
+				}
 				break // exit loop, will label needs-human-review
+			}
+
+			// More retries available — write to retry dir so the pre-retry review is preserved.
+			if hook != nil {
+				if err := hook.WriteRetryFunctionalReviewResult(issue.Number, attempt, fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
 			}
 
 			logger.Info("retrying implementation",
@@ -325,7 +339,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			}
 
 		default:
-			// No verdict found — treat as failure.
+			// No verdict found — write to top-level and treat as failure.
+			if hook != nil {
+				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
+			}
 			outcome.Status = "failed"
 			outcome.Err = fmt.Errorf("reviewer agent did not produce a verdict")
 			return outcome

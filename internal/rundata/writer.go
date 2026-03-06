@@ -142,6 +142,14 @@ func (w *Writer) WriteRetryReviewResult(issueNum, retryNum int, step StepResult)
 	return writeJSONMkdirs(path, step)
 }
 
+// WriteRetryFunctionalReviewResult writes the functional review that triggered a retry.
+// Path: issues/<issueNum>/retries/<retryNum>/functional-review.json
+func (w *Writer) WriteRetryFunctionalReviewResult(issueNum, retryNum int, step StepResult) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum),
+		"retries", fmt.Sprintf("%d", retryNum), "functional-review.json")
+	return writeJSONMkdirs(path, step)
+}
+
 // WriteOutcome writes the outcome for the issue identified by outcome.IssueNumber.
 // Path: issues/<issueNum>/outcome.json
 func (w *Writer) WriteOutcome(outcome Outcome) error {

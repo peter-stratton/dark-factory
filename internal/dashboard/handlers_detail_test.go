@@ -820,6 +820,80 @@ func TestServer_IssueDetail_ToolTraceSection(t *testing.T) {
 	}
 }
 
+func TestServer_IssueDetail_RetryFunctionalReviewInTimeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{15},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "15")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 15, Status: "implemented"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "impl output", DurationSeconds: 30})
+
+	// Retry 0: pre-retry functional review (CHANGES_REQUESTED) + retry implementer
+	retryDir := filepath.Join(issueDir, "retries", "0")
+	if err := os.MkdirAll(retryDir, 0o755); err != nil {
+		t.Fatalf("creating retry dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(retryDir, "functional-review.json"),
+		rundata.StepResult{Output: "REVIEW_RESULT=CHANGES_REQUESTED", DurationSeconds: 8})
+	writeJSON(t, filepath.Join(retryDir, "retry.json"),
+		rundata.StepResult{Output: "retry output", DurationSeconds: 25})
+
+	// Final functional review (APPROVED)
+	writeJSON(t, filepath.Join(issueDir, "functional-review.json"),
+		rundata.StepResult{Output: "REVIEW_RESULT=APPROVED", DurationSeconds: 7})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/15", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	// All steps should be present.
+	for _, want := range []string{"Implement", "Functional Review", "Retry 1"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing timeline step %q", want)
+		}
+	}
+
+	// The pre-retry functional review (Changes Requested) should appear before Retry 1.
+	idxFR := strings.Index(body, "REVIEW_RESULT=CHANGES_REQUESTED")
+	idxRetry := strings.Index(body, "retry output")
+	idxFinal := strings.Index(body, "REVIEW_RESULT=APPROVED")
+
+	if idxFR < 0 {
+		t.Error("body missing pre-retry functional review output")
+	}
+	if idxRetry < 0 {
+		t.Error("body missing retry implementer output")
+	}
+	if idxFinal < 0 {
+		t.Error("body missing final functional review output")
+	}
+	if idxFR >= 0 && idxRetry >= 0 && idxFR > idxRetry {
+		t.Error("pre-retry Functional Review should appear before Retry 1 in timeline")
+	}
+	if idxRetry >= 0 && idxFinal >= 0 && idxRetry > idxFinal {
+		t.Error("Retry 1 should appear before final Functional Review in timeline")
+	}
+}
+
 func TestServer_IssueDetail_NoToolTraceWhenAbsent(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now().UTC()
