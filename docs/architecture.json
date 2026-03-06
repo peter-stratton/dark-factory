@@ -1,0 +1,60 @@
+{
+  "layers": [
+    {
+      "name": "cmd",
+      "description": "CLI entry point and Cobra command wiring. Top of the dependency tree.",
+      "paths": ["cmd/", "internal/cmd/"],
+      "may_depend_on": ["orchestration", "service", "domain", "infrastructure", "presentation", "foundation", "content"],
+      "must_not_depend_on": []
+    },
+    {
+      "name": "orchestration",
+      "description": "Workflow coordination and agent lifecycle. Runs multi-issue workflows and manages agent execution.",
+      "paths": ["internal/orchestrator/", "internal/agent/"],
+      "may_depend_on": ["service", "domain", "infrastructure", "foundation", "content"],
+      "must_not_depend_on": ["cmd", "presentation"]
+    },
+    {
+      "name": "service",
+      "description": "Business logic that combines domain and infrastructure. Analysis and validation that requires external service access.",
+      "paths": ["internal/deps/", "internal/vet/"],
+      "may_depend_on": ["domain", "infrastructure", "foundation", "content"],
+      "must_not_depend_on": ["cmd", "orchestration", "presentation"]
+    },
+    {
+      "name": "presentation",
+      "description": "Web dashboard and UI for monitoring runs.",
+      "paths": ["internal/dashboard/"],
+      "may_depend_on": ["domain", "foundation"],
+      "must_not_depend_on": ["cmd", "orchestration", "service", "infrastructure", "content"]
+    },
+    {
+      "name": "domain",
+      "description": "Pure business logic, models, and rules. No external service dependencies.",
+      "paths": ["internal/detect/", "internal/doctor/", "internal/patterns/", "internal/punchlist/", "internal/quality/", "internal/rundata/"],
+      "may_depend_on": ["foundation", "content"],
+      "must_not_depend_on": ["cmd", "orchestration", "service", "infrastructure", "presentation"]
+    },
+    {
+      "name": "infrastructure",
+      "description": "External service clients and process management. GitHub API, locking, sandbox execution.",
+      "paths": ["internal/github/", "internal/lock/", "internal/sandbox/", "internal/pypi/", "internal/agent/runner/"],
+      "may_depend_on": ["foundation"],
+      "must_not_depend_on": ["cmd", "orchestration", "service", "domain", "presentation", "content"]
+    },
+    {
+      "name": "foundation",
+      "description": "Zero-dependency utilities importable by all layers. Configuration and logging.",
+      "paths": ["internal/config/", "internal/logging/"],
+      "may_depend_on": [],
+      "must_not_depend_on": ["cmd", "orchestration", "service", "domain", "infrastructure", "presentation", "content"]
+    },
+    {
+      "name": "content",
+      "description": "Embedded skill definitions, prompt templates, and harness scaffolding templates. No internal dependencies.",
+      "paths": ["internal/skills/", "internal/harness/", "prompts/"],
+      "may_depend_on": [],
+      "must_not_depend_on": ["cmd", "orchestration", "service", "domain", "infrastructure", "presentation", "foundation"]
+    }
+  ]
+}

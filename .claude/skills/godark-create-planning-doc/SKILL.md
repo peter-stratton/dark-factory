@@ -21,8 +21,10 @@ description, constraints, acceptance criteria, and test cases.
    the configured `planning_dir`) to understand the project's conventions,
    naming patterns, and level of detail.
 
-3. **Read project context** — Read `CLAUDE.md` and `docs/CONTEXT.md` (if they
-   exist) for architecture and coding conventions.
+3. **Read project context** — Read `CLAUDE.md` (if it exists) for architecture
+   and coding conventions. Also read
+   `docs/architecture.json` and `docs/conventions.md` if they exist to
+   understand the current architecture layers and agreed coding conventions.
 
 4. **Discuss each issue** — For each issue slug in the phase, work with the user
    to flesh out:
@@ -34,6 +36,11 @@ description, constraints, acceptance criteria, and test cases.
 
    Ask clarifying questions. Don't assume — the user knows what they want, and
    vague specs lead to bad agent output.
+
+   When new phases introduce packages that don't fit any existing layer in
+   `docs/architecture.json`, prompt the user to update `docs/architecture.json`
+   before finalising the spec (or suggest running `/godark-define-architecture`
+   to revise the layer definitions).
 
 5. **Write the planning doc** — Create the file in `docs/planning/` using the
    format below. The filename should be `phase-N-<kebab-slug>.md` matching the

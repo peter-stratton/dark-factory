@@ -10,11 +10,11 @@ import (
 func TestParse_ValidJSON(t *testing.T) {
 	input := `{
 		"layers": [
-			{"name": "types",        "dir": "internal/types/",        "imports": []},
-			{"name": "config",       "dir": "internal/config/",       "imports": ["types"]},
-			{"name": "deps",         "dir": "internal/deps/",         "imports": ["types", "config"]},
-			{"name": "github",       "dir": "internal/github/",       "imports": ["types"]},
-			{"name": "orchestrator", "dir": "internal/orchestrator/", "imports": ["types", "config", "deps", "github"]}
+			{"name": "types",        "paths": ["internal/types/"],        "may_depend_on": []},
+			{"name": "config",       "paths": ["internal/config/"],       "may_depend_on": ["types"]},
+			{"name": "deps",         "paths": ["internal/deps/"],         "may_depend_on": ["types", "config"]},
+			{"name": "github",       "paths": ["internal/github/"],       "may_depend_on": ["types"]},
+			{"name": "orchestrator", "paths": ["internal/orchestrator/"], "may_depend_on": ["types", "config", "deps", "github"]}
 		]
 	}`
 
@@ -28,11 +28,11 @@ func TestParse_ValidJSON(t *testing.T) {
 	if def.Layers[0].Name != "types" {
 		t.Errorf("want first layer name %q, got %q", "types", def.Layers[0].Name)
 	}
-	if def.Layers[1].Dir != "internal/config/" {
-		t.Errorf("want second layer dir %q, got %q", "internal/config/", def.Layers[1].Dir)
+	if len(def.Layers[1].Paths) != 1 || def.Layers[1].Paths[0] != "internal/config/" {
+		t.Errorf("want second layer paths [%q], got %v", "internal/config/", def.Layers[1].Paths)
 	}
-	if len(def.Layers[4].Imports) != 4 {
-		t.Errorf("want 4 imports for orchestrator, got %d", len(def.Layers[4].Imports))
+	if len(def.Layers[4].MayDependOn) != 4 {
+		t.Errorf("want 4 may_depend_on for orchestrator, got %d", len(def.Layers[4].MayDependOn))
 	}
 }
 
@@ -47,8 +47,8 @@ func TestParse_EmptyLayers(t *testing.T) {
 func TestParse_DuplicateNames(t *testing.T) {
 	input := `{
 		"layers": [
-			{"name": "config", "dir": "internal/config/", "imports": []},
-			{"name": "config", "dir": "internal/config2/", "imports": []}
+			{"name": "config", "paths": ["internal/config/"], "may_depend_on": []},
+			{"name": "config", "paths": ["internal/config2/"], "may_depend_on": []}
 		]
 	}`
 	_, err := Parse(strings.NewReader(input))
@@ -60,15 +60,30 @@ func TestParse_DuplicateNames(t *testing.T) {
 	}
 }
 
-func TestParse_BadImportReference(t *testing.T) {
+func TestParse_BadDependencyReference(t *testing.T) {
 	input := `{
 		"layers": [
-			{"name": "config", "dir": "internal/config/", "imports": ["nonexistent"]}
+			{"name": "config", "paths": ["internal/config/"], "may_depend_on": ["nonexistent"]}
 		]
 	}`
 	_, err := Parse(strings.NewReader(input))
 	if err == nil {
-		t.Fatal("want error for bad import reference, got nil")
+		t.Fatal("want error for bad dependency reference, got nil")
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("want error mentioning nonexistent, got: %v", err)
+	}
+}
+
+func TestParse_BadMustNotDependOnReference(t *testing.T) {
+	input := `{
+		"layers": [
+			{"name": "config", "paths": ["internal/config/"], "may_depend_on": [], "must_not_depend_on": ["nonexistent"]}
+		]
+	}`
+	_, err := Parse(strings.NewReader(input))
+	if err == nil {
+		t.Fatal("want error for bad must_not_depend_on reference, got nil")
 	}
 	if !strings.Contains(err.Error(), "nonexistent") {
 		t.Errorf("want error mentioning nonexistent, got: %v", err)
@@ -78,7 +93,7 @@ func TestParse_BadImportReference(t *testing.T) {
 func TestParse_EmptyName(t *testing.T) {
 	input := `{
 		"layers": [
-			{"name": "", "dir": "internal/types/", "imports": []}
+			{"name": "", "paths": ["internal/types/"], "may_depend_on": []}
 		]
 	}`
 	_, err := Parse(strings.NewReader(input))
@@ -87,15 +102,15 @@ func TestParse_EmptyName(t *testing.T) {
 	}
 }
 
-func TestParse_EmptyDir(t *testing.T) {
+func TestParse_EmptyPaths(t *testing.T) {
 	input := `{
 		"layers": [
-			{"name": "types", "dir": "", "imports": []}
+			{"name": "types", "paths": [], "may_depend_on": []}
 		]
 	}`
 	_, err := Parse(strings.NewReader(input))
 	if err == nil {
-		t.Fatal("want error for empty layer dir, got nil")
+		t.Fatal("want error for empty layer paths, got nil")
 	}
 }
 
@@ -107,29 +122,29 @@ func TestParse_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestParse_NoImportsField(t *testing.T) {
+func TestParse_NoMayDependOnField(t *testing.T) {
 	input := `{
 		"layers": [
-			{"name": "types", "dir": "internal/types/"}
+			{"name": "types", "paths": ["internal/types/"]}
 		]
 	}`
 	def, err := Parse(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if def.Layers[0].Imports == nil {
+	if def.Layers[0].MayDependOn == nil {
 		// nil slice is acceptable for missing field
 		return
 	}
-	if len(def.Layers[0].Imports) != 0 {
-		t.Errorf("want empty imports, got %v", def.Layers[0].Imports)
+	if len(def.Layers[0].MayDependOn) != 0 {
+		t.Errorf("want empty may_depend_on, got %v", def.Layers[0].MayDependOn)
 	}
 }
 
 func TestParseFile_Valid(t *testing.T) {
 	content := `{
 		"layers": [
-			{"name": "types", "dir": "internal/types/", "imports": []}
+			{"name": "types", "paths": ["internal/types/"], "may_depend_on": []}
 		]
 	}`
 	tmp := filepath.Join(t.TempDir(), "architecture.json")

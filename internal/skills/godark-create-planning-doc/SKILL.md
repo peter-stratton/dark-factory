@@ -21,8 +21,8 @@ description, constraints, acceptance criteria, and test cases.
    the configured `planning_dir`) to understand the project's conventions,
    naming patterns, and level of detail.
 
-3. **Read project context** — Read `CLAUDE.md` and `docs/CONTEXT.md` (if they
-   exist) for architecture and coding conventions. Also read
+3. **Read project context** — Read `CLAUDE.md` (if it exists) for architecture
+   and coding conventions. Also read
    `docs/architecture.json` and `docs/conventions.md` if they exist to
    understand the current architecture layers and agreed coding conventions.
 

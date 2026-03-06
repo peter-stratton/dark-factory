@@ -60,16 +60,56 @@ Given a GitHub repo and a milestone, `godark` runs a three-agent development loo
 9. **Punchlist** — for each merged PR, a tool-less punchlist agent generates 3-5 concrete manual acceptance tests (specific config values, commands, expected outcomes) rendered as checkboxes alongside the existing punchlist output
 10. **Repeat** — move to the next unblocked issue
 
-## Pre-run checklist
+## Setting up a new project
 
-Before running the dev loop, use the planning skills (installed by `godark init`)
-inside Claude Code to prepare your project:
+```
+godark new <project-name> --repo owner/repo
+```
 
-| Step | Skill | What it does |
-|------|-------|--------------|
+Creates the directory, writes CLAUDE.md template and `.gitignore`, runs
+`git init`, then scaffolds skills, `godark.yaml`, and empty harness doc
+templates. Follow the harness setup steps below to populate the docs.
+
+## Migrating an existing project
+
+```
+godark init --repo owner/repo
+```
+
+Installs skills, creates `godark.yaml` (if missing), and scaffolds empty harness
+doc templates without overwriting existing files. Safe to re-run — skills are
+always updated, everything else is skip-if-exists.
+
+Harness documentation is optional — `godark run` works without it. But agents
+produce better results when they have clear architecture definitions, coding
+conventions, and a concise CLAUDE.md to orient from.
+
+**Notes:**
+- Use `--reset-claude-md` to replace an existing CLAUDE.md with the harness template before running `/godark-harness-claude-md`.
+- If your project already has conventions in `CONTRIBUTING.md` or architecture in `docs/ADR/`, the harness skill will point to those instead of forcing a migration.
+
+## Harness setup
+
+After `godark new` or `godark init`, run these skills inside Claude Code to
+populate the harness docs:
+
+| Step | Command / Skill | What it does |
+|------|-----------------|--------------|
+| 1 | `/godark-define-architecture` | Analyze the codebase (or discuss plans for new projects) and write `docs/architecture.md` + `docs/architecture.json` |
+| 2 | `/godark-define-conventions` | Analyze existing code patterns (or recommend idioms) and write `docs/conventions.md` |
+| 3 | `/godark-harness-claude-md` | Compress CLAUDE.md into a minimal directory of pointers to subordinate docs |
+| 4 | `godark vet architecture` | Validate the layer definitions have no cycles |
+
+## Planning a phase
+
+Once harness docs are in place, use the planning skills to create a roadmap and
+prepare issues for agent execution:
+
+| Step | Command / Skill | What it does |
+|------|-----------------|--------------|
 | 1 | `/godark-create-roadmap <project-goal>` | Create a phased roadmap and GitHub milestones |
 | 2 | `/godark-create-planning-doc <phase-number>` | Write a detailed planning doc for a roadmap phase |
-| 3 | `/godark-create-issues <phase-number>` | Create GitHub issues from the planning doc phase #|
+| 3 | `/godark-create-issues <phase-number>` | Create GitHub issues from the planning doc |
 | 4 | `/godark-create-scenario <issue-number>` | Generate a scenario spec for each issue |
 | 5 | `godark vet issues --repo owner/repo --tag phase-N` | Validate issues are agent-ready |
 | 6 | `godark vet scenarios --repo owner/repo --tag phase-N` | Validate scenario specs |
@@ -113,6 +153,7 @@ Available Commands:
   completion  Generate the autocompletion script for the specified shell
   implement   Implement a single GitHub issue
   init        Initialize a project with godark skills and default config
+  new         Create a new harness-ready project directory
   run         Run the development loop for a milestone or single issue
   status      Show summary of the most recent run
   version     Print the version and build time
@@ -168,9 +209,10 @@ Usage:
   godark vet [command]
 
 Available Commands:
-  issues      Validate GitHub issue structure for agent consumption
-  scenarios   Validate scenario spec files
-  roadmap     Validate planning docs against milestone issues
+  architecture  Validate architecture layer definitions for DAG correctness
+  issues        Validate GitHub issue structure for agent consumption
+  scenarios     Validate scenario spec files
+  roadmap       Validate planning docs against milestone issues
 
 Flags:
       --config string   Path to configuration file (default "godark.yaml")
@@ -208,6 +250,35 @@ Flags:
       --tag string            Milestone tag (e.g., phase-3) — resolved to full milestone title
 ```
 
+#### godark vet architecture
+
+```
+Validate architecture layer definitions for DAG correctness.
+
+Reads docs/architecture.json and checks for cycles in the dependency
+graph. Exits 0 with an info message if no architecture file exists
+(harnesses are opt-in).
+
+Flags:
+      --architecture-file string   Path to architecture JSON file (default "docs/architecture.json")
+      --json                       Output findings as JSON
+```
+
+### godark new
+
+```
+Create a new directory with all harness files for a greenfield project.
+
+Creates the directory, writes CLAUDE.md and .gitignore, runs git init,
+then scaffolds skills, godark.yaml, and harness documentation files.
+
+Usage:
+  godark new <project-name> [flags]
+
+Flags:
+      --repo string   GitHub repository (owner/repo) — pre-populates repo: in godark.yaml
+```
+
 ### godark init
 
 ```
@@ -215,8 +286,16 @@ Write Claude Code skill files and a default godark.yaml to the current
 directory. Skills are always overwritten (they are managed by godark).
 The config file is only created if it does not already exist.
 
+Also scaffolds harness documentation templates (docs/architecture.md,
+docs/architecture.json, docs/conventions.md, docs/ROADMAP.md, and
+prompt templates) using skip-if-exists semantics.
+
 Usage:
   godark init [flags]
+
+Flags:
+      --repo string       GitHub repository (owner/repo) — used to create the godark-in-progress label
+      --reset-claude-md   Replace existing CLAUDE.md with the harness template
 ```
 
 ### godark status

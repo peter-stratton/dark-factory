@@ -20,8 +20,8 @@ func parseDef(t *testing.T, json string) *layers.Definition {
 func TestValidateArchitecture_NoCycles(t *testing.T) {
 	def := parseDef(t, `{
 		"layers": [
-			{"name": "A", "dir": "a/", "imports": []},
-			{"name": "B", "dir": "b/", "imports": ["A"]}
+			{"name": "A", "paths": ["a/"], "may_depend_on": []},
+			{"name": "B", "paths": ["b/"], "may_depend_on": ["A"]}
 		]
 	}`)
 	report := ValidateArchitecture(def)
@@ -34,8 +34,8 @@ func TestValidateArchitecture_SimpleCycle(t *testing.T) {
 	// A→B→A
 	def := parseDef(t, `{
 		"layers": [
-			{"name": "A", "dir": "a/", "imports": ["B"]},
-			{"name": "B", "dir": "b/", "imports": ["A"]}
+			{"name": "A", "paths": ["a/"], "may_depend_on": ["B"]},
+			{"name": "B", "paths": ["b/"], "may_depend_on": ["A"]}
 		]
 	}`)
 	report := ValidateArchitecture(def)
@@ -56,9 +56,9 @@ func TestValidateArchitecture_TransitiveCycle(t *testing.T) {
 	// A→B→C→A
 	def := parseDef(t, `{
 		"layers": [
-			{"name": "A", "dir": "a/", "imports": ["B"]},
-			{"name": "B", "dir": "b/", "imports": ["C"]},
-			{"name": "C", "dir": "c/", "imports": ["A"]}
+			{"name": "A", "paths": ["a/"], "may_depend_on": ["B"]},
+			{"name": "B", "paths": ["b/"], "may_depend_on": ["C"]},
+			{"name": "C", "paths": ["c/"], "may_depend_on": ["A"]}
 		]
 	}`)
 	report := ValidateArchitecture(def)
@@ -78,10 +78,10 @@ func TestValidateArchitecture_TransitiveCycle(t *testing.T) {
 }
 
 func TestValidateArchitecture_SelfImport(t *testing.T) {
-	// A imports A
+	// A depends on A
 	def := parseDef(t, `{
 		"layers": [
-			{"name": "A", "dir": "a/", "imports": ["A"]}
+			{"name": "A", "paths": ["a/"], "may_depend_on": ["A"]}
 		]
 	}`)
 	report := ValidateArchitecture(def)
@@ -101,11 +101,11 @@ func TestValidateArchitecture_CleanArchitecture(t *testing.T) {
 	// Well-structured 5-layer DAG — no cycles.
 	def := parseDef(t, `{
 		"layers": [
-			{"name": "types",        "dir": "internal/types/",        "imports": []},
-			{"name": "config",       "dir": "internal/config/",       "imports": ["types"]},
-			{"name": "deps",         "dir": "internal/deps/",         "imports": ["types", "config"]},
-			{"name": "github",       "dir": "internal/github/",       "imports": ["types"]},
-			{"name": "orchestrator", "dir": "internal/orchestrator/", "imports": ["types", "config", "deps", "github"]}
+			{"name": "types",        "paths": ["internal/types/"],        "may_depend_on": []},
+			{"name": "config",       "paths": ["internal/config/"],       "may_depend_on": ["types"]},
+			{"name": "deps",         "paths": ["internal/deps/"],         "may_depend_on": ["types", "config"]},
+			{"name": "github",       "paths": ["internal/github/"],       "may_depend_on": ["types"]},
+			{"name": "orchestrator", "paths": ["internal/orchestrator/"], "may_depend_on": ["types", "config", "deps", "github"]}
 		]
 	}`)
 	report := ValidateArchitecture(def)
@@ -118,8 +118,8 @@ func TestValidateArchitecture_NoDuplicateCycleReports(t *testing.T) {
 	// A→B→A: should produce exactly one finding, not two.
 	def := parseDef(t, `{
 		"layers": [
-			{"name": "A", "dir": "a/", "imports": ["B"]},
-			{"name": "B", "dir": "b/", "imports": ["A"]}
+			{"name": "A", "paths": ["a/"], "may_depend_on": ["B"]},
+			{"name": "B", "paths": ["b/"], "may_depend_on": ["A"]}
 		]
 	}`)
 	report := ValidateArchitecture(def)
@@ -133,10 +133,10 @@ func TestValidateArchitecture_DisconnectedCycles(t *testing.T) {
 	// Two independent cycles: A→B→A and C→D→C.
 	def := parseDef(t, `{
 		"layers": [
-			{"name": "A", "dir": "a/", "imports": ["B"]},
-			{"name": "B", "dir": "b/", "imports": ["A"]},
-			{"name": "C", "dir": "c/", "imports": ["D"]},
-			{"name": "D", "dir": "d/", "imports": ["C"]}
+			{"name": "A", "paths": ["a/"], "may_depend_on": ["B"]},
+			{"name": "B", "paths": ["b/"], "may_depend_on": ["A"]},
+			{"name": "C", "paths": ["c/"], "may_depend_on": ["D"]},
+			{"name": "D", "paths": ["d/"], "may_depend_on": ["C"]}
 		]
 	}`)
 	report := ValidateArchitecture(def)

@@ -12,8 +12,8 @@ Help the user define a phased roadmap for their project and write it to
 
 ## Steps
 
-1. **Gather context** — Read `CLAUDE.md` and `docs/CONTEXT.md` (if they exist)
-   to understand the project. Read `docs/architecture.json` and
+1. **Gather context** — Read `CLAUDE.md` (if it exists) to understand the
+   project. Read `docs/architecture.json` and
    `docs/conventions.md` if they exist to understand current architecture layers
    and coding conventions. Read `godark.yaml` to find the `repo` and
    `roadmap_path` (default: `docs/ROADMAP.md`).
