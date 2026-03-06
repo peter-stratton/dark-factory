@@ -110,13 +110,8 @@ func TestNewClaudeMDHeaders(t *testing.T) {
 	content := string(data)
 
 	for _, header := range []string{
-		"## Project",
-		"## Build and Test",
-		"## Architecture",
-		"## Principles",
-		"## Protected Paths",
-		"## Git Workflow",
-		"## Definition of Done",
+		"# CLAUDE.md",
+		"## Where to look",
 	} {
 		if !strings.Contains(content, header) {
 			t.Errorf("CLAUDE.md missing expected header %q", header)

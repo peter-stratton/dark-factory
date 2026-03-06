@@ -23,7 +23,7 @@ func ValidateArchitecture(def *layers.Definition) *Report {
 func detectCycles(def *layers.Definition, r *Report) {
 	adj := make(map[string][]string, len(def.Layers))
 	for _, l := range def.Layers {
-		adj[l.Name] = l.Imports
+		adj[l.Name] = l.MayDependOn
 	}
 
 	// 0 = unvisited (white), 1 = in-progress (gray), 2 = done (black)
