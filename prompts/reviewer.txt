@@ -14,6 +14,10 @@ Steps:
 6. Check that imports respect the dependency layers per the following architecture rules and verify that no layer boundary violations were introduced:
 {{.ArchitectureDocContent}}
 {{- end}}
+{{- if .ArchitectureJSON}}
+   Machine-readable layer definitions — for each changed file, verify that its imports respect the `may_depend_on` and `must_not_depend_on` rules for its layer:
+{{.ArchitectureJSON}}
+{{- end}}
 {{- if .TestCommand}}
 7. Run unit tests: {{.TestCommand}}
 {{- end}}

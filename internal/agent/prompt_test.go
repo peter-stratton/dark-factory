@@ -404,3 +404,57 @@ func TestSlugify(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewerPrompt_IncludesArchitectureJSONBlock(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	jsonContent := `{"layers":[{"name":"foundation","may_depend_on":[]}]}`
+	data := PromptData{
+		IssueNumber:      1,
+		Repo:             "owner/repo",
+		PRNumber:         10,
+		TestCommand:      "make test",
+		BuildCommand:     "make build",
+		ProtectedPaths:   "CLAUDE.md",
+		ScenarioDir:      "tests/scenarios/",
+		ReviewDir:        "tests/review/",
+		ArchitectureJSON: jsonContent,
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, jsonContent) {
+		t.Error("reviewer prompt should include ArchitectureJSON content when present")
+	}
+	if !strings.Contains(rendered, "may_depend_on") {
+		t.Error("reviewer prompt should reference may_depend_on when ArchitectureJSON is present")
+	}
+}
+
+func TestReviewerPrompt_OmitsArchitectureJSONBlockWhenEmpty(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:      1,
+		Repo:             "owner/repo",
+		PRNumber:         10,
+		TestCommand:      "make test",
+		BuildCommand:     "make build",
+		ProtectedPaths:   "CLAUDE.md",
+		ScenarioDir:      "tests/scenarios/",
+		ReviewDir:        "tests/review/",
+		ArchitectureJSON: "",
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "must_not_depend_on") {
+		t.Error("reviewer prompt should not include must_not_depend_on when ArchitectureJSON is absent")
+	}
+}

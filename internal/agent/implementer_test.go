@@ -392,3 +392,32 @@ func TestNewPromptData_ConventionsDocFileMissing(t *testing.T) {
 		t.Errorf("ConventionsDocContent = %q, want empty string for missing file", data.ConventionsDocContent)
 	}
 }
+
+func TestNewPromptData_ArchitectureJSONFileExists(t *testing.T) {
+	dir := t.TempDir()
+	jsonPath := filepath.Join(dir, "architecture.json")
+	content := `{"layers":[{"name":"foundation"}]}`
+	if err := os.WriteFile(jsonPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testConfig()
+	cfg.ArchitectureJSON = jsonPath
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.ArchitectureJSON != content {
+		t.Errorf("ArchitectureJSON = %q, want %q", data.ArchitectureJSON, content)
+	}
+}
+
+func TestNewPromptData_ArchitectureJSONFileMissing(t *testing.T) {
+	cfg := testConfig()
+	cfg.ArchitectureJSON = "/nonexistent/path/architecture.json"
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.ArchitectureJSON != "" {
+		t.Errorf("ArchitectureJSON = %q, want empty string for missing file", data.ArchitectureJSON)
+	}
+}
