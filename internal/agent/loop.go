@@ -246,12 +246,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
 		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec)
 		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
+		// Build fStep here so it is available after the quality gate override below.
+		var fStep rundata.StepResult
 		if hook != nil {
-			fStep := ResultToStep(reviewResult.AgentResult)
+			fStep = ResultToStep(reviewResult.AgentResult)
 			fStep.Flags = fRDFlags
-			if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
-				logger.Warn("failed to write functional review result", "error", err)
-			}
 		}
 
 		// Pre-merge guard: if the reviewer approved without writing tests to the
@@ -278,6 +277,23 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			)
 			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", overrideComment); err != nil {
 				logger.Warn("failed to post quality gate override comment", "error", err)
+			}
+		}
+
+		// Write the functional review result. Pre-retry failures are stored in the
+		// retry directory so the timeline can show each failed review before its
+		// corresponding retry. Only the final iteration (approved or retries exhausted)
+		// writes to the top-level functional-review.json.
+		if hook != nil {
+			retriesLeft := maxAttempts - attempt - 1
+			if reviewResult.Verdict == "CHANGES_REQUESTED" && retriesLeft > 0 {
+				if err := hook.WriteRetryFunctionalReview(issue.Number, attempt, fStep); err != nil {
+					logger.Warn("failed to write retry functional review result", "error", err)
+				}
+			} else {
+				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
 			}
 		}
 

@@ -512,6 +512,85 @@ func TestServer_IssueDetail_WithRetries(t *testing.T) {
 	}
 }
 
+// TestServer_IssueDetail_FunctionalReviewBeforeRetry verifies that when a retry
+// directory contains a functional-review.json, the timeline shows the functional
+// review step before the corresponding retry implementer step.
+func TestServer_IssueDetail_FunctionalReviewBeforeRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{15},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "15")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 15, Status: "implemented"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "first attempt", DurationSeconds: 30})
+
+	// Retry 0: functional review (CHANGES_REQUESTED) stored in retry dir, then retry implementer.
+	retryDir := filepath.Join(issueDir, "retries", "0")
+	if err := os.MkdirAll(retryDir, 0o755); err != nil {
+		t.Fatalf("creating retry dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(retryDir, "functional-review.json"),
+		rundata.StepResult{Output: "REVIEW_RESULT=CHANGES_REQUESTED", DurationSeconds: 10})
+	writeJSON(t, filepath.Join(retryDir, "retry.json"),
+		rundata.StepResult{Output: "retry attempt", DurationSeconds: 25})
+
+	// Final functional review at top level (APPROVED).
+	writeJSON(t, filepath.Join(issueDir, "functional-review.json"),
+		rundata.StepResult{Output: "REVIEW_RESULT=APPROVED", DurationSeconds: 8})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/15", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	// Both the pre-retry functional review and the retry step must be present.
+	if !strings.Contains(body, "Functional Review") {
+		t.Error("body missing Functional Review step")
+	}
+	if !strings.Contains(body, "Retry 1") {
+		t.Error("body missing Retry 1 step")
+	}
+
+	// The pre-retry functional review (Changes Requested) must appear BEFORE Retry 1.
+	idxFR := strings.Index(body, "Changes Requested")
+	idxRetry := strings.Index(body, "Retry 1")
+	if idxFR < 0 {
+		t.Error("body missing 'Changes Requested' verdict from pre-retry functional review")
+	}
+	if idxRetry < 0 {
+		t.Error("body missing 'Retry 1' step")
+	}
+	if idxFR >= 0 && idxRetry >= 0 && idxFR > idxRetry {
+		t.Error("Functional Review (Changes Requested) should appear before Retry 1")
+	}
+
+	// The final functional review (Passed) should appear after Retry 1.
+	idxPassed := strings.LastIndex(body, "Passed")
+	if idxPassed < 0 {
+		t.Error("body missing final 'Passed' verdict from approved functional review")
+	}
+	if idxRetry >= 0 && idxPassed >= 0 && idxPassed < idxRetry {
+		t.Error("final Functional Review (Passed) should appear after Retry 1")
+	}
+}
+
 // --- Dialogue tests ---
 
 // writeDialogueFile writes a dialogue.json file under issueDir.

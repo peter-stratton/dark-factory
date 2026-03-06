@@ -239,6 +239,24 @@ func TestRetryReviewWritten(t *testing.T) {
 	}
 }
 
+func TestRetryFunctionalReviewWritten(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{Output: "REVIEW_RESULT=CHANGES_REQUESTED"}
+	if err := w.WriteRetryFunctionalReview(42, 0, step); err != nil {
+		t.Fatalf("WriteRetryFunctionalReview() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "retries", "0", "functional-review.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected file at %s, got: %v", path, err)
+	}
+}
+
 func TestOutcomeWritten(t *testing.T) {
 	base := t.TempDir()
 	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})

@@ -382,6 +382,77 @@ func TestListRunsAcrossMultipleReposSameOwner(t *testing.T) {
 	}
 }
 
+func TestLoadRunRetryFunctionalReview(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:      "owner/repo",
+		StartedAt: time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "10")
+	retryDir := filepath.Join(issueDir, "retries", "0")
+	if err := os.MkdirAll(retryDir, 0o755); err != nil {
+		t.Fatalf("creating retry dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(retryDir, "retry.json"), StepResult{Output: "retry output"}); err != nil {
+		t.Fatalf("writing retry.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(retryDir, "functional-review.json"), StepResult{Output: "REVIEW_RESULT=CHANGES_REQUESTED"}); err != nil {
+		t.Fatalf("writing functional-review.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	retries := detail.Issues[0].Retries
+	if len(retries) != 1 {
+		t.Fatalf("expected 1 retry, got %d", len(retries))
+	}
+	if retries[0].FunctionalReview.Output != "REVIEW_RESULT=CHANGES_REQUESTED" {
+		t.Errorf("FunctionalReview.Output = %q, want %q",
+			retries[0].FunctionalReview.Output, "REVIEW_RESULT=CHANGES_REQUESTED")
+	}
+}
+
+func TestLoadRunRetryFunctionalReviewAbsentIsZero(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:      "owner/repo",
+		StartedAt: time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "10")
+	retryDir := filepath.Join(issueDir, "retries", "0")
+	if err := os.MkdirAll(retryDir, 0o755); err != nil {
+		t.Fatalf("creating retry dir: %v", err)
+	}
+	// Only retry.json written — no functional-review.json.
+	if err := writeJSON(filepath.Join(retryDir, "retry.json"), StepResult{Output: "retry output"}); err != nil {
+		t.Fatalf("writing retry.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	retries := detail.Issues[0].Retries
+	if len(retries) != 1 {
+		t.Fatalf("expected 1 retry, got %d", len(retries))
+	}
+	// FunctionalReview should be zero value when file is absent.
+	if retries[0].FunctionalReview.Output != "" || retries[0].FunctionalReview.Error != "" {
+		t.Errorf("FunctionalReview should be zero value when absent, got %+v", retries[0].FunctionalReview)
+	}
+}
+
 func TestLoadRunRetriesSortedByAttempt(t *testing.T) {
 	base := t.TempDir()
 	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
