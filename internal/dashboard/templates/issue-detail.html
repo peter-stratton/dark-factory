@@ -109,7 +109,7 @@
                     Tool Trace
                   </button>
                   <div x-show="open" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
-                    <pre class="code-block" style="white-space: pre-wrap; word-break: break-word;">{{.Output}}</pre>
+                    <div class="markdown-body">{{renderMarkdown .Output}}</div>
                   </div>
                 </div>
                 {{end}}
@@ -153,24 +153,24 @@
         </div>
         <div class="card__body" style="padding: var(--space-4) var(--space-5);">
           {{if .Punchlist.VerificationSteps}}
-          <div style="margin-bottom: var(--space-4);">
-            <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Verification Steps</div>
+          <details style="margin-bottom: var(--space-4);">
+            <summary class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2); cursor: pointer;">Verification Steps ({{len .Punchlist.VerificationSteps}})</summary>
             <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
               {{range .Punchlist.VerificationSteps}}
               <li style="margin-bottom: var(--space-1);">☐ {{.}}</li>
               {{end}}
             </ul>
-          </div>
+          </details>
           {{end}}
           {{if .Punchlist.ScenarioCases}}
-          <div style="margin-bottom: var(--space-4);">
-            <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Scenario Test Cases</div>
+          <details style="margin-bottom: var(--space-4);">
+            <summary class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2); cursor: pointer;">Scenario Test Cases ({{len .Punchlist.ScenarioCases}})</summary>
             <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
               {{range .Punchlist.ScenarioCases}}
               <li style="margin-bottom: var(--space-1);">☐ {{.}}</li>
               {{end}}
             </ul>
-          </div>
+          </details>
           {{end}}
           {{if .Punchlist.AcceptanceTests}}
           <div style="margin-bottom: var(--space-4);">

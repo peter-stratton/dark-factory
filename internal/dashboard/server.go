@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/yuin/goldmark"
 )
 
 //go:embed templates static
@@ -37,7 +39,16 @@ func New(cfg Config, reader *rundata.Reader) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	tmpl, err := template.New("").ParseFS(content, "templates/*.html")
+	funcMap := template.FuncMap{
+		"renderMarkdown": func(s string) template.HTML {
+			var buf bytes.Buffer
+			if err := goldmark.Convert([]byte(s), &buf); err != nil {
+				return template.HTML(template.HTMLEscapeString(s)) //nolint:gosec
+			}
+			return template.HTML(buf.Bytes()) //nolint:gosec
+		},
+	}
+	tmpl, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing templates: %w", err)
 	}

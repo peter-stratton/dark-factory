@@ -556,6 +556,11 @@ a:hover {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow: hidden;
+  margin-bottom: var(--space-5);
+}
+
+.card:last-child {
+  margin-bottom: 0;
 }
 
 .card__header {
@@ -1076,4 +1081,51 @@ a:hover {
   display: flex;
   justify-content: center;
   padding: var(--space-4);
+}
+
+/* --- Rendered Markdown --- */
+.markdown-body {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  margin: var(--space-3) 0 var(--space-2) 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.markdown-body h2 { font-size: var(--text-base); }
+.markdown-body p {
+  margin: 0 0 var(--space-2) 0;
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 var(--space-2) 0;
+  padding-left: var(--space-5);
+}
+.markdown-body li {
+  margin-bottom: var(--space-1);
+}
+.markdown-body code {
+  background: var(--bg-surface-2);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+.markdown-body pre {
+  background: var(--bg-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  margin: 0 0 var(--space-2) 0;
+}
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+}
+.markdown-body strong {
+  color: var(--text-primary);
 }

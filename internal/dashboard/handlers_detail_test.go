@@ -479,7 +479,7 @@ func TestServer_IssueDetail_WithRetries(t *testing.T) {
 			Flags:           []rundata.Flag{{Code: "NO_TESTS", Message: "missing tests"}},
 		})
 
-	retryDir := filepath.Join(issueDir, "retries", "1")
+	retryDir := filepath.Join(issueDir, "retries", "0")
 	if err := os.MkdirAll(retryDir, 0o755); err != nil {
 		t.Fatalf("creating retry dir: %v", err)
 	}

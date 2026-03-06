@@ -393,10 +393,10 @@ func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
 	}
 	for _, retry := range issue.Retries {
 		if hasStepData(retry.Retry) {
-			steps = append(steps, stepToView(fmt.Sprintf("Retry %d", retry.Attempt), retry.Retry))
+			steps = append(steps, stepToView(fmt.Sprintf("Retry %d", retry.Attempt+1), retry.Retry))
 		}
 		if hasStepData(retry.QualityReview) {
-			steps = append(steps, stepToView(fmt.Sprintf("Quality Review (Retry %d)", retry.Attempt), retry.QualityReview))
+			steps = append(steps, stepToView(fmt.Sprintf("Quality Review (Retry %d)", retry.Attempt+1), retry.QualityReview))
 		}
 	}
 	if hasStepData(issue.FunctionalReview) {
