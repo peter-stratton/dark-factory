@@ -307,7 +307,7 @@ comments. Architecture constraints are validated before execution.
 
 ---
 
-## Phase 9: Harness-Aware Agent Execution
+## Phase 9: Harness-Aware Agent Execution ✅
 
 **Goal**: The harness files scaffolded and validated in Phase 8 are wired
 into actual agent runs. Agents read architecture and conventions docs,
