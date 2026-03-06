@@ -64,6 +64,19 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			logger.Warn("spec generation failed, continuing without spec", "error", err)
 		} else if specResult.TimedOut {
 			logger.Warn("spec generation timed out, continuing without spec")
+		} else {
+			// The spec was pushed to the remote branch inside the container but
+			// the host filesystem never received it. Fetch it now so that
+			// HasScenarioSpec works for all subsequent orchestrator-side checks.
+			if _, fetchErr := GuardRunner("git", "fetch", "origin", branch); fetchErr == nil {
+				if _, checkoutErr := GuardRunner("git", "checkout", "FETCH_HEAD", "--", cfg.ScenarioDir); checkoutErr != nil {
+					logger.Warn("failed to checkout spec from remote branch", "branch", branch, "error", checkoutErr)
+				} else {
+					logger.Info("fetched spec from remote branch", "branch", branch, "scenario_dir", cfg.ScenarioDir)
+				}
+			} else {
+				logger.Warn("failed to fetch remote branch for spec", "branch", branch, "error", fetchErr)
+			}
 		}
 	}
 
