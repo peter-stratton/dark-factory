@@ -164,9 +164,20 @@ func filteredRuns(metas []rundata.RunMeta, repoFilter string) []RunView {
 }
 
 func metaToView(m rundata.RunMeta) RunView {
+	milestone := m.Milestone
+	if milestone == "" && len(m.IssueNumbers) > 0 {
+		labels := make([]string, len(m.IssueNumbers))
+		for i, n := range m.IssueNumbers {
+			labels[i] = fmt.Sprintf("#%d", n)
+		}
+		milestone = "Issue " + strings.Join(labels, ", ")
+		if len(m.IssueNumbers) > 1 {
+			milestone = "Issues " + strings.Join(labels, ", ")
+		}
+	}
 	v := RunView{
 		Repo:        m.Repo,
-		Milestone:   m.Milestone,
+		Milestone:   milestone,
 		IssueCount:  len(m.IssueNumbers),
 		StartedAt:   m.StartedAt,
 		When:        humanizeAge(m.StartedAt),
