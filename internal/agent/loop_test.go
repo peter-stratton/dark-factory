@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -988,7 +990,7 @@ func TestComputeReviewFlags_QualityReviewerExemptFromTestExecution(t *testing.T)
 	}
 
 	// Quality reviewer (checkTestExecution=false): should NOT produce test-execution flags.
-	qFlags := computeReviewFlags(result, cfg, false)
+	qFlags := computeReviewFlags(result, cfg, false, false)
 	for _, f := range qFlags {
 		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
 			t.Errorf("quality reviewer should be exempt from %q, got flag: %+v", f.Code, f)
@@ -996,7 +998,7 @@ func TestComputeReviewFlags_QualityReviewerExemptFromTestExecution(t *testing.T)
 	}
 
 	// Functional reviewer (checkTestExecution=true): SHOULD produce test-execution flags.
-	fFlags := computeReviewFlags(result, cfg, true)
+	fFlags := computeReviewFlags(result, cfg, true, true)
 	var hasTestFlag bool
 	for _, f := range fFlags {
 		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
@@ -1018,7 +1020,7 @@ func TestComputeReviewFlags_CostFloorFlag(t *testing.T) {
 		Quality: config.Quality{MinReviewCostUSD: 0.10},
 	}
 
-	flags := computeReviewFlags(result, cfg, false)
+	flags := computeReviewFlags(result, cfg, false, false)
 
 	var found bool
 	for _, f := range flags {
@@ -1042,7 +1044,7 @@ func TestComputeReviewFlags_DisabledWhenZeroThreshold(t *testing.T) {
 		Quality: config.Quality{MinReviewCostUSD: 0, MinReviewDurationSeconds: 0},
 	}
 
-	flags := computeReviewFlags(result, cfg, false)
+	flags := computeReviewFlags(result, cfg, false, false)
 	for _, f := range flags {
 		if f.Code == "low_cost" || f.Code == "short_duration" {
 			t.Errorf("cost/duration flags should be disabled when threshold is 0, got: %+v", f)
@@ -1115,9 +1117,17 @@ func TestProcessIssue_FlagsIncludedInHookStepResult(t *testing.T) {
 func TestProcessIssue_QualityReviewerExemptInLoop(t *testing.T) {
 	// Set a non-empty TestCommand and ReviewDir so CheckReviewTestExecution would
 	// produce flags — but only for the functional reviewer, not the quality reviewer.
+	// Create a scenario dir with a spec for issue #5 so hasScenarioSpec=true and
+	// test-execution flags are expected from the functional reviewer.
+	scenarioDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(scenarioDir, "spec.md"), []byte("Relates to: Issue #5\n"), 0600); err != nil {
+		t.Fatalf("failed to write scenario spec: %v", err)
+	}
+
 	cfg := loopConfig()
 	cfg.TestCommand = "go test ./..."
 	cfg.ReviewDir = "tests/review/"
+	cfg.ScenarioDir = scenarioDir
 
 	hook := newCaptureHook()
 

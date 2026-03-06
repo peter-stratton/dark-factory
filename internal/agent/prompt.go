@@ -39,6 +39,7 @@ type PromptData struct {
 	StrictnessDirective string
 	ArchitectureDoc     string
 	ConventionsDoc      string
+	HasScenarioSpec     bool
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from
