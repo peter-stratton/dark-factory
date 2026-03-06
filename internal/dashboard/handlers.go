@@ -67,6 +67,7 @@ type IssueDetailData struct {
 	RunURL      string // link back to run detail page
 	Timeline    []TimelineStepView
 	Punchlist   *rundata.PunchlistData
+	Dialogue    []rundata.DialogueEntry
 }
 
 // TimelineStepView is the view model for one step in the issue timeline.
@@ -325,6 +326,7 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		RunURL:      runURL,
 		Timeline:    buildTimeline(*found),
 		Punchlist:   found.Punchlist,
+		Dialogue:    found.Dialogue,
 	}
 
 	var buf bytes.Buffer
