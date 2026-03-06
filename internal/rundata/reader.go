@@ -28,6 +28,7 @@ type IssueDetail struct {
 	FunctionalReview StepResult
 	Retries          []RetryDetail
 	Punchlist        *PunchlistData
+	Dialogue         []DialogueEntry
 }
 
 // RunDetail holds the full data for one run, including per-issue details.
@@ -217,6 +218,7 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		Outcome:          r.readOutcome(filepath.Join(issueDir, "outcome.json")),
 		Retries:          r.loadRetries(filepath.Join(issueDir, "retries")),
 		Punchlist:        r.readPunchlist(filepath.Join(issueDir, "punchlist.json")),
+		Dialogue:         r.readDialogue(filepath.Join(issueDir, "dialogue.json")),
 	}
 }
 
@@ -238,6 +240,26 @@ func (r *Reader) readPunchlist(path string) *PunchlistData {
 		return nil
 	}
 	return &pl
+}
+
+// readDialogue reads dialogue entries from path. Returns nil if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readDialogue(path string) []DialogueEntry {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping dialogue file", "path", path, "error", err)
+		return nil
+	}
+
+	var entries []DialogueEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		r.logger.Warn("corrupt dialogue file, skipping", "path", path, "error", err)
+		return nil
+	}
+	return entries
 }
 
 // readStep reads a StepResult from path. Returns zero value if the file is

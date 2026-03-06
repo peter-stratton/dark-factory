@@ -12,6 +12,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/dialogue"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/rundata"
@@ -600,6 +601,126 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	}
 	if meta.Summary.Total != 2 {
 		t.Errorf("summary.total = %d, want 2", meta.Summary.Total)
+	}
+}
+
+func TestBuildDialogueEntries_SingleRound(t *testing.T) {
+	implNotes := []dialogue.ImplementationNotes{
+		{Raw: "impl body 1"},
+	}
+	reviewNotes := []dialogue.ReviewNotes{
+		{Raw: "review body 1"},
+	}
+
+	entries := buildDialogueEntries(implNotes, reviewNotes)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].Role != "implementer" || entries[0].Round != 1 || entries[0].Body != "impl body 1" {
+		t.Errorf("entries[0]: got {%s, %d, %q}", entries[0].Role, entries[0].Round, entries[0].Body)
+	}
+	if entries[1].Role != "reviewer" || entries[1].Round != 1 || entries[1].Body != "review body 1" {
+		t.Errorf("entries[1]: got {%s, %d, %q}", entries[1].Role, entries[1].Round, entries[1].Body)
+	}
+}
+
+func TestBuildDialogueEntries_MultipleRounds(t *testing.T) {
+	implNotes := []dialogue.ImplementationNotes{
+		{Raw: "impl 1"},
+		{Raw: "impl 2"},
+	}
+	reviewNotes := []dialogue.ReviewNotes{
+		{Raw: "review 1"},
+		{Raw: "review 2"},
+	}
+
+	entries := buildDialogueEntries(implNotes, reviewNotes)
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(entries))
+	}
+	want := []struct {
+		role  string
+		round int
+		body  string
+	}{
+		{"implementer", 1, "impl 1"},
+		{"reviewer", 1, "review 1"},
+		{"implementer", 2, "impl 2"},
+		{"reviewer", 2, "review 2"},
+	}
+	for i, w := range want {
+		if entries[i].Role != w.role || entries[i].Round != w.round || entries[i].Body != w.body {
+			t.Errorf("entries[%d]: got {%s, %d, %q}, want {%s, %d, %q}",
+				i, entries[i].Role, entries[i].Round, entries[i].Body,
+				w.role, w.round, w.body)
+		}
+	}
+}
+
+func TestBuildDialogueEntries_Empty(t *testing.T) {
+	entries := buildDialogueEntries(nil, nil)
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for empty input, got %d", len(entries))
+	}
+}
+
+func TestProcessIssues_WritesDialogue(t *testing.T) {
+	implComment := "## Implementation Notes\n\n### Approach\nDid the thing.\n\n### Key Decisions\nUsed X.\n\n### Known Limitations\nNone.\n\n### Architecture\nDomain layer.\n"
+	reviewComment := "## Review Notes\n\n### Approved\nYes.\n\n### Changes Requested\n\n### Architecture Compliance\nGood.\n"
+
+	allIssues := []github.Issue{
+		{Number: 5, Title: "test issue"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: 5, Status: "implemented", PRNumber: 77}
+		})
+
+	// Mock fetchPRCommentBodiesFn.
+	origFetch := fetchPRCommentBodiesFn
+	t.Cleanup(func() { fetchPRCommentBodiesFn = origFetch })
+	fetchPRCommentBodiesFn = func(repo string, prNum int) ([]string, error) {
+		return []string{implComment, reviewComment}, nil
+	}
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	writer, err := rundata.New("owner/repo", "test-milestone", []int{5})
+	if err != nil {
+		t.Fatalf("rundata.New: %v", err)
+	}
+
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone"); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	// Read dialogue.json from the issue directory.
+	dialoguePath := filepath.Join(writer.Dir(), "issues", "5", "dialogue.json")
+	data, err := os.ReadFile(dialoguePath)
+	if err != nil {
+		t.Fatalf("reading dialogue.json: %v", err)
+	}
+
+	var entries []rundata.DialogueEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		t.Fatalf("parsing dialogue.json: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 dialogue entries, got %d", len(entries))
+	}
+	if entries[0].Role != "implementer" || entries[0].Round != 1 {
+		t.Errorf("entries[0]: got role=%q round=%d, want implementer/1", entries[0].Role, entries[0].Round)
+	}
+	if entries[1].Role != "reviewer" || entries[1].Round != 1 {
+		t.Errorf("entries[1]: got role=%q round=%d, want reviewer/1", entries[1].Role, entries[1].Round)
 	}
 }
 

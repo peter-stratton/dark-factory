@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -412,6 +413,126 @@ func TestLoadRunRetriesSortedByAttempt(t *testing.T) {
 	for i, want := range []int{1, 2, 3} {
 		if retries[i].Attempt != want {
 			t.Errorf("retries[%d].Attempt: got %d, want %d", i, retries[i].Attempt, want)
+		}
+	}
+}
+
+func TestReadDialogue(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{42},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+
+	entries := []DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "impl body"},
+		{Role: "reviewer", Round: 1, Body: "review body"},
+	}
+	if err := writeJSON(filepath.Join(issueDir, "dialogue.json"), entries); err != nil {
+		t.Fatalf("writing dialogue.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+
+	d := detail.Issues[0].Dialogue
+	if len(d) != 2 {
+		t.Fatalf("Dialogue: got %d entries, want 2", len(d))
+	}
+	if d[0].Role != "implementer" || d[0].Round != 1 || d[0].Body != "impl body" {
+		t.Errorf("Dialogue[0]: got {%s, %d, %q}, want {implementer, 1, impl body}", d[0].Role, d[0].Round, d[0].Body)
+	}
+	if d[1].Role != "reviewer" || d[1].Round != 1 || d[1].Body != "review body" {
+		t.Errorf("Dialogue[1]: got {%s, %d, %q}, want {reviewer, 1, review body}", d[1].Role, d[1].Round, d[1].Body)
+	}
+}
+
+func TestReadDialogueMissingFile(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:      "owner/repo",
+		StartedAt: time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	// dialogue.json intentionally not written
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	if detail.Issues[0].Dialogue != nil {
+		t.Errorf("Dialogue: expected nil when file absent, got %v", detail.Issues[0].Dialogue)
+	}
+}
+
+func TestReadDialogueRoundTrip(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("HOME", base)
+	w, err := New("owner/repo", "Phase 7", []int{5})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	want := []DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "first impl"},
+		{Role: "reviewer", Round: 1, Body: "first review"},
+		{Role: "implementer", Round: 2, Body: "second impl"},
+		{Role: "reviewer", Round: 2, Body: "second review"},
+	}
+	if err := w.WriteDialogue(5, want); err != nil {
+		t.Fatalf("WriteDialogue() error: %v", err)
+	}
+
+	r := &Reader{logger: slog.Default(), baseDir: filepath.Join(base, ".godark", "runs")}
+	runs, err := r.ListRuns()
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("ListRuns() error: %v, len: %d", err, len(runs))
+	}
+
+	parts := strings.SplitN(runs[0].Repo, "/", 2)
+	owner, repo := parts[0], parts[1]
+	timestamp := filepath.Base(w.Dir())
+
+	detail, err := r.LoadRun(owner, repo, timestamp)
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+
+	got := detail.Issues[0].Dialogue
+	if len(got) != len(want) {
+		t.Fatalf("Dialogue: got %d entries, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Role != w.Role || got[i].Round != w.Round || got[i].Body != w.Body {
+			t.Errorf("Dialogue[%d]: got {%s, %d, %q}, want {%s, %d, %q}",
+				i, got[i].Role, got[i].Round, got[i].Body,
+				w.Role, w.Round, w.Body)
 		}
 	}
 }
