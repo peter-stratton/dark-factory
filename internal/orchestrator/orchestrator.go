@@ -316,7 +316,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 						"issue_number", issue.Number, "error", fetchErr)
 				} else {
 					implNotes, reviewNotes := dialogue.ParseComments(bodies)
-					entries := buildDialogueEntries(implNotes, reviewNotes)
+					entries := BuildDialogueEntries(implNotes, reviewNotes)
 					if len(entries) > 0 {
 						if err := writer.WriteDialogue(issue.Number, entries); err != nil {
 							logger.Warn("failed to write dialogue",
@@ -464,9 +464,9 @@ var processIssueFn = agent.ProcessIssue
 // Replaceable for testing.
 var fetchPRCommentBodiesFn = github.FetchPRCommentBodies
 
-// buildDialogueEntries interleaves implementation and review notes by round,
+// BuildDialogueEntries interleaves implementation and review notes by round,
 // returning a slice of DialogueEntry values suitable for persisting.
-func buildDialogueEntries(implNotes []dialogue.ImplementationNotes, reviewNotes []dialogue.ReviewNotes) []rundata.DialogueEntry {
+func BuildDialogueEntries(implNotes []dialogue.ImplementationNotes, reviewNotes []dialogue.ReviewNotes) []rundata.DialogueEntry {
 	maxRounds := len(implNotes)
 	if len(reviewNotes) > maxRounds {
 		maxRounds = len(reviewNotes)

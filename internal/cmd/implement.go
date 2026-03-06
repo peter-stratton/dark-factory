@@ -11,6 +11,7 @@ import (
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
+	"github.com/phs/dark-factory/internal/dialogue"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
@@ -144,6 +145,24 @@ loop directly, without milestone or dependency resolution.`,
 
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
 
+		// Write dialogue if we have a PR and a writer.
+		if writer != nil && outcome.PRNumber > 0 {
+			bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+			if fetchErr != nil {
+				logger.Warn("failed to fetch PR comment bodies for dialogue",
+					"issue_number", issueNumber, "error", fetchErr)
+			} else {
+				implNotes, reviewNotes := dialogue.ParseComments(bodies)
+				dialogueEntries := orchestrator.BuildDialogueEntries(implNotes, reviewNotes)
+				if len(dialogueEntries) > 0 {
+					if err := writer.WriteDialogue(issueNumber, dialogueEntries); err != nil {
+						logger.Warn("failed to write dialogue",
+							"issue_number", issueNumber, "error", err)
+					}
+				}
+			}
+		}
+
 		// Finalize run data regardless of outcome.
 		if writer != nil {
 			implemented := 0
@@ -197,6 +216,21 @@ loop directly, without milestone or dependency resolution.`,
 				ChangedFiles: files,
 			}}
 			agent.EnrichPunchlistEntries(ctx, entries, prompts, cfg, authEnv, logger)
+
+			if writer != nil {
+				e := entries[0]
+				plData := rundata.PunchlistData{
+					VerificationSteps: e.ExtractVerificationSteps(),
+					ScenarioCases:     e.ExtractScenarioCases(),
+					AcceptanceTests:   e.AcceptanceTests,
+					ChangedFiles:      e.ChangedFiles,
+				}
+				if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
+					logger.Warn("failed to write punchlist data",
+						"issue_number", e.IssueNumber, "error", err)
+				}
+			}
+
 			text := punchlist.Generate(entries)
 			fmt.Println()
 			if err := punchlist.Write(text, punchlistPath); err != nil {
@@ -207,6 +241,10 @@ loop directly, without milestone or dependency resolution.`,
 		return nil
 	},
 }
+
+// fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
+// Replaceable for testing.
+var fetchPRCommentBodiesFn = github.FetchPRCommentBodies
 
 func init() {
 	f := implementCmd.Flags()
