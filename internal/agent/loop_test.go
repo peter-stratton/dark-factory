@@ -1573,6 +1573,47 @@ func TestProcessIssue_FunctionalRetrySavedToRetryDir(t *testing.T) {
 	}
 }
 
+// TestProcessIssue_FunctionalRetriesExhaustedWritesTopLevel verifies that when
+// the functional reviewer returns CHANGES_REQUESTED on the final attempt (retries
+// exhausted), WriteReviewResult("functional") is still called — not
+// WriteRetryFunctionalReview — because no subsequent retry follows.
+func TestProcessIssue_FunctionalRetriesExhaustedWritesTopLevel(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 1 // 2 attempts: attempt=0 (CHANGES_REQUESTED) → attempt=1 (CHANGES_REQUESTED, exhausted)
+
+	hook := &retryFunctionalReviewHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
+
+	if outcome.Status != "needs-human-review" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
+	}
+	// WriteRetryFunctionalReview called once for attempt=0 (a retry follows).
+	if len(hook.retryFunctionalAttempts) != 1 {
+		t.Fatalf("WriteRetryFunctionalReview called %d times, want 1", len(hook.retryFunctionalAttempts))
+	}
+	if hook.retryFunctionalAttempts[0] != 0 {
+		t.Errorf("WriteRetryFunctionalReview attempt = %d, want 0", hook.retryFunctionalAttempts[0])
+	}
+	// WriteReviewResult("functional") must be called for the last exhausted attempt.
+	foundFunctional := false
+	for _, k := range hook.reviewKinds {
+		if k == "functional" {
+			foundFunctional = true
+		}
+	}
+	if !foundFunctional {
+		t.Errorf("WriteReviewResult(\"functional\") not called for exhausted final attempt; calls: %v", hook.reviewKinds)
+	}
+}
+
 // TestProcessIssue_FunctionalApprovalWritesTopLevel verifies that when the
 // functional reviewer approves on the first attempt (no retry), WriteReviewResult
 // is called (not WriteRetryFunctionalReview).
