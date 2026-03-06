@@ -240,6 +240,84 @@ func TestLoadRunNoIssuesDir(t *testing.T) {
 	}
 }
 
+func TestLoadRunPlaceholderIssuesFromMeta(t *testing.T) {
+	base := t.TempDir()
+	makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 7",
+		IssueNumbers: []int{10, 20, 30},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	// No issues/ directory exists — simulates a run in progress before any
+	// hook data has been written.
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 3 {
+		t.Fatalf("expected 3 placeholder issues, got %d", len(detail.Issues))
+	}
+
+	nums := map[int]bool{}
+	for _, issue := range detail.Issues {
+		nums[issue.IssueNumber] = true
+		if issue.Outcome.Status != "" {
+			t.Errorf("issue #%d: expected zero-value status, got %q", issue.IssueNumber, issue.Outcome.Status)
+		}
+	}
+	for _, want := range []int{10, 20, 30} {
+		if !nums[want] {
+			t.Errorf("missing placeholder issue #%d", want)
+		}
+	}
+}
+
+func TestLoadRunPlaceholderSkipsExistingIssueDirs(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{10, 20},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	// Issue 10 has a directory with an outcome; issue 20 does not.
+	issueDir := filepath.Join(runDir, "issues", "10")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), Outcome{
+		IssueNumber: 10, Status: "implemented", PRNumber: 55,
+	}); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 2 {
+		t.Fatalf("expected 2 issues, got %d", len(detail.Issues))
+	}
+
+	issueMap := map[int]IssueDetail{}
+	for _, issue := range detail.Issues {
+		issueMap[issue.IssueNumber] = issue
+	}
+
+	if issueMap[10].Outcome.Status != "implemented" {
+		t.Errorf("issue #10: expected status %q, got %q", "implemented", issueMap[10].Outcome.Status)
+	}
+	if issueMap[20].Outcome.Status != "" {
+		t.Errorf("issue #20: expected zero-value status, got %q", issueMap[20].Outcome.Status)
+	}
+}
+
 func TestLoadRunReturnsErrorForMissingRunJSON(t *testing.T) {
 	base := t.TempDir()
 	r := newReaderWithBase(base)
