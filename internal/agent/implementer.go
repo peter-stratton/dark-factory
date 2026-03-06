@@ -94,8 +94,8 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ScenarioDir:     cfg.ScenarioDir,
 		ReviewDir:       cfg.ReviewDir,
 		HasScenarioSpec: HasScenarioSpec(cfg.ScenarioDir, issue.Number),
-		ArchitectureDoc: readFileOrEmpty(cfg.ArchitectureDoc),
-		ConventionsDoc:  readFileOrEmpty(cfg.ConventionsDoc),
+		ArchitectureDocContent: readFileOrEmpty(cfg.ArchitectureDoc),
+		ConventionsDocContent:  readFileOrEmpty(cfg.ConventionsDoc),
 	}
 }
 

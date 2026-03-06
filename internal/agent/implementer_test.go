@@ -338,8 +338,8 @@ func TestNewPromptData_ArchitectureDocFileExists(t *testing.T) {
 
 	data := newPromptData(testIssue(), cfg, "test-slug")
 
-	if data.ArchitectureDoc != content {
-		t.Errorf("ArchitectureDoc = %q, want %q", data.ArchitectureDoc, content)
+	if data.ArchitectureDocContent != content {
+		t.Errorf("ArchitectureDocContent = %q, want %q", data.ArchitectureDocContent, content)
 	}
 }
 
@@ -349,8 +349,8 @@ func TestNewPromptData_ArchitectureDocFileMissing(t *testing.T) {
 
 	data := newPromptData(testIssue(), cfg, "test-slug")
 
-	if data.ArchitectureDoc != "" {
-		t.Errorf("ArchitectureDoc = %q, want empty string for missing file", data.ArchitectureDoc)
+	if data.ArchitectureDocContent != "" {
+		t.Errorf("ArchitectureDocContent = %q, want empty string for missing file", data.ArchitectureDocContent)
 	}
 }
 
@@ -374,11 +374,11 @@ func TestNewPromptData_BothFilesExist(t *testing.T) {
 
 	data := newPromptData(testIssue(), cfg, "test-slug")
 
-	if data.ArchitectureDoc != archContent {
-		t.Errorf("ArchitectureDoc = %q, want %q", data.ArchitectureDoc, archContent)
+	if data.ArchitectureDocContent != archContent {
+		t.Errorf("ArchitectureDocContent = %q, want %q", data.ArchitectureDocContent, archContent)
 	}
-	if data.ConventionsDoc != convContent {
-		t.Errorf("ConventionsDoc = %q, want %q", data.ConventionsDoc, convContent)
+	if data.ConventionsDocContent != convContent {
+		t.Errorf("ConventionsDocContent = %q, want %q", data.ConventionsDocContent, convContent)
 	}
 }
 
@@ -388,7 +388,7 @@ func TestNewPromptData_ConventionsDocFileMissing(t *testing.T) {
 
 	data := newPromptData(testIssue(), cfg, "test-slug")
 
-	if data.ConventionsDoc != "" {
-		t.Errorf("ConventionsDoc = %q, want empty string for missing file", data.ConventionsDoc)
+	if data.ConventionsDocContent != "" {
+		t.Errorf("ConventionsDocContent = %q, want empty string for missing file", data.ConventionsDocContent)
 	}
 }
