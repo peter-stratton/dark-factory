@@ -255,30 +255,15 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		}
 
 		// Pre-merge guard: if the reviewer approved without writing tests to the
-		// review dir, reject the approval and force a retry. This turns the
-		// no_review_tests_written quality flag into a hard gate.
+		// review dir, re-run the reviewer. The reviewer is the agent responsible
+		// for writing tests to ReviewDir — retrying the implementer would be
+		// pointless since the implementer is forbidden from touching ReviewDir.
 		if reviewResult.Verdict == "APPROVED" && hasQualityFlag(fFlags, "no_review_tests_written") {
-			logger.Warn("functional review approved without writing tests — rejecting approval",
+			logger.Warn("functional review approved without writing tests — re-running reviewer",
 				"issue_number", issue.Number,
 				"attempt", attempt+1,
 			)
-			reviewResult.Verdict = "CHANGES_REQUESTED"
-
-			// Post a comment so the retry agent has actionable feedback.
-			overrideComment := fmt.Sprintf(
-				"## Review Notes (Orchestrator Override)\n\n"+
-					"### Changes Requested\n\n"+
-					"The functional reviewer approved this PR, but the orchestrator's quality gate "+
-					"detected that no integration tests were written to `%s`.\n\n"+
-					"**You must** write at least one integration test file to `%s` that validates "+
-					"the scenario spec, run the tests, then delete the `%s` directory before finishing.\n\n"+
-					"This is a hard requirement — the approval will be rejected again if no Write "+
-					"to `%s` is detected in the tool trace.",
-				cfg.ReviewDir, cfg.ReviewDir, cfg.ReviewDir, cfg.ReviewDir,
-			)
-			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", overrideComment); err != nil {
-				logger.Warn("failed to post quality gate override comment", "error", err)
-			}
+			continue
 		}
 
 		switch reviewResult.Verdict {

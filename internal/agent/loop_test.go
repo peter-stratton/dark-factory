@@ -1188,10 +1188,10 @@ func TestHasQualityFlag_Empty(t *testing.T) {
 	}
 }
 
-// TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests verifies that when the
+// TestProcessIssue_PreMergeGuardRerunsReviewer verifies that when the
 // functional reviewer approves a PR but the no_review_tests_written flag is detected,
-// the approval is rejected and retried rather than merged.
-func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
+// the reviewer is re-run (not the implementer) and no merge happens until tests are written.
+func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 	// Create a scenario dir with a spec for issue #5 so hasScenarioSpec=true.
 	scenarioDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(scenarioDir, "spec.md"), []byte("Relates to: Issue #5\n"), 0600); err != nil {
@@ -1215,10 +1215,7 @@ func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
 	callIdx := 0
 	var mergeCallCount int
 
-	// reviewerWithoutTests returns a JSON runner result that includes REVIEW_RESULT=APPROVED
-	// but no Write to tests/review/ in the tool trace, so the guard should fire.
 	reviewerWithoutTests := func() []byte {
-		// Tool trace has no Write to tests/review/ so no_review_tests_written fires.
 		final := runnerFinalResult{
 			Result:    "REVIEW_RESULT=APPROVED",
 			ToolTrace: []string{"Read tests/existing_test.go", "go test ./..."},
@@ -1227,7 +1224,6 @@ func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
 		return b
 	}
 
-	// reviewerWithTests returns a result with a Write to tests/review/ in the trace.
 	reviewerWithTests := func() []byte {
 		final := runnerFinalResult{
 			Result:    "REVIEW_RESULT=APPROVED",
@@ -1244,11 +1240,9 @@ func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer — approve
 			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
-		case 3: // functional reviewer — approves without writing tests (guard should reject)
+		case 3: // functional reviewer — approves without writing tests (guard re-runs reviewer)
 			return reviewerWithoutTests(), []byte(""), 0, nil
-		case 4: // retry implementer
-			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
-		default: // second functional reviewer — approves with tests written
+		default: // second functional reviewer — approves with tests written (no implementer retry in between)
 			return reviewerWithTests(), []byte(""), 0, nil
 		}
 	}
@@ -1264,84 +1258,16 @@ func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
 
-	// Should eventually succeed after the guard forced a retry.
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
 	}
-	// The guard should have triggered at least one retry (callIdx > 3).
-	if callIdx <= 3 {
-		t.Errorf("expected more than 3 agent calls (guard should have triggered retry), got %d", callIdx)
+	// 4 agent calls: implementer, quality reviewer, reviewer (no tests), reviewer (with tests).
+	// No implementer retry — the guard re-runs the reviewer directly.
+	if callIdx != 4 {
+		t.Errorf("expected exactly 4 agent calls (no implementer retry), got %d", callIdx)
 	}
 	if mergeCallCount != 1 {
 		t.Errorf("gh pr merge should be called once at the end, got %d calls", mergeCallCount)
-	}
-}
-
-// TestProcessIssue_PreMergeGuardPostsComment verifies that when the quality gate
-// overrides a functional reviewer approval, a PR comment is posted so the retry
-// agent has actionable feedback.
-func TestProcessIssue_PreMergeGuardPostsComment(t *testing.T) {
-	scenarioDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(scenarioDir, "spec.md"), []byte("Relates to: Issue #5\n"), 0600); err != nil {
-		t.Fatalf("failed to write scenario spec: %v", err)
-	}
-
-	cfg := loopConfig()
-	cfg.MaxRetries = 1
-	cfg.TestCommand = "go test ./..."
-	cfg.ReviewDir = "tests/review/"
-	cfg.ScenarioDir = scenarioDir
-
-	origRunner := Runner
-	origGuard := GuardRunner
-	t.Cleanup(func() {
-		Runner = origRunner
-		GuardRunner = origGuard
-	})
-
-	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		callIdx++
-		switch callIdx {
-		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
-		case 2: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
-		case 3: // functional reviewer — approves without tests
-			final := runnerFinalResult{
-				Result:    "REVIEW_RESULT=APPROVED",
-				ToolTrace: []string{"Read tests/existing_test.go", "go test ./..."},
-			}
-			b, _ := json.Marshal(final)
-			return b, []byte(""), 0, nil
-		case 4: // retry
-			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
-		default: // second functional review — with tests
-			final := runnerFinalResult{
-				Result:    "REVIEW_RESULT=APPROVED",
-				ToolTrace: []string{"Write tests/review/my_test.go", "go test ./..."},
-			}
-			b, _ := json.Marshal(final)
-			return b, []byte(""), 0, nil
-		}
-	}
-
-	var overrideCommentPosted bool
-	GuardRunner = func(name string, args ...string) ([]byte, error) {
-		joined := strings.Join(args, " ")
-		if name == "gh" && strings.Contains(joined, "pr comment") && strings.Contains(joined, "Orchestrator Override") {
-			overrideCommentPosted = true
-		}
-		return loopGuardFn(name, args...)
-	}
-
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
-
-	if outcome.Status != "implemented" {
-		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
-	}
-	if !overrideCommentPosted {
-		t.Error("expected quality gate override to post a PR comment, but none was detected")
 	}
 }
 
