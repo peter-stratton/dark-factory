@@ -74,9 +74,20 @@ func RemoveIssueLabel(repo string, issueNum int, label string) error {
 
 // FindIssuesWithLabel returns the numbers of open issues that have the given label.
 func FindIssuesWithLabel(repo, label string) ([]int, error) {
+	return findIssuesWithLabel(repo, label, "open")
+}
+
+// FindAllIssuesWithLabel returns the numbers of all issues (open and closed)
+// that have the given label. Used by unlock to clean up stale labels on
+// merged/closed issues.
+func FindAllIssuesWithLabel(repo, label string) ([]int, error) {
+	return findIssuesWithLabel(repo, label, "all")
+}
+
+func findIssuesWithLabel(repo, label, state string) ([]int, error) {
 	out, err := CommandRunner("gh", "issue", "list",
 		"--repo", repo,
-		"--state", "open",
+		"--state", state,
 		"--label", label,
 		"--json", "number",
 		"--limit", "200",

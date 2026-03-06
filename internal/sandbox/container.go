@@ -95,10 +95,16 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 
 	// 3. docker wait (with context timeout)
 	result := &RunResult{}
+	waitStart := time.Now()
 	out, err = commandRunnerWithContext(ctx, "docker", "wait", name)
-	if ctx.Err() != nil {
-		// Timed out or cancelled — stop the container.
-		logger.Warn("container timed out, stopping", "name", name)
+	wallElapsed := time.Since(waitStart)
+	if ctx.Err() != nil || (opts.Timeout > 0 && wallElapsed > opts.Timeout+30*time.Second) {
+		// Timed out or cancelled — stop the container. The wall-clock check
+		// is a safety net for cases where the context deadline is unreliable
+		// (e.g. macOS sleep suspends the monotonic clock used by timers but
+		// wall-clock time advances, so docker wait can return successfully
+		// after the intended timeout has long passed).
+		logger.Warn("container timed out, stopping", "name", name, "wall_elapsed", wallElapsed)
 		result.TimedOut = true
 		_, _ = CommandRunner("docker", "stop", name)
 	} else if err != nil {

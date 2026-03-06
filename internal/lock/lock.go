@@ -133,7 +133,7 @@ func (l *Locker) Release(issueNumbers []int) error {
 // Used by `godark unlock` for manual cleanup of stale locks.
 // Returns the number of issues found with the lock label.
 func (l *Locker) ReleaseAll() (int, error) {
-	issues, err := github.FindIssuesWithLabel(l.repo, l.label)
+	issues, err := github.FindAllIssuesWithLabel(l.repo, l.label)
 	if err != nil {
 		return 0, fmt.Errorf("finding locked issues: %w", err)
 	}
