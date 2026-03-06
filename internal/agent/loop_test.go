@@ -1277,10 +1277,10 @@ func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
 	}
 }
 
-// TestProcessIssue_FetchesSpecAfterSuccessfulGeneration verifies that after
-// GenerateSpec succeeds, loop.go issues git fetch and git checkout to pull the
-// spec file from the remote branch to the host ScenarioDir.
-func TestProcessIssue_FetchesSpecAfterSuccessfulGeneration(t *testing.T) {
+// TestProcessIssue_SpecGeneratedNoFetchNeeded verifies that after
+// GenerateSpec succeeds, no git fetch or checkout is performed — the
+// specGenerated flag is used instead of pulling files to the host.
+func TestProcessIssue_SpecGeneratedNoFetchNeeded(t *testing.T) {
 	origRunner := Runner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
@@ -1318,40 +1318,35 @@ func TestProcessIssue_FetchesSpecAfterSuccessfulGeneration(t *testing.T) {
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 3: // quality reviewer
 			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
-		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer — include Write to review dir
+			return []byte(wrapRunnerJSONWithTrace("REVIEW_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil
 		}
 	}
 
-	cfg := loopConfig()
 	prompts := testPrompts(t)
 	prompts.SpecGenerator = "Generate spec for #{{.IssueNumber}}"
 
-	ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
 
-	// Verify git fetch origin <branch> was called.
-	expectedBranch := BranchName(loopIssue().Number, Slugify(loopIssue().Title))
-	fetchFound := false
-	checkoutFound := false
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+
+	// Verify no git fetch or checkout was called — specGenerated flag handles it.
 	for _, call := range guardCalls {
-		if len(call) == 4 && call[0] == "git" && call[1] == "fetch" && call[2] == "origin" && call[3] == expectedBranch {
-			fetchFound = true
+		if len(call) >= 2 && call[0] == "git" && call[1] == "fetch" {
+			t.Errorf("unexpected git fetch call: %v", call)
 		}
-		if len(call) == 5 && call[0] == "git" && call[1] == "checkout" && call[2] == "FETCH_HEAD" && call[3] == "--" && call[4] == cfg.ScenarioDir {
-			checkoutFound = true
+		if len(call) >= 2 && call[0] == "git" && call[1] == "checkout" {
+			t.Errorf("unexpected git checkout call: %v", call)
 		}
-	}
-	if !fetchFound {
-		t.Errorf("expected git fetch origin %s to be called, guard calls: %v", expectedBranch, guardCalls)
-	}
-	if !checkoutFound {
-		t.Errorf("expected git checkout FETCH_HEAD -- %s to be called, guard calls: %v", cfg.ScenarioDir, guardCalls)
 	}
 }
 
-// TestProcessIssue_ContinuesWhenSpecFetchFails verifies that a git fetch
-// failure after spec generation does not abort the issue processing.
-func TestProcessIssue_ContinuesWhenSpecFetchFails(t *testing.T) {
+// TestProcessIssue_SpecGeneratedSetsHasSpec verifies that when the spec
+// generator succeeds, hasSpec is true for quality checks even though
+// the spec file only exists on the remote branch (not the host).
+func TestProcessIssue_SpecGeneratedSetsHasSpec(t *testing.T) {
 	origRunner := Runner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
@@ -1363,9 +1358,6 @@ func TestProcessIssue_ContinuesWhenSpecFetchFails(t *testing.T) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
 			return []byte("abc123\n"), nil
-		}
-		if name == "git" && len(args) > 1 && args[0] == "fetch" {
-			return nil, fmt.Errorf("fetch failed: remote not found")
 		}
 		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
 			return []byte(`{"number": 10}`), nil
@@ -1389,8 +1381,8 @@ func TestProcessIssue_ContinuesWhenSpecFetchFails(t *testing.T) {
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 3: // quality reviewer
 			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
-		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer — must include Write to review dir
+			return []byte(wrapRunnerJSONWithTrace("REVIEW_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil
 		}
 	}
 
@@ -1399,7 +1391,7 @@ func TestProcessIssue_ContinuesWhenSpecFetchFails(t *testing.T) {
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
 
-	// Fetch failure must not abort the run; processing should continue normally.
+	// Spec generator success sets hasSpec=true; functional reviewer wrote tests, so it passes.
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
 	}

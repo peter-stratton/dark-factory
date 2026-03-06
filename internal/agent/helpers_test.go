@@ -19,6 +19,14 @@ func wrapRunnerJSON(text string) string {
 	return string(b)
 }
 
+// wrapRunnerJSONWithTrace wraps agent text output with a tool trace in the
+// ndjson final result line that parseRunnerOutput expects.
+func wrapRunnerJSONWithTrace(text string, trace []string) string {
+	final := runnerFinalResult{Result: text, ToolTrace: trace}
+	b, _ := json.Marshal(final)
+	return string(b)
+}
+
 // testLogger returns a logger that only emits errors, suitable for tests.
 func testLogger(t *testing.T) *slog.Logger {
 	t.Helper()

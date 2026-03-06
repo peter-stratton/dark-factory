@@ -57,6 +57,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	baseSHA := trimOutput(baseSHAOut)
 
 	// Step 0: Generate scenario spec if missing.
+	specGenerated := false
 	if prompts.SpecGenerator != "" && !HasScenarioSpec(cfg.ScenarioDir, issue.Number) {
 		logger.Info("no scenario spec found, generating", "issue_number", issue.Number)
 		specResult, err := GenerateSpec(ctx, issue, cfg, prompts, authEnv, logger)
@@ -65,24 +66,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		} else if specResult.TimedOut {
 			logger.Warn("spec generation timed out, continuing without spec")
 		} else {
-			// The spec was pushed to the remote branch inside the container but
-			// the host filesystem never received it. Fetch it now so that
-			// HasScenarioSpec works for all subsequent orchestrator-side checks.
-			if _, fetchErr := GuardRunner("git", "fetch", "origin", branch); fetchErr == nil {
-				if _, checkoutErr := GuardRunner("git", "checkout", "FETCH_HEAD", "--", cfg.ScenarioDir); checkoutErr != nil {
-					logger.Warn("failed to checkout spec from remote branch", "branch", branch, "error", checkoutErr)
-				} else {
-					// Unstage the checked-out files so the working tree stays
-					// clean for subsequent git operations (pull --rebase after merge).
-					// The files remain on disk for HasScenarioSpec() to find.
-					if _, resetErr := GuardRunner("git", "reset", "HEAD", "--", cfg.ScenarioDir); resetErr != nil {
-						logger.Warn("failed to unstage spec files", "error", resetErr)
-					}
-					logger.Info("fetched spec from remote branch", "branch", branch, "scenario_dir", cfg.ScenarioDir)
-				}
-			} else {
-				logger.Warn("failed to fetch remote branch for spec", "branch", branch, "error", fetchErr)
-			}
+			// The spec was committed to the remote branch inside the container.
+			// The file isn't on the host, but the reviewer container will see it
+			// when it checks out the PR branch. After merge and pull, the spec
+			// lands on main permanently.
+			specGenerated = true
+			logger.Info("spec generated on remote branch", "branch", branch)
 		}
 	}
 
@@ -132,11 +121,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return outcome
 	}
 
-	_ = WarnMissingScenario(cfg.Repo, prNum, issue.Number, cfg.ScenarioDir, logger)
+	if !specGenerated {
+		_ = WarnMissingScenario(cfg.Repo, prNum, issue.Number, cfg.ScenarioDir, logger)
+	}
 
 	// Determine whether a scenario spec exists for this issue. Used by the
 	// functional reviewer's quality check: tests are only expected when a spec exists.
-	hasSpec := HasScenarioSpec(cfg.ScenarioDir, issue.Number)
+	hasSpec := specGenerated || HasScenarioSpec(cfg.ScenarioDir, issue.Number)
 
 	// Step 4: Quality review gate (if prompt is configured).
 	if prompts.QualityReviewer != "" {
