@@ -230,6 +230,14 @@ func TestCheckReviewTestExecution(t *testing.T) {
 			wantCodes:       []string{"no_review_tests_written"},
 		},
 		{
+			name:            "bash write to review dir counts",
+			trace:           []string{"Bash: cat > tests/review/issue42_test.go << 'EOF'", "Bash: go test ./tests/review/..."},
+			reviewDir:       reviewDir,
+			testCommand:     testCmd,
+			hasScenarioSpec: true,
+			wantCodes:       nil,
+		},
+		{
 			name:            "no scenario spec skips all checks",
 			trace:           []string{},
 			reviewDir:       reviewDir,

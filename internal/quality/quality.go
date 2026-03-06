@@ -95,8 +95,12 @@ func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string,
 	dir := strings.TrimRight(reviewDir, "/")
 
 	for _, entry := range toolTrace {
-		if !testsWritten && strings.Contains(entry, "Write") && strings.Contains(entry, dir+"/") {
-			testsWritten = true
+		if !testsWritten && strings.Contains(entry, dir+"/") {
+			if strings.Contains(entry, "Write") {
+				testsWritten = true
+			} else if strings.Contains(entry, "Bash") && isBashWrite(entry, dir) {
+				testsWritten = true
+			}
 		}
 		if !testsRun && strings.Contains(entry, testCommand) {
 			testsRun = true
@@ -117,4 +121,26 @@ func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string,
 	}
 
 	return flags
+}
+
+// isBashWrite returns true if entry looks like a Bash command that creates a
+// file inside dir (e.g. cat >, tee, heredoc redirects). This catches cases
+// where the reviewer uses Bash instead of the Write tool to create test files.
+func isBashWrite(entry, dir string) bool {
+	// Look for common file-creation patterns followed by the review dir path.
+	// The entry format is "Bash: <command>".
+	for _, pattern := range []string{"cat >", "cat>>", "tee ", "echo >", "echo>>", "printf >", "printf>>", "> " + dir, ">> " + dir} {
+		if strings.Contains(entry, pattern) {
+			return true
+		}
+	}
+	// Heredoc with cat writing to the dir.
+	if strings.Contains(entry, "cat") && strings.Contains(entry, "<<") {
+		return true
+	}
+	// mkdir for the review dir suggests the agent is about to write files.
+	if strings.Contains(entry, "mkdir") && strings.Contains(entry, dir) {
+		return true
+	}
+	return false
 }
