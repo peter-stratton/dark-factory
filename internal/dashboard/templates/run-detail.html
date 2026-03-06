@@ -94,7 +94,7 @@
 {{define "issues-rows"}}
 {{range .}}
 <tr data-href="{{.URL}}" onclick="location.href=this.dataset.href">
-  <td class="text-secondary">#{{.IssueNumber}}</td>
+  <td><span class="text-secondary">#{{.IssueNumber}}</span>{{if .Title}} {{.Title}}{{end}}</td>
   <td>
     <span class="badge badge--{{.StatusClass}}">
       <span class="badge__dot"></span>

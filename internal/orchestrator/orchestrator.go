@@ -406,6 +406,22 @@ done:
 			})
 		}
 		agent.EnrichPunchlistEntries(ctx, entries, prompts, cfg, authEnv, logger)
+
+		if writer != nil {
+			for _, e := range entries {
+				plData := rundata.PunchlistData{
+					VerificationSteps: e.ExtractVerificationSteps(),
+					ScenarioCases:     e.ExtractScenarioCases(),
+					AcceptanceTests:   e.AcceptanceTests,
+					ChangedFiles:      e.ChangedFiles,
+				}
+				if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
+					logger.Warn("failed to write punchlist data",
+						"issue_number", e.IssueNumber, "error", err)
+				}
+			}
+		}
+
 		text := punchlist.Generate(entries)
 		fmt.Println()
 		if err := punchlist.Write(text, punchlistPath); err != nil {

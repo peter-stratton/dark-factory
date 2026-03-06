@@ -46,6 +46,7 @@ type StepResult struct {
 // Outcome records the final result for a single issue.
 type Outcome struct {
 	IssueNumber int    `json:"issue_number"`
+	Title       string `json:"title,omitempty"`
 	Status      string `json:"status"`
 	PRNumber    int    `json:"pr_number"`
 }
@@ -145,6 +146,21 @@ func (w *Writer) WriteRetryReviewResult(issueNum, retryNum int, step StepResult)
 func (w *Writer) WriteOutcome(outcome Outcome) error {
 	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", outcome.IssueNumber), "outcome.json")
 	return writeJSONMkdirs(path, outcome)
+}
+
+// PunchlistData holds the per-issue punchlist content persisted to punchlist.json.
+type PunchlistData struct {
+	VerificationSteps []string `json:"verification_steps,omitempty"`
+	ScenarioCases     []string `json:"scenario_cases,omitempty"`
+	AcceptanceTests   []string `json:"acceptance_tests,omitempty"`
+	ChangedFiles      []string `json:"changed_files,omitempty"`
+}
+
+// WritePunchlist writes the punchlist data for the given issue.
+// Path: issues/<issueNum>/punchlist.json
+func (w *Writer) WritePunchlist(issueNum int, data PunchlistData) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "punchlist.json")
+	return writeJSONMkdirs(path, data)
 }
 
 // FinalizeRun updates run.json with the finished_at timestamp and summary.
