@@ -11,6 +11,13 @@ A Go CLI that orchestrates autonomous AI agents to implement GitHub issues,
 review their own work, and merge — without human intervention. Supports Go,
 Flutter, Node.js, Rust, and Python projects.
 
+- **Adversarial two-agent review** — implementer and reviewer are independent agents with separate permissions; the reviewer literally cannot edit files, so it can't "fix" problems instead of flagging them
+- **Specification-driven quality gates** — human-authored scenario specs define "done"; the reviewer generates ephemeral integration tests from specs, not just rubber-stamping the diff
+- **Architecture-as-code enforcement** — machine-readable layer definitions validated by `godark vet`; the reviewer checks architectural compliance, not just correctness
+- **Structured agent dialogue** — implementer posts reasoning as PR comments, reviewer challenges it; the PR thread is an auditable record of adversarial design review
+- **Harness engineering lifecycle** — scaffold, validate, and enforce project constraints with `godark new`, `godark init`, `godark vet`, and six harness types
+- **Single binary, runs on a laptop** — no infrastructure fleet, no MCP server farm; one Go binary, Docker, and a GitHub token
+
 ## Prerequisites
 
 ### Authentication
