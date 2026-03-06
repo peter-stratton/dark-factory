@@ -421,3 +421,25 @@ func TestNewPromptData_ArchitectureJSONFileMissing(t *testing.T) {
 		t.Errorf("ArchitectureJSON = %q, want empty string for missing file", data.ArchitectureJSON)
 	}
 }
+
+func TestNewPromptData_EnforceArchitectureFromConfig(t *testing.T) {
+	cfg := testConfig()
+	cfg.EnforceArchitecture = true
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if !data.EnforceArchitecture {
+		t.Error("EnforceArchitecture should be true when set in config")
+	}
+}
+
+func TestNewPromptData_EnforceArchitectureDefaultFalse(t *testing.T) {
+	cfg := testConfig()
+	// EnforceArchitecture not set — zero value is false.
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.EnforceArchitecture {
+		t.Error("EnforceArchitecture should be false when not set in config")
+	}
+}

@@ -17,6 +17,11 @@ Steps:
 {{- if .ArchitectureJSON}}
    Machine-readable layer definitions — for each changed file, verify that its imports respect the `may_depend_on` and `must_not_depend_on` rules for its layer:
 {{.ArchitectureJSON}}
+{{- if .EnforceArchitecture}}
+   Layer violations MUST result in CHANGES_REQUESTED. Do not approve PRs with layer violations.
+{{- else}}
+   Flag any layer violations in your Review Notes under Architecture Compliance, but they do not block approval.
+{{- end}}
 {{- end}}
 {{- if .TestCommand}}
 7. Run unit tests: {{.TestCommand}}
