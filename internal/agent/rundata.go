@@ -6,8 +6,9 @@ import "github.com/phs/dark-factory/internal/rundata"
 // DurationSeconds from the timing fields captured during execution.
 func ResultToStep(r *Result) rundata.StepResult {
 	step := rundata.StepResult{
-		Output:  r.ResultText,
-		CostUSD: r.CostUSD,
+		Output:    r.ResultText,
+		CostUSD:   r.CostUSD,
+		ToolTrace: r.ToolTrace,
 	}
 	if !r.StartedAt.IsZero() {
 		t := r.StartedAt

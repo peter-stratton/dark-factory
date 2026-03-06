@@ -103,13 +103,28 @@
                   <span>{{.Cost}}</span>
                 </div>
                 {{if .HasOutput}}
-                <div class="expandable mt-2">
-                  <button class="expandable__trigger" @click="open = !open">
-                    <span class="expandable__arrow" :style="open ? 'transform: rotate(90deg)' : ''">&#9658;</span>
-                    Tool Trace
+                <div class="expandable mt-2" x-data="{ outputOpen: false }">
+                  <button class="expandable__trigger" @click="outputOpen = !outputOpen">
+                    <span class="expandable__arrow" :style="outputOpen ? 'transform: rotate(90deg)' : ''">&#9658;</span>
+                    Agent Output
                   </button>
-                  <div x-show="open" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
+                  <div x-show="outputOpen" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
                     <div class="markdown-body">{{renderMarkdown .Output}}</div>
+                  </div>
+                </div>
+                {{end}}
+                {{if .ToolTrace}}
+                <div class="expandable mt-2" x-data="{ traceOpen: false }">
+                  <button class="expandable__trigger" @click="traceOpen = !traceOpen">
+                    <span class="expandable__arrow" :style="traceOpen ? 'transform: rotate(90deg)' : ''">&#9658;</span>
+                    Tool Trace ({{len .ToolTrace}} calls)
+                  </button>
+                  <div x-show="traceOpen" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
+                    <ol style="margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); font-family: monospace;">
+                      {{range .ToolTrace}}
+                      <li style="margin-bottom: var(--space-1);">{{.}}</li>
+                      {{end}}
+                    </ol>
                   </div>
                 </div>
                 {{end}}
