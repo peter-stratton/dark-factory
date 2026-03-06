@@ -38,6 +38,7 @@ type PromptData struct {
 	BranchExists           bool
 	StrictnessDirective    string
 	ArchitectureDocContent string
+	ArchitectureJSON       string
 	ConventionsDocContent  string
 	HasScenarioSpec        bool
 }

@@ -501,6 +501,21 @@ quality:
 	}
 }
 
+func TestArchitectureJSONDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ArchitectureJSON != "docs/architecture.json" {
+		t.Errorf("ArchitectureJSON = %q, want %q", cfg.ArchitectureJSON, "docs/architecture.json")
+	}
+}
+
 func TestArchitectureDocDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `

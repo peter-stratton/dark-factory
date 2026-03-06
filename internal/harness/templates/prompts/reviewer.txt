@@ -14,18 +14,30 @@ Steps:
 6. Check that imports respect the dependency layers per the following architecture rules and verify that no layer boundary violations were introduced:
 {{.ArchitectureDocContent}}
 {{- end}}
+{{- if .ArchitectureJSON}}
+   Machine-readable layer definitions — for each changed file, verify that its imports respect the `may_depend_on` and `must_not_depend_on` rules for its layer:
+{{.ArchitectureJSON}}
+{{- end}}
 {{- if .TestCommand}}
 7. Run unit tests: {{.TestCommand}}
 {{- end}}
 {{- if .BuildCommand}}
 8. Verify build: {{.BuildCommand}}
 {{- end}}
-9. Generate integration tests in {{.ReviewDir}} that validate the behaviors described in the scenario spec
-10. Run your integration tests (use the appropriate test runner for the project language, or fall back to {{.TestCommand}})
+{{- if .HasScenarioSpec}}
+9. MANDATORY: Generate integration tests in {{.ReviewDir}} that validate each behavior described in the scenario spec. You MUST write at least one test file to {{.ReviewDir}} before proceeding. Do not skip this step.
+10. MANDATORY: Run your integration tests (use the appropriate test runner for the project language, or fall back to {{.TestCommand}}). Do not skip this step.
+{{- else}}
+9. No scenario spec exists for this issue. Document why integration tests are not applicable in your review comment and proceed to the verdict.
+{{- end}}
 
 CRITICAL RULES:
 - Do NOT modify any protected paths: {{.ProtectedPaths}}
 - Do NOT modify files in {{.ScenarioDir}}
+{{- if .HasScenarioSpec}}
+- You MUST write integration tests to {{.ReviewDir}} (step 9) before making your verdict. This is non-negotiable.
+- After running tests, delete the {{.ReviewDir}} directory before finishing.
+{{- end}}
 
 Based on your findings:
 - If ALL tests pass and the implementation meets acceptance criteria:
