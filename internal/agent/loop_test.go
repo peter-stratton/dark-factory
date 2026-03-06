@@ -1277,6 +1277,74 @@ func TestProcessIssue_PreMergeGuardRejectsApprovalWithoutTests(t *testing.T) {
 	}
 }
 
+// TestProcessIssue_PreMergeGuardPostsComment verifies that when the quality gate
+// overrides a functional reviewer approval, a PR comment is posted so the retry
+// agent has actionable feedback.
+func TestProcessIssue_PreMergeGuardPostsComment(t *testing.T) {
+	scenarioDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(scenarioDir, "spec.md"), []byte("Relates to: Issue #5\n"), 0600); err != nil {
+		t.Fatalf("failed to write scenario spec: %v", err)
+	}
+
+	cfg := loopConfig()
+	cfg.MaxRetries = 1
+	cfg.TestCommand = "go test ./..."
+	cfg.ReviewDir = "tests/review/"
+	cfg.ScenarioDir = scenarioDir
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		case 3: // functional reviewer — approves without tests
+			final := runnerFinalResult{
+				Result:    "REVIEW_RESULT=APPROVED",
+				ToolTrace: []string{"Read tests/existing_test.go", "go test ./..."},
+			}
+			b, _ := json.Marshal(final)
+			return b, []byte(""), 0, nil
+		case 4: // retry
+			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+		default: // second functional review — with tests
+			final := runnerFinalResult{
+				Result:    "REVIEW_RESULT=APPROVED",
+				ToolTrace: []string{"Write tests/review/my_test.go", "go test ./..."},
+			}
+			b, _ := json.Marshal(final)
+			return b, []byte(""), 0, nil
+		}
+	}
+
+	var overrideCommentPosted bool
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "pr comment") && strings.Contains(joined, "Orchestrator Override") {
+			overrideCommentPosted = true
+		}
+		return loopGuardFn(name, args...)
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if !overrideCommentPosted {
+		t.Error("expected quality gate override to post a PR comment, but none was detected")
+	}
+}
+
 // TestProcessIssue_SpecGeneratedNoFetchNeeded verifies that after
 // GenerateSpec succeeds, no git fetch or checkout is performed — the
 // specGenerated flag is used instead of pulling files to the host.

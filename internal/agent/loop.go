@@ -263,6 +263,22 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				"attempt", attempt+1,
 			)
 			reviewResult.Verdict = "CHANGES_REQUESTED"
+
+			// Post a comment so the retry agent has actionable feedback.
+			overrideComment := fmt.Sprintf(
+				"## Review Notes (Orchestrator Override)\n\n"+
+					"### Changes Requested\n\n"+
+					"The functional reviewer approved this PR, but the orchestrator's quality gate "+
+					"detected that no integration tests were written to `%s`.\n\n"+
+					"**You must** write at least one integration test file to `%s` that validates "+
+					"the scenario spec, run the tests, then delete the `%s` directory before finishing.\n\n"+
+					"This is a hard requirement — the approval will be rejected again if no Write "+
+					"to `%s` is detected in the tool trace.",
+				cfg.ReviewDir, cfg.ReviewDir, cfg.ReviewDir, cfg.ReviewDir,
+			)
+			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", overrideComment); err != nil {
+				logger.Warn("failed to post quality gate override comment", "error", err)
+			}
 		}
 
 		switch reviewResult.Verdict {
