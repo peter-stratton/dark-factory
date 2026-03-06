@@ -41,6 +41,8 @@ CRITICAL RULES:
 - Do NOT modify files in {{.ScenarioDir}}
 {{- if .HasScenarioSpec}}
 - You MUST write integration tests to {{.ReviewDir}} (step 9) before making your verdict. This is non-negotiable.
+- Judging existing tests sufficient is NOT acceptable — you must write your own ephemeral tests in {{.ReviewDir}}.
+- The orchestrator verifies that you wrote files to {{.ReviewDir}} by inspecting your tool trace. If no Write to {{.ReviewDir}} is detected, your APPROVED verdict will be automatically rejected and the implementation retried.
 - After running tests, delete the {{.ReviewDir}} directory before finishing.
 {{- end}}
 

@@ -52,6 +52,35 @@ func TestResultToStep_OutputFromResultText(t *testing.T) {
 	}
 }
 
+func TestResultToStep_ToolTracePropagated(t *testing.T) {
+	trace := []string{"Read /some/file", "Write /some/output", "Bash go test ./..."}
+	r := &Result{
+		ResultText: "done",
+		ToolTrace:  trace,
+	}
+
+	step := ResultToStep(r)
+
+	if len(step.ToolTrace) != len(trace) {
+		t.Fatalf("ToolTrace length = %d, want %d", len(step.ToolTrace), len(trace))
+	}
+	for i, want := range trace {
+		if step.ToolTrace[i] != want {
+			t.Errorf("ToolTrace[%d] = %q, want %q", i, step.ToolTrace[i], want)
+		}
+	}
+}
+
+func TestResultToStep_NilToolTraceOmitted(t *testing.T) {
+	r := &Result{ResultText: "done"}
+
+	step := ResultToStep(r)
+
+	if step.ToolTrace != nil {
+		t.Errorf("ToolTrace = %v, want nil when Result.ToolTrace is nil", step.ToolTrace)
+	}
+}
+
 func TestResultToStep_DurationSeconds_Positive(t *testing.T) {
 	started := time.Now()
 	finished := started.Add(5 * time.Second)

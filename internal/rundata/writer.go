@@ -41,6 +41,7 @@ type StepResult struct {
 	DurationSeconds float64    `json:"duration_seconds,omitempty"`
 	CostUSD         float64    `json:"cost_usd,omitempty"`
 	Flags           []Flag     `json:"flags,omitempty"`
+	ToolTrace       []string   `json:"tool_trace,omitempty"`
 }
 
 // Outcome records the final result for a single issue.

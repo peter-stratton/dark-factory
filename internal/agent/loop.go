@@ -244,6 +244,17 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			}
 		}
 
+		// Pre-merge guard: if the reviewer approved without writing tests to the
+		// review dir, reject the approval and force a retry. This turns the
+		// no_review_tests_written quality flag into a hard gate.
+		if reviewResult.Verdict == "APPROVED" && hasQualityFlag(fFlags, "no_review_tests_written") {
+			logger.Warn("functional review approved without writing tests — rejecting approval",
+				"issue_number", issue.Number,
+				"attempt", attempt+1,
+			)
+			reviewResult.Verdict = "CHANGES_REQUESTED"
+		}
+
 		switch reviewResult.Verdict {
 		case "APPROVED":
 			if cfg.NoMerge {
@@ -373,6 +384,16 @@ func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution b
 	}
 
 	return flags
+}
+
+// hasQualityFlag reports whether any flag in the slice has the given code.
+func hasQualityFlag(flags []quality.Flag, code string) bool {
+	for _, f := range flags {
+		if f.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 // logAndRecordFlags logs each flag as a warning and returns a []rundata.Flag for storage.

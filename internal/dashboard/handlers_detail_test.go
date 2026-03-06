@@ -306,7 +306,7 @@ func TestServer_IssueDetail_ToolTraceToggle(t *testing.T) {
 	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
 		rundata.Outcome{IssueNumber: 3, Status: "implemented"})
 	writeJSON(t, filepath.Join(issueDir, "implement.json"),
-		rundata.StepResult{Output: "tool trace output here", DurationSeconds: 20})
+		rundata.StepResult{Output: "agent output here", DurationSeconds: 20})
 
 	srv := newServer(t, tmpDir)
 	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/3", nil)
@@ -320,19 +320,19 @@ func TestServer_IssueDetail_ToolTraceToggle(t *testing.T) {
 
 	// Alpine.js toggle attributes must be present
 	if !strings.Contains(body, "x-data") {
-		t.Errorf("body missing Alpine.js x-data attribute for tool trace toggle")
+		t.Errorf("body missing Alpine.js x-data attribute for agent output toggle")
 	}
 	if !strings.Contains(body, "x-show") {
-		t.Errorf("body missing Alpine.js x-show attribute for tool trace toggle")
+		t.Errorf("body missing Alpine.js x-show attribute for agent output toggle")
 	}
 	if !strings.Contains(body, "@click") {
-		t.Errorf("body missing Alpine.js @click attribute for tool trace toggle")
+		t.Errorf("body missing Alpine.js @click attribute for agent output toggle")
 	}
-	if !strings.Contains(body, "Tool Trace") {
-		t.Errorf("body missing 'Tool Trace' trigger label")
+	if !strings.Contains(body, "Agent Output") {
+		t.Errorf("body missing 'Agent Output' trigger label")
 	}
-	if !strings.Contains(body, "tool trace output here") {
-		t.Errorf("body missing tool trace content")
+	if !strings.Contains(body, "agent output here") {
+		t.Errorf("body missing agent output content")
 	}
 }
 
@@ -762,5 +762,97 @@ func TestServer_IndexRows_HaveRunDetailURL(t *testing.T) {
 	// The URL appears in a data-href attribute (not in JS context, so no escaping).
 	if !strings.Contains(body, `data-href="`+expectedURL+`"`) {
 		t.Errorf("index body missing run detail URL %q in data-href; got: %q", expectedURL, truncate(body, 800))
+	}
+}
+
+func TestServer_IssueDetail_ToolTraceSection(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{6},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "6")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 6, Status: "implemented"})
+	writeJSON(t, filepath.Join(issueDir, "functional-review.json"),
+		rundata.StepResult{
+			Output:    "REVIEW_RESULT=APPROVED",
+			ToolTrace: []string{"Read src/main.go", "Write tests/review/test_main.go", "go test ./..."},
+			DurationSeconds: 15,
+		})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/6", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	// Tool Trace section should be present with the call count.
+	if !strings.Contains(body, "Tool Trace (3 calls)") {
+		t.Errorf("body missing 'Tool Trace (3 calls)' trigger label; got: %q", truncate(body, 500))
+	}
+	// Each tool call entry should appear.
+	if !strings.Contains(body, "Read src/main.go") {
+		t.Errorf("body missing first tool trace entry 'Read src/main.go'")
+	}
+	if !strings.Contains(body, "Write tests/review/test_main.go") {
+		t.Errorf("body missing second tool trace entry 'Write tests/review/test_main.go'")
+	}
+	if !strings.Contains(body, "go test ./...") {
+		t.Errorf("body missing third tool trace entry 'go test ./...'")
+	}
+	// Alpine.js toggle should be present.
+	if !strings.Contains(body, "traceOpen") {
+		t.Errorf("body missing Alpine.js traceOpen variable for tool trace toggle")
+	}
+}
+
+func TestServer_IssueDetail_NoToolTraceWhenAbsent(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{7},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "7")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 7, Status: "implemented"})
+	// StepResult with no ToolTrace field.
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "done", DurationSeconds: 5})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/7", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	// The "Tool Trace (N calls)" label should not appear when ToolTrace is empty.
+	if strings.Contains(body, "Tool Trace (") {
+		t.Errorf("body should not contain 'Tool Trace (N calls)' when ToolTrace is absent")
 	}
 }

@@ -81,6 +81,7 @@ type TimelineStepView struct {
 	Flags        []rundata.Flag
 	HasOutput    bool
 	Output       string
+	ToolTrace    []string // tool calls recorded during this step
 }
 
 // IndexData is the data passed to the index template.
@@ -466,6 +467,7 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 		Flags:        step.Flags,
 		HasOutput:    step.Output != "",
 		Output:       step.Output,
+		ToolTrace:    step.ToolTrace,
 	}
 }
 

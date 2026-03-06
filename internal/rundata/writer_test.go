@@ -295,6 +295,67 @@ func TestFlagsWrittenToReviewJSON(t *testing.T) {
 	}
 }
 
+func TestToolTraceWrittenToJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	trace := []string{"Read main.go", "Write tests/review/test.go", "go test ./..."}
+	step := StepResult{Output: "review output", ToolTrace: trace}
+	if err := w.WriteReviewResult(42, "functional", step); err != nil {
+		t.Fatalf("WriteReviewResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "functional-review.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading functional-review.json: %v", err)
+	}
+
+	var written StepResult
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing functional-review.json: %v", err)
+	}
+
+	if len(written.ToolTrace) != len(trace) {
+		t.Fatalf("ToolTrace length: got %d, want %d", len(written.ToolTrace), len(trace))
+	}
+	for i, want := range trace {
+		if written.ToolTrace[i] != want {
+			t.Errorf("ToolTrace[%d] = %q, want %q", i, written.ToolTrace[i], want)
+		}
+	}
+}
+
+func TestToolTraceOmittedFromJSONWhenEmpty(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{Output: "review output"}
+	if err := w.WriteReviewResult(42, "functional", step); err != nil {
+		t.Fatalf("WriteReviewResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "functional-review.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading functional-review.json: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if _, ok := raw["tool_trace"]; ok {
+		t.Error("tool_trace key should be omitted from JSON when empty")
+	}
+}
+
 func TestNoFlagsOmittedFromJSON(t *testing.T) {
 	base := t.TempDir()
 	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
