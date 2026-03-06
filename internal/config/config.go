@@ -45,6 +45,7 @@ type Config struct {
 	NoSandbox              bool `yaml:"no_sandbox"`
 	NoMerge                bool `yaml:"no_merge"`
 	QualityStrictnessDecay bool `yaml:"quality_strictness_decay"`
+	EnforceArchitecture    bool `yaml:"enforce_architecture"`
 
 	// AuthPreference controls which Anthropic auth token is preferred when both
 	// ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set.

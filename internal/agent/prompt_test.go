@@ -434,6 +434,95 @@ func TestReviewerPrompt_IncludesArchitectureJSONBlock(t *testing.T) {
 	}
 }
 
+func TestReviewerPrompt_EnforceArchitectureOn_IncludesBlockingDirective(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	jsonContent := `{"layers":[{"name":"foundation","may_depend_on":[]}]}`
+	data := PromptData{
+		IssueNumber:         1,
+		Repo:                "owner/repo",
+		PRNumber:            10,
+		TestCommand:         "make test",
+		BuildCommand:        "make build",
+		ProtectedPaths:      "CLAUDE.md",
+		ScenarioDir:         "tests/scenarios/",
+		ReviewDir:           "tests/review/",
+		ArchitectureJSON:    jsonContent,
+		EnforceArchitecture: true,
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "MUST result in CHANGES_REQUESTED") {
+		t.Error("reviewer prompt should include blocking directive when EnforceArchitecture is true")
+	}
+	if strings.Contains(rendered, "do not block approval") {
+		t.Error("reviewer prompt should not include informational directive when EnforceArchitecture is true")
+	}
+}
+
+func TestReviewerPrompt_EnforceArchitectureOff_IncludesInformationalDirective(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	jsonContent := `{"layers":[{"name":"foundation","may_depend_on":[]}]}`
+	data := PromptData{
+		IssueNumber:         1,
+		Repo:                "owner/repo",
+		PRNumber:            10,
+		TestCommand:         "make test",
+		BuildCommand:        "make build",
+		ProtectedPaths:      "CLAUDE.md",
+		ScenarioDir:         "tests/scenarios/",
+		ReviewDir:           "tests/review/",
+		ArchitectureJSON:    jsonContent,
+		EnforceArchitecture: false,
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "do not block approval") {
+		t.Error("reviewer prompt should include informational directive when EnforceArchitecture is false")
+	}
+	if strings.Contains(rendered, "MUST result in CHANGES_REQUESTED") {
+		t.Error("reviewer prompt should not include blocking directive when EnforceArchitecture is false")
+	}
+}
+
+func TestReviewerPrompt_NoArchitectureJSON_OmitsBothDirectives(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:         1,
+		Repo:                "owner/repo",
+		PRNumber:            10,
+		TestCommand:         "make test",
+		BuildCommand:        "make build",
+		ProtectedPaths:      "CLAUDE.md",
+		ScenarioDir:         "tests/scenarios/",
+		ReviewDir:           "tests/review/",
+		ArchitectureJSON:    "",
+		EnforceArchitecture: true,
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "MUST result in CHANGES_REQUESTED") {
+		t.Error("reviewer prompt should not include blocking directive when ArchitectureJSON is empty")
+	}
+	if strings.Contains(rendered, "do not block approval") {
+		t.Error("reviewer prompt should not include informational directive when ArchitectureJSON is empty")
+	}
+}
+
 func TestReviewerPrompt_OmitsArchitectureJSONBlockWhenEmpty(t *testing.T) {
 	p, err := LoadPrompts(&config.Config{})
 	if err != nil {

@@ -578,6 +578,37 @@ conventions_doc: custom/conventions.md
 	}
 }
 
+func TestEnforceArchitectureDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.EnforceArchitecture {
+		t.Error("EnforceArchitecture should default to false")
+	}
+}
+
+func TestEnforceArchitectureFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+enforce_architecture: true
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.EnforceArchitecture {
+		t.Error("EnforceArchitecture = false, want true from YAML")
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

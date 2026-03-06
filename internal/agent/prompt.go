@@ -37,6 +37,7 @@ type PromptData struct {
 	ReviewDir      string
 	BranchExists           bool
 	StrictnessDirective    string
+	EnforceArchitecture    bool
 	ArchitectureDocContent string
 	ArchitectureJSON       string
 	ConventionsDocContent  string
