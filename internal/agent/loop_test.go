@@ -849,11 +849,12 @@ func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 
 // testRunDataHook is a simple RunDataHook implementation for unit tests.
 type testRunDataHook struct {
-	implementCalls   int
-	reviewKinds      []string
-	retryCalls       int
-	retryReviewCalls int
-	outcomes         []rundata.Outcome
+	implementCalls               int
+	reviewKinds                  []string
+	retryCalls                   int
+	retryReviewCalls             int
+	retryFunctionalReviewCalls   int
+	outcomes                     []rundata.Outcome
 }
 
 func (h *testRunDataHook) WriteImplementResult(_ int, _ rundata.StepResult) error {
@@ -870,6 +871,10 @@ func (h *testRunDataHook) WriteRetryResult(_ int, _ int, _ rundata.StepResult) e
 }
 func (h *testRunDataHook) WriteRetryReviewResult(_ int, _ int, _ rundata.StepResult) error {
 	h.retryReviewCalls++
+	return nil
+}
+func (h *testRunDataHook) WriteRetryFunctionalReviewResult(_ int, _ int, _ rundata.StepResult) error {
+	h.retryFunctionalReviewCalls++
 	return nil
 }
 func (h *testRunDataHook) WriteOutcome(o rundata.Outcome) error {
@@ -1438,5 +1443,128 @@ func TestProcessIssue_PreMergeGuardAllowsApprovalWithTests(t *testing.T) {
 	// Should be exactly 3 agent calls: implement + quality + functional (no retries).
 	if callIdx != 3 {
 		t.Errorf("expected 3 agent calls (implement + quality + review), got %d", callIdx)
+	}
+}
+
+// captureRetryFunctionalHook extends testRunDataHook to record which attempts
+// triggered WriteRetryFunctionalReviewResult vs WriteReviewResult("functional").
+type captureRetryFunctionalHook struct {
+	testRunDataHook
+	retryFunctionalAttempts []int    // attempt indices passed to WriteRetryFunctionalReviewResult
+	topLevelFunctionalKinds []string // kinds passed to WriteReviewResult
+}
+
+func (h *captureRetryFunctionalHook) WriteReviewResult(_ int, kind string, _ rundata.StepResult) error {
+	h.reviewKinds = append(h.reviewKinds, kind)
+	h.topLevelFunctionalKinds = append(h.topLevelFunctionalKinds, kind)
+	return nil
+}
+
+func (h *captureRetryFunctionalHook) WriteRetryFunctionalReviewResult(_ int, attempt int, _ rundata.StepResult) error {
+	h.retryFunctionalReviewCalls++
+	h.retryFunctionalAttempts = append(h.retryFunctionalAttempts, attempt)
+	return nil
+}
+
+// TestProcessIssue_FunctionalReviewOnRetry_WritesToRetryDir verifies that when
+// the functional reviewer returns CHANGES_REQUESTED and a retry is available,
+// the pre-retry review is written to the retry dir (not top-level).
+func TestProcessIssue_FunctionalReviewOnRetry_WritesToRetryDir(t *testing.T) {
+	hook := &captureRetryFunctionalHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// Pre-retry functional review should go to retry dir (attempt 0).
+	if hook.retryFunctionalReviewCalls != 1 {
+		t.Errorf("WriteRetryFunctionalReviewResult called %d times, want 1", hook.retryFunctionalReviewCalls)
+	}
+	if len(hook.retryFunctionalAttempts) == 1 && hook.retryFunctionalAttempts[0] != 0 {
+		t.Errorf("WriteRetryFunctionalReviewResult attempt = %d, want 0", hook.retryFunctionalAttempts[0])
+	}
+	// Final (approved) functional review should go to top-level.
+	functionalTopLevel := 0
+	for _, k := range hook.topLevelFunctionalKinds {
+		if k == "functional" {
+			functionalTopLevel++
+		}
+	}
+	if functionalTopLevel != 1 {
+		t.Errorf("WriteReviewResult(\"functional\") top-level called %d times, want 1; kinds: %v", functionalTopLevel, hook.topLevelFunctionalKinds)
+	}
+}
+
+// TestProcessIssue_FunctionalReviewExhausted_WritesToTopLevel verifies that when
+// retries are exhausted, the final CHANGES_REQUESTED review goes to top-level.
+func TestProcessIssue_FunctionalReviewExhausted_WritesToTopLevel(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 1
+
+	hook := &captureRetryFunctionalHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
+
+	if outcome.Status != "needs-human-review" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
+	}
+	// First CHANGES_REQUESTED goes to retry dir (attempt 0 — retry available).
+	if hook.retryFunctionalReviewCalls != 1 {
+		t.Errorf("WriteRetryFunctionalReviewResult called %d times, want 1", hook.retryFunctionalReviewCalls)
+	}
+	// Final CHANGES_REQUESTED (retries exhausted) goes to top-level.
+	functionalTopLevel := 0
+	for _, k := range hook.topLevelFunctionalKinds {
+		if k == "functional" {
+			functionalTopLevel++
+		}
+	}
+	if functionalTopLevel != 1 {
+		t.Errorf("WriteReviewResult(\"functional\") top-level called %d times, want 1 (for exhausted retry); kinds: %v", functionalTopLevel, hook.topLevelFunctionalKinds)
+	}
+}
+
+// TestProcessIssue_FunctionalReviewApproved_WritesToTopLevel verifies that when
+// the functional reviewer approves on the first attempt, the result goes to top-level
+// and WriteRetryFunctionalReviewResult is never called.
+func TestProcessIssue_FunctionalReviewApproved_WritesToTopLevel(t *testing.T) {
+	hook := &captureRetryFunctionalHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if hook.retryFunctionalReviewCalls != 0 {
+		t.Errorf("WriteRetryFunctionalReviewResult called %d times, want 0", hook.retryFunctionalReviewCalls)
+	}
+	functionalTopLevel := 0
+	for _, k := range hook.topLevelFunctionalKinds {
+		if k == "functional" {
+			functionalTopLevel++
+		}
+	}
+	if functionalTopLevel != 1 {
+		t.Errorf("WriteReviewResult(\"functional\") called %d times, want 1; kinds: %v", functionalTopLevel, hook.topLevelFunctionalKinds)
 	}
 }

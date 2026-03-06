@@ -14,9 +14,10 @@ import (
 
 // RetryDetail holds the step results for one retry attempt.
 type RetryDetail struct {
-	Attempt       int
-	Retry         StepResult
-	QualityReview StepResult
+	Attempt          int
+	Retry            StepResult
+	QualityReview    StepResult
+	FunctionalReview StepResult
 }
 
 // IssueDetail aggregates all data for one issue within a run.
@@ -326,9 +327,10 @@ func (r *Reader) loadRetries(retriesDir string) []RetryDetail {
 		}
 		retryDir := filepath.Join(retriesDir, entry.Name())
 		retries = append(retries, RetryDetail{
-			Attempt:       attempt,
-			Retry:         r.readStep(filepath.Join(retryDir, "retry.json")),
-			QualityReview: r.readStep(filepath.Join(retryDir, "quality-review.json")),
+			Attempt:          attempt,
+			Retry:            r.readStep(filepath.Join(retryDir, "retry.json")),
+			QualityReview:    r.readStep(filepath.Join(retryDir, "quality-review.json")),
+			FunctionalReview: r.readStep(filepath.Join(retryDir, "functional-review.json")),
 		})
 	}
 

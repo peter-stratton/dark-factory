@@ -356,8 +356,8 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 	flagCount := len(issue.Implement.Flags) + len(issue.QualityReview.Flags) + len(issue.FunctionalReview.Flags)
 	totalCost := issue.Implement.CostUSD + issue.QualityReview.CostUSD + issue.FunctionalReview.CostUSD
 	for _, retry := range issue.Retries {
-		flagCount += len(retry.Retry.Flags) + len(retry.QualityReview.Flags)
-		totalCost += retry.Retry.CostUSD + retry.QualityReview.CostUSD
+		flagCount += len(retry.Retry.Flags) + len(retry.QualityReview.Flags) + len(retry.FunctionalReview.Flags)
+		totalCost += retry.Retry.CostUSD + retry.QualityReview.CostUSD + retry.FunctionalReview.CostUSD
 	}
 
 	statusLabel := "Running"
@@ -404,6 +404,9 @@ func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
 		steps = append(steps, stepToView("Quality Review", issue.QualityReview))
 	}
 	for _, retry := range issue.Retries {
+		if hasStepData(retry.FunctionalReview) {
+			steps = append(steps, stepToView("Functional Review", retry.FunctionalReview))
+		}
 		if hasStepData(retry.Retry) {
 			steps = append(steps, stepToView(fmt.Sprintf("Retry %d", retry.Attempt+1), retry.Retry))
 		}
