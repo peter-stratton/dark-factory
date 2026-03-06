@@ -11,6 +11,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/deps"
 	"github.com/phs/dark-factory/internal/detect"
+	"github.com/phs/dark-factory/internal/dialogue"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
@@ -307,6 +308,24 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			seen[issue.Number] = true
 			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook)
 
+			// Write dialogue after processing if we have a PR and a writer.
+			if writer != nil && outcome.PRNumber > 0 {
+				bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+				if fetchErr != nil {
+					logger.Warn("failed to fetch PR comment bodies for dialogue",
+						"issue_number", issue.Number, "error", fetchErr)
+				} else {
+					implNotes, reviewNotes := dialogue.ParseComments(bodies)
+					entries := buildDialogueEntries(implNotes, reviewNotes)
+					if len(entries) > 0 {
+						if err := writer.WriteDialogue(issue.Number, entries); err != nil {
+							logger.Warn("failed to write dialogue",
+								"issue_number", issue.Number, "error", err)
+						}
+					}
+				}
+			}
+
 			switch outcome.Status {
 			case "implemented":
 				stats.implemented++
@@ -440,6 +459,39 @@ func printSummary(total, blocked, processable int) {
 // processIssueFn is the function called to process each issue.
 // Replaceable for testing.
 var processIssueFn = agent.ProcessIssue
+
+// fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
+// Replaceable for testing.
+var fetchPRCommentBodiesFn = github.FetchPRCommentBodies
+
+// buildDialogueEntries interleaves implementation and review notes by round,
+// returning a slice of DialogueEntry values suitable for persisting.
+func buildDialogueEntries(implNotes []dialogue.ImplementationNotes, reviewNotes []dialogue.ReviewNotes) []rundata.DialogueEntry {
+	maxRounds := len(implNotes)
+	if len(reviewNotes) > maxRounds {
+		maxRounds = len(reviewNotes)
+	}
+
+	var entries []rundata.DialogueEntry
+	for round := 1; round <= maxRounds; round++ {
+		i := round - 1
+		if i < len(implNotes) {
+			entries = append(entries, rundata.DialogueEntry{
+				Role:  "implementer",
+				Round: round,
+				Body:  implNotes[i].Raw,
+			})
+		}
+		if i < len(reviewNotes) {
+			entries = append(entries, rundata.DialogueEntry{
+				Role:  "reviewer",
+				Round: round,
+				Body:  reviewNotes[i].Raw,
+			})
+		}
+	}
+	return entries
+}
 
 // newRunDataWriterFn creates a new RunDataWriter. Replaceable for testing.
 var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int) (*rundata.Writer, error) {

@@ -148,6 +148,20 @@ func (w *Writer) WriteOutcome(outcome Outcome) error {
 	return writeJSONMkdirs(path, outcome)
 }
 
+// DialogueEntry records one turn in the agent dialogue for an issue.
+type DialogueEntry struct {
+	Role  string `json:"role"`  // "implementer" or "reviewer"
+	Round int    `json:"round"` // 1-indexed retry round
+	Body  string `json:"body"`  // raw comment text
+}
+
+// WriteDialogue writes the dialogue entries for the given issue.
+// Path: issues/<issueNum>/dialogue.json
+func (w *Writer) WriteDialogue(issueNum int, entries []DialogueEntry) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "dialogue.json")
+	return writeJSONMkdirs(path, entries)
+}
+
 // PunchlistData holds the per-issue punchlist content persisted to punchlist.json.
 type PunchlistData struct {
 	VerificationSteps []string `json:"verification_steps,omitempty"`

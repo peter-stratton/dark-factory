@@ -325,6 +325,83 @@ func TestNoFlagsOmittedFromJSON(t *testing.T) {
 	}
 }
 
+func TestWriteDialogue(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entries := []DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "## Implementation Notes\nApproach..."},
+		{Role: "reviewer", Round: 1, Body: "## Review Notes\nApproved..."},
+	}
+	if err := w.WriteDialogue(42, entries); err != nil {
+		t.Fatalf("WriteDialogue() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "dialogue.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading dialogue.json: %v", err)
+	}
+
+	var written []DialogueEntry
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing dialogue.json: %v", err)
+	}
+
+	if len(written) != 2 {
+		t.Fatalf("entries: got %d, want 2", len(written))
+	}
+	if written[0].Role != "implementer" || written[0].Round != 1 {
+		t.Errorf("entry[0]: got {%s, %d}, want {implementer, 1}", written[0].Role, written[0].Round)
+	}
+	if written[1].Role != "reviewer" || written[1].Round != 1 {
+		t.Errorf("entry[1]: got {%s, %d}, want {reviewer, 1}", written[1].Role, written[1].Round)
+	}
+}
+
+func TestWriteDialogueMultipleRounds(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{7})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entries := []DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "round 1 impl"},
+		{Role: "reviewer", Round: 1, Body: "round 1 review"},
+		{Role: "implementer", Round: 2, Body: "round 2 impl"},
+		{Role: "reviewer", Round: 2, Body: "round 2 review"},
+	}
+	if err := w.WriteDialogue(7, entries); err != nil {
+		t.Fatalf("WriteDialogue() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "7", "dialogue.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading dialogue.json: %v", err)
+	}
+
+	var written []DialogueEntry
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing dialogue.json: %v", err)
+	}
+
+	if len(written) != 4 {
+		t.Fatalf("entries: got %d, want 4", len(written))
+	}
+	for i, want := range entries {
+		if written[i].Role != want.Role || written[i].Round != want.Round || written[i].Body != want.Body {
+			t.Errorf("entry[%d]: got {%s, %d, %q}, want {%s, %d, %q}",
+				i, written[i].Role, written[i].Round, written[i].Body,
+				want.Role, want.Round, want.Body)
+		}
+	}
+}
+
 func TestPathTraversalRejected(t *testing.T) {
 	cases := []string{
 		"../evil/../../path",
