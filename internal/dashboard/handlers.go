@@ -43,6 +43,7 @@ type RunDetailData struct {
 // IssueRowView is the view model for one issue row in the run detail table.
 type IssueRowView struct {
 	IssueNumber int
+	Title       string // issue title, e.g. "Architecture layer parser"
 	Status      string // "Implemented", "Failed", "Running"
 	StatusClass string // "success", "danger", "info"
 	PRNumber    int
@@ -59,11 +60,13 @@ type IssueDetailData struct {
 	Repo        string
 	Timestamp   string
 	IssueNumber int
+	Title       string
 	PRNumber    int
 	PRLink      string
 	IssueLink   string
 	RunURL      string // link back to run detail page
 	Timeline    []TimelineStepView
+	Punchlist   *rundata.PunchlistData
 }
 
 // TimelineStepView is the view model for one step in the issue timeline.
@@ -315,11 +318,13 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		Repo:        repo,
 		Timestamp:   timestamp,
 		IssueNumber: issueNum,
+		Title:       found.Outcome.Title,
 		PRNumber:    found.Outcome.PRNumber,
 		PRLink:      prLink,
 		IssueLink:   issueLink,
 		RunURL:      runURL,
 		Timeline:    buildTimeline(*found),
+		Punchlist:   found.Punchlist,
 	}
 
 	var buf bytes.Buffer
@@ -361,6 +366,7 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 
 	return IssueRowView{
 		IssueNumber: issue.IssueNumber,
+		Title:       issue.Outcome.Title,
 		Status:      statusLabel,
 		StatusClass: statusClass,
 		PRNumber:    issue.Outcome.PRNumber,

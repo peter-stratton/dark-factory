@@ -157,6 +157,16 @@ func Write(text, path string) error {
 	return nil
 }
 
+// ExtractVerificationSteps returns the verification step strings for the entry.
+func (e Entry) ExtractVerificationSteps() []string {
+	return extractVerificationSteps(e.IssueBody)
+}
+
+// ExtractScenarioCases returns the scenario case names for the entry.
+func (e Entry) ExtractScenarioCases() []string {
+	return extractScenarioCases(e.ScenarioSpec)
+}
+
 // extractVerificationSteps extracts manual verification items from an issue body.
 // It collects checkbox items (- [ ]) from anywhere in the body, plus plain
 // bullet points within test/acceptance/verification/cases section headers.

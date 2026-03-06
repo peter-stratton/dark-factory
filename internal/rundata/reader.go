@@ -27,6 +27,7 @@ type IssueDetail struct {
 	QualityReview    StepResult
 	FunctionalReview StepResult
 	Retries          []RetryDetail
+	Punchlist        *PunchlistData
 }
 
 // RunDetail holds the full data for one run, including per-issue details.
@@ -208,7 +209,28 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		FunctionalReview: r.readStep(filepath.Join(issueDir, "functional-review.json")),
 		Outcome:          r.readOutcome(filepath.Join(issueDir, "outcome.json")),
 		Retries:          r.loadRetries(filepath.Join(issueDir, "retries")),
+		Punchlist:        r.readPunchlist(filepath.Join(issueDir, "punchlist.json")),
 	}
+}
+
+// readPunchlist reads a PunchlistData from path. Returns nil if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readPunchlist(path string) *PunchlistData {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping punchlist file", "path", path, "error", err)
+		return nil
+	}
+
+	var pl PunchlistData
+	if err := json.Unmarshal(data, &pl); err != nil {
+		r.logger.Warn("corrupt punchlist file, skipping", "path", path, "error", err)
+		return nil
+	}
+	return &pl
 }
 
 // readStep reads a StepResult from path. Returns zero value if the file is

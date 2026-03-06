@@ -174,7 +174,10 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	}
 
 	agentCmd := "cd " + workDir + " && python3 /usr/local/bin/agent_runner.py"
-	cloneScript := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
+	cloneScript, err := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
+	if err != nil {
+		return nil, fmt.Errorf("building clone script: %w", err)
+	}
 	entrypoint := sandbox.EntrypointScript(cloneScript, agentCmd)
 
 	sandboxOpts := sandbox.RunOpts{

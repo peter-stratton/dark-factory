@@ -61,7 +61,7 @@
     <!-- Main Content -->
     <main class="main">
       <div class="page-header animate-in">
-        <h1 class="page-header__title">Issue #{{.IssueNumber}}</h1>
+        <h1 class="page-header__title">Issue #{{.IssueNumber}}{{if .Title}}: {{.Title}}{{end}}</h1>
         <p class="page-header__subtitle">
           {{.Repo}}
           {{if .PRNumber}}&nbsp;&middot;&nbsp;<a class="pr-link" href="{{.PRLink}}" target="_blank" rel="noopener">PR #{{.PRNumber}}</a>{{end}}
@@ -124,6 +124,57 @@
           {{end}}
         </div>
       </div>
+
+      {{if .Punchlist}}
+      <!-- Punchlist -->
+      <div class="card animate-in animate-in-2">
+        <div class="card__header">
+          <span class="card__title">Manual Testing Punchlist</span>
+        </div>
+        <div class="card__body" style="padding: var(--space-4) var(--space-5);">
+          {{if .Punchlist.VerificationSteps}}
+          <div style="margin-bottom: var(--space-4);">
+            <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Verification Steps</div>
+            <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
+              {{range .Punchlist.VerificationSteps}}
+              <li style="margin-bottom: var(--space-1);">☐ {{.}}</li>
+              {{end}}
+            </ul>
+          </div>
+          {{end}}
+          {{if .Punchlist.ScenarioCases}}
+          <div style="margin-bottom: var(--space-4);">
+            <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Scenario Test Cases</div>
+            <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
+              {{range .Punchlist.ScenarioCases}}
+              <li style="margin-bottom: var(--space-1);">☐ {{.}}</li>
+              {{end}}
+            </ul>
+          </div>
+          {{end}}
+          {{if .Punchlist.AcceptanceTests}}
+          <div style="margin-bottom: var(--space-4);">
+            <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Suggested Acceptance Tests</div>
+            <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
+              {{range .Punchlist.AcceptanceTests}}
+              <li style="margin-bottom: var(--space-1);">☐ {{.}}</li>
+              {{end}}
+            </ul>
+          </div>
+          {{end}}
+          {{if .Punchlist.ChangedFiles}}
+          <div>
+            <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Changed Files</div>
+            <ul style="margin: 0; padding-left: var(--space-5);">
+              {{range .Punchlist.ChangedFiles}}
+              <li style="margin-bottom: var(--space-1);"><code>{{.}}</code></li>
+              {{end}}
+            </ul>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
     </main>
   </div>
 </body>
