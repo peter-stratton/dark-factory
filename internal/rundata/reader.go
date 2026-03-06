@@ -156,13 +156,11 @@ func (r *Reader) LoadRun(owner, repo, timestamp string) (*RunDetail, error) {
 
 	issuesDir := filepath.Join(runDir, "issues")
 	issueEntries, err := os.ReadDir(issuesDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return detail, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("reading issues dir: %w", err)
 	}
 
+	seen := make(map[int]bool)
 	for _, issueEntry := range issueEntries {
 		if !issueEntry.IsDir() {
 			continue
@@ -175,6 +173,15 @@ func (r *Reader) LoadRun(owner, repo, timestamp string) (*RunDetail, error) {
 		}
 		issueDir := filepath.Join(issuesDir, issueNumStr)
 		detail.Issues = append(detail.Issues, r.loadIssueDetail(issueDir, issueNum))
+		seen[issueNum] = true
+	}
+
+	// Add placeholder entries for issues listed in run.json but without a
+	// directory yet (e.g., still running, no hook data written).
+	for _, num := range meta.IssueNumbers {
+		if !seen[num] {
+			detail.Issues = append(detail.Issues, IssueDetail{IssueNumber: num})
+		}
 	}
 
 	return detail, nil
