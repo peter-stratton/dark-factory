@@ -7,11 +7,13 @@ Issue body:
 
 Before writing any code:
 1. Read the full issue body carefully, including any ## Test cases section
-{{- if .ArchitectureDoc}}
-2. Read `{{.ArchitectureDoc}}` for dependency layer rules
+{{- if .ArchitectureDocContent}}
+2. Respect the following dependency layer rules:
+{{.ArchitectureDocContent}}
 {{- end}}
-{{- if .ConventionsDoc}}
-3. Read `{{.ConventionsDoc}}` for coding conventions
+{{- if .ConventionsDocContent}}
+3. Follow the coding conventions below:
+{{.ConventionsDocContent}}
 {{- end}}
 4. Identify every file you expect to create or modify
 5. Post a brief implementation plan as a comment on the issue
@@ -27,7 +29,7 @@ CRITICAL RULES:
 - Do NOT modify files in {{.ScenarioDir}} or {{.ReviewDir}}
 
 Implementation steps:
-1. Write the implementation code{{if .ArchitectureDoc}}, respecting layer boundaries from {{.ArchitectureDoc}}{{end}}
+1. Write the implementation code{{if .ArchitectureDocContent}}, respecting the architecture layer rules above{{end}}
 2. Write unit tests alongside the implementation
 {{- if .BuildCommand}}
 3. Run build: {{.BuildCommand}}
@@ -53,4 +55,4 @@ List any non-obvious decisions or trade-offs made during implementation.
 Note anything incomplete, deferred, or that the reviewer should be aware of.
 
 ### Architecture
-Describe which layers were touched and how dependencies were respected{{if .ArchitectureDoc}} (see {{.ArchitectureDoc}}){{end}}.
+Describe which layers were touched and how dependencies were respected{{if .ArchitectureDocContent}} (per architecture rules above){{end}}.

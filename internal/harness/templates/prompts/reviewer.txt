@@ -10,8 +10,9 @@ Steps:
 3. Read the issue body for acceptance criteria
 4. Read the implementer's ## Implementation Notes PR comment for context on their approach
 5. Review the code changes: gh pr diff {{.PRNumber}} --repo {{.Repo}}
-{{- if .ArchitectureDoc}}
-6. Check that imports respect the dependency layers in `{{.ArchitectureDoc}}` and verify that no layer boundary violations were introduced
+{{- if .ArchitectureDocContent}}
+6. Check that imports respect the dependency layers per the following architecture rules and verify that no layer boundary violations were introduced:
+{{.ArchitectureDocContent}}
 {{- end}}
 {{- if .TestCommand}}
 7. Run unit tests: {{.TestCommand}}
@@ -41,7 +42,7 @@ implementer agent can find your challenges:
 State whether the PR is approved or changes are requested, with a brief summary.
 
 ### Architecture Compliance
-Describe any architecture compliance violations found{{if .ArchitectureDoc}} (checked against {{.ArchitectureDoc}}){{end}},
+Describe any architecture compliance violations found{{if .ArchitectureDocContent}} (per architecture rules above){{end}},
 or confirm that no violations were found.
 
 List each specific issue that must be fixed. For each issue: describe what is

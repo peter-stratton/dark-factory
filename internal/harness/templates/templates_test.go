@@ -121,8 +121,8 @@ func TestImplementerPromptHasArchitectureReference(t *testing.T) {
 		t.Fatalf("reading implementer prompt: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "{{.ArchitectureDoc}}") {
-		t.Error("implementer prompt does not reference architecture doc via {{.ArchitectureDoc}} template variable")
+	if !strings.Contains(content, "{{.ArchitectureDocContent}}") {
+		t.Error("implementer prompt does not reference architecture doc via {{.ArchitectureDocContent}} template variable")
 	}
 }
 
@@ -132,8 +132,8 @@ func TestImplementerPromptHasConventionsReference(t *testing.T) {
 		t.Fatalf("reading implementer prompt: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "{{.ConventionsDoc}}") {
-		t.Error("implementer prompt does not reference conventions doc via {{.ConventionsDoc}} template variable")
+	if !strings.Contains(content, "{{.ConventionsDocContent}}") {
+		t.Error("implementer prompt does not reference conventions doc via {{.ConventionsDocContent}} template variable")
 	}
 }
 
@@ -143,8 +143,8 @@ func TestImplementerPromptHasArchitectureConditional(t *testing.T) {
 		t.Fatalf("reading implementer prompt: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "{{if .ArchitectureDoc}}") && !strings.Contains(content, "{{- if .ArchitectureDoc}}") {
-		t.Error("implementer prompt does not guard {{.ArchitectureDoc}} with a conditional")
+	if !strings.Contains(content, "{{if .ArchitectureDocContent}}") && !strings.Contains(content, "{{- if .ArchitectureDocContent}}") {
+		t.Error("implementer prompt does not guard {{.ArchitectureDocContent}} with a conditional")
 	}
 }
 

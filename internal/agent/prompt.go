@@ -35,11 +35,11 @@ type PromptData struct {
 	ProtectedPaths string
 	ScenarioDir    string
 	ReviewDir      string
-	BranchExists        bool
-	StrictnessDirective string
-	ArchitectureDoc     string
-	ConventionsDoc      string
-	HasScenarioSpec     bool
+	BranchExists           bool
+	StrictnessDirective    string
+	ArchitectureDocContent string
+	ConventionsDocContent  string
+	HasScenarioSpec        bool
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from
