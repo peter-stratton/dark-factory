@@ -16,9 +16,10 @@ type ReviewResult struct {
 }
 
 // Review runs the reviewer agent for the given PR and returns the verdict.
-func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*ReviewResult, error) {
+func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hasSpec bool) (*ReviewResult, error) {
 	data := newPromptData(issue, cfg, Slugify(issue.Title))
 	data.PRNumber = prNum
+	data.HasScenarioSpec = hasSpec
 
 	rendered, err := RenderPrompt(prompts.Reviewer, data)
 	if err != nil {

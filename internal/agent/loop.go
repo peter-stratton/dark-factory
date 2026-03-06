@@ -237,7 +237,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			return outcome
 		}
 
-		reviewResult, err := Review(ctx, issue, prNum, cfg, prompts, authEnv, logger)
+		reviewResult, err := Review(ctx, issue, prNum, cfg, prompts, authEnv, logger, hasSpec)
 		if err != nil {
 			outcome.Status = "failed"
 			outcome.Err = fmt.Errorf("reviewer agent: %w", err)

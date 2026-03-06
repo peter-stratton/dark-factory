@@ -11,7 +11,7 @@ func TestReview_ReturnsVerdict(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -26,7 +26,7 @@ func TestReview_ChangesRequested(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -42,7 +42,7 @@ func TestReview_SetsReviewerRole(t *testing.T) {
 		return []byte("REVIEW_RESULT=APPROVED\n"), []byte(""), 0, nil
 	})
 
-	_, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -58,7 +58,7 @@ func TestReview_StructuredVerdictApproved(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -73,7 +73,7 @@ func TestReview_StructuredVerdictChangesRequested(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestReview_NoStructuredVerdict_FallsBackToStdout(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -104,7 +104,7 @@ func TestReview_NeitherSource_EmptyVerdict(t *testing.T) {
 		return []byte(out), []byte(""), 0, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
