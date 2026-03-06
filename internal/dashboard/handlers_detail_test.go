@@ -512,6 +512,232 @@ func TestServer_IssueDetail_WithRetries(t *testing.T) {
 	}
 }
 
+// --- Dialogue tests ---
+
+// writeDialogueFile writes a dialogue.json file under issueDir.
+func writeDialogueFile(t *testing.T, issueDir string, entries []rundata.DialogueEntry) {
+	t.Helper()
+	writeJSON(t, filepath.Join(issueDir, "dialogue.json"), entries)
+}
+
+// buildIssueDir creates the issue directory and writes outcome.json, returning the issue dir path.
+func buildIssueDir(t *testing.T, runDir string, issueNum int) string {
+	t.Helper()
+	issueDir := filepath.Join(runDir, "issues", strconv.Itoa(issueNum))
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: issueNum, Status: "implemented"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "done", DurationSeconds: 5})
+	return issueDir
+}
+
+func TestServer_IssueDetail_DialogueDisplayed(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{20},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 20)
+	writeDialogueFile(t, issueDir, []rundata.DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "implementation note here"},
+		{Role: "reviewer", Round: 1, Body: "review comment here"},
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/20", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Dialogue") {
+		t.Errorf("body missing Dialogue section; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "implementation note here") {
+		t.Errorf("body missing implementer body text")
+	}
+	if !strings.Contains(body, "review comment here") {
+		t.Errorf("body missing reviewer body text")
+	}
+}
+
+func TestServer_IssueDetail_NoDialogue(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{21},
+		StartedAt:    now,
+	})
+	buildIssueDir(t, runDir, 21)
+	// No dialogue.json written.
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/21", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	// The Dialogue card should not be rendered when there are no entries.
+	// We check that the heading text doesn't appear inside a card context.
+	// The word "Dialogue" in the page title is fine, so we check for the
+	// card__title span which is only present when the section is rendered.
+	if strings.Contains(body, `card__title">Dialogue`) {
+		t.Errorf("body should not contain Dialogue card when no entries exist")
+	}
+}
+
+func TestServer_IssueDetail_RolesStyled(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{22},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 22)
+	writeDialogueFile(t, issueDir, []rundata.DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "implementer text"},
+		{Role: "reviewer", Round: 1, Body: "reviewer text"},
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/22", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	// Each role appears as text in the summary.
+	if !strings.Contains(body, "implementer") {
+		t.Errorf("body missing role label 'implementer'")
+	}
+	if !strings.Contains(body, "reviewer") {
+		t.Errorf("body missing role label 'reviewer'")
+	}
+	// Distinct visual styling: implementer uses color-accent, reviewer uses color-warning.
+	if !strings.Contains(body, "color-accent") {
+		t.Errorf("body missing implementer border style (color-accent)")
+	}
+	if !strings.Contains(body, "color-warning") {
+		t.Errorf("body missing reviewer border style (color-warning)")
+	}
+}
+
+func TestServer_IssueDetail_DialogueExpandable(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{23},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 23)
+	writeDialogueFile(t, issueDir, []rundata.DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "expandable body content"},
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/23", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "<details") {
+		t.Errorf("body missing <details> element for expandable dialogue body")
+	}
+	if !strings.Contains(body, "<summary") {
+		t.Errorf("body missing <summary> element inside <details>")
+	}
+	if !strings.Contains(body, "expandable body content") {
+		t.Errorf("body missing dialogue body content inside <details>")
+	}
+}
+
+func TestServer_IssueDetail_MultipleRounds(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{24},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 24)
+	writeDialogueFile(t, issueDir, []rundata.DialogueEntry{
+		{Role: "implementer", Round: 1, Body: "impl round 1"},
+		{Role: "reviewer", Round: 1, Body: "review round 1"},
+		{Role: "implementer", Round: 2, Body: "impl round 2"},
+		{Role: "reviewer", Round: 2, Body: "review round 2"},
+		{Role: "implementer", Round: 3, Body: "impl round 3"},
+		{Role: "reviewer", Round: 3, Body: "review round 3"},
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/24", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+
+	// All six entries should appear.
+	for _, want := range []string{
+		"impl round 1", "review round 1",
+		"impl round 2", "review round 2",
+		"impl round 3", "review round 3",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing dialogue entry %q", want)
+		}
+	}
+
+	// Verify ordering: round 1 appears before round 2, round 2 before round 3.
+	idx1 := strings.Index(body, "impl round 1")
+	idx2 := strings.Index(body, "impl round 2")
+	idx3 := strings.Index(body, "impl round 3")
+	if idx1 < 0 || idx2 < 0 || idx3 < 0 {
+		t.Fatal("could not find all round markers for ordering check")
+	}
+	if idx1 > idx2 {
+		t.Errorf("round 1 should appear before round 2")
+	}
+	if idx2 > idx3 {
+		t.Errorf("round 2 should appear before round 3")
+	}
+}
+
 func TestServer_IndexRows_HaveRunDetailURL(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now().UTC()

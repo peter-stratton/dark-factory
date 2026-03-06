@@ -125,6 +125,26 @@
         </div>
       </div>
 
+      {{if .Dialogue}}
+      <!-- Dialogue Timeline -->
+      <div class="card animate-in animate-in-2">
+        <div class="card__header">
+          <span class="card__title">Dialogue</span>
+        </div>
+        <div class="card__body" style="padding: var(--space-4) var(--space-5);">
+          {{range .Dialogue}}
+          <details style="margin-bottom: var(--space-3); border-left: 3px solid {{if eq .Role "implementer"}}var(--color-accent){{else}}var(--color-warning){{end}}; padding-left: var(--space-3);">
+            <summary style="cursor: pointer; user-select: none; padding: var(--space-2) 0; font-size: var(--text-sm); font-weight: 500;">
+              {{if eq .Role "implementer"}}&#128295;{{else}}&#128064;{{end}}
+              {{.Role}} &middot; Round {{.Round}}
+            </summary>
+            <pre class="code-block" style="white-space: pre-wrap; word-break: break-word; margin-top: var(--space-2);">{{.Body}}</pre>
+          </details>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
       {{if .Punchlist}}
       <!-- Punchlist -->
       <div class="card animate-in animate-in-2">
