@@ -190,23 +190,20 @@ render the structured failure summary, and loads the new prompt in
 
 ---
 
-## Issue 181: Wire verify step into agent loop
+## Issue 199: Wire verify step into agent loop (host mode)
 
-**Blocked by**: #176, #177, #178
+**Blocked by**: #176, #177
 
 ### Description
 
 Insert the deterministic verify step into `ProcessIssue` between the guard
 rails (step 3) and the quality review gate (step 4). After the implementer
-finishes and guard rails pass, the orchestrator checks out the PR branch and
-runs build/lint/test. If any check fails and a fix prompt is configured, the
-failure summary is fed back to the implementer agent for a fix attempt
-(reusing the session ID). After fixing, verify re-runs. This repeats up to
-`MaxFixAttempts` times.
+finishes and guard rails pass, the orchestrator builds the check list from
+config and runs `RunVerify` with a host-mode `CommandRunner`.
 
-In sandbox mode, verify commands run in a container using the same Docker
-image (clone repo, checkout PR branch, run commands). In host mode, verify
-commands run directly on the host after fetching and checking out the branch.
+This issue covers only the host-mode runner (`sh -c <command>` via
+`GuardRunner`) and the basic pass/skip paths. The fix cycle and sandbox
+runner are handled in follow-on issues.
 
 ### Key constraints
 
@@ -215,53 +212,136 @@ commands run directly on the host after fetching and checking out the branch.
   - Build `[]Check` from `cfg.BuildCommand`, `cfg.LintCommand`,
     `cfg.TestCommand` (skip empty)
   - If no checks configured, skip verify entirely
-  - Create a `CommandRunner` based on `cfg.NoSandbox`:
-    - Host mode: run `sh -c <command>` via `GuardRunner` in the checked-out
-      PR branch
-    - Sandbox mode: run command in a container via `sandbox.RunContainer`
-      using the same image, cloning the repo and checking out the PR branch
+  - Create a host-mode `CommandRunner` that runs `sh -c <command>` via
+    `GuardRunner` in the checked-out PR branch
   - Call `RunVerify` with the checks and runner
   - If `AllPassed`: log success, proceed to review
-  - If not `AllPassed` and fix prompt is configured:
+  - If not `AllPassed`:
+    - If `cfg.Verify.Blocking`: fail the issue with verify error summary
+    - If `!cfg.Verify.Blocking`: log warning, proceed to review
+  - No fix cycle in this issue — that is handled by issue 183
+
+### Acceptance criteria
+
+- [ ] Verify step runs between guard rails and quality review
+- [ ] Empty commands are skipped; no checks configured skips verify entirely
+- [ ] Host-mode runner executes `sh -c <command>` via `GuardRunner`
+- [ ] `Blocking: true` fails the issue when verify fails
+- [ ] `Blocking: false` warns and proceeds to review
+
+### Test cases
+
+- **All checks pass**: Verify succeeds, proceeds directly to review
+- **No commands configured**: Verify step is skipped entirely
+- **Host mode verify**: Verify commands run on host via `sh -c`
+- **Blocking failure**: Verify fails with `Blocking: true`, issue status is
+  "failed"
+- **Non-blocking failure**: Verify fails with `Blocking: false`, proceeds to
+  review with warning
+- **Verify runs between guard rails and quality review**: Guard rails run
+  before verify, quality review runs after verify passes
+
+---
+
+## Issue 200: Verify fix cycle
+
+**Blocked by**: #178, #199
+
+### Description
+
+Add the fix-retry loop to the verify step. When verify fails and a fix
+prompt is configured, the failure summary is fed back to the implementer
+agent for a fix attempt (reusing the session ID). After fixing, verify
+re-runs. This repeats up to `MaxFixAttempts` times.
+
+### Key constraints
+
+- Modify `internal/agent/implementer.go`:
+  - Add `VerifyFix` function (similar to `Retry`) that renders the
+    `verify_fix.txt` prompt with `VerifyErrors` and invokes `Run` with
+    role `implementer_retry`
+  - Accept `prevSessionID` for session continuity
+- Modify `internal/agent/loop.go`:
+  - Replace the direct fail/warn on verify failure with the fix cycle:
     - Format `VerifyErrors` from the `VerifyResult` (check name + output)
     - Render `verify_fix.txt` with the errors
-    - Call the implementer agent with the fix prompt (resume session)
+    - Call `VerifyFix` with the fix prompt (resume session)
     - Re-run verify
     - Loop up to `cfg.Verify.MaxFixAttempts` times
   - If verify still fails after fix attempts:
     - If `cfg.Verify.Blocking`: fail the issue with verify error
     - If `!cfg.Verify.Blocking`: log warning, proceed to review
   - Re-check protected path drift after each fix attempt
-- Modify `internal/agent/implementer.go`:
-  - Add `VerifyFix` function (similar to `Retry`) that renders the fix prompt
-    and invokes `Run` with role `implementer_retry`
 
 ### Acceptance criteria
 
-- [ ] Verify step runs between guard rails and quality review
-- [ ] Empty commands are skipped; no checks configured skips verify entirely
 - [ ] Fix cycle invokes implementer with verify errors and resumes session
 - [ ] Fix cycle respects `MaxFixAttempts` limit
 - [ ] `Blocking: true` fails the issue when verify exhausts fix attempts
-- [ ] `Blocking: false` warns and proceeds to review
+- [ ] `Blocking: false` warns and proceeds to review after exhausted attempts
+- [ ] Protected path drift is re-checked after each fix attempt
+- [ ] Session ID is forwarded for context resumption
 
 ### Test cases
 
-- **All checks pass**: Verify succeeds, proceeds directly to review
-- **Build fails, fix succeeds**: First verify fails, fix attempt passes verify,
-  proceeds to review
-- **Exhausted fix attempts (blocking)**: Verify fails, fixes fail, issue status
-  is "failed"
-- **Exhausted fix attempts (non-blocking)**: Verify fails, fixes fail, proceeds
-  to review with warning
-- **No commands configured**: Verify step is skipped entirely
-- **Sandbox mode verify**: Verify commands run inside container with correct
-  image and branch
-- **Host mode verify**: Verify commands run on host via shell
-- **Drift check after fix**: Protected path drift is re-checked after each fix
-  attempt
+- **Build fails, fix succeeds**: First verify fails, fix attempt passes
+  verify, proceeds to review
+- **Exhausted fix attempts (blocking)**: Verify fails, fixes fail, issue
+  status is "failed"
+- **Exhausted fix attempts (non-blocking)**: Verify fails, fixes fail,
+  proceeds to review with warning
+- **Drift check after fix**: Protected path drift is re-checked after each
+  fix attempt
 - **Session continuity**: Fix agent receives previous session ID for context
   resumption
+- **Fix prompt contains error output**: Rendered prompt includes check names
+  and truncated output from the failed verify
+
+---
+
+## Issue 201: Sandbox-mode verify runner
+
+**Blocked by**: #199
+
+### Description
+
+Add a sandbox `CommandRunner` variant for the verify step. When
+`cfg.NoSandbox` is false, verify commands run inside a container using
+`sandbox.RunContainer` with the same Docker image. The container clones
+the repo, checks out the PR branch, and runs the verify command.
+
+### Key constraints
+
+- New function in `internal/agent/verify.go` (or `loop.go`):
+  - `sandboxCommandRunner(ctx, image, repo, branch, logger)` returning a
+    `CommandRunner` that:
+    - Calls `sandbox.RunContainer` with the verify command
+    - Uses the same Docker image as agent containers (`cfg.Docker.Image`)
+    - Container script: `git clone <repo> /workspace && cd /workspace &&
+      git checkout <branch> && sh -c <command>`
+    - Returns stdout, stderr, exit code from the container result
+- Modify `internal/agent/loop.go`:
+  - When building the `CommandRunner`, check `cfg.NoSandbox`:
+    - `true`: use the existing host-mode runner (from issue 181)
+    - `false`: use the new sandbox runner
+  - Pass `prBranch` and `cfg.Docker.Image` to the sandbox runner
+
+### Acceptance criteria
+
+- [ ] Sandbox runner executes verify commands inside a container
+- [ ] Container uses the same image as agent containers
+- [ ] Container clones the repo and checks out the PR branch
+- [ ] Stdout, stderr, and exit code are captured correctly
+- [ ] `cfg.NoSandbox` selects between host and sandbox runners
+
+### Test cases
+
+- **Sandbox mode verify**: Verify commands run inside container with correct
+  image and branch
+- **Host mode unchanged**: `NoSandbox: true` still uses the host runner
+- **Container failure**: Non-zero exit code from container is captured as
+  check failure
+- **Container cleanup**: Container is removed after verify completes
 
 ---
 
@@ -320,7 +400,7 @@ pattern, the hook blocks it and returns a system message explaining why.
 
 ## Issue 182: Verify step run data integration
 
-**Blocked by**: #181
+**Blocked by**: #199, #200
 
 ### Description
 

@@ -1,6 +1,6 @@
-# Scenario: Wire verify step into agent loop
+# Scenario: Wire verify step into agent loop (host mode)
 
-Relates to: Issue #181
+Relates to: Issue #199
 
 ## Setup
 - The `internal/agent/` package with mock agent runners and hook implementations
@@ -16,41 +16,25 @@ Process an issue where verify checks (build, test) all pass.
 - Quality review is invoked after verify
 - No fix cycle is triggered
 
-### Build fails then fix succeeds
-Process an issue where initial verify fails on build, then the fix attempt
-makes verify pass.
-- Implementer is invoked with verify fix prompt containing the build error
-- Second verify attempt passes
-- Quality review is invoked after successful verify
-
-### Exhausted fix attempts with blocking mode
-Process an issue with `Verify.Blocking: true` and `Verify.MaxFixAttempts: 2`
-where verify fails on every attempt.
-- Two fix attempts are made
-- Issue outcome status is "failed"
-- Quality review is never invoked
-
-### Exhausted fix attempts with non-blocking mode
-Process an issue with `Verify.Blocking: false` and `Verify.MaxFixAttempts: 1`
-where verify fails on every attempt.
-- One fix attempt is made
-- A warning is logged
-- Quality review is still invoked (verify failure does not block)
-
 ### No commands configured skips verify
 Process an issue with empty `BuildCommand`, `LintCommand`, and `TestCommand`.
 - Verify step is skipped entirely
 - Quality review is invoked directly after guard rails
 
-### Fix agent resumes session
-Process an issue where verify fails and a fix cycle is triggered.
-- The fix agent invocation includes the implementer's session ID
-- The fix prompt contains the verify error summary
+### Host mode verify runs via sh -c
+Process an issue with `NoSandbox: true` and `BuildCommand: "go build ./..."`.
+- `CommandRunner` executes `sh -c "go build ./..."` via `GuardRunner`
+- Stdout, stderr, and exit code are captured
 
-### Protected path drift re-checked after fix
-Process an issue where the fix agent modifies a protected path.
-- Protected path drift check runs after the fix attempt
-- Issue is failed or flagged for the drift violation
+### Blocking failure stops processing
+Process an issue with `Verify.Blocking: true` where build fails.
+- Issue outcome status is "failed"
+- Quality review is never invoked
+
+### Non-blocking failure proceeds to review
+Process an issue with `Verify.Blocking: false` where build fails.
+- A warning is logged
+- Quality review is still invoked
 
 ### Verify runs between guard rails and quality review
 Process an issue through the full pipeline.
