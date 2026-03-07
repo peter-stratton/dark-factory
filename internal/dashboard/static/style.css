@@ -1129,3 +1129,23 @@ a:hover {
 .markdown-body strong {
   color: var(--text-primary);
 }
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
+}
+.markdown-body th,
+.markdown-body td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  text-align: left;
+}
+.markdown-body th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.markdown-body tbody tr:hover {
+  background: var(--bg-secondary);
+}

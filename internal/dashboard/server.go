@@ -15,6 +15,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 )
 
 //go:embed templates static
@@ -39,10 +40,11 @@ func New(cfg Config, reader *rundata.Reader) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	md := goldmark.New(goldmark.WithExtensions(extension.Table))
 	funcMap := template.FuncMap{
 		"renderMarkdown": func(s string) template.HTML {
 			var buf bytes.Buffer
-			if err := goldmark.Convert([]byte(s), &buf); err != nil {
+			if err := md.Convert([]byte(s), &buf); err != nil {
 				return template.HTML(template.HTMLEscapeString(s)) //nolint:gosec
 			}
 			return template.HTML(buf.Bytes()) //nolint:gosec
