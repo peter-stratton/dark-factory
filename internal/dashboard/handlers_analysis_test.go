@@ -1,11 +1,11 @@
 package dashboard_test
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,8 +35,7 @@ func buildAnalysisRun(t *testing.T, baseDir, owner, repo, timestamp string, meta
 }
 
 func itoa(n int) string {
-	b, _ := json.Marshal(n)
-	return strings.Trim(string(b), `"`)
+	return strconv.Itoa(n)
 }
 
 func TestServer_Analysis_EmptyState(t *testing.T) {
