@@ -609,6 +609,81 @@ enforce_architecture: true
 	}
 }
 
+func TestVerifyDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LintCommand != "" {
+		t.Errorf("LintCommand = %q, want empty string", cfg.LintCommand)
+	}
+	if cfg.Verify.MaxFixAttempts != 2 {
+		t.Errorf("Verify.MaxFixAttempts = %d, want 2", cfg.Verify.MaxFixAttempts)
+	}
+	if !cfg.Verify.Blocking {
+		t.Error("Verify.Blocking = false, want true")
+	}
+}
+
+func TestLintCommandFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+lint_command: "./scripts/lint.sh"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LintCommand != "./scripts/lint.sh" {
+		t.Errorf("LintCommand = %q, want %q", cfg.LintCommand, "./scripts/lint.sh")
+	}
+}
+
+func TestVerifyBlockFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+verify:
+  max_fix_attempts: 5
+  blocking: false
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Verify.MaxFixAttempts != 5 {
+		t.Errorf("Verify.MaxFixAttempts = %d, want 5", cfg.Verify.MaxFixAttempts)
+	}
+	if cfg.Verify.Blocking {
+		t.Error("Verify.Blocking = true, want false")
+	}
+}
+
+func TestVerifyFixPromptPathFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+prompts:
+  verify_fix: "custom/fix.txt"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Prompts.VerifyFix != "custom/fix.txt" {
+		t.Errorf("Prompts.VerifyFix = %q, want %q", cfg.Prompts.VerifyFix, "custom/fix.txt")
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.
