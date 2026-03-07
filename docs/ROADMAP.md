@@ -433,3 +433,26 @@ loop between agent execution and prompt engineering.
 - Linter config generation from `architecture.json` (per-language)
 - Daemon mode (`godark watch`) — continuous polling
 - Bounded concurrency — parallel agent execution for independent issues
+- Human-in-the-loop review cycle
+  - **Problem**: `no_merge: true` stops godark at PR creation, but if a human
+    requests changes, godark has no way to pick that up and push fixes. The
+    human must either fix things themselves or manually re-trigger godark.
+  - **Webhook listener** (or `gh` polling) watches for `CHANGES_REQUESTED`
+    reviews and new review comments on godark-created PRs.
+  - **Session resumption**: feed the human's review comments into the
+    implementer agent, resuming its prior session (`GODARK_SESSION_ID`) so it
+    has full context of the original implementation + the AI reviewer's
+    feedback + the human's feedback.
+  - **State machine** tracks each PR through: `ai_review` → `human_review` →
+    `human_changes_requested` → `ai_fix` → `human_review` (loop until
+    approved or max cycles).
+  - **Graduated autonomy**: classify PRs by risk (lines changed, API/migration
+    touches, config changes) and let `godark.yaml` define thresholds:
+    - `auto_merge: low_risk` — auto-merge small/safe PRs, stop for human on
+      the rest
+    - `auto_merge: all` — human spot-checks only
+    - `auto_merge: none` — current `no_merge: true` behavior
+  - **PR labels** communicate state: `godark:awaiting-human-review`,
+    `godark:fixing-review-feedback`, `godark:ready-to-merge`.
+  - Enables adoption in orgs that require human review (e.g., onX) while
+    building toward earned autonomy as trust increases.
