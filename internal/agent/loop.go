@@ -63,8 +63,21 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		specResult, err := GenerateSpec(ctx, issue, cfg, prompts, authEnv, logger)
 		if err != nil {
 			logger.Warn("spec generation failed, continuing without spec", "error", err)
+			if hook != nil {
+				step := rundata.StepResult{Error: err.Error()}
+				if writeErr := hook.WriteSpecGeneratorResult(issue.Number, step); writeErr != nil {
+					logger.Warn("failed to write spec generator result", "error", writeErr)
+				}
+			}
 		} else if specResult.TimedOut {
 			logger.Warn("spec generation timed out, continuing without spec")
+			if hook != nil {
+				step := ResultToStep(specResult)
+				step.Error = "timed out"
+				if writeErr := hook.WriteSpecGeneratorResult(issue.Number, step); writeErr != nil {
+					logger.Warn("failed to write spec generator result", "error", writeErr)
+				}
+			}
 		} else {
 			// The spec was committed to the remote branch inside the container.
 			// The file isn't on the host, but the reviewer container will see it
@@ -72,6 +85,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			// lands on main permanently.
 			specGenerated = true
 			logger.Info("spec generated on remote branch", "branch", branch)
+			if hook != nil {
+				if writeErr := hook.WriteSpecGeneratorResult(issue.Number, ResultToStep(specResult)); writeErr != nil {
+					logger.Warn("failed to write spec generator result", "error", writeErr)
+				}
+			}
 		}
 	}
 

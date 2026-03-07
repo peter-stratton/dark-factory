@@ -135,6 +135,24 @@ func TestRunJSONFinalized(t *testing.T) {
 	}
 }
 
+func TestSpecGeneratorWritten(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{Output: "spec generator output"}
+	if err := w.WriteSpecGeneratorResult(42, step); err != nil {
+		t.Fatalf("WriteSpecGeneratorResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "spec-generator.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected file at %s, got: %v", path, err)
+	}
+}
+
 func TestImplementWritten(t *testing.T) {
 	base := t.TempDir()
 	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})

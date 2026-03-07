@@ -397,6 +397,9 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
 	var steps []TimelineStepView
 
+	if hasStepData(issue.SpecGenerator) {
+		steps = append(steps, stepToView("Spec Generator", issue.SpecGenerator))
+	}
 	if hasStepData(issue.Implement) {
 		steps = append(steps, stepToView("Implement", issue.Implement))
 	}

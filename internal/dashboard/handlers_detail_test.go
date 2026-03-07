@@ -930,3 +930,85 @@ func TestServer_IssueDetail_NoToolTraceWhenAbsent(t *testing.T) {
 		t.Errorf("body should not contain 'Tool Trace (N calls)' when ToolTrace is absent")
 	}
 }
+
+func TestServer_IssueDetail_SpecGeneratorInTimeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{5},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "5")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 5, Status: "implemented", PRNumber: 99})
+	writeJSON(t, filepath.Join(issueDir, "spec-generator.json"),
+		rundata.StepResult{Output: "spec gen trace", DurationSeconds: 20})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "impl trace", DurationSeconds: 45})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/5", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	idxSG := strings.Index(body, "Spec Generator")
+	idxImpl := strings.Index(body, "Implement")
+
+	if idxSG < 0 {
+		t.Error("body missing Spec Generator step")
+	}
+	if idxImpl < 0 {
+		t.Error("body missing Implement step")
+	}
+	if idxSG >= 0 && idxImpl >= 0 && idxSG > idxImpl {
+		t.Error("Spec Generator should appear before Implement in timeline")
+	}
+}
+
+func TestServer_IssueDetail_SpecGeneratorAbsentOmitted(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{6},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "6")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 6, Status: "implemented"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "impl trace", DurationSeconds: 45})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/6", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "Spec Generator") {
+		t.Error("body should not contain Spec Generator step when no spec-generator.json exists")
+	}
+}
