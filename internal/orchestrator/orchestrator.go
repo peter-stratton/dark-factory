@@ -428,11 +428,13 @@ done:
 
 		if writer != nil {
 			for _, e := range entries {
+				status := punchlistEnrichmentStatus(prompts, e.AcceptanceTests)
 				plData := rundata.PunchlistData{
 					VerificationSteps: e.ExtractVerificationSteps(),
 					ScenarioCases:     e.ExtractScenarioCases(),
 					AcceptanceTests:   e.AcceptanceTests,
 					ChangedFiles:      e.ChangedFiles,
+					EnrichmentStatus:  status,
 				}
 				if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
 					logger.Warn("failed to write punchlist data",
@@ -533,6 +535,20 @@ func PullAfterMerge(logger *slog.Logger) error {
 
 	logger.Warn("failed to pull after merge", "error", err)
 	return fmt.Errorf("pull after merge failed: %w", err)
+}
+
+// punchlistEnrichmentStatus derives the enrichment status string for a single
+// punchlist entry. Returns "skipped" when no prompt was configured, "success"
+// when tests were generated, and "failed" when the prompt was present but no
+// tests could be parsed from the LLM output.
+func punchlistEnrichmentStatus(prompts *agent.Prompts, acceptanceTests []string) string {
+	if prompts.Punchlist == "" {
+		return "skipped"
+	}
+	if acceptanceTests != nil {
+		return "success"
+	}
+	return "failed"
 }
 
 // issueNumbers extracts the issue numbers from a slice of issues.

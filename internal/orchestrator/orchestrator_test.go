@@ -724,5 +724,39 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 	}
 }
 
+func TestPunchlistEnrichmentStatus_Skipped(t *testing.T) {
+	prompts := &agent.Prompts{Punchlist: ""}
+	status := punchlistEnrichmentStatus(prompts, nil)
+	if status != "skipped" {
+		t.Errorf("expected %q, got %q", "skipped", status)
+	}
+}
+
+func TestPunchlistEnrichmentStatus_Success(t *testing.T) {
+	prompts := &agent.Prompts{Punchlist: "some prompt"}
+	status := punchlistEnrichmentStatus(prompts, []string{"Test one"})
+	if status != "success" {
+		t.Errorf("expected %q, got %q", "success", status)
+	}
+}
+
+func TestPunchlistEnrichmentStatus_Failed(t *testing.T) {
+	prompts := &agent.Prompts{Punchlist: "some prompt"}
+	status := punchlistEnrichmentStatus(prompts, nil)
+	if status != "failed" {
+		t.Errorf("expected %q, got %q", "failed", status)
+	}
+}
+
+func TestPunchlistEnrichmentStatus_SuccessEmptySlice(t *testing.T) {
+	// An empty (non-nil) slice counts as success — the LLM ran but returned
+	// zero tests, which is different from a parse error (nil).
+	prompts := &agent.Prompts{Punchlist: "some prompt"}
+	status := punchlistEnrichmentStatus(prompts, []string{})
+	if status != "success" {
+		t.Errorf("expected %q for empty non-nil slice, got %q", "success", status)
+	}
+}
+
 // Suppress unused import warnings.
 var _ = fmt.Sprintf
