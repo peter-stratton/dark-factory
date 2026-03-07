@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Analysis</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/alpine.min.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <a href="/" class="breadcrumbs__link">Runs</a>
+        <span class="breadcrumbs__sep">/</span>
+        <span class="breadcrumbs__current">Analysis</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Dashboard
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="/" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="/analysis" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1 11l4-8 3 5 2-3 2 6H1zm13.5-5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Analysis
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      {{if .Repos}}
+      <div class="sidebar__section">
+        <div class="sidebar__label">Repositories</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="/analysis" class="sidebar__link{{if eq $.RepoFilter ""}} sidebar__link--active{{end}}">
+              All repos
+            </a>
+          </li>
+          {{range .Repos}}
+          <li>
+            <a href="/analysis?repo={{.}}" class="sidebar__link{{if eq . $.RepoFilter}} sidebar__link--active{{end}}">
+              {{.}}
+            </a>
+          </li>
+          {{end}}
+        </ul>
+      </div>
+      {{end}}
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Analysis</h1>
+        <p class="page-header__subtitle">Aggregate statistics across all orchestration runs</p>
+      </div>
+
+      {{if .Repos}}
+
+      <!-- Filter Controls -->
+      <div class="controls animate-in animate-in-1">
+        <div class="control-group">
+          <select class="filter-select"
+                  name="repo"
+                  aria-label="Filter by repository"
+                  hx-get="/partials/analysis-stats"
+                  hx-target="#analysis-content"
+                  hx-trigger="change"
+                  hx-swap="innerHTML">
+            <option value="">All Repos</option>
+            {{range .Repos}}
+            <option value="{{.}}"{{if eq . $.RepoFilter}} selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+        </div>
+      </div>
+
+      {{end}}
+
+      <div id="analysis-content">
+        {{template "analysis-stats" .}}
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>
+
+{{define "analysis-stats"}}
+{{if not .HasData}}
+
+<!-- Empty State -->
+<div class="empty-state animate-in animate-in-1">
+  <h2 class="empty-state__title">No run data available</h2>
+  <p class="empty-state__description">
+    Start orchestration runs to see aggregate analysis here.
+  </p>
+</div>
+
+{{else}}
+
+<!-- Outcome Distribution -->
+<div class="card animate-in animate-in-1">
+  <div class="card__header">
+    <span class="card__title">Outcome Distribution</span>
+    <span class="text-muted">{{.Report.IssueCount}} issues across {{.Report.RunCount}} runs</span>
+  </div>
+  {{if .Outcomes}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th class="cell-num">Count</th>
+        <th>Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Outcomes}}
+      <tr>
+        <td>{{.Status}}</td>
+        <td class="cell-num">{{.Count}}</td>
+        <td>
+          <div class="pass-fail-bar">
+            <span class="text-muted">{{printf "%.1f" .Percent}}%</span>
+            <div class="pass-fail-bar__bar">
+              <div class="progress-bar__segment progress-bar__segment--success" style="width: {{printf "%.1f" .Percent}}%;"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="text-muted" style="padding: 1rem;">No outcome data recorded.</p>
+  {{end}}
+</div>
+
+<!-- Flag Frequency -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Flag Frequency</span>
+    <span class="text-muted">Quality flag codes across all steps</span>
+  </div>
+  {{if .Report.FlagFrequencies}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Flag Code</th>
+        <th class="cell-num">Count</th>
+        <th>% of Issues</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Report.FlagFrequencies}}
+      <tr>
+        <td><code>{{.Code}}</code></td>
+        <td class="cell-num">{{.Count}}</td>
+        <td>
+          <div class="pass-fail-bar">
+            <span class="text-muted">{{printf "%.1f" .Percent}}%</span>
+            <div class="pass-fail-bar__bar">
+              <div class="progress-bar__segment progress-bar__segment--danger" style="width: {{printf "%.1f" .Percent}}%;"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="text-muted" style="padding: 1rem;">No quality flags recorded.</p>
+  {{end}}
+</div>
+
+<!-- Retry Stats -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Retry Statistics</span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th class="cell-num">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Average retries per issue</td>
+        <td class="cell-num">{{printf "%.2f" .Report.RetryStats.AvgPerIssue}}</td>
+      </tr>
+      <tr>
+        <td>Maximum retries on a single issue</td>
+        <td class="cell-num">{{.Report.RetryStats.MaxRetries}}</td>
+      </tr>
+      <tr>
+        <td>Issues with exhausted retries</td>
+        <td class="cell-num">{{.Report.RetryStats.ExhaustedCount}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Cost Stats -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Cost Statistics</span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th class="cell-num">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Total cost</td>
+        <td class="cell-num">{{printf "$%.4f" .Report.CostStats.TotalUSD}}</td>
+      </tr>
+      <tr>
+        <td>Average cost per issue</td>
+        <td class="cell-num">{{printf "$%.4f" .Report.CostStats.AvgPerIssueUSD}}</td>
+      </tr>
+      <tr>
+        <td>Average cost per run</td>
+        <td class="cell-num">{{printf "$%.4f" .Report.CostStats.AvgPerRunUSD}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{{if .Gaps}}
+
+<!-- Prompt Gaps -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Prompt Gaps</span>
+    <span class="text-muted">Conditions correlated with higher failure rates</span>
+  </div>
+  <div style="padding: 0.5rem 0;">
+    {{range .Gaps}}
+    <details style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--color-border);">
+      <summary style="cursor: pointer; font-weight: 500;">{{.Finding}}</summary>
+      <div style="margin-top: 0.75rem; padding-left: 1rem;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Condition</th>
+              <th class="cell-num">Fail Rate</th>
+              <th class="cell-num">Samples</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>With</td>
+              <td class="cell-num">{{printf "%.1f" .FailPctWith}}%</td>
+              <td class="cell-num">{{.SamplesWith}}</td>
+            </tr>
+            <tr>
+              <td>Without</td>
+              <td class="cell-num">{{printf "%.1f" .FailPctWithout}}%</td>
+              <td class="cell-num">{{.SamplesWithout}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {{end}}
+  </div>
+</div>
+
+{{end}}
+
+{{end}}
+{{end}}
