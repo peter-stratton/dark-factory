@@ -20,6 +20,7 @@ type Prompts struct {
 	QualityReviewer  string
 	SpecGenerator    string
 	Punchlist        string
+	VerifyFix        string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -35,6 +36,7 @@ type PromptData struct {
 	ProtectedPaths string
 	ScenarioDir    string
 	ReviewDir      string
+	VerifyErrors           string
 	BranchExists           bool
 	StrictnessDirective    string
 	EnforceArchitecture    bool
@@ -108,6 +110,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		p.Punchlist = ""
 	} else {
 		p.Punchlist = pl
+	}
+
+	// VerifyFix is optional — load from config or embedded default.
+	vf, err := loadPromptFile(cfg.Prompts.VerifyFix, "verify_fix.txt")
+	if err != nil {
+		p.VerifyFix = ""
+	} else {
+		p.VerifyFix = vf
 	}
 
 	return p, nil

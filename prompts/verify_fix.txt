@@ -1,0 +1,18 @@
+The automated verify step for PR #{{.PRNumber}} (issue #{{.IssueNumber}}: {{.IssueTitle}}) in the {{.Repo}} repository has failed.
+
+The following checks did not pass:
+
+{{.VerifyErrors}}
+
+Steps to fix:
+1. Check out the PR branch: gh pr checkout {{.PRNumber}} --repo {{.Repo}}
+2. Read the failing check output above carefully to understand what needs to be fixed
+3. Fix the issues in the code — do not re-run the checks yourself; dark-factory will re-verify after you push
+
+CRITICAL RULES:
+- Do NOT modify any protected paths: {{.ProtectedPaths}}
+- Push to the existing PR branch — do not open a new PR
+
+After fixing:
+1. Commit your fixes with a message referencing the PR (e.g. "Fix verify failures on PR #{{.PRNumber}}")
+2. Push to the PR branch
