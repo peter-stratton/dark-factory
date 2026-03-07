@@ -64,7 +64,7 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 		return nil
 	}
 
-	timeout := 2 * time.Minute
+	timeout := 10 * time.Minute
 	opts := RunOpts{
 		Prompt:  buf.String(),
 		Role:    "punchlist",
