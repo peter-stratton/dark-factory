@@ -675,6 +675,43 @@ func TestLoadRunSpecGeneratorAbsentIsZeroValue(t *testing.T) {
 	}
 }
 
+func TestLoadRunOutcomeDescriptionRoundTrip(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{42},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	wantDesc := "## Problem\nThis is the description.\n\n## Fix\nDo the thing."
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), Outcome{
+		IssueNumber: 42,
+		Title:       "My Issue",
+		Description: wantDesc,
+		Status:      "implemented",
+		PRNumber:    7,
+	}); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	if detail.Issues[0].Outcome.Description != wantDesc {
+		t.Errorf("Description = %q, want %q", detail.Issues[0].Outcome.Description, wantDesc)
+	}
+}
+
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }

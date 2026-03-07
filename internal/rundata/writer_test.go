@@ -293,6 +293,67 @@ func TestOutcomeWritten(t *testing.T) {
 	}
 }
 
+func TestOutcomeDescriptionWritten(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	outcome := Outcome{
+		IssueNumber: 42,
+		Title:       "Some issue title",
+		Description: "## Problem\nThis is the issue body.",
+		Status:      "implemented",
+		PRNumber:    57,
+	}
+	if err := w.WriteOutcome(outcome); err != nil {
+		t.Fatalf("WriteOutcome() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "outcome.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading outcome.json: %v", err)
+	}
+
+	var written Outcome
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing outcome.json: %v", err)
+	}
+
+	if written.Description != outcome.Description {
+		t.Errorf("Description = %q, want %q", written.Description, outcome.Description)
+	}
+}
+
+func TestOutcomeDescriptionOmittedWhenEmpty(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	outcome := Outcome{IssueNumber: 42, Status: "implemented"}
+	if err := w.WriteOutcome(outcome); err != nil {
+		t.Fatalf("WriteOutcome() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "outcome.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading outcome.json: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if _, ok := raw["description"]; ok {
+		t.Error("description key should be omitted from JSON when empty")
+	}
+}
+
 func TestFlagsWrittenToReviewJSON(t *testing.T) {
 	base := t.TempDir()
 	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
