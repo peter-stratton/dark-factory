@@ -1038,34 +1038,9 @@ func TestProcessIssue_HookCalledOnSpecGeneratorTimeout(t *testing.T) {
 	})
 	GuardRunner = loopGuardFn
 
-	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		callIdx++
-		if callIdx == 1 {
-			// Simulate a timed-out spec generator by returning a JSON with is_error=false
-			// but also making the context appear cancelled by returning empty output.
-			// We use a cancelled context approach: return empty so parseRunnerOutput
-			// returns nil and then inject TimedOut behavior.
-			// Instead, return the timed-out JSON result format:
-			return []byte(""), []byte(""), 124, nil
-		}
-		outputs := []string{"implementer output", "QUALITY_RESULT=APPROVED", "REVIEW_RESULT=APPROVED"}
-		idx := callIdx - 2
-		if idx < len(outputs) {
-			return []byte(wrapRunnerJSON(outputs[idx])), []byte(""), 0, nil
-		}
-		return []byte(wrapRunnerJSON("")), []byte(""), 0, nil
-	}
-
-	// The exit code 124 (timeout) doesn't directly set TimedOut — that's set by
-	// ctx cancellation. Instead, test that the hook is called even when spec gen
-	// produces no meaningful result (empty output, no error, no timeout).
-	// The hook should be called on any code path through spec gen when hook != nil.
-	// For a true timeout test, we use a pre-cancelled context for spec gen.
-
-	// Use a real-cancelled-context approach via a custom runner that cancels ctx.
 	ctx, cancel := context.WithCancel(context.Background())
-	callIdx = 0
+	defer cancel()
+	callIdx := 0
 	Runner = func(innerCtx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		callIdx++
 		if callIdx == 1 {
