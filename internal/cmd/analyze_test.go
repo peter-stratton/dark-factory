@@ -50,7 +50,7 @@ func analyzeWithReader(t *testing.T, base, repo, milestone, sinceStr, untilStr s
 		return "", err
 	}
 	var buf bytes.Buffer
-	err = runAnalyze(&buf, reader, repo, milestone, since, until, jsonOut)
+	err = runAnalyze(&buf, reader, nil, repo, milestone, since, until, jsonOut)
 	return buf.String(), err
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -42,7 +43,7 @@ retry statistics, cost statistics, and detected prompt gaps.`,
 			return fmt.Errorf("creating reader: %w", err)
 		}
 
-		return runAnalyze(cmd.OutOrStdout(), reader, repo, milestone, since, until, jsonOut)
+		return runAnalyze(cmd.OutOrStdout(), reader, slog.Default(), repo, milestone, since, until, jsonOut)
 	},
 }
 
@@ -58,7 +59,12 @@ func init() {
 
 // runAnalyze is the core logic for the analyze command.
 // It reads runs from reader, applies filters, and writes the report to w.
-func runAnalyze(w io.Writer, reader *rundata.Reader, repo, milestone string, since, until *time.Time, jsonOut bool) error {
+// If logger is nil, slog.Default() is used.
+func runAnalyze(w io.Writer, reader *rundata.Reader, logger *slog.Logger, repo, milestone string, since, until *time.Time, jsonOut bool) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	metas, err := reader.ListRuns()
 	if err != nil {
 		return fmt.Errorf("listing runs: %w", err)
@@ -74,11 +80,13 @@ func runAnalyze(w io.Writer, reader *rundata.Reader, repo, milestone string, sin
 	for _, meta := range filtered {
 		owner, repoName, err := splitRepo(meta.Repo)
 		if err != nil {
+			logger.Warn("skipping run: invalid repo format", "repo", meta.Repo, "error", err)
 			continue
 		}
 		timestamp := meta.StartedAt.UTC().Format("20060102-150405")
 		detail, err := reader.LoadRun(owner, repoName, timestamp)
 		if err != nil {
+			logger.Warn("skipping run: cannot load run data", "repo", meta.Repo, "timestamp", timestamp, "error", err)
 			continue
 		}
 		runs = append(runs, *detail)
@@ -187,7 +195,13 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "\nOutcomes\n")
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "  Status\tCount\tPercent\n")
-	for status, count := range report.Outcomes {
+	statuses := make([]string, 0, len(report.Outcomes))
+	for status := range report.Outcomes {
+		statuses = append(statuses, status)
+	}
+	sort.Strings(statuses)
+	for _, status := range statuses {
+		count := report.Outcomes[status]
 		var pct float64
 		if report.IssueCount > 0 {
 			pct = float64(count) / float64(report.IssueCount) * 100
