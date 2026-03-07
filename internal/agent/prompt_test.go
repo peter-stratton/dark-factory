@@ -547,3 +547,116 @@ func TestReviewerPrompt_OmitsArchitectureJSONBlockWhenEmpty(t *testing.T) {
 		t.Error("reviewer prompt should not include must_not_depend_on when ArchitectureJSON is absent")
 	}
 }
+
+func TestLoadPrompts_VerifyFixLoadedFromEmbedded(t *testing.T) {
+	cfg := &config.Config{}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.VerifyFix == "" {
+		t.Error("VerifyFix should be loaded from embedded default")
+	}
+}
+
+func TestLoadPrompts_VerifyFixLoadedFromConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	content := "verify fix custom template {{.VerifyErrors}}"
+	path := filepath.Join(dir, "vf.txt")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Prompts: config.Prompts{
+			VerifyFix: path,
+		},
+	}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.VerifyFix != content {
+		t.Errorf("VerifyFix = %q, want %q", p.VerifyFix, content)
+	}
+}
+
+func TestLoadPrompts_VerifyFixMissingFileIsEmpty(t *testing.T) {
+	cfg := &config.Config{
+		Prompts: config.Prompts{
+			VerifyFix: "/nonexistent/verify_fix.txt",
+		},
+	}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() should not error for missing verify_fix, got: %v", err)
+	}
+	if p.VerifyFix != "" {
+		t.Errorf("VerifyFix = %q, want empty for missing file", p.VerifyFix)
+	}
+}
+
+func TestVerifyFixPrompt_RendersWithVerifyErrors(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	errText := "build: exit status 1\nundefined: foo"
+	data := PromptData{
+		IssueNumber:    5,
+		IssueTitle:     "Add feature",
+		Repo:           "owner/repo",
+		PRNumber:       12,
+		BuildCommand:   "go build ./...",
+		TestCommand:    "go test ./...",
+		ProtectedPaths: "CLAUDE.md",
+		VerifyErrors:   errText,
+	}
+	rendered, err := RenderPrompt(p.VerifyFix, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, errText) {
+		t.Error("verify_fix prompt should contain the verify error text")
+	}
+	if !strings.Contains(rendered, "12") {
+		t.Error("verify_fix prompt should contain the PR number")
+	}
+}
+
+func TestVerifyFixPrompt_RendersWithEmptyVerifyErrors(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    5,
+		IssueTitle:     "Add feature",
+		Repo:           "owner/repo",
+		PRNumber:       12,
+		BuildCommand:   "go build ./...",
+		TestCommand:    "go test ./...",
+		ProtectedPaths: "CLAUDE.md",
+		VerifyErrors:   "",
+	}
+	_, err = RenderPrompt(p.VerifyFix, data)
+	if err != nil {
+		t.Errorf("RenderPrompt() with empty VerifyErrors should not error, got: %v", err)
+	}
+}
+
+func TestRenderPrompt_VerifyErrorsField(t *testing.T) {
+	tmpl := "errors: {{.VerifyErrors}}"
+	errText := "lint: line 42: unused variable"
+	data := PromptData{VerifyErrors: errText}
+	result, err := RenderPrompt(tmpl, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if result != "errors: "+errText {
+		t.Errorf("RenderPrompt() = %q, want %q", result, "errors: "+errText)
+	}
+}
