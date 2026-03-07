@@ -14,11 +14,5 @@ CRITICAL RULES:
 - Push to the existing PR branch — do not open a new PR
 
 After fixing:
-{{- if .BuildCommand}}
-1. Run build to confirm: {{.BuildCommand}}
-{{- end}}
-{{- if .TestCommand}}
-2. Run tests to confirm: {{.TestCommand}}
-{{- end}}
-3. Commit your fixes with a message referencing the PR (e.g. "Fix verify failures on PR #{{.PRNumber}}")
-4. Push to the PR branch
+1. Commit your fixes with a message referencing the PR (e.g. "Fix verify failures on PR #{{.PRNumber}}")
+2. Push to the PR branch
