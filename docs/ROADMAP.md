@@ -342,6 +342,89 @@ post structured dialogue on PRs, and the reviewer checks layer compliance
 
 ---
 
+## Phase 10: Deterministic Verification Pipeline
+
+**Goal**: Agent implementation passes through a deterministic verify step
+(build + lint + test) run by Go code — not by the agent — before review begins.
+Failures are fed back to the implementer automatically, saving review cycles
+and tokens. Agents are also restricted from running destructive shell commands.
+
+**Milestone**: `Phase 10` | **Label**: `phase-10`
+
+### Lint command config
+- Add `lint_command` field to `godark.yaml` (empty string = skip)
+- User provides any command or shell script — dark-factory runs it and checks
+  the exit code, same pattern as `build_command` and `test_command`
+
+### Go-side verify step
+- New deterministic step in the agent loop between implementation and review
+- Runs `build_command`, `lint_command`, and `test_command` in sequence
+- Captures structured pass/fail result with summarized error output (not raw
+  terminal dumps) — only the failing command's stderr/stdout, truncated to a
+  reasonable length
+- Runs inside the sandbox if sandboxing is enabled
+
+### Auto-fix cycle
+- On verify failure, feed the structured error summary back to the implementer
+  for a fix attempt (reuses session for context continuity)
+- Configurable max fix attempts before escalating to review or failing
+- Verify step re-runs after each fix attempt
+
+### Verify behavior config
+- `verify:` config block controlling which checks run and failure behavior
+- Option to treat verify failures as blocking (default) or warning-only
+- Individual checks can be disabled (e.g. skip lint, keep build + test)
+
+### Bash deny-list
+- Deny-list for destructive commands in the `PreToolUse` hook (`rm -rf`,
+  `git push --force`, `git reset --hard`, `curl | sh`, etc.)
+- Configurable via `denied_commands` in `godark.yaml`
+- Agent receives a system message explaining why the command was blocked
+
+### Run data integration
+- Verify step results written to run data (pass/fail per check, duration,
+  fix attempt count)
+- Quality flags for verify failures surfaced in dashboard
+
+**Issues**: TBD
+
+---
+
+## Phase 11: Run Analysis & Prompt Feedback
+
+**Goal**: `godark analyze` reads run data across multiple runs to surface
+failure patterns, common quality flags, and prompt gaps — closing the feedback
+loop between agent execution and prompt engineering.
+
+**Milestone**: `Phase 11` | **Label**: `phase-11`
+
+### Analyze command
+- `godark analyze` command — reads `~/.godark/runs/` across all repos and runs
+- Filterable by repo, milestone, date range
+- Outputs a structured report to stdout (human-readable, optionally JSON)
+
+### Failure mode aggregation
+- Common quality flag frequencies (e.g. "30% of reviews flagged
+  `no_review_tests_written` on first pass")
+- Retry reason distribution — why implementations needed retries
+- Verdict distributions per phase/milestone
+- Verify step failure rates by check type (build vs lint vs test)
+
+### Prompt gap detection
+- Correlate issue characteristics (title patterns, body length, label set)
+  with failure rates
+- Identify which template variables are empty on failing runs vs passing runs
+- Surface issues that consistently exhaust retries
+
+### Dashboard integration
+- Analysis views in `godark status` alongside existing run/issue views
+- Trend charts: success rate, average retries, cost per issue over time
+- Drill-down from aggregate patterns to specific failing runs
+
+**Issues**: TBD
+
+---
+
 ### Future considerations (not yet scoped)
 - Linter config generation from `architecture.json` (per-language)
 - Daemon mode (`godark watch`) — continuous polling
