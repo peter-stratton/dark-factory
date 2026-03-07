@@ -62,6 +62,18 @@ func NewReader(logger *slog.Logger) (*Reader, error) {
 	}, nil
 }
 
+// NewReaderWithBase creates a Reader using a custom base directory.
+// If logger is nil, slog.Default() is used. Intended for testing.
+func NewReaderWithBase(baseDir string, logger *slog.Logger) *Reader {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Reader{
+		logger:  logger,
+		baseDir: baseDir,
+	}
+}
+
 // RunDir returns the filesystem path to the directory for the given run.
 // It does not validate path components; callers are responsible for validation.
 func (r *Reader) RunDir(owner, repo, timestamp string) string {
