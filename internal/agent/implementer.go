@@ -130,6 +130,7 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 		env[k] = v
 	}
 	env["GODARK_PROTECTED_PATHS"] = strings.Join(cfg.ProtectedPaths, ",")
+	env["GODARK_DENIED_COMMANDS"] = strings.Join(cfg.DeniedCommands, ",")
 
 	return RunOpts{
 		Prompt:  rendered,
