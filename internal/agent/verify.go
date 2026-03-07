@@ -3,6 +3,8 @@ package agent
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strings"
 )
 
 // Check defines a single verification command to run.
@@ -73,4 +75,20 @@ func truncateVerifyOutput(b []byte) string {
 		return string(b)
 	}
 	return string(b[len(b)-verifyOutputLimit:])
+}
+
+// formatVerifyErrors formats the failed checks from a VerifyResult as a
+// human-readable string suitable for inclusion in the verify_fix prompt.
+// Each failed check is rendered as "=== <name> (exit code N) ===\n<output>\n".
+func formatVerifyErrors(result VerifyResult) string {
+	var sb strings.Builder
+	for _, cr := range result.Checks {
+		if cr.Passed {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("=== %s (exit code %d) ===\n", cr.Name, cr.ExitCode))
+		sb.WriteString(cr.Output)
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
