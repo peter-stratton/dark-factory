@@ -212,15 +212,17 @@ async def main() -> None:
     cost_usd = 0.0
     is_error = False
     tool_trace: list[str] = []
+    assistant_texts: list[str] = []
 
     async def _collect_messages(opts):
         """Stream messages from the SDK, printing each one. Returns (session_id, result, cost, is_error)."""
-        nonlocal result_session_id, result_text, cost_usd, is_error, tool_trace
+        nonlocal result_session_id, result_text, cost_usd, is_error, tool_trace, assistant_texts
         result_session_id = ""
         result_text = ""
         cost_usd = 0.0
         is_error = False
         tool_trace = []
+        assistant_texts = []
         async for message in claude_agent_sdk.query(prompt=prompt, options=opts):
             try:
                 msg_dict = message.model_dump(mode="json") if hasattr(message, "model_dump") else vars(message)
@@ -228,12 +230,16 @@ async def main() -> None:
                 msg_dict = {"type": type(message).__name__, "raw": str(message)}
             print(json.dumps(msg_dict, default=str), flush=True)
 
-            # Collect tool-use summaries from AssistantMessage content blocks.
+            # Collect text and tool-use summaries from AssistantMessage content blocks.
             msg_type = type(message).__name__
             if msg_type == "AssistantMessage":
                 for block in getattr(message, "content", []):
                     block_type = type(block).__name__
-                    if block_type == "ToolUseBlock":
+                    if block_type == "TextBlock":
+                        text = getattr(block, "text", "")
+                        if text:
+                            assistant_texts.append(text)
+                    elif block_type == "ToolUseBlock":
                         tool_name = getattr(block, "name", "")
                         tool_input = getattr(block, "input", {}) or {}
                         if tool_name in ("Edit", "Write", "Read"):
@@ -265,10 +271,13 @@ async def main() -> None:
         else:
             raise
 
-    # For reviewer/quality_reviewer roles, extract the verdict from result_text.
+    # For reviewer/quality_reviewer roles, extract the verdict.
+    # Check full_output (all assistant text) since the sentinel may not be
+    # in the final ResultMessage alone.
     verdict = ""
-    if role == "reviewer" and result_text:
-        upper = result_text.upper()
+    verdict_source = full_output or result_text
+    if role == "reviewer" and verdict_source:
+        upper = verdict_source.upper()
         for line in upper.splitlines():
             stripped = line.strip()
             if "REVIEW" in stripped and "RESULT" in stripped:
@@ -279,8 +288,8 @@ async def main() -> None:
                     verdict = "APPROVED"
                     break
 
-    if role == "quality_reviewer" and result_text:
-        upper = result_text.upper()
+    if role == "quality_reviewer" and verdict_source:
+        upper = verdict_source.upper()
         for line in upper.splitlines():
             stripped = line.strip()
             if "QUALITY" in stripped and "RESULT" in stripped:
@@ -291,9 +300,13 @@ async def main() -> None:
                     verdict = "APPROVED"
                     break
 
+    # Use the full accumulated assistant text as the result so the dashboard
+    # shows the complete agent output, not just the final sentinel line.
+    full_output = "\n\n".join(assistant_texts) if assistant_texts else result_text
+
     final: dict = {
         "session_id": result_session_id,
-        "result": result_text,
+        "result": full_output,
         "cost_usd": cost_usd,
         "is_error": is_error,
     }
