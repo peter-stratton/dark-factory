@@ -1,6 +1,9 @@
 package agent
 
-import "context"
+import (
+	"bytes"
+	"context"
+)
 
 // Check defines a single verification command to run.
 type Check struct {
@@ -32,16 +35,20 @@ const verifyOutputLimit = 4096
 // It stops at the first failure unless all checks are requested.
 // Returns a VerifyResult with outcomes for all checks that were run.
 func RunVerify(ctx context.Context, checks []Check, run CommandRunner) VerifyResult {
-	var results []CheckResult
+	results := []CheckResult{}
 
 	for _, check := range checks {
+		if ctx.Err() != nil {
+			return VerifyResult{Checks: results, AllPassed: false}
+		}
+
 		if check.Command == "" {
 			continue
 		}
 
 		stdout, stderr, exitCode, err := run(ctx, check.Command)
 
-		combined := append(stdout, stderr...)
+		combined := bytes.Join([][]byte{stdout, stderr}, nil)
 		output := truncateVerifyOutput(combined)
 
 		passed := exitCode == 0 && err == nil
