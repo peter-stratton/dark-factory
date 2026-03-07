@@ -271,6 +271,10 @@ async def main() -> None:
         else:
             raise
 
+    # Use the full accumulated assistant text as the result so the dashboard
+    # shows the complete agent output, not just the final sentinel line.
+    full_output = "\n\n".join(assistant_texts) if assistant_texts else result_text
+
     # For reviewer/quality_reviewer roles, extract the verdict.
     # Check full_output (all assistant text) since the sentinel may not be
     # in the final ResultMessage alone.
@@ -299,10 +303,6 @@ async def main() -> None:
                 elif "APPROVED" in stripped:
                     verdict = "APPROVED"
                     break
-
-    # Use the full accumulated assistant text as the result so the dashboard
-    # shows the complete agent output, not just the final sentinel line.
-    full_output = "\n\n".join(assistant_texts) if assistant_texts else result_text
 
     final: dict = {
         "session_id": result_session_id,
