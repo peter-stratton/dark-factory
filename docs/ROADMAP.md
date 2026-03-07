@@ -464,37 +464,23 @@ adoption at orgs with real-world service complexity.
 - `generate_command` field (string or list) runs before `build_command` in
   the verify pipeline — supports protoc, sqlc, gqlgen, mockery, etc.
 - Per-module or root-level (if no `modules:` block)
-- Generated file protection: `generated_paths` list marks directories that
-  agents must not hand-edit (e.g., `service/api/grpc/gen/`,
-  `service/repository/crdb/generated/`)
+- Generated file protection: `generated_paths` list marks directories or
+  glob patterns that agents must not hand-edit (e.g., `service/api/grpc/gen/`,
+  `service/repository/crdb/generated/`, `**/*.freezed.dart`)
   ```yaml
   generated_paths:
     - service/api/grpc/gen/
     - service/api/graph/generated/
     - service/repository/crdb/generated/
     - service/test/mocks/
+    - "**/*.freezed.dart"    # glob patterns for co-located generated files
+    - "**/*.g.dart"
   ```
 - Enforced via the existing `PreToolUse` hook — same mechanism as
   `protected_paths` but with a distinct error message ("this file is
   generated — edit the source file instead")
 - Prompt templates include a generated-files summary so agents know which
   source files drive which generated outputs
-
-### Compose-based test infrastructure
-- `test_infra` config block for declaring infrastructure dependencies:
-  ```yaml
-  test_infra:
-    compose_file: docker-compose.test.yml
-    setup_command: "docker compose up -d --wait"
-    teardown_command: "docker compose down"
-  ```
-- Setup runs once before the verify pipeline; teardown after all modules
-  complete
-- Implies `no_sandbox: true` or Docker socket forwarding — compose can't
-  run inside the current single-container sandbox
-- Unit tests vs integration tests: `test_command` for fast unit tests
-  (run during implementation), `integration_test_command` for full-stack
-  tests (run during verify/review only)
 
 ### Build secrets and environment
 - `required_env` list in `godark.yaml` — fail fast at startup if any are
@@ -507,16 +493,6 @@ adoption at orgs with real-world service complexity.
 - Forwarded to sandbox automatically (extends current `CollectAuthEnv`)
 - Secrets are never logged or written to run data
 
-### Pre-test setup commands
-- `setup_command` runs before tests — seeds databases, starts emulators,
-  applies migrations:
-  ```yaml
-  setup_command: |
-    docker compose up -d crdb pubsub-emulator
-    migrate -path ./migrations -database "$DB_URL" up
-  ```
-- Runs once per verify cycle, not per retry
-
 ### CI status check awareness
 - `wait_for_checks` config option — after PR creation, poll GitHub status
   checks before proceeding to review:
@@ -528,6 +504,24 @@ adoption at orgs with real-world service complexity.
 - If required checks fail, feed the failure output to the implementer for
   a fix cycle (same pattern as verify failures in Phase 10)
 - If not configured, current behavior is preserved (proceed immediately)
+
+### `/godark-configure-project` skill
+- Embedded skill (installed by `godark init`) that analyzes an existing project
+  and populates `godark.yaml` with the complex config fields added in this phase
+- Detects: multiple `go.mod`/`pubspec.yaml`/`package.json` files → suggests
+  `modules:` with per-module build/test commands and `depends_on` relationships
+- Detects: `docker-compose*.yml` files → suggests `test_infra:` block with
+  setup/teardown commands
+- Detects: codegen config files (`sqlc.yml`, `gqlgen.yml`, `.mockery.yaml`,
+  `build.yaml`, `protoc` invocations in Makefile/scripts) → suggests
+  `generate_command` and `generated_paths`
+- Detects: `.env.example`, `required_env` in CI configs, secret references →
+  suggests `required_env` list
+- Detects: CI workflow files → suggests `wait_for_checks` with required check
+  names
+- Interactive: presents findings and lets the user confirm/edit before writing
+- Merges into existing `godark.yaml` (does not overwrite fields already set)
+- Same pattern as `/godark-define-architecture` — analyze, recommend, confirm
 
 ### Config summary
 ```yaml
@@ -544,13 +538,10 @@ modules:
 generated_paths:
   - service/api/grpc/gen/
   - service/api/graph/generated/
-test_infra:
-  compose_file: docker-compose.test.yml
-  setup_command: "docker compose up -d --wait"
-  teardown_command: "docker compose down"
+  - "**/*.freezed.dart"
+  - "**/*.g.dart"
 required_env:
   - CLOUDSMITH_TOKEN
-setup_command: "migrate -path ./migrations -database $DB_URL up"
 wait_for_checks:
   timeout: 10m
   required: [golangci-lint]
@@ -795,3 +786,11 @@ service-account auth.
 - Linter config generation from `architecture.json` (per-language)
 - Multi-cluster deployment and geographic distribution
 - Cost allocation and chargeback per team/repo
+- Per-module change detection — diff PR changed files against module paths
+  and only run build/test for affected modules and their dependents (currently
+  all modules are built/tested unconditionally)
+- Compose-based test infrastructure — `test_infra` config block for managing
+  docker-compose lifecycle (setup/teardown) around the verify pipeline;
+  deferred because `wait_for_checks` covers integration testing via CI
+- Docker-in-Docker (DinD) support for running compose-based tests inside
+  the sandbox container without requiring `no_sandbox: true`
