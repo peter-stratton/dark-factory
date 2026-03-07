@@ -21,6 +21,12 @@ type Quality struct {
 	MinReviewDurationSeconds int     `yaml:"min_review_duration_seconds"`
 }
 
+// Verify holds configuration for the verify step.
+type Verify struct {
+	MaxFixAttempts int  `yaml:"max_fix_attempts"`
+	Blocking       bool `yaml:"blocking"`
+}
+
 // Config holds all configuration for a godark run.
 type Config struct {
 	Repo       string `yaml:"repo"`
@@ -29,6 +35,7 @@ type Config struct {
 	AgentTimeout string            `yaml:"agent_timeout"`
 	BuildCommand string            `yaml:"build_command"`
 	TestCommand  string            `yaml:"test_command"`
+	LintCommand  string            `yaml:"lint_command"`
 	SandboxEnv   map[string]string `yaml:"sandbox_env"`
 	Runtime      Runtime           `yaml:"runtime"`
 
@@ -55,6 +62,7 @@ type Config struct {
 	Docker  Docker  `yaml:"docker"`
 	Prompts Prompts `yaml:"prompts"`
 	Quality Quality `yaml:"quality"`
+	Verify  Verify  `yaml:"verify"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -75,6 +83,7 @@ type Prompts struct {
 	QualityReviewer  string `yaml:"quality_reviewer"`
 	SpecGenerator    string `yaml:"spec_generator"`
 	Punchlist        string `yaml:"punchlist"`
+	VerifyFix        string `yaml:"verify_fix"`
 }
 
 // CLIFlags holds flag values passed on the command line.
@@ -125,6 +134,10 @@ func defaults() *Config {
 		ConventionsDoc:         "docs/conventions.md",
 		QualityStrictnessDecay: true,
 		AuthPreference:         "oauth",
+		Verify: Verify{
+			MaxFixAttempts: 2,
+			Blocking:       true,
+		},
 	}
 }
 
