@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/alpine.min.js" defer></script>
-  <script src="/static/chart.min.js"></script>
+  <script src="/static/chart.min.js" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -363,18 +363,7 @@
         responsive: true,
         maintainAspectRatio: true,
         scales: {
-          x: { type: 'time', time: { unit: 'day' } },
           y: { beginAtZero: true }
-        },
-        plugins: {
-          tooltip: {
-            callbacks: {
-              title: function(items) {
-                var p = points[items[0].dataIndex];
-                return p.repo + ' \u2022 ' + p.milestone;
-              }
-            }
-          }
         }
       }
     });

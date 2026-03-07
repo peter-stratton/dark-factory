@@ -352,7 +352,6 @@ func TestServer_ChartJSServed(t *testing.T) {
 func TestServer_Analysis_ChartsRendered(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now().UTC()
-	finishedAt := now
 
 	// Build 5 finished runs so HasTrends=true.
 	for i := 0; i < 5; i++ {
@@ -373,7 +372,6 @@ func TestServer_Analysis_ChartsRendered(t *testing.T) {
 			FinishedAt:   &fa,
 			Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
 		}, issues)
-		_ = finishedAt
 	}
 
 	srv := newServer(t, tmpDir)
