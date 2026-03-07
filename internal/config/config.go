@@ -42,6 +42,9 @@ type Config struct {
 	ProtectedPaths  []string `yaml:"protected_paths"`
 	DeniedCommands  []string `yaml:"denied_commands"`
 	RoadmapPath    string   `yaml:"roadmap_path"`
+
+	GenerateCommand string   `yaml:"generate_command"`
+	GeneratedPaths  []string `yaml:"generated_paths"`
 	PlanningDir    string   `yaml:"planning_dir"`
 	ScenarioDir    string   `yaml:"scenario_dir"`
 	ReviewDir      string   `yaml:"review_dir"`

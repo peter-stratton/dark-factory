@@ -741,6 +741,100 @@ denied_commands: []
 	}
 }
 
+func TestGenerateCommandDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GenerateCommand != "" {
+		t.Errorf("GenerateCommand = %q, want empty string", cfg.GenerateCommand)
+	}
+}
+
+func TestGeneratedPathsDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GeneratedPaths != nil {
+		t.Errorf("GeneratedPaths = %v, want nil", cfg.GeneratedPaths)
+	}
+}
+
+func TestGenerateCommandFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+generate_command: "make generate"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GenerateCommand != "make generate" {
+		t.Errorf("GenerateCommand = %q, want %q", cfg.GenerateCommand, "make generate")
+	}
+}
+
+func TestGeneratedPathsDirectoriesFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+generated_paths:
+  - service/api/grpc/gen/
+  - service/test/mocks/
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"service/api/grpc/gen/", "service/test/mocks/"}
+	if len(cfg.GeneratedPaths) != len(want) {
+		t.Fatalf("GeneratedPaths len = %d, want %d", len(cfg.GeneratedPaths), len(want))
+	}
+	for i, w := range want {
+		if cfg.GeneratedPaths[i] != w {
+			t.Errorf("GeneratedPaths[%d] = %q, want %q", i, cfg.GeneratedPaths[i], w)
+		}
+	}
+}
+
+func TestGeneratedPathsGlobsFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+generated_paths:
+  - "**/*.freezed.dart"
+  - "**/*.g.dart"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"**/*.freezed.dart", "**/*.g.dart"}
+	if len(cfg.GeneratedPaths) != len(want) {
+		t.Fatalf("GeneratedPaths len = %d, want %d", len(cfg.GeneratedPaths), len(want))
+	}
+	for i, w := range want {
+		if cfg.GeneratedPaths[i] != w {
+			t.Errorf("GeneratedPaths[%d] = %q, want %q", i, cfg.GeneratedPaths[i], w)
+		}
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.
