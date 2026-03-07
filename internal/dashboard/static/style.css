@@ -1129,6 +1129,13 @@ a:hover {
 .markdown-body strong {
   color: var(--text-primary);
 }
+.markdown-inline {
+  display: inline;
+}
+.markdown-inline p {
+  display: inline;
+  margin: 0;
+}
 .markdown-body table {
   width: 100%;
   border-collapse: collapse;
