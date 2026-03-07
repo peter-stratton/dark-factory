@@ -72,9 +72,9 @@ display but does not orchestrate workflows or call external services directly.
 
 ### domain
 
-**Paths:** `internal/detect/`, `internal/dialogue/`, `internal/doctor/`,
-`internal/patterns/`, `internal/punchlist/`, `internal/quality/`,
-`internal/rundata/`
+**Paths:** `internal/analysis/`, `internal/detect/`, `internal/dialogue/`,
+`internal/doctor/`, `internal/patterns/`, `internal/punchlist/`,
+`internal/quality/`, `internal/rundata/`
 
 **Purpose:** Pure business logic, data models, and validation rules. These
 packages define the core concepts of the system without depending on external
