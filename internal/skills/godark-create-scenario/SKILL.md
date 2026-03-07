@@ -1,35 +1,51 @@
 ---
 name: godark-create-scenario
-description: Generate a scenario spec file for a GitHub issue
-argument-hint: <issue-number>
+description: Generate scenario spec files for a phase or individual issue
+argument-hint: "<phase-number> or <issue-number>"
 disable-model-invocation: true
 ---
 
-# Create Scenario Spec
+# Create Scenario Specs
 
-Generate a scenario spec file for the given GitHub issue.
+Generate scenario spec files for all issues in a phase, or for a single issue.
 
 ## Steps
 
-1. **Fetch the issue** — Run `gh issue view <issue-number> --json title,body,milestone`
-   to get the issue title, body, and milestone. If the command fails, stop and
-   report the error.
+1. **Determine scope** — If the argument looks like a phase number (small
+   integer, or matches a planning doc), treat it as a phase and generate specs
+   for all issues in that phase. If it looks like a larger issue number,
+   generate a spec for that single issue.
 
-2. **Determine the phase** — Extract the phase from the issue's milestone name
-   (e.g., "Phase 3" → `phase-3`). If no milestone is set, ask the user which
-   phase subdirectory to use.
+2. **Gather issues** — For a phase:
+   - Read `godark.yaml` to get the `repo` and `planning_dir`
+     (default: `docs/planning/`).
+   - Find the planning doc by globbing `<planning_dir>/phase-<N>-*.md`.
+   - Extract all issue titles and numbers from the planning doc.
+   - Run `gh issue list --milestone "<Phase Name>" --repo <repo> --state all
+     --limit 200` to get issue numbers if not already in the planning doc.
 
-3. **Read existing specs for reference** — List files in `tests/scenarios/` and
-   its subdirectories, and read one or two to understand the project's scenario
-   spec style.
+   For a single issue:
+   - Run `gh issue view <issue-number> --json title,body,milestone` to get the
+     issue details.
 
-4. **Generate the spec file** — Create a new file in the appropriate phase
-   subdirectory under `tests/scenarios/` (e.g., `tests/scenarios/phase-3/`),
-   creating the subdirectory if needed. The filename must be kebab-case derived
-   from the scenario title (e.g., `config-loading.md`).
+3. **Check existing specs** — List files in `tests/scenarios/` and its
+   subdirectories. Skip any issue that already has a scenario spec file
+   (matching by `Relates to: Issue #N`). Report which issues are skipped.
 
-5. **Print the path** — After writing the file, print the path so the user can
-   review it.
+4. **Read existing specs for reference** — Read one or two existing specs to
+   understand the project's scenario spec style and conventions.
+
+5. **Confirm with user** — Present the list of issues, noting which will get
+   new specs and which are being skipped. Ask the user to confirm before
+   generating.
+
+6. **Generate spec files** — For each issue that needs a spec, create a new
+   file in the appropriate phase subdirectory under `tests/scenarios/`
+   (e.g., `tests/scenarios/phase-3/`), creating the subdirectory if needed.
+   The filename must be kebab-case derived from the scenario title
+   (e.g., `config-loading.md`).
+
+7. **Print summary** — List each created file path and any skipped issues.
 
 ## Format
 
@@ -61,3 +77,6 @@ Description of what to do.
 - Do **not** modify or overwrite existing spec files.
 - A single spec file covers one logical scenario. If the issue needs multiple
   scenarios, create multiple files.
+- When generating for a phase, process issues in dependency order (issues with
+  no dependencies first) so that earlier specs can inform the style of later
+  ones.
