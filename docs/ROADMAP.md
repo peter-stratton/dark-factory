@@ -429,14 +429,147 @@ loop between agent execution and prompt engineering.
 
 ---
 
-## Phase 12: Human-in-the-Loop Review
+## Phase 12: Complex Project Support
+
+**Goal**: `godark` handles production repos with multiple modules, code
+generation pipelines, compose-based test infrastructure, and build secrets.
+Without this, godark is limited to simple single-module projects — blocking
+adoption at orgs with real-world service complexity.
+
+**Milestone**: `Phase 12` | **Label**: `phase-12`
+
+### Multi-module monorepo support
+- `modules:` section in `godark.yaml` maps subdirectories to their own
+  build/test/lint commands:
+  ```yaml
+  modules:
+    service:
+      build_command: "go build ./..."
+      test_command: "go test ./..."
+      generate_command: "go generate ./..."
+    admin-cli:
+      build_command: "go build ./..."
+      test_command: "go test ./..."
+      depends_on: [service]
+  ```
+- If `modules:` is absent, current behavior is preserved (single root module)
+- Change detection: when an issue touches files in `service/`, only
+  `service` and its dependents (`admin-cli`) need build/test — skip unrelated
+  modules
+- The verify pipeline (Phase 10) runs per-module in dependency order
+- Prompt templates receive module context so agents know which subdirectory
+  they're working in
+
+### Code generation pipeline
+- `generate_command` field (string or list) runs before `build_command` in
+  the verify pipeline — supports protoc, sqlc, gqlgen, mockery, etc.
+- Per-module or root-level (if no `modules:` block)
+- Generated file protection: `generated_paths` list marks directories that
+  agents must not hand-edit (e.g., `service/api/grpc/gen/`,
+  `service/repository/crdb/generated/`)
+  ```yaml
+  generated_paths:
+    - service/api/grpc/gen/
+    - service/api/graph/generated/
+    - service/repository/crdb/generated/
+    - service/test/mocks/
+  ```
+- Enforced via the existing `PreToolUse` hook — same mechanism as
+  `protected_paths` but with a distinct error message ("this file is
+  generated — edit the source file instead")
+- Prompt templates include a generated-files summary so agents know which
+  source files drive which generated outputs
+
+### Compose-based test infrastructure
+- `test_infra` config block for declaring infrastructure dependencies:
+  ```yaml
+  test_infra:
+    compose_file: docker-compose.test.yml
+    setup_command: "docker compose up -d --wait"
+    teardown_command: "docker compose down"
+  ```
+- Setup runs once before the verify pipeline; teardown after all modules
+  complete
+- Implies `no_sandbox: true` or Docker socket forwarding — compose can't
+  run inside the current single-container sandbox
+- Unit tests vs integration tests: `test_command` for fast unit tests
+  (run during implementation), `integration_test_command` for full-stack
+  tests (run during verify/review only)
+
+### Build secrets and environment
+- `required_env` list in `godark.yaml` — fail fast at startup if any are
+  missing:
+  ```yaml
+  required_env:
+    - CLOUDSMITH_TOKEN
+    - PUBSUB_EMULATOR_HOST
+  ```
+- Forwarded to sandbox automatically (extends current `CollectAuthEnv`)
+- Secrets are never logged or written to run data
+
+### Pre-test setup commands
+- `setup_command` runs before tests — seeds databases, starts emulators,
+  applies migrations:
+  ```yaml
+  setup_command: |
+    docker compose up -d crdb pubsub-emulator
+    migrate -path ./migrations -database "$DB_URL" up
+  ```
+- Runs once per verify cycle, not per retry
+
+### CI status check awareness
+- `wait_for_checks` config option — after PR creation, poll GitHub status
+  checks before proceeding to review:
+  ```yaml
+  wait_for_checks:
+    timeout: 10m
+    required: [golangci-lint, apollo-check]
+  ```
+- If required checks fail, feed the failure output to the implementer for
+  a fix cycle (same pattern as verify failures in Phase 10)
+- If not configured, current behavior is preserved (proceed immediately)
+
+### Config summary
+```yaml
+modules:
+  service:
+    build_command: "go build ./..."
+    test_command: "go test ./..."
+    generate_command: "make generate"
+    depends_on: []
+  admin-cli:
+    build_command: "go build ./..."
+    test_command: "go test ./..."
+    depends_on: [service]
+generated_paths:
+  - service/api/grpc/gen/
+  - service/api/graph/generated/
+test_infra:
+  compose_file: docker-compose.test.yml
+  setup_command: "docker compose up -d --wait"
+  teardown_command: "docker compose down"
+required_env:
+  - CLOUDSMITH_TOKEN
+setup_command: "migrate -path ./migrations -database $DB_URL up"
+wait_for_checks:
+  timeout: 10m
+  required: [golangci-lint]
+```
+
+**Issues**: TBD
+
+**Planning doc**: `docs/planning/phase-12-complex-project-support.md`
+
+---
+
+## Phase 13: Human-in-the-Loop Review
 
 **Goal**: Humans can review godark-created PRs and request changes that the
 agent automatically picks up and fixes. Teams adopt godark with full human
 oversight and gradually increase autonomy as trust builds. This is the
 critical path for org adoption — most teams will not start with auto-merge.
 
-**Milestone**: `Phase 12` | **Label**: `phase-12`
+**Milestone**: `Phase 13` | **Label**: `phase-13`
 
 ### PR lifecycle state machine
 - Each godark PR tracks state: `ai_review` → `awaiting_human` →
@@ -500,11 +633,11 @@ risk_thresholds:
 
 **Issues**: TBD
 
-**Planning doc**: `docs/planning/phase-12-human-in-the-loop-review.md`
+**Planning doc**: `docs/planning/phase-13-human-in-the-loop-review.md`
 
 ---
 
-## Phase 13: Bounded Concurrency
+## Phase 14: Bounded Concurrency
 
 **Goal**: Independent issues within a run execute in parallel, bounded by a
 configurable worker pool. Dependent issues still respect topological ordering.
@@ -512,7 +645,7 @@ Merge serialization ensures `main` stays linear. Designed for org-scale use
 where serial execution across dozens of issues per milestone is a throughput
 bottleneck.
 
-**Milestone**: `Phase 13` | **Label**: `phase-13`
+**Milestone**: `Phase 14` | **Label**: `phase-14`
 
 ### Concurrency model
 - Worker pool with configurable max concurrency (`concurrency:` in
@@ -560,11 +693,11 @@ concurrency:
 
 **Issues**: TBD
 
-**Planning doc**: `docs/planning/phase-13-bounded-concurrency.md`
+**Planning doc**: `docs/planning/phase-14-bounded-concurrency.md`
 
 ---
 
-## Phase 14: Server Mode & Centralized Operation
+## Phase 15: Server Mode & Centralized Operation
 
 **Goal**: `godark` can run as a centralized service orchestrating agent work
 across many repos, while preserving the local CLI-first workflow for
@@ -573,7 +706,7 @@ org-scale deployment where hundreds of developers across hundreds of
 microservices need shared visibility, centralized scheduling, and
 service-account auth.
 
-**Milestone**: `Phase 14` | **Label**: `phase-14`
+**Milestone**: `Phase 15` | **Label**: `phase-15`
 
 ### Design principle: same engine, two frontends
 - The orchestrator, agent loop, review cycle, verify pipeline, and sandbox
@@ -654,7 +787,7 @@ service-account auth.
 
 **Issues**: TBD
 
-**Planning doc**: `docs/planning/phase-14-server-mode.md`
+**Planning doc**: `docs/planning/phase-15-server-mode.md`
 
 ---
 
