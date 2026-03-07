@@ -429,30 +429,236 @@ loop between agent execution and prompt engineering.
 
 ---
 
+## Phase 12: Human-in-the-Loop Review
+
+**Goal**: Humans can review godark-created PRs and request changes that the
+agent automatically picks up and fixes. Teams adopt godark with full human
+oversight and gradually increase autonomy as trust builds. This is the
+critical path for org adoption — most teams will not start with auto-merge.
+
+**Milestone**: `Phase 12` | **Label**: `phase-12`
+
+### PR lifecycle state machine
+- Each godark PR tracks state: `ai_review` → `awaiting_human` →
+  `human_changes_requested` → `ai_fix` → `awaiting_human` (loop until
+  approved or max cycles exceeded)
+- State communicated via PR labels: `godark:awaiting-human-review`,
+  `godark:fixing-review-feedback`, `godark:ready-to-merge`
+- Labels are the source of truth — any external tooling or human can read
+  the current state at a glance
+
+### Feedback listener
+- `godark watch` subcommand — polls for `CHANGES_REQUESTED` GitHub reviews
+  and new review comments on godark-labeled PRs
+- Configurable poll interval (default 60s)
+- Filters to own PRs only (created by the configured GitHub user/app)
+- Webhook mode as a future optimization (polling is simpler to deploy and
+  sufficient for most orgs)
+
+### Session resumption with human feedback
+- When a human requests changes, feed their review comments into the
+  implementer agent, resuming its prior session (`GODARK_SESSION_ID`)
+- Agent has full context: original implementation reasoning, AI reviewer
+  feedback from prior rounds, and now the human's feedback
+- Human comments are treated the same as AI reviewer comments — the
+  implementer sees a unified feedback stream
+- After fixing, the agent pushes and re-labels the PR as
+  `godark:awaiting-human-review`
+
+### Graduated autonomy
+- `auto_merge` config in `godark.yaml` controls merge behavior per-repo:
+  ```yaml
+  auto_merge: none       # default — stop at PR, human merges
+  auto_merge: low_risk   # auto-merge small/safe PRs, stop for rest
+  auto_merge: all        # human spot-checks only
+  ```
+- Risk classification for `low_risk` mode:
+  - Lines changed threshold (configurable, e.g. < 200 lines)
+  - No changes to protected paths, CI/CD configs, or dependency files
+  - All verify checks passed on first attempt (no fix cycles)
+  - No quality flags raised
+- Risk assessment written to run data so humans can audit the classification
+
+### Dashboard integration
+- PRs awaiting human review surfaced prominently in run detail view
+- Filter/sort by `awaiting_human` state across all runs
+- Human feedback rounds visible in the issue detail dialogue timeline
+- Notification hooks (configurable: Slack webhook, email) when PRs are
+  ready for human review
+
+### Config
+```yaml
+auto_merge: none  # none | low_risk | all
+watch:
+  poll_interval: 60s
+  notify:
+    slack_webhook: ""  # optional
+risk_thresholds:
+  max_lines: 200
+  max_files: 10
+```
+
+**Issues**: TBD
+
+**Planning doc**: `docs/planning/phase-12-human-in-the-loop-review.md`
+
+---
+
+## Phase 13: Bounded Concurrency
+
+**Goal**: Independent issues within a run execute in parallel, bounded by a
+configurable worker pool. Dependent issues still respect topological ordering.
+Merge serialization ensures `main` stays linear. Designed for org-scale use
+where serial execution across dozens of issues per milestone is a throughput
+bottleneck.
+
+**Milestone**: `Phase 13` | **Label**: `phase-13`
+
+### Concurrency model
+- Worker pool with configurable max concurrency (`concurrency:` in
+  `godark.yaml`, default 1 for backward compatibility)
+- Dependency-aware scheduling: issues with no unresolved blockers are
+  dispatched to the pool immediately; blocked issues wait until their
+  dependencies complete successfully
+- Each worker gets its own sandbox container (image built once, shared)
+- Workers operate on independent git worktrees or clones to avoid branch
+  conflicts
+
+### Merge serialization
+- A single merge goroutine consumes a channel of approved PRs
+- Merges happen one at a time: squash-merge, pull `--rebase`, then signal
+  the next merge
+- If a rebase conflict occurs post-merge, the affected PR is re-queued for
+  a fix cycle (implementer resumes session with conflict context)
+- Merge ordering follows completion order, not issue priority — first
+  approved, first merged
+
+### Run data and locking
+- `rundata.Writer` must be safe for concurrent use (mutex or per-issue
+  writers)
+- `lock.Locker` already labels issues — ensure label operations are
+  idempotent under concurrent waves
+- Per-issue log files (not interleaved) for debuggability
+
+### Dashboard updates
+- Issue rows show real-time status updates via htmx polling (already works)
+- Add "active workers" indicator to run detail view
+- Concurrent issues show simultaneous "in progress" badges
+
+### Rate limiting and backpressure
+- GitHub API rate limit awareness — back off when approaching limits
+- Configurable per-worker delay between API calls if needed
+- Anthropic API concurrency limits respected (workers block on token
+  availability rather than failing)
+
+### Config
+```yaml
+concurrency:
+  max_workers: 4        # parallel agent invocations
+  merge_strategy: fifo  # fifo (default) or priority
+```
+
+**Issues**: TBD
+
+**Planning doc**: `docs/planning/phase-13-bounded-concurrency.md`
+
+---
+
+## Phase 14: Server Mode & Centralized Operation
+
+**Goal**: `godark` can run as a centralized service orchestrating agent work
+across many repos, while preserving the local CLI-first workflow for
+individual developers. The same core engine powers both modes. Designed for
+org-scale deployment where hundreds of developers across hundreds of
+microservices need shared visibility, centralized scheduling, and
+service-account auth.
+
+**Milestone**: `Phase 14` | **Label**: `phase-14`
+
+### Design principle: same engine, two frontends
+- The orchestrator, agent loop, review cycle, verify pipeline, and sandbox
+  execution are mode-agnostic — they don't know or care who invoked them
+- `godark.yaml` stays in each repo (config travels with code, not with the
+  server)
+- Mode is determined by how the engine is invoked (CLI vs. server), not by
+  a fork in the core logic
+
+### Pluggable run data storage
+- Introduce a `RunStore` interface behind `rundata.Writer` / `rundata.Reader`
+- `LocalStore` — current filesystem implementation (default for CLI mode)
+- `RemoteStore` — shared storage backend (S3-compatible, database, or
+  shared filesystem) for server mode
+- CLI mode can optionally push to a remote store for shared visibility
+  (`run_store: s3://bucket/godark-runs` in config)
+- Dashboard reads from whichever store is configured
+
+### Server mode (`godark serve`)
+- HTTP/gRPC API server that accepts run requests and reports status
+- Endpoints: trigger run (repo + milestone/issue), query run status, list
+  runs, stream logs
+- Job queue for dispatching runs to worker nodes (initially in-process,
+  later pluggable: Redis, SQS, NATS)
+- Composes with Phase 13 concurrency — server manages a pool of workers
+  across multiple repos simultaneously
+- Health checks, graceful shutdown, and run recovery on restart
+
+### Trigger mechanisms
+- API call (CI/CD integration, chatops, internal tooling)
+- GitHub webhook listener — trigger on issue label, milestone assignment,
+  or scheduled event
+- Cron/schedule — periodic sweeps of milestones across configured repos
+- CLI remains the local trigger (`godark run` unchanged)
+
+### Multi-repo configuration
+- Server config file lists managed repos and their overrides:
+  ```yaml
+  # godark-server.yaml
+  server:
+    listen: ":8443"
+    run_store: "s3://company-godark/runs"
+    auth: github-app  # or personal-token
+  repos:
+    - org/service-a    # uses repo's own godark.yaml
+    - org/service-b
+    - org/service-c:
+        auto_merge: none           # server-level override
+        concurrency.max_workers: 2
+  ```
+- Per-repo `godark.yaml` is authoritative for project-specific config
+  (prompts, architecture, conventions)
+- Server config provides org-level defaults and overrides (merge policy,
+  concurrency limits, risk thresholds)
+
+### Auth model
+- CLI mode: developer's personal tokens (current behavior, unchanged)
+- Server mode: GitHub App installation (per-org, scoped permissions)
+- API keys for external triggers (CI/CD, chatops)
+- Per-repo permission scoping — the GitHub App's installation permissions
+  limit which repos the server can touch
+
+### Shared dashboard
+- Same dashboard code, served by `godark serve` instead of `godark status`
+- Aggregates runs across all repos and teams
+- Team/repo filtering, org-wide quality metrics
+- Role-based views: developer sees their repos, platform team sees
+  everything
+- Composes with Phase 11 analysis — cross-repo trend data becomes
+  meaningful at org scale
+
+### CLI ↔ server interop
+- `godark run` can optionally delegate to a running server instead of
+  executing locally (`server: https://godark.internal` in config)
+- `godark status` can point at the shared dashboard
+- Developers can still run fully local for experimentation and testing
+- Local runs can push results to the shared store for visibility
+
+**Issues**: TBD
+
+**Planning doc**: `docs/planning/phase-14-server-mode.md`
+
+---
+
 ### Future considerations (not yet scoped)
 - Linter config generation from `architecture.json` (per-language)
-- Daemon mode (`godark watch`) — continuous polling
-- Bounded concurrency — parallel agent execution for independent issues
-- Human-in-the-loop review cycle
-  - **Problem**: `no_merge: true` stops godark at PR creation, but if a human
-    requests changes, godark has no way to pick that up and push fixes. The
-    human must either fix things themselves or manually re-trigger godark.
-  - **Webhook listener** (or `gh` polling) watches for `CHANGES_REQUESTED`
-    reviews and new review comments on godark-created PRs.
-  - **Session resumption**: feed the human's review comments into the
-    implementer agent, resuming its prior session (`GODARK_SESSION_ID`) so it
-    has full context of the original implementation + the AI reviewer's
-    feedback + the human's feedback.
-  - **State machine** tracks each PR through: `ai_review` → `human_review` →
-    `human_changes_requested` → `ai_fix` → `human_review` (loop until
-    approved or max cycles).
-  - **Graduated autonomy**: classify PRs by risk (lines changed, API/migration
-    touches, config changes) and let `godark.yaml` define thresholds:
-    - `auto_merge: low_risk` — auto-merge small/safe PRs, stop for human on
-      the rest
-    - `auto_merge: all` — human spot-checks only
-    - `auto_merge: none` — current `no_merge: true` behavior
-  - **PR labels** communicate state: `godark:awaiting-human-review`,
-    `godark:fixing-review-feedback`, `godark:ready-to-merge`.
-  - Enables adoption in orgs that require human review (e.g., onX) while
-    building toward earned autonomy as trust increases.
+- Multi-cluster deployment and geographic distribution
+- Cost allocation and chargeback per team/repo
