@@ -8,15 +8,44 @@
 ```
 
 A Go CLI that orchestrates autonomous AI agents to implement GitHub issues,
-review their own work, and merge — without human intervention. Supports Go,
-Flutter, Node.js, Rust, and Python projects.
+review their own work, and merge — without human intervention.
 
-- **Adversarial two-agent review** — implementer and reviewer are independent agents with separate permissions; the reviewer literally cannot edit files, so it can't "fix" problems instead of flagging them
-- **Specification-driven quality gates** — human-authored scenario specs define "done"; the reviewer generates ephemeral integration tests from specs, not just rubber-stamping the diff
-- **Architecture-as-code enforcement** — machine-readable layer definitions validated by `godark vet`; the reviewer checks architectural compliance, not just correctness
-- **Structured agent dialogue** — implementer posts reasoning as PR comments, reviewer challenges it; the PR thread is an auditable record of adversarial design review
+### Philosophy
+
+The hard part of software engineering isn't typing code — it's deciding what to
+build and how it fits. Dark Factory keeps those decisions with humans. Engineers
+write the roadmap, define architecture layers, design conventions, and author
+issue specs. Agents operate within those constraints. The harness *is* the
+design.
+
+This is a collaborative architecture tool, not a "throw a ticket at an AI and
+hope for the best" system. The adversarial review model reinforces this: a
+separate reviewer agent checks whether the code respects the architecture a
+human defined, follows conventions a human wrote, and meets acceptance criteria
+a human specified. Every judgment call that shapes a codebase stays with the
+humans who understand it.
+
+### Features
+
+- **Three-agent pipeline** — implementer, quality reviewer, and functional reviewer are independent agents with isolated permissions; reviewers literally cannot edit files
+- **Specification-driven quality gates** — human-authored scenario specs define "done"; the functional reviewer generates ephemeral integration tests from specs, not just rubber-stamping the diff
+- **Architecture-as-code enforcement** — machine-readable layer definitions validated by `godark vet`; reviewers check architectural compliance, not just correctness
+- **Structured agent dialogue** — implementer posts reasoning as PR comments, reviewers challenge it; the PR thread is an auditable record of adversarial design review
+- **Full run observability** — local web dashboard with review chain timelines, quality flags, tool traces, and agent dialogue history for every issue
 - **Harness engineering lifecycle** — scaffold, validate, and enforce project constraints with `godark new`, `godark init`, `godark vet`, and six harness types
+- **Auto-detected multi-language support** — detects project type from marker files and configures the sandbox, build, and test commands automatically
 - **Single binary, runs on a laptop** — no infrastructure fleet, no MCP server farm; one Go binary, Docker, and a GitHub token
+
+### Project type support
+
+| Runtime  | Marker file       | Default build | Default test |
+|----------|-------------------|---------------|--------------|
+| Go       | `go.mod`          | `go build ./...` | `go test ./...` |
+| Flutter  | `pubspec.yaml`    | _(none)_      | `flutter test` |
+| Node.js  | `package.json`    | `npm run build` | `npm test` |
+| Rust     | `Cargo.toml`      | `cargo build` | `cargo test` |
+| Elixir   | `mix.exs`         | `mix compile` | `mix test` |
+| Python   | `pyproject.toml` / `requirements.txt` | _(none)_ | `pytest` |
 
 ## Prerequisites
 
@@ -129,18 +158,12 @@ godark run --milestone "Phase N" --repo owner/repo
 
 ## Supported runtimes
 
-`godark` auto-detects the project language by scanning the repo root for well-known marker files. Detection applies only when `runtime`, `build_command`, and `test_command` are all absent from the config.
-
-| Runtime  | Marker file       | Default build command | Default test command |
-|----------|-------------------|-----------------------|----------------------|
-| go       | `go.mod`          | `go build ./...`      | `go test ./...`      |
-| flutter  | `pubspec.yaml`    | _(none)_              | `flutter test`       |
-| node     | `package.json`    | `npm run build`       | `npm test`           |
-| rust     | `Cargo.toml`      | `cargo build`         | `cargo test`         |
-| elixir   | `mix.exs`         | `mix compile`         | `mix test`           |
-| python   | `pyproject.toml` or `requirements.txt` | _(none)_ | `pytest` |
-
-If no marker file is found, `godark` proceeds without installing a language toolchain. Use a custom `docker.dockerfile` or set `runtime:` explicitly for unsupported languages.
+Project type is auto-detected by scanning the repo root for marker files (see
+[table above](#project-type-support)). Detection applies only when `runtime`,
+`build_command`, and `test_command` are all absent from the config. If no marker
+file is found, `godark` proceeds without installing a language toolchain. Use a
+custom `docker.dockerfile` or set `runtime:` explicitly for unsupported
+languages.
 
 ## CLI reference
 
