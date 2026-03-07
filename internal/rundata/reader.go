@@ -31,6 +31,7 @@ type IssueDetail struct {
 	Retries          []RetryDetail
 	Punchlist        *PunchlistData
 	Dialogue         []DialogueEntry
+	VerifyResults    []VerifyStepResult
 }
 
 // RunDetail holds the full data for one run, including per-issue details.
@@ -222,6 +223,7 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		Retries:          r.loadRetries(filepath.Join(issueDir, "retries")),
 		Punchlist:        r.readPunchlist(filepath.Join(issueDir, "punchlist.json")),
 		Dialogue:         r.readDialogue(filepath.Join(issueDir, "dialogue.json")),
+		VerifyResults:    r.loadVerifyResults(issueDir),
 	}
 }
 
@@ -303,6 +305,68 @@ func (r *Reader) readOutcome(path string) Outcome {
 		return Outcome{}
 	}
 	return outcome
+}
+
+// loadVerifyResults reads all verify-N.json files from issueDir, sorted by attempt number.
+// Returns nil if no verify files are present (backwards compatible).
+func (r *Reader) loadVerifyResults(issueDir string) []VerifyStepResult {
+	entries, err := os.ReadDir(issueDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping verify results", "dir", issueDir, "error", err)
+		return nil
+	}
+
+	var results []VerifyStepResult
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "verify-") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		numStr := strings.TrimSuffix(strings.TrimPrefix(name, "verify-"), ".json")
+		attempt, err := strconv.Atoi(numStr)
+		if err != nil {
+			r.logger.Warn("skipping non-numeric verify file", "file", name)
+			continue
+		}
+		path := filepath.Join(issueDir, name)
+		vr := r.readVerifyResult(path, attempt)
+		results = append(results, vr)
+	}
+
+	if len(results) == 0 {
+		return nil
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Attempt < results[j].Attempt
+	})
+	return results
+}
+
+// readVerifyResult reads a VerifyStepResult from path. On missing or corrupt files,
+// returns a zero-value VerifyStepResult with the given attempt number.
+func (r *Reader) readVerifyResult(path string, attempt int) VerifyStepResult {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return VerifyStepResult{Attempt: attempt}
+	}
+	if err != nil {
+		r.logger.Warn("skipping verify file", "path", path, "error", err)
+		return VerifyStepResult{Attempt: attempt}
+	}
+
+	var vr VerifyStepResult
+	if err := json.Unmarshal(data, &vr); err != nil {
+		r.logger.Warn("corrupt verify file, using zero value", "path", path, "error", err)
+		return VerifyStepResult{Attempt: attempt}
+	}
+	return vr
 }
 
 // loadRetries reads all retry step results from retriesDir, sorted by attempt number.

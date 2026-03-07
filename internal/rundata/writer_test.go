@@ -560,6 +560,108 @@ func TestWriteDialogueMultipleRounds(t *testing.T) {
 	}
 }
 
+func TestWriteVerifyResult(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := VerifyStepResult{
+		Attempt:   0,
+		AllPassed: true,
+		Checks: []CheckResult{
+			{Name: "build", Passed: true, ExitCode: 0},
+		},
+	}
+	if err := w.WriteVerifyResult(42, step); err != nil {
+		t.Fatalf("WriteVerifyResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "verify-0.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected file at %s, got: %v", path, err)
+	}
+}
+
+func TestWriteVerifyResultMultipleAttempts(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step0 := VerifyStepResult{Attempt: 0, AllPassed: false, FixAttempted: false}
+	if err := w.WriteVerifyResult(42, step0); err != nil {
+		t.Fatalf("WriteVerifyResult(attempt=0) error: %v", err)
+	}
+
+	step1 := VerifyStepResult{Attempt: 1, AllPassed: true, FixAttempted: true}
+	if err := w.WriteVerifyResult(42, step1); err != nil {
+		t.Fatalf("WriteVerifyResult(attempt=1) error: %v", err)
+	}
+
+	for _, name := range []string{"verify-0.json", "verify-1.json"} {
+		path := filepath.Join(w.Dir(), "issues", "42", name)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected file at %s, got: %v", path, err)
+		}
+	}
+}
+
+func TestWriteVerifyResultContents(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := VerifyStepResult{
+		Attempt:      1,
+		AllPassed:    false,
+		FixAttempted: true,
+		Checks: []CheckResult{
+			{Name: "build", Passed: false, Output: "error: build failed", ExitCode: 1},
+		},
+	}
+	if err := w.WriteVerifyResult(42, step); err != nil {
+		t.Fatalf("WriteVerifyResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "verify-1.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading verify-1.json: %v", err)
+	}
+
+	var written VerifyStepResult
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing verify-1.json: %v", err)
+	}
+
+	if written.Attempt != 1 {
+		t.Errorf("Attempt = %d, want 1", written.Attempt)
+	}
+	if written.AllPassed {
+		t.Errorf("AllPassed = true, want false")
+	}
+	if !written.FixAttempted {
+		t.Errorf("FixAttempted = false, want true")
+	}
+	if len(written.Checks) != 1 {
+		t.Fatalf("Checks: got %d, want 1", len(written.Checks))
+	}
+	if written.Checks[0].Name != "build" {
+		t.Errorf("Checks[0].Name = %q, want %q", written.Checks[0].Name, "build")
+	}
+	if written.Checks[0].Passed {
+		t.Errorf("Checks[0].Passed = true, want false")
+	}
+	if written.Checks[0].ExitCode != 1 {
+		t.Errorf("Checks[0].ExitCode = %d, want 1", written.Checks[0].ExitCode)
+	}
+}
+
 func TestPathTraversalRejected(t *testing.T) {
 	cases := []string{
 		"../evil/../../path",

@@ -179,6 +179,30 @@ func (w *Writer) WriteDialogue(issueNum int, entries []DialogueEntry) error {
 	return writeJSONMkdirs(path, entries)
 }
 
+// CheckResult holds the outcome of a single verification check.
+type CheckResult struct {
+	Name     string `json:"name"`
+	Passed   bool   `json:"passed"`
+	Output   string `json:"output,omitempty"`
+	ExitCode int    `json:"exit_code"`
+}
+
+// VerifyStepResult holds the outcome of one verify attempt (initial or fix retry).
+type VerifyStepResult struct {
+	Attempt      int           `json:"attempt"` // 0-indexed
+	Checks       []CheckResult `json:"checks"`
+	AllPassed    bool          `json:"all_passed"`
+	FixAttempted bool          `json:"fix_attempted"`
+}
+
+// WriteVerifyResult writes a verify step result for the given issue and attempt.
+// Path: issues/<issueNum>/verify-<attempt>.json
+func (w *Writer) WriteVerifyResult(issueNum int, step VerifyStepResult) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum),
+		fmt.Sprintf("verify-%d.json", step.Attempt))
+	return writeJSONMkdirs(path, step)
+}
+
 // PunchlistData holds the per-issue punchlist content persisted to punchlist.json.
 type PunchlistData struct {
 	VerificationSteps []string `json:"verification_steps,omitempty"`

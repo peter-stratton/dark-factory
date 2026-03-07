@@ -849,13 +849,14 @@ func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 
 // testRunDataHook is a simple RunDataHook implementation for unit tests.
 type testRunDataHook struct {
-	specGeneratorCalls           int
-	implementCalls               int
-	reviewKinds                  []string
-	retryCalls                   int
-	retryReviewCalls             int
-	retryFunctionalReviewCalls   int
-	outcomes                     []rundata.Outcome
+	specGeneratorCalls         int
+	implementCalls             int
+	reviewKinds                []string
+	retryCalls                 int
+	retryReviewCalls           int
+	retryFunctionalReviewCalls int
+	verifyResults              []rundata.VerifyStepResult
+	outcomes                   []rundata.Outcome
 }
 
 func (h *testRunDataHook) WriteSpecGeneratorResult(_ int, _ rundata.StepResult) error {
@@ -880,6 +881,10 @@ func (h *testRunDataHook) WriteRetryReviewResult(_ int, _ int, _ rundata.StepRes
 }
 func (h *testRunDataHook) WriteRetryFunctionalReviewResult(_ int, _ int, _ rundata.StepResult) error {
 	h.retryFunctionalReviewCalls++
+	return nil
+}
+func (h *testRunDataHook) WriteVerifyResult(_ int, step rundata.VerifyStepResult) error {
+	h.verifyResults = append(h.verifyResults, step)
 	return nil
 }
 func (h *testRunDataHook) WriteOutcome(o rundata.Outcome) error {
@@ -1060,6 +1065,103 @@ func TestProcessIssue_HookCalledOnSpecGeneratorTimeout(t *testing.T) {
 
 	if hook.specGeneratorCalls != 1 {
 		t.Errorf("WriteSpecGeneratorResult called %d times, want 1", hook.specGeneratorCalls)
+	}
+}
+
+func TestProcessIssue_HookCalledOnVerifyPass(t *testing.T) {
+	hook := &testRunDataHook{}
+	cfg := verifyLoopConfig(true)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" {
+			return []byte(""), nil // verify command passes
+		}
+		return []byte(""), nil
+	})
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
+
+	if len(hook.verifyResults) != 1 {
+		t.Fatalf("WriteVerifyResult called %d times, want 1", len(hook.verifyResults))
+	}
+	if hook.verifyResults[0].Attempt != 0 {
+		t.Errorf("verifyResults[0].Attempt = %d, want 0", hook.verifyResults[0].Attempt)
+	}
+	if hook.verifyResults[0].FixAttempted {
+		t.Errorf("verifyResults[0].FixAttempted = true, want false")
+	}
+}
+
+func TestProcessIssue_HookCalledOnVerifyFixRetries(t *testing.T) {
+	hook := &testRunDataHook{}
+	cfg := verifyFixLoopConfig(true, 1)
+	shCallIdx := 0
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+		"verify-fix output",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" {
+			idx := shCallIdx
+			shCallIdx++
+			if idx == 0 {
+				// First verify: fail.
+				return []byte("error output"), fmt.Errorf("exit status 1")
+			}
+			// Second verify (after fix): pass.
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	})
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), hook)
+
+	// Expect two WriteVerifyResult calls: attempt 0 (fail) and attempt 1 (pass after fix).
+	if len(hook.verifyResults) != 2 {
+		t.Fatalf("WriteVerifyResult called %d times, want 2", len(hook.verifyResults))
+	}
+	if hook.verifyResults[0].Attempt != 0 {
+		t.Errorf("verifyResults[0].Attempt = %d, want 0", hook.verifyResults[0].Attempt)
+	}
+	if hook.verifyResults[0].FixAttempted {
+		t.Errorf("verifyResults[0].FixAttempted = true, want false")
+	}
+	if hook.verifyResults[1].Attempt != 1 {
+		t.Errorf("verifyResults[1].Attempt = %d, want 1", hook.verifyResults[1].Attempt)
+	}
+	if !hook.verifyResults[1].FixAttempted {
+		t.Errorf("verifyResults[1].FixAttempted = false, want true")
 	}
 }
 

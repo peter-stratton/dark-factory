@@ -712,6 +712,127 @@ func TestLoadRunOutcomeDescriptionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLoadRunVerifyResults(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{42},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+
+	// Write two verify results.
+	vr0 := VerifyStepResult{Attempt: 0, AllPassed: false, FixAttempted: false,
+		Checks: []CheckResult{{Name: "build", Passed: false, ExitCode: 1}}}
+	vr1 := VerifyStepResult{Attempt: 1, AllPassed: true, FixAttempted: true,
+		Checks: []CheckResult{{Name: "build", Passed: true, ExitCode: 0}}}
+
+	if err := writeJSON(filepath.Join(issueDir, "verify-0.json"), vr0); err != nil {
+		t.Fatalf("writing verify-0.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "verify-1.json"), vr1); err != nil {
+		t.Fatalf("writing verify-1.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	vrs := detail.Issues[0].VerifyResults
+	if len(vrs) != 2 {
+		t.Fatalf("VerifyResults: got %d, want 2", len(vrs))
+	}
+	if vrs[0].Attempt != 0 {
+		t.Errorf("VerifyResults[0].Attempt = %d, want 0", vrs[0].Attempt)
+	}
+	if vrs[0].AllPassed {
+		t.Errorf("VerifyResults[0].AllPassed = true, want false")
+	}
+	if vrs[1].Attempt != 1 {
+		t.Errorf("VerifyResults[1].Attempt = %d, want 1", vrs[1].Attempt)
+	}
+	if !vrs[1].AllPassed {
+		t.Errorf("VerifyResults[1].AllPassed = false, want true")
+	}
+	if !vrs[1].FixAttempted {
+		t.Errorf("VerifyResults[1].FixAttempted = false, want true")
+	}
+}
+
+func TestLoadRunVerifyResultsMissingFiles(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:      "owner/repo",
+		StartedAt: time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	// No verify-*.json files written.
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	if detail.Issues[0].VerifyResults != nil {
+		t.Errorf("VerifyResults: expected nil when no files, got %v", detail.Issues[0].VerifyResults)
+	}
+}
+
+func TestLoadRunVerifyResultsSortedByAttempt(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:      "owner/repo",
+		StartedAt: time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+
+	// Write out-of-order verify files.
+	for _, n := range []int{2, 0, 1} {
+		vr := VerifyStepResult{Attempt: n}
+		path := filepath.Join(issueDir, "verify-"+strconv.Itoa(n)+".json")
+		if err := writeJSON(path, vr); err != nil {
+			t.Fatalf("writing verify-%d.json: %v", n, err)
+		}
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	vrs := detail.Issues[0].VerifyResults
+	if len(vrs) != 3 {
+		t.Fatalf("VerifyResults: got %d, want 3", len(vrs))
+	}
+	for i, want := range []int{0, 1, 2} {
+		if vrs[i].Attempt != want {
+			t.Errorf("VerifyResults[%d].Attempt = %d, want %d", i, vrs[i].Attempt, want)
+		}
+	}
+}
+
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }

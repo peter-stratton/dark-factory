@@ -155,6 +155,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
 		verifyResult := RunVerify(ctx, verifyChecks, newHostRunner())
+		if hook != nil {
+			if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
+				logger.Warn("failed to write verify result", "error", err)
+			}
+		}
 
 		if !verifyResult.AllPassed && prompts.VerifyFix != "" && cfg.Verify.MaxFixAttempts > 0 {
 			for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
@@ -193,6 +198,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 				// Re-run verify.
 				verifyResult = RunVerify(ctx, verifyChecks, newHostRunner())
+				if hook != nil {
+					if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
+						logger.Warn("failed to write verify result", "error", err)
+					}
+				}
 				if verifyResult.AllPassed {
 					break
 				}
