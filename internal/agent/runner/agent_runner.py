@@ -18,6 +18,7 @@ import asyncio
 import datetime
 import json
 import os
+import random
 import sys
 
 import claude_agent_sdk
@@ -257,19 +258,37 @@ async def main() -> None:
                 cost_usd = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
                 is_error = bool(getattr(message, "is_error", False))
 
-    try:
-        await _collect_messages(options)
-    except Exception as exc:
-        if session_id:
-            # Resume failed — fall back to a fresh session with the retry prompt.
+    max_retries = 3
+    base_delay = 2.0  # seconds
+    last_exc: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            await _collect_messages(options)
+            break  # success
+        except Exception as exc:
+            last_exc = exc
+
+            # Session resume failure — fall back to fresh session, then retry.
+            if session_id and options.resume:
+                warning = {
+                    "warning": f"session resume failed, falling back to fresh session: {exc!r}",
+                }
+                print(json.dumps(warning), file=sys.stderr, flush=True)
+                options.resume = None
+                continue
+
+            if attempt >= max_retries:
+                raise
+
+            # Exponential backoff with jitter: base * 2^attempt + random(0, base)
+            delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)
             warning = {
-                "warning": f"session resume failed, starting fresh session: {exc!r}",
+                "warning": f"transient error (attempt {attempt + 1}/{max_retries + 1}), "
+                           f"retrying in {delay:.1f}s: {exc!r}",
             }
             print(json.dumps(warning), file=sys.stderr, flush=True)
-            options.resume = None
-            await _collect_messages(options)
-        else:
-            raise
+            await asyncio.sleep(delay)
 
     # Use the full accumulated assistant text as the result so the dashboard
     # shows the complete agent output, not just the final sentinel line.
