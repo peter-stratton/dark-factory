@@ -523,9 +523,11 @@ type AnalysisData struct {
 	Report     analysis.Report
 	Gaps       []GapView
 	Outcomes   []OutcomeRow // sorted by count desc
+	Trends     []analysis.TrendPoint
 	Repos      []string
 	RepoFilter string
 	HasData    bool
+	HasTrends  bool // true when Trends has at least 2 points
 }
 
 func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
@@ -608,6 +610,7 @@ func (s *Server) buildAnalysisData(repoFilter string) (*AnalysisData, error) {
 
 	report := analysis.Aggregate(runs)
 	rawGaps := analysis.DetectGaps(runs)
+	trends := analysis.ComputeTrends(runs)
 	outcomes := buildOutcomeRows(report)
 	gaps := buildGapViews(rawGaps)
 
@@ -615,9 +618,11 @@ func (s *Server) buildAnalysisData(repoFilter string) (*AnalysisData, error) {
 		Report:     report,
 		Gaps:       gaps,
 		Outcomes:   outcomes,
+		Trends:     trends,
 		Repos:      repos,
 		RepoFilter: repoFilter,
 		HasData:    len(runs) > 0,
+		HasTrends:  len(trends) >= 2,
 	}, nil
 }
 
