@@ -108,6 +108,13 @@ func (w *Writer) Dir() string {
 	return w.dir
 }
 
+// WriteSpecGeneratorResult writes the spec generator step result for the given issue.
+// Path: issues/<issueNum>/spec-generator.json
+func (w *Writer) WriteSpecGeneratorResult(issueNum int, step StepResult) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "spec-generator.json")
+	return writeJSONMkdirs(path, step)
+}
+
 // WriteImplementResult writes the implement step result for the given issue.
 // Path: issues/<issueNum>/implement.json
 func (w *Writer) WriteImplementResult(issueNum int, step StepResult) error {

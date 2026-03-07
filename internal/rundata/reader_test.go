@@ -607,6 +607,74 @@ func TestLoadRunRetryFunctionalReviewAbsent(t *testing.T) {
 	}
 }
 
+func TestLoadRunReadsSpecGeneratorResult(t *testing.T) {
+	base := t.TempDir()
+	startedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 7",
+		IssueNumbers: []int{42},
+		StartedAt:    startedAt,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "spec-generator.json"), StepResult{Output: "spec gen output"}); err != nil {
+		t.Fatalf("writing spec-generator.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), Outcome{IssueNumber: 42, Status: "implemented"}); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	if detail.Issues[0].SpecGenerator.Output != "spec gen output" {
+		t.Errorf("SpecGenerator.Output = %q, want %q", detail.Issues[0].SpecGenerator.Output, "spec gen output")
+	}
+}
+
+func TestLoadRunSpecGeneratorAbsentIsZeroValue(t *testing.T) {
+	base := t.TempDir()
+	startedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 7",
+		IssueNumbers: []int{42},
+		StartedAt:    startedAt,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "implement.json"), StepResult{Output: "impl output"}); err != nil {
+		t.Fatalf("writing implement.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	sg := detail.Issues[0].SpecGenerator
+	if sg.Output != "" || sg.Error != "" || sg.DurationSeconds != 0 {
+		t.Errorf("SpecGenerator should be zero value when file absent, got: %+v", sg)
+	}
+}
+
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }

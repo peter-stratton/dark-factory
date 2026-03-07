@@ -6,6 +6,7 @@ import "github.com/phs/dark-factory/internal/rundata"
 // these methods after each agent step. Callers should check for nil before
 // passing; individual methods are not required to be nil-safe themselves.
 type RunDataHook interface {
+	WriteSpecGeneratorResult(issueNumber int, step rundata.StepResult) error
 	WriteImplementResult(issueNumber int, step rundata.StepResult) error
 	WriteReviewResult(issueNumber int, kind string, step rundata.StepResult) error
 	WriteRetryResult(issueNumber int, attempt int, step rundata.StepResult) error
