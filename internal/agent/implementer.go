@@ -76,6 +76,39 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID 
 	return Run(ctx, opts, cfg.NoSandbox, logger)
 }
 
+// VerifyFix runs the implementer agent in verify-fix mode. It renders the
+// verify_fix prompt with the provided verifyErrors string and invokes Run
+// with role "implementer_retry". prevSessionID, if non-empty, is forwarded
+// as GODARK_SESSION_ID so the agent can resume its previous session context.
+func VerifyFix(ctx context.Context, issue github.Issue, prNumber int, verifyErrors string, prevSessionID string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+	slug := Slugify(issue.Title)
+	data := newPromptData(issue, cfg, slug)
+	data.PRNumber = prNumber
+	data.VerifyErrors = verifyErrors
+
+	rendered, err := RenderPrompt(prompts.VerifyFix, data)
+	if err != nil {
+		return nil, fmt.Errorf("rendering verify_fix prompt: %w", err)
+	}
+
+	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer_retry")
+	if err != nil {
+		return nil, err
+	}
+
+	if prevSessionID != "" {
+		opts.Env["GODARK_SESSION_ID"] = prevSessionID
+	}
+
+	logger.Info("starting verify-fix agent",
+		"issue_number", issue.Number,
+		"pr_number", prNumber,
+		"resume_session", prevSessionID != "",
+	)
+
+	return Run(ctx, opts, cfg.NoSandbox, logger)
+}
+
 // BranchName returns the conventional branch name for an issue.
 func BranchName(issueNumber int, slug string) string {
 	return fmt.Sprintf("%d-%s", issueNumber, slug)

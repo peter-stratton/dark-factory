@@ -155,6 +155,50 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
 		verifyResult := RunVerify(ctx, verifyChecks, newHostRunner())
+
+		if !verifyResult.AllPassed && prompts.VerifyFix != "" && cfg.Verify.MaxFixAttempts > 0 {
+			for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
+				if ctx.Err() != nil {
+					outcome.Status = "failed"
+					outcome.Err = ctx.Err()
+					return outcome
+				}
+
+				verifyErrors := formatVerifyErrors(verifyResult)
+				logger.Info("running verify-fix attempt",
+					"issue_number", issue.Number,
+					"attempt", fixAttempt+1,
+					"max_attempts", cfg.Verify.MaxFixAttempts,
+				)
+
+				fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
+				if err != nil {
+					outcome.Status = "failed"
+					outcome.Err = fmt.Errorf("verify-fix agent: %w", err)
+					return outcome
+				}
+				if fixResult.TimedOut {
+					outcome.Status = "failed"
+					outcome.Err = fmt.Errorf("verify-fix agent timed out")
+					return outcome
+				}
+				sessionID = fixResult.SessionID
+
+				// Re-check drift after each fix attempt.
+				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+					outcome.Status = "failed"
+					outcome.Err = driftErr
+					return outcome
+				}
+
+				// Re-run verify.
+				verifyResult = RunVerify(ctx, verifyChecks, newHostRunner())
+				if verifyResult.AllPassed {
+					break
+				}
+			}
+		}
+
 		if verifyResult.AllPassed {
 			logger.Info("verify step passed", "issue_number", issue.Number)
 		} else {

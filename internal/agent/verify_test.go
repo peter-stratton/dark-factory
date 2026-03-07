@@ -310,3 +310,80 @@ func TestRunVerify_OutputWithinLimitNotTruncated(t *testing.T) {
 		t.Errorf("Output = %q, want %q (should not be truncated)", result.Checks[0].Output, smallOutput)
 	}
 }
+
+func TestFormatVerifyErrors_FailedChecksIncluded(t *testing.T) {
+	result := VerifyResult{
+		AllPassed: false,
+		Checks: []CheckResult{
+			{Name: "build", Passed: false, Output: "build error output", ExitCode: 1},
+		},
+	}
+
+	got := formatVerifyErrors(result)
+
+	if !strings.Contains(got, "=== build (exit code 1) ===") {
+		t.Errorf("expected check header in output, got: %q", got)
+	}
+	if !strings.Contains(got, "build error output") {
+		t.Errorf("expected check output in result, got: %q", got)
+	}
+}
+
+func TestFormatVerifyErrors_PassedChecksExcluded(t *testing.T) {
+	result := VerifyResult{
+		AllPassed: false,
+		Checks: []CheckResult{
+			{Name: "build", Passed: true, Output: "ok", ExitCode: 0},
+			{Name: "lint", Passed: false, Output: "lint error", ExitCode: 1},
+		},
+	}
+
+	got := formatVerifyErrors(result)
+
+	if strings.Contains(got, "build") {
+		t.Errorf("passed check 'build' should not appear in errors, got: %q", got)
+	}
+	if !strings.Contains(got, "lint") {
+		t.Errorf("failed check 'lint' should appear in errors, got: %q", got)
+	}
+}
+
+func TestFormatVerifyErrors_MultipleFailures(t *testing.T) {
+	result := VerifyResult{
+		AllPassed: false,
+		Checks: []CheckResult{
+			{Name: "build", Passed: false, Output: "build failed", ExitCode: 1},
+			{Name: "test", Passed: false, Output: "tests failed", ExitCode: 2},
+		},
+	}
+
+	got := formatVerifyErrors(result)
+
+	if !strings.Contains(got, "=== build (exit code 1) ===") {
+		t.Errorf("expected build header in output, got: %q", got)
+	}
+	if !strings.Contains(got, "=== test (exit code 2) ===") {
+		t.Errorf("expected test header in output, got: %q", got)
+	}
+	if !strings.Contains(got, "build failed") {
+		t.Errorf("expected build output, got: %q", got)
+	}
+	if !strings.Contains(got, "tests failed") {
+		t.Errorf("expected test output, got: %q", got)
+	}
+}
+
+func TestFormatVerifyErrors_EmptyWhenAllPassed(t *testing.T) {
+	result := VerifyResult{
+		AllPassed: true,
+		Checks: []CheckResult{
+			{Name: "build", Passed: true, Output: "ok", ExitCode: 0},
+		},
+	}
+
+	got := formatVerifyErrors(result)
+
+	if got != "" {
+		t.Errorf("expected empty string when all checks passed, got: %q", got)
+	}
+}

@@ -490,3 +490,86 @@ func TestNewPromptData_EnforceArchitectureDefaultFalse(t *testing.T) {
 		t.Error("EnforceArchitecture should be false when not set in config")
 	}
 }
+
+func TestVerifyFix_RendersPromptWithErrors(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	prompts := &Prompts{
+		VerifyFix: "PR #{{.PRNumber}} issue #{{.IssueNumber}} errors: {{.VerifyErrors}}",
+	}
+	verifyErrors := "=== build (exit code 1) ===\nbuild failed\n"
+
+	_, err := VerifyFix(context.Background(), testIssue(), 7, verifyErrors, "", testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("VerifyFix() error = %v", err)
+	}
+
+	prompt := capturedEnv["GODARK_PROMPT"]
+	if !strings.Contains(prompt, "PR #7") {
+		t.Errorf("expected PR number in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "#42") {
+		t.Errorf("expected issue number in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "build failed") {
+		t.Errorf("expected verify errors in prompt, got: %s", prompt)
+	}
+}
+
+func TestVerifyFix_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	prompts := &Prompts{VerifyFix: "fix prompt"}
+	_, err := VerifyFix(context.Background(), testIssue(), 7, "some errors", "sess-abc123", testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("VerifyFix() error = %v", err)
+	}
+
+	if capturedEnv["GODARK_SESSION_ID"] != "sess-abc123" {
+		t.Errorf("GODARK_SESSION_ID = %q, want %q", capturedEnv["GODARK_SESSION_ID"], "sess-abc123")
+	}
+}
+
+func TestVerifyFix_WithoutSessionID_NoSessionEnv(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	prompts := &Prompts{VerifyFix: "fix prompt"}
+	_, err := VerifyFix(context.Background(), testIssue(), 7, "some errors", "", testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("VerifyFix() error = %v", err)
+	}
+
+	if _, ok := capturedEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set when prevSessionID is empty, got %q", capturedEnv["GODARK_SESSION_ID"])
+	}
+}
+
+func TestVerifyFix_SetsImplementerRetryRole(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	prompts := &Prompts{VerifyFix: "fix prompt"}
+	_, err := VerifyFix(context.Background(), testIssue(), 7, "errors", "", testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("VerifyFix() error = %v", err)
+	}
+
+	if capturedEnv["GODARK_ROLE"] != "implementer_retry" {
+		t.Errorf("GODARK_ROLE = %q, want %q", capturedEnv["GODARK_ROLE"], "implementer_retry")
+	}
+}

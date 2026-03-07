@@ -2022,3 +2022,443 @@ func TestProcessIssue_VerifyRunsBeforeQualityReview(t *testing.T) {
 		t.Errorf("agentCalls = %d, want 1 (quality review should not run when verify blocks)", stubs.agentCalls)
 	}
 }
+
+// verifyFixLoopConfig returns a loop config with a build command, blocking setting,
+// and MaxFixAttempts configured for verify-fix cycle tests.
+func verifyFixLoopConfig(blocking bool, maxFixAttempts int) *config.Config {
+	cfg := verifyLoopConfig(blocking)
+	cfg.Verify.MaxFixAttempts = maxFixAttempts
+	return cfg
+}
+
+// verifyFixPrompts returns test prompts with a VerifyFix template.
+func verifyFixPrompts(t *testing.T) *Prompts {
+	t.Helper()
+	p := testPrompts(t)
+	p.VerifyFix = "Fix PR #{{.PRNumber}} issue #{{.IssueNumber}} errors: {{.VerifyErrors}}"
+	return p
+}
+
+// TestProcessIssue_VerifyFixSucceedsOnFirstAttempt verifies that when verify
+// initially fails but the fix agent succeeds, processing continues to review.
+func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	shCallIdx := 0
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			shCallIdx++
+			if shCallIdx == 1 {
+				// First verify run: fail.
+				return []byte("build error output"), fmt.Errorf("exit status 1")
+			}
+			// Second verify run (after fix): pass.
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // verify-fix agent
+			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := verifyFixLoopConfig(true, 1)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+	if shCallIdx != 2 {
+		t.Errorf("shCallIdx = %d, want 2 (initial verify + re-verify after fix)", shCallIdx)
+	}
+}
+
+// TestProcessIssue_VerifyFixExhaustedBlocking verifies that when all fix attempts
+// are exhausted and verify still fails with Blocking=true, status is "failed".
+func TestProcessIssue_VerifyFixExhaustedBlocking(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			// All verify runs fail.
+			return []byte("build error"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		// All agent calls return OK — verify failures drive the outcome.
+		out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	}
+
+	// MaxFixAttempts=2 → 2 fix agents called, then blocked.
+	cfg := verifyFixLoopConfig(true, 2)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed after exhausted blocking fix attempts", outcome.Status)
+	}
+	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "verify") {
+		t.Errorf("Err = %v, want error containing 'verify'", outcome.Err)
+	}
+	// Agent calls: 1 (implementer) + 2 (fix agents) = 3
+	if callIdx != 3 {
+		t.Errorf("callIdx = %d, want 3 (implementer + 2 fix agents)", callIdx)
+	}
+}
+
+// TestProcessIssue_VerifyFixExhaustedNonBlocking verifies that when all fix attempts
+// are exhausted with Blocking=false, processing proceeds to review with a warning.
+func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			// All verify runs fail.
+			return []byte("build error"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // verify-fix agent
+			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 3: // quality reviewer (non-blocking proceeds here)
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	// MaxFixAttempts=1, Blocking=false → 1 fix agent, then proceed to review.
+	cfg := verifyFixLoopConfig(false, 1)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (non-blocking proceeds to review)", outcome.Status)
+	}
+}
+
+// TestProcessIssue_VerifyFixDriftCheckedAfterFix verifies that protected path drift
+// is re-checked after each fix attempt, and a drift detection fails the issue.
+func TestProcessIssue_VerifyFixDriftCheckedAfterFix(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	shCallIdx := 0
+	driftCheckCount := 0
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			driftCheckCount++
+			if driftCheckCount == 2 {
+				// Drift detected after the fix attempt.
+				return []byte("CLAUDE.md\n"), nil
+			}
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			shCallIdx++
+			// First verify fails so fix cycle triggers.
+			return []byte("build error"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	}
+
+	cfg := verifyFixLoopConfig(true, 2)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed (drift detected after fix)", outcome.Status)
+	}
+	if !strings.Contains(outcome.Err.Error(), "protected path drift") {
+		t.Errorf("Err = %v, want 'protected path drift'", outcome.Err)
+	}
+	if driftCheckCount < 2 {
+		t.Errorf("driftCheckCount = %d, want >= 2 (drift re-checked after fix)", driftCheckCount)
+	}
+}
+
+// TestProcessIssue_VerifyFixSessionContinuity verifies that the fix agent receives
+// the implementer's session ID for context resumption.
+func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	shCallIdx := 0
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			shCallIdx++
+			if shCallIdx == 1 {
+				return []byte("build error"), fmt.Errorf("exit status 1")
+			}
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	var fixAgentEnv map[string]string
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer — returns a session ID
+			out := `{"session_id":"sess-impl-xyz","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // verify-fix agent — capture env
+			fixAgentEnv = make(map[string]string, len(env))
+			for k, v := range env {
+				fixAgentEnv[k] = v
+			}
+			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := verifyFixLoopConfig(true, 1)
+	ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), nil)
+
+	if fixAgentEnv == nil {
+		t.Fatal("verify-fix agent was never called")
+	}
+	if fixAgentEnv["GODARK_SESSION_ID"] != "sess-impl-xyz" {
+		t.Errorf("GODARK_SESSION_ID = %q, want sess-impl-xyz", fixAgentEnv["GODARK_SESSION_ID"])
+	}
+}
+
+// TestProcessIssue_VerifyFixPromptContainsErrorOutput verifies that the rendered
+// verify_fix prompt includes check names and output from failed verify checks.
+func TestProcessIssue_VerifyFixPromptContainsErrorOutput(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	shCallIdx := 0
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			shCallIdx++
+			if shCallIdx == 1 {
+				return []byte("undefined: Foo"), fmt.Errorf("exit status 1")
+			}
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	var fixAgentPrompt string
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // verify-fix agent — capture prompt
+			fixAgentPrompt = env["GODARK_PROMPT"]
+			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := verifyFixLoopConfig(true, 1)
+	ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), nil)
+
+	if fixAgentPrompt == "" {
+		t.Fatal("verify-fix agent was never called")
+	}
+	if !strings.Contains(fixAgentPrompt, "build") {
+		t.Errorf("fix prompt missing check name 'build', got: %s", fixAgentPrompt)
+	}
+	if !strings.Contains(fixAgentPrompt, "undefined: Foo") {
+		t.Errorf("fix prompt missing check output 'undefined: Foo', got: %s", fixAgentPrompt)
+	}
+}
+
+// TestProcessIssue_VerifyFixSkippedWhenNoPrompt verifies that when VerifyFix prompt
+// is not configured, verify failures use the original blocking/non-blocking behavior.
+func TestProcessIssue_VerifyFixSkippedWhenNoPrompt(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			return []byte("build error"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		out := `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	}
+
+	// No VerifyFix prompt → fix cycle should not trigger.
+	prompts := testPrompts(t) // VerifyFix is empty
+	cfg := verifyFixLoopConfig(true, 2)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed (no fix prompt, blocking verify failure)", outcome.Status)
+	}
+	// Only 1 agent call — fix cycle never triggered.
+	if callIdx != 1 {
+		t.Errorf("callIdx = %d, want 1 (no fix agents when VerifyFix prompt is empty)", callIdx)
+	}
+}
