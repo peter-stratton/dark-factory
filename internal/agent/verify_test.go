@@ -419,7 +419,7 @@ func TestSandboxCommandRunner_UsesCorrectImage(t *testing.T) {
 	}
 }
 
-func TestSandboxCommandRunner_ScriptContainsRepoAndBranch(t *testing.T) {
+func TestSandboxCommandRunner_RepoAndBranchPassedViaEnv(t *testing.T) {
 	var capturedOpts sandbox.RunOpts
 	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
 		capturedOpts = opts
@@ -432,15 +432,11 @@ func TestSandboxCommandRunner_ScriptContainsRepoAndBranch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(capturedOpts.Cmd) < 3 {
-		t.Fatalf("Cmd too short: %v", capturedOpts.Cmd)
+	if capturedOpts.Env["GODARK_REPO"] != "owner/myrepo" {
+		t.Errorf("GODARK_REPO = %q, want %q", capturedOpts.Env["GODARK_REPO"], "owner/myrepo")
 	}
-	script := capturedOpts.Cmd[2]
-	if !strings.Contains(script, "owner/myrepo") {
-		t.Errorf("script missing repo %q, got: %q", "owner/myrepo", script)
-	}
-	if !strings.Contains(script, "pr-branch-42") {
-		t.Errorf("script missing branch %q, got: %q", "pr-branch-42", script)
+	if capturedOpts.Env["GODARK_BRANCH"] != "pr-branch-42" {
+		t.Errorf("GODARK_BRANCH = %q, want %q", capturedOpts.Env["GODARK_BRANCH"], "pr-branch-42")
 	}
 }
 

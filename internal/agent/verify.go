@@ -90,14 +90,15 @@ func truncateVerifyOutput(b []byte) string {
 // through the GODARK_VERIFY_CMD environment variable to avoid shell quoting issues.
 func sandboxCommandRunner(image, repo, branch string, logger *slog.Logger) CommandRunner {
 	return func(ctx context.Context, command string) ([]byte, []byte, int, error) {
-		script := fmt.Sprintf(
-			"#!/bin/sh\nset -e\ngit clone https://github.com/%s.git /workspace && cd /workspace && git checkout %s && sh -c \"$GODARK_VERIFY_CMD\"\n",
-			repo, branch,
-		)
+		script := "#!/bin/sh\nset -e\ngit clone \"https://github.com/${GODARK_REPO}.git\" /workspace && cd /workspace && git checkout \"${GODARK_BRANCH}\" && sh -c \"$GODARK_VERIFY_CMD\"\n"
 		opts := sandbox.RunOpts{
 			Image: image,
 			Cmd:   []string{"sh", "-c", script},
-			Env:   map[string]string{"GODARK_VERIFY_CMD": command},
+			Env: map[string]string{
+				"GODARK_REPO":       repo,
+				"GODARK_BRANCH":     branch,
+				"GODARK_VERIFY_CMD": command,
+			},
 		}
 		result, err := sandboxRunContainer(ctx, opts, logger)
 		if err != nil {

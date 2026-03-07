@@ -2635,16 +2635,14 @@ func sandboxGuardFn(name string, args ...string) ([]byte, error) {
 func TestProcessIssue_VerifySandboxMode(t *testing.T) {
 	var sandboxCalled bool
 	var capturedImage string
-	var capturedScript string
+	var capturedEnv map[string]string
 
 	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
 	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
 		sandboxCalled = true
 		capturedImage = opts.Image
-		if len(opts.Cmd) >= 3 {
-			capturedScript = opts.Cmd[2]
-		}
+		capturedEnv = opts.Env
 		return &sandbox.RunResult{ExitCode: 0, Stdout: "build ok"}, nil
 	}
 
@@ -2670,9 +2668,9 @@ func TestProcessIssue_VerifySandboxMode(t *testing.T) {
 	if capturedImage != "test-image:latest" {
 		t.Errorf("Image = %q, want %q", capturedImage, "test-image:latest")
 	}
-	// Script should reference the repo.
-	if !strings.Contains(capturedScript, "owner/repo") {
-		t.Errorf("script missing repo, got: %q", capturedScript)
+	// Repo should be passed via environment variable, not embedded in the script.
+	if capturedEnv["GODARK_REPO"] != "owner/repo" {
+		t.Errorf("GODARK_REPO = %q, want %q", capturedEnv["GODARK_REPO"], "owner/repo")
 	}
 }
 
