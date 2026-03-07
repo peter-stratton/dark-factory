@@ -56,10 +56,12 @@ func DetectGaps(runs []rundata.RunDetail) []PromptGap {
 	}
 
 	// Exhausted retries — list issue numbers and titles as a separate finding.
-	var exhausted []rundata.IssueDetail
+	var exhausted, notExhausted []rundata.IssueDetail
 	for _, issue := range allIssues {
 		if issue.Outcome.Status == "needs-human-review" {
 			exhausted = append(exhausted, issue)
+		} else {
+			notExhausted = append(notExhausted, issue)
 		}
 	}
 	if len(exhausted) > 0 {
@@ -68,9 +70,11 @@ func DetectGaps(runs []rundata.RunDetail) []PromptGap {
 			parts = append(parts, fmt.Sprintf("#%d %q", issue.IssueNumber, issue.Outcome.Title))
 		}
 		gaps = append(gaps, PromptGap{
-			Finding:     "exhausted retries: " + strings.Join(parts, ", "),
-			FailRateWith: 1.0,
-			SamplesWith:  len(exhausted),
+			Finding:        "exhausted retries: " + strings.Join(parts, ", "),
+			FailRateWith:   issueFailureRate(exhausted),
+			FailRateWithout: issueFailureRate(notExhausted),
+			SamplesWith:    len(exhausted),
+			SamplesWithout: len(notExhausted),
 		})
 	}
 

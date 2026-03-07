@@ -232,8 +232,6 @@ func TestDetectGapsNoGaps(t *testing.T) {
 
 func TestDetectGapsSortedByMagnitude(t *testing.T) {
 	// Two pairwise findings with different gap sizes — larger gap sorts first.
-	// Quality reviewer gap: 5 with (0% fail) vs 5 without (60% fail) → gap = 0.6
-	// Scenario specs gap: 5 with (20% fail = 1/5) vs 5 without (40% fail = 2/5) → gap = 0.2
 	var issues []rundata.IssueDetail
 
 	// 5 issues: have quality reviewer AND spec gen, none failed.
