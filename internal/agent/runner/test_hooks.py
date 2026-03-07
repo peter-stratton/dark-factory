@@ -8,7 +8,12 @@ import unittest
 from unittest.mock import patch
 
 # Import helpers directly from agent_runner
-from agent_runner import _is_protected, make_audit_hook, make_protected_path_hook
+from agent_runner import (
+    _is_protected,
+    make_audit_hook,
+    make_denied_commands_hook,
+    make_protected_path_hook,
+)
 
 
 def run(coro):
@@ -144,6 +149,64 @@ class TestProtectedPathHookBash(unittest.TestCase):
     def test_bash_empty_command_allowed(self):
         hook = make_protected_path_hook(["CLAUDE.md"])
         result = self._call_bash(hook, "")
+        self.assertNotEqual(result.get("decision"), "block")
+
+
+class TestDeniedCommandsHook(unittest.TestCase):
+    """Tests for the make_denied_commands_hook PreToolUse hook."""
+
+    def _call_bash(self, hook, command: str) -> dict:
+        hook_input = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "tool_use_id": "tu_004",
+            "session_id": "sess_001",
+            "transcript_path": "/tmp/transcript",
+            "cwd": "/workspace",
+        }
+        return run(hook(hook_input, "Bash", None))
+
+    def _call_non_bash(self, hook, tool_name: str) -> dict:
+        hook_input = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": tool_name,
+            "tool_input": {"file_path": "foo.go"},
+            "tool_use_id": "tu_005",
+            "session_id": "sess_001",
+            "transcript_path": "/tmp/transcript",
+            "cwd": "/workspace",
+        }
+        return run(hook(hook_input, "Bash", None))
+
+    def test_matching_command_is_blocked(self):
+        hook = make_denied_commands_hook(["rm -rf", "git push --force"])
+        result = self._call_bash(hook, "rm -rf /workspace")
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_system_message_names_matching_pattern(self):
+        hook = make_denied_commands_hook(["rm -rf", "git push --force"])
+        result = self._call_bash(hook, "rm -rf /workspace")
+        self.assertIn("rm -rf", result.get("systemMessage", ""))
+
+    def test_non_matching_command_is_allowed(self):
+        hook = make_denied_commands_hook(["rm -rf", "git push --force"])
+        result = self._call_bash(hook, "go test ./...")
+        self.assertNotEqual(result.get("decision"), "block")
+
+    def test_empty_command_is_allowed(self):
+        hook = make_denied_commands_hook(["rm -rf"])
+        result = self._call_bash(hook, "")
+        self.assertNotEqual(result.get("decision"), "block")
+
+    def test_non_bash_tool_is_allowed(self):
+        hook = make_denied_commands_hook(["rm -rf"])
+        result = self._call_non_bash(hook, "Write")
+        self.assertNotEqual(result.get("decision"), "block")
+
+    def test_empty_denied_patterns_allows_all(self):
+        hook = make_denied_commands_hook([])
+        result = self._call_bash(hook, "rm -rf /workspace")
         self.assertNotEqual(result.get("decision"), "block")
 
 

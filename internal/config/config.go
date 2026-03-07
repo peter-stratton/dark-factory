@@ -127,7 +127,7 @@ func defaults() *Config {
 	return &Config{
 		MaxRetries:             3,
 		RoadmapPath:            "docs/ROADMAP.md",
-		DeniedCommands: []string{
+		DeniedCommands:         []string{
 			"rm -rf",
 			"git push --force",
 			"git push -f",
