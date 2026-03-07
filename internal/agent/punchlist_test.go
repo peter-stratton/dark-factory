@@ -12,7 +12,7 @@ import (
 
 func TestParseAcceptanceTests_ValidJSON(t *testing.T) {
 	input := `["Test one", "Test two", "Test three"]`
-	tests := parseAcceptanceTests(input, testLogger(t))
+	tests := parseAcceptanceTests(input, 0, testLogger(t))
 	if len(tests) != 3 {
 		t.Fatalf("expected 3 tests, got %d: %v", len(tests), tests)
 	}
@@ -23,7 +23,7 @@ func TestParseAcceptanceTests_ValidJSON(t *testing.T) {
 
 func TestParseAcceptanceTests_FencedJSON(t *testing.T) {
 	input := "```json\n[\"Test one\", \"Test two\"]\n```"
-	tests := parseAcceptanceTests(input, testLogger(t))
+	tests := parseAcceptanceTests(input, 0, testLogger(t))
 	if len(tests) != 2 {
 		t.Fatalf("expected 2 tests, got %d: %v", len(tests), tests)
 	}
@@ -34,7 +34,7 @@ func TestParseAcceptanceTests_FencedJSON(t *testing.T) {
 
 func TestParseAcceptanceTests_FencedNoLang(t *testing.T) {
 	input := "```\n[\"A\", \"B\"]\n```"
-	tests := parseAcceptanceTests(input, testLogger(t))
+	tests := parseAcceptanceTests(input, 0, testLogger(t))
 	if len(tests) != 2 {
 		t.Fatalf("expected 2 tests, got %d: %v", len(tests), tests)
 	}
@@ -42,14 +42,14 @@ func TestParseAcceptanceTests_FencedNoLang(t *testing.T) {
 
 func TestParseAcceptanceTests_InvalidJSON(t *testing.T) {
 	input := "This is not JSON at all"
-	tests := parseAcceptanceTests(input, testLogger(t))
+	tests := parseAcceptanceTests(input, 0, testLogger(t))
 	if tests != nil {
 		t.Errorf("expected nil for invalid JSON, got %v", tests)
 	}
 }
 
 func TestParseAcceptanceTests_EmptyString(t *testing.T) {
-	tests := parseAcceptanceTests("", testLogger(t))
+	tests := parseAcceptanceTests("", 0, testLogger(t))
 	if tests != nil {
 		t.Errorf("expected nil for empty string, got %v", tests)
 	}
@@ -57,7 +57,7 @@ func TestParseAcceptanceTests_EmptyString(t *testing.T) {
 
 func TestParseAcceptanceTests_CapsAtFive(t *testing.T) {
 	input := `["A","B","C","D","E","F","G"]`
-	tests := parseAcceptanceTests(input, testLogger(t))
+	tests := parseAcceptanceTests(input, 0, testLogger(t))
 	if len(tests) != 5 {
 		t.Fatalf("expected 5 tests (capped), got %d: %v", len(tests), tests)
 	}
@@ -65,7 +65,7 @@ func TestParseAcceptanceTests_CapsAtFive(t *testing.T) {
 
 func TestParseAcceptanceTests_EmbeddedInText(t *testing.T) {
 	input := "Here are the tests:\n[\"Test one\", \"Test two\"]\nDone."
-	tests := parseAcceptanceTests(input, testLogger(t))
+	tests := parseAcceptanceTests(input, 0, testLogger(t))
 	if len(tests) != 2 {
 		t.Fatalf("expected 2 tests from embedded JSON, got %d: %v", len(tests), tests)
 	}
@@ -73,7 +73,7 @@ func TestParseAcceptanceTests_EmbeddedInText(t *testing.T) {
 
 func TestParseAcceptanceTests_EmptyArray(t *testing.T) {
 	input := `[]`
-	tests := parseAcceptanceTests(input, testLogger(t))
+	tests := parseAcceptanceTests(input, 0, testLogger(t))
 	if len(tests) != 0 {
 		t.Errorf("expected 0 tests for empty array, got %d", len(tests))
 	}
@@ -96,7 +96,7 @@ func TestParseAcceptanceTests_InvalidJSON_LogsWarn(t *testing.T) {
 	cap := &logCapturer{}
 	logger := slog.New(cap)
 
-	result := parseAcceptanceTests("not json at all", logger)
+	result := parseAcceptanceTests("not json at all", 0, logger)
 	if result != nil {
 		t.Errorf("expected nil for invalid JSON, got %v", result)
 	}
@@ -237,7 +237,10 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 
 	// Suppress stderr noise from os.Stderr logger.
 	origStderr := os.Stderr
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.Stderr = w
 
 	entry := punchlist.Entry{IssueNumber: 42, PRNumber: 10}

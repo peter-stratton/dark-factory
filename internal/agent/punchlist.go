@@ -85,18 +85,15 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 		return nil
 	}
 
-	tests := parseAcceptanceTests(result.ResultText, logger)
+	tests := parseAcceptanceTests(result.ResultText, entry.IssueNumber, logger)
 	if tests == nil {
 		// Try stdout as fallback.
-		tests = parseAcceptanceTests(result.Stdout, logger)
+		tests = parseAcceptanceTests(result.Stdout, entry.IssueNumber, logger)
 	}
 	if tests != nil {
 		logger.Info("punchlist acceptance tests generated",
 			"issue_number", entry.IssueNumber,
 			"count", len(tests))
-	} else {
-		logger.Warn("punchlist acceptance tests could not be parsed from LLM output",
-			"issue_number", entry.IssueNumber)
 	}
 	return tests
 }
@@ -129,7 +126,7 @@ func EnrichPunchlistEntries(ctx context.Context, entries []punchlist.Entry, prom
 
 // parseAcceptanceTests extracts a JSON array of strings from LLM output.
 // Handles optional markdown code fences. Caps at 5 items.
-func parseAcceptanceTests(text string, logger *slog.Logger) []string {
+func parseAcceptanceTests(text string, issueNumber int, logger *slog.Logger) []string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
@@ -160,11 +157,11 @@ func parseAcceptanceTests(text string, logger *slog.Logger) []string {
 		end := strings.LastIndex(text, "]")
 		if start >= 0 && end > start {
 			if err2 := json.Unmarshal([]byte(text[start:end+1]), &tests); err2 != nil {
-				logger.Warn("failed to parse acceptance tests JSON", "error", err2, "raw_response", text)
+				logger.Warn("failed to parse acceptance tests JSON", "issue_number", issueNumber, "error", err2, "raw_response", text)
 				return nil
 			}
 		} else {
-			logger.Warn("failed to parse acceptance tests JSON", "error", err, "raw_response", text)
+			logger.Warn("failed to parse acceptance tests JSON", "issue_number", issueNumber, "error", err, "raw_response", text)
 			return nil
 		}
 	}
