@@ -6,6 +6,7 @@
   <title>godark — Runs</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/chart.min.js" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -80,6 +81,72 @@
       </div>
 
       {{if .Repos}}
+
+      {{if .HasSummary}}
+      <!-- Analytics Summary Cards -->
+      <div class="stats-row animate-in animate-in-1">
+        <a href="/analysis" class="stat-block" style="text-decoration: none;">
+          <div class="stat-block__label">Total Runs</div>
+          <div class="stat-block__value">{{.Summary.RunCount}}</div>
+        </a>
+        <a href="/analysis" class="stat-block" style="text-decoration: none;">
+          <div class="stat-block__label">Total Issues</div>
+          <div class="stat-block__value">{{.Summary.IssueCount}}</div>
+        </a>
+        <a href="/analysis" class="stat-block" style="text-decoration: none;">
+          <div class="stat-block__label">Success Rate</div>
+          <div class="stat-block__value stat-block__value--success">{{printf "%.0f" .SuccessRatePct}}%</div>
+        </a>
+        <a href="/analysis" class="stat-block" style="text-decoration: none;">
+          <div class="stat-block__label">Avg Cost / Issue</div>
+          <div class="stat-block__value">{{if gt .Summary.CostStats.AvgPerIssueUSD 0.0}}${{printf "%.4f" .Summary.CostStats.AvgPerIssueUSD}}{{else}}—{{end}}</div>
+        </a>
+      </div>
+
+      {{if .HasTrends}}
+      <!-- Success Rate Sparkline -->
+      <script type="application/json" id="index-trend-data">{{toJSON .Trends}}</script>
+      <div class="card animate-in animate-in-2">
+        <div class="card__header">
+          <span class="card__title">Success Rate Trend</span>
+          <a href="/analysis" class="text-muted" style="font-size: var(--text-xs);">Full analysis →</a>
+        </div>
+        <canvas id="index-chart-success-rate" style="width:100%;max-height:120px;"></canvas>
+      </div>
+      <script>
+      (function() {
+        var raw = document.getElementById('index-trend-data').textContent;
+        var points = JSON.parse(raw);
+        var canvas = document.getElementById('index-chart-success-rate');
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            datasets: [{
+              label: 'Success Rate (%)',
+              data: points.map(function(p) {
+                return { x: p.timestamp, y: +(p.success_rate * 100).toFixed(1) };
+              }),
+              borderColor: '#4ade80',
+              backgroundColor: '#4ade8033',
+              fill: true,
+              pointRadius: 4,
+              tension: 0.1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+              y: { beginAtZero: true, max: 100 }
+            }
+          }
+        });
+      })();
+      </script>
+      {{end}}
+      {{end}}
 
       <!-- Filter Controls -->
       <div class="controls animate-in animate-in-1">

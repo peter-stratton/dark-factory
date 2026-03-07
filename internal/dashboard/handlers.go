@@ -88,9 +88,14 @@ type TimelineStepView struct {
 
 // IndexData is the data passed to the index template.
 type IndexData struct {
-	Runs       []RunView
-	Repos      []string // unique repo names, sorted
-	RepoFilter string   // currently active repo filter (empty = all)
+	Runs           []RunView
+	Repos          []string // unique repo names, sorted
+	RepoFilter     string   // currently active repo filter (empty = all)
+	Summary        *analysis.Report
+	Trends         []analysis.TrendPoint
+	HasSummary     bool
+	HasTrends      bool
+	SuccessRatePct float64 // pre-computed for the summary card
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -148,10 +153,44 @@ func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
 
 	runs := filteredRuns(allMetas, repoFilter)
 
+	// Load up to 50 most recent full run details for the analytics summary.
+	const maxSummaryRuns = 50
+	summaryMetas := allMetas
+	if len(summaryMetas) > maxSummaryRuns {
+		summaryMetas = summaryMetas[:maxSummaryRuns]
+	}
+	var fullRuns []rundata.RunDetail
+	for _, m := range summaryMetas {
+		parts := strings.SplitN(m.Repo, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		timestamp := m.StartedAt.UTC().Format("20060102-150405")
+		detail, err := s.reader.LoadRun(parts[0], parts[1], timestamp)
+		if err != nil {
+			s.cfg.Logger.Warn("loading run detail for summary", "repo", m.Repo, "error", err)
+			continue
+		}
+		fullRuns = append(fullRuns, *detail)
+	}
+
+	report := analysis.Aggregate(fullRuns)
+	trends := analysis.ComputeTrends(fullRuns)
+
+	var successRatePct float64
+	if report.IssueCount > 0 {
+		successRatePct = float64(report.Outcomes["implemented"]) / float64(report.IssueCount) * 100
+	}
+
 	return &IndexData{
-		Runs:       runs,
-		Repos:      repos,
-		RepoFilter: repoFilter,
+		Runs:           runs,
+		Repos:          repos,
+		RepoFilter:     repoFilter,
+		Summary:        &report,
+		Trends:         trends,
+		HasSummary:     len(fullRuns) > 0,
+		HasTrends:      len(trends) >= 2,
+		SuccessRatePct: successRatePct,
 	}, nil
 }
 
