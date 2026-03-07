@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/alpine.min.js" defer></script>
+  <script src="/static/chart.min.js"></script>
 </head>
 <body>
   <div class="shell">
@@ -301,4 +302,103 @@
 {{end}}
 
 {{end}}
+
+<!-- Trend Charts (always rendered; hides gracefully when data is insufficient) -->
+{{if .HasTrends}}
+
+<script type="application/json" id="trend-data">{{toJSON .Trends}}</script>
+
+<!-- Success Rate Chart -->
+<div class="card animate-in animate-in-3">
+  <div class="card__header">
+    <span class="card__title">Success Rate Over Time</span>
+    <span class="text-muted">Fraction of issues implemented per run</span>
+  </div>
+  <canvas id="chart-success-rate" style="width:100%;max-height:300px;"></canvas>
+</div>
+
+<!-- Avg Retries Chart -->
+<div class="card animate-in animate-in-3">
+  <div class="card__header">
+    <span class="card__title">Average Retries Over Time</span>
+    <span class="text-muted">Mean retries per issue per run</span>
+  </div>
+  <canvas id="chart-avg-retries" style="width:100%;max-height:300px;"></canvas>
+</div>
+
+<!-- Cost Per Run Chart -->
+<div class="card animate-in animate-in-3">
+  <div class="card__header">
+    <span class="card__title">Cost Per Run Over Time</span>
+    <span class="text-muted">Total USD cost per finished run</span>
+  </div>
+  <canvas id="chart-cost" style="width:100%;max-height:300px;"></canvas>
+</div>
+
+<script>
+(function() {
+  var raw = document.getElementById('trend-data').textContent;
+  var points = JSON.parse(raw);
+
+  function makeChart(canvasId, label, getter, color) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [{
+          label: label,
+          data: points.map(function(p) {
+            return { x: p.timestamp, y: getter(p) };
+          }),
+          borderColor: color,
+          backgroundColor: color + '33',
+          fill: true,
+          pointRadius: 4,
+          tension: 0.1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        scales: {
+          x: { type: 'time', time: { unit: 'day' } },
+          y: { beginAtZero: true }
+        },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              title: function(items) {
+                var p = points[items[0].dataIndex];
+                return p.repo + ' \u2022 ' + p.milestone;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  makeChart('chart-success-rate', 'Success Rate (%)',
+    function(p) { return +(p.success_rate * 100).toFixed(1); }, '#4ade80');
+  makeChart('chart-avg-retries', 'Avg Retries',
+    function(p) { return +p.avg_retries.toFixed(2); }, '#f59e0b');
+  makeChart('chart-cost', 'Total Cost (USD)',
+    function(p) { return +p.total_cost_usd.toFixed(4); }, '#60a5fa');
+})();
+</script>
+
+{{else}}
+
+<!-- Trend charts fallback: fewer than 2 finished runs -->
+<div class="card animate-in animate-in-3">
+  <div class="card__header">
+    <span class="card__title">Trend Charts</span>
+  </div>
+  <p class="text-muted" style="padding: 1rem;">Not enough data for trends (requires at least 2 completed runs).</p>
+</div>
+
+{{end}}
+
 {{end}}

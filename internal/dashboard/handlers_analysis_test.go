@@ -329,6 +329,169 @@ func TestServer_Analysis_PartialEndpoint(t *testing.T) {
 	}
 }
 
+func TestServer_ChartJSServed(t *testing.T) {
+	tmpDir := t.TempDir()
+	srv := newServer(t, tmpDir)
+
+	req := httptest.NewRequest(http.MethodGet, "/static/chart.min.js", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /static/chart.min.js: status = %d, want 200", rr.Code)
+	}
+	ct := rr.Header().Get("Content-Type")
+	if !strings.Contains(ct, "javascript") {
+		t.Errorf("Content-Type = %q, want to contain javascript", ct)
+	}
+	if rr.Body.Len() == 0 {
+		t.Error("chart.min.js response body is empty")
+	}
+}
+
+func TestServer_Analysis_ChartsRendered(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	finishedAt := now
+
+	// Build 5 finished runs so HasTrends=true.
+	for i := 0; i < 5; i++ {
+		ts := now.Add(time.Duration(-i) * time.Hour).Format("20060102-150405")
+		issues := []rundata.IssueDetail{
+			{
+				IssueNumber: 1,
+				Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+				Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
+			},
+		}
+		fa := now.Add(time.Duration(-i) * time.Hour)
+		buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+			Repo:         "acme/proj",
+			Milestone:    "v1.0",
+			IssueNumbers: []int{1},
+			StartedAt:    now.Add(time.Duration(-i) * time.Hour),
+			FinishedAt:   &fa,
+			Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
+		}, issues)
+		_ = finishedAt
+	}
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "<canvas") {
+		t.Errorf("analysis page with 5 runs missing <canvas> elements; got: %q", truncate(body, 600))
+	}
+}
+
+func TestServer_Analysis_TrendDataEmbedded(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+
+	// Build 2 finished runs so trend JSON is embedded.
+	for i := 0; i < 2; i++ {
+		ts := now.Add(time.Duration(-i) * time.Hour).Format("20060102-150405")
+		fa := now.Add(time.Duration(-i) * time.Hour)
+		issues := []rundata.IssueDetail{
+			{
+				IssueNumber: 1,
+				Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+				Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
+			},
+		}
+		buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+			Repo:         "acme/proj",
+			Milestone:    "v1.0",
+			IssueNumbers: []int{1},
+			StartedAt:    now.Add(time.Duration(-i) * time.Hour),
+			FinishedAt:   &fa,
+			Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
+		}, issues)
+	}
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+	// The page should contain the JSON trend data script tag.
+	if !strings.Contains(body, `id="trend-data"`) {
+		t.Errorf("analysis page missing trend-data script tag; got: %q", truncate(body, 600))
+	}
+	// The JSON should contain the success_rate field.
+	if !strings.Contains(body, "success_rate") {
+		t.Errorf("trend data JSON missing success_rate field; got: %q", truncate(body, 600))
+	}
+}
+
+func TestServer_Analysis_NoDataFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	srv := newServer(t, tmpDir)
+
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Not enough data") {
+		t.Errorf("analysis page with 0 runs missing 'Not enough data' message; got: %q", truncate(body, 400))
+	}
+}
+
+func TestServer_Analysis_SingleRunFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	finishedAt := now
+
+	issues := []rundata.IssueDetail{
+		{
+			IssueNumber: 1,
+			Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+			Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
+		},
+	}
+	buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+		FinishedAt:   &finishedAt,
+		Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
+	}, issues)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+	// With only 1 run, charts should not be shown.
+	if strings.Contains(body, "<canvas") {
+		t.Errorf("analysis page with 1 run should not contain <canvas> elements")
+	}
+	// Fallback message should be shown.
+	if !strings.Contains(body, "Not enough data") {
+		t.Errorf("analysis page with 1 run missing 'Not enough data' fallback; got: %q", truncate(body, 400))
+	}
+}
+
 func TestServer_Analysis_NavLinkPresent(t *testing.T) {
 	tmpDir := t.TempDir()
 	srv := newServer(t, tmpDir)

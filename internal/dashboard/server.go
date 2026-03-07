@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -48,6 +49,13 @@ func New(cfg Config, reader *rundata.Reader) (*Server, error) {
 				return template.HTML(template.HTMLEscapeString(s)) //nolint:gosec
 			}
 			return template.HTML(buf.Bytes()) //nolint:gosec
+		},
+		"toJSON": func(v any) (template.JS, error) {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return "", err
+			}
+			return template.JS(b), nil //nolint:gosec
 		},
 	}
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/*.html")
