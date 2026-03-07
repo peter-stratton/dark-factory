@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/phs/dark-factory/internal/agent"
@@ -24,15 +25,18 @@ import (
 )
 
 var implementCmd = &cobra.Command{
-	Use:   "implement <issue-number>",
-	Short: "Implement a single GitHub issue",
-	Long: `Fetch a GitHub issue by number and run the implement → review → merge
-loop directly, without milestone or dependency resolution.`,
-	Args: cobra.ExactArgs(1),
+	Use:   "implement [issue-number...] [--issues 160,161,162]",
+	Short: "Implement one or more GitHub issues",
+	Long: `Fetch one or more GitHub issues by number and run the implement → review → merge
+loop directly, without milestone or dependency resolution.
+
+Issue numbers may be provided as positional arguments, via --issues, or both.`,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		issueNumber, err := strconv.Atoi(args[0])
+		issuesFlag, _ := cmd.Flags().GetString("issues")
+		issueNums, err := collectIssueNumbers(args, issuesFlag)
 		if err != nil {
-			return fmt.Errorf("invalid issue number %q: %w", args[0], err)
+			return err
 		}
 
 		configPath, _ := cmd.Flags().GetString("config")
@@ -63,15 +67,17 @@ loop directly, without milestone or dependency resolution.`,
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		issue, err := github.FetchIssue(cfg.Repo, issueNumber)
-		if err != nil {
-			return fmt.Errorf("fetching issue #%d: %w", issueNumber, err)
-		}
-
 		if dryRun {
-			fmt.Printf("Issue #%d: %s\n", issue.Number, issue.Title)
-			fmt.Printf("Labels: %v\n", issue.Labels)
-			fmt.Printf("Body:\n%s\n", issue.Body)
+			for _, num := range issueNums {
+				issue, err := github.FetchIssue(cfg.Repo, num)
+				if err != nil {
+					return fmt.Errorf("fetching issue #%d: %w", num, err)
+				}
+				fmt.Printf("Issue #%d: %s\n", issue.Number, issue.Title)
+				fmt.Printf("Labels: %v\n", issue.Labels)
+				fmt.Printf("Body:\n%s\n", issue.Body)
+				fmt.Println()
+			}
 			return nil
 		}
 
@@ -81,7 +87,7 @@ loop directly, without milestone or dependency resolution.`,
 
 		// Create RunDataWriter first to get the run directory for the log file.
 		var hook agent.RunDataHook
-		writer, writerErr := rundata.New(cfg.Repo, "", []int{issueNumber})
+		writer, writerErr := rundata.New(cfg.Repo, "", issueNums)
 		var logDir string
 		if writerErr != nil {
 			// Fall back to a private temp directory so each run is isolated.
@@ -133,7 +139,6 @@ loop directly, without milestone or dependency resolution.`,
 
 		// Acquire run lock to prevent concurrent godark executions.
 		locker := lock.New(cfg.Repo, logger)
-		issueNums := []int{issueNumber}
 		if err := locker.Acquire(issueNums, force); err != nil {
 			return fmt.Errorf("acquiring run lock: %w", err)
 		}
@@ -143,37 +148,110 @@ loop directly, without milestone or dependency resolution.`,
 			}
 		}()
 
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
+		// Stats across all issues.
+		var implemented, readyToMerge, needsHumanReview, failed int
 
-		// Write dialogue if we have a PR and a writer.
-		if writer != nil && outcome.PRNumber > 0 {
-			bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
-			if fetchErr != nil {
-				logger.Warn("failed to fetch PR comment bodies for dialogue",
-					"issue_number", issueNumber, "error", fetchErr)
-			} else {
-				implNotes, reviewNotes := dialogue.ParseComments(bodies)
-				dialogueEntries := orchestrator.BuildDialogueEntries(implNotes, reviewNotes)
-				if len(dialogueEntries) > 0 {
-					if err := writer.WriteDialogue(issueNumber, dialogueEntries); err != nil {
-						logger.Warn("failed to write dialogue",
-							"issue_number", issueNumber, "error", err)
+		// Punchlist entries accumulated across all issues.
+		var punchlistEntries []punchlist.Entry
+
+		punchlistPath, _ := cmd.Flags().GetString("punchlist")
+
+		for _, issueNumber := range issueNums {
+			if ctx.Err() != nil {
+				logger.Warn("context cancelled, stopping", "error", ctx.Err())
+				break
+			}
+
+			issue, err := github.FetchIssue(cfg.Repo, issueNumber)
+			if err != nil {
+				logger.Warn("failed to fetch issue, skipping", "issue_number", issueNumber, "error", err)
+				failed++
+				fmt.Printf("  #%d — failed to fetch: %s\n", issueNumber, err)
+				continue
+			}
+
+			outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
+
+			// Write dialogue if we have a PR and a writer.
+			if writer != nil && outcome.PRNumber > 0 {
+				bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+				if fetchErr != nil {
+					logger.Warn("failed to fetch PR comment bodies for dialogue",
+						"issue_number", issueNumber, "error", fetchErr)
+				} else {
+					implNotes, reviewNotes := dialogue.ParseComments(bodies)
+					dialogueEntries := orchestrator.BuildDialogueEntries(implNotes, reviewNotes)
+					if len(dialogueEntries) > 0 {
+						if err := writer.WriteDialogue(issueNumber, dialogueEntries); err != nil {
+							logger.Warn("failed to write dialogue",
+								"issue_number", issueNumber, "error", err)
+						}
 					}
 				}
 			}
+
+			switch outcome.Status {
+			case "implemented":
+				implemented++
+				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+				if err := orchestrator.PullAfterMerge(logger); err != nil {
+					logger.Warn("could not sync local repo after merge", "error", err)
+				}
+			case "ready-to-merge":
+				readyToMerge++
+				fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+			case "needs-human-review":
+				needsHumanReview++
+				fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
+			default:
+				failed++
+				errMsg := ""
+				if outcome.Err != nil {
+					errMsg = outcome.Err.Error()
+				}
+				fmt.Printf("  #%d %s — failed: %s\n", issue.Number, issue.Title, errMsg)
+			}
+
+			logger.Info("issue outcome",
+				"issue_number", outcome.IssueNumber,
+				"status", outcome.Status,
+				"pr_number", outcome.PRNumber,
+				"retries", outcome.Retries,
+				"error", outcome.Err,
+			)
+
+			if outcome.PRNumber > 0 {
+				files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
+				if err != nil {
+					logger.Warn("failed to fetch changed files for punchlist",
+						"pr_number", outcome.PRNumber, "error", err)
+				}
+				spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issueNumber)
+				if err != nil {
+					logger.Warn("failed to read scenario spec for punchlist",
+						"issue_number", issueNumber, "error", err)
+				}
+				punchlistEntries = append(punchlistEntries, punchlist.Entry{
+					IssueNumber:  issue.Number,
+					IssueTitle:   issue.Title,
+					IssueBody:    issue.Body,
+					PRNumber:     outcome.PRNumber,
+					Repo:         cfg.Repo,
+					ScenarioSpec: spec,
+					ChangedFiles: files,
+				})
+			}
 		}
 
-		// Finalize run data regardless of outcome.
+		// Print totals.
+		fmt.Println()
+		fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed\n",
+			implemented, readyToMerge, needsHumanReview, failed)
+
+		// Finalize run data.
 		if writer != nil {
-			implemented := 0
-			failed := 0
-			if outcome.Status == "implemented" {
-				implemented = 1
-			} else if outcome.Status == "failed" {
-				failed = 1
-			}
 			if err := writer.FinalizeRun(rundata.RunSummary{
-				Total:       1,
+				Total:       implemented + readyToMerge + needsHumanReview + failed,
 				Implemented: implemented,
 				Failed:      failed,
 			}); err != nil {
@@ -181,57 +259,26 @@ loop directly, without milestone or dependency resolution.`,
 			}
 		}
 
-		if outcome.Err != nil {
-			return fmt.Errorf("issue #%d failed: %w", issueNumber, outcome.Err)
-		}
-
-		fmt.Printf("Issue #%d: %s (PR #%d, %d retries)\n",
-			outcome.IssueNumber, outcome.Status, outcome.PRNumber, outcome.Retries)
-
-		if outcome.Status == "implemented" {
-			if err := orchestrator.PullAfterMerge(logger); err != nil {
-				logger.Warn("could not sync local repo after merge", "error", err)
-			}
-		}
-
-		if outcome.PRNumber > 0 {
-			punchlistPath, _ := cmd.Flags().GetString("punchlist")
-			files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
-			if err != nil {
-				logger.Warn("failed to fetch changed files for punchlist",
-					"pr_number", outcome.PRNumber, "error", err)
-			}
-			spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issueNumber)
-			if err != nil {
-				logger.Warn("failed to read scenario spec for punchlist",
-					"issue_number", issueNumber, "error", err)
-			}
-			entries := []punchlist.Entry{{
-				IssueNumber:  issue.Number,
-				IssueTitle:   issue.Title,
-				IssueBody:    issue.Body,
-				PRNumber:     outcome.PRNumber,
-				Repo:         cfg.Repo,
-				ScenarioSpec: spec,
-				ChangedFiles: files,
-			}}
-			agent.EnrichPunchlistEntries(ctx, entries, prompts, cfg, authEnv, logger)
+		// Generate punchlist from all accumulated entries.
+		if len(punchlistEntries) > 0 {
+			agent.EnrichPunchlistEntries(ctx, punchlistEntries, prompts, cfg, authEnv, logger)
 
 			if writer != nil {
-				e := entries[0]
-				plData := rundata.PunchlistData{
-					VerificationSteps: e.ExtractVerificationSteps(),
-					ScenarioCases:     e.ExtractScenarioCases(),
-					AcceptanceTests:   e.AcceptanceTests,
-					ChangedFiles:      e.ChangedFiles,
-				}
-				if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
-					logger.Warn("failed to write punchlist data",
-						"issue_number", e.IssueNumber, "error", err)
+				for _, e := range punchlistEntries {
+					plData := rundata.PunchlistData{
+						VerificationSteps: e.ExtractVerificationSteps(),
+						ScenarioCases:     e.ExtractScenarioCases(),
+						AcceptanceTests:   e.AcceptanceTests,
+						ChangedFiles:      e.ChangedFiles,
+					}
+					if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
+						logger.Warn("failed to write punchlist data",
+							"issue_number", e.IssueNumber, "error", err)
+					}
 				}
 			}
 
-			text := punchlist.Generate(entries)
+			text := punchlist.Generate(punchlistEntries)
 			fmt.Println()
 			if err := punchlist.Write(text, punchlistPath); err != nil {
 				logger.Warn("failed to write punchlist", "error", err)
@@ -240,6 +287,61 @@ loop directly, without milestone or dependency resolution.`,
 
 		return nil
 	},
+}
+
+// collectIssueNumbers merges positional args and the --issues flag value into
+// a single deduplicated ordered slice. Returns an error if no issue numbers
+// are provided from either source.
+func collectIssueNumbers(args []string, issuesFlag string) ([]int, error) {
+	seen := make(map[int]bool)
+	var nums []int
+
+	for _, a := range args {
+		n, err := strconv.Atoi(strings.TrimSpace(a))
+		if err != nil {
+			return nil, fmt.Errorf("invalid issue number %q: %w", a, err)
+		}
+		if !seen[n] {
+			seen[n] = true
+			nums = append(nums, n)
+		}
+	}
+
+	if issuesFlag != "" {
+		flagNums, err := parseIssueNumbers(issuesFlag)
+		if err != nil {
+			return nil, fmt.Errorf("--issues: %w", err)
+		}
+		for _, n := range flagNums {
+			if !seen[n] {
+				seen[n] = true
+				nums = append(nums, n)
+			}
+		}
+	}
+
+	if len(nums) == 0 {
+		return nil, fmt.Errorf("at least one issue number is required (use positional args or --issues)")
+	}
+	return nums, nil
+}
+
+// parseIssueNumbers parses a comma-separated string of issue numbers into a
+// slice of ints. Returns an error if any token is not a valid integer.
+func parseIssueNumbers(s string) ([]int, error) {
+	var nums []int
+	for _, token := range strings.Split(s, ",") {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		n, err := strconv.Atoi(token)
+		if err != nil {
+			return nil, fmt.Errorf("invalid issue number %q: %w", token, err)
+		}
+		nums = append(nums, n)
+	}
+	return nums, nil
 }
 
 // fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
@@ -256,6 +358,7 @@ func init() {
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.String("config", "godark.yaml", "Path to configuration file")
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
+	f.String("issues", "", "Comma-separated list of issue numbers (e.g. 160,161,162)")
 
 	rootCmd.AddCommand(implementCmd)
 }
