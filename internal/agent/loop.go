@@ -2,8 +2,11 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/phs/dark-factory/internal/config"
@@ -147,6 +150,31 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// Determine whether a scenario spec exists for this issue. Used by the
 	// functional reviewer's quality check: tests are only expected when a spec exists.
 	hasSpec := specGenerated || HasScenarioSpec(cfg.ScenarioDir, issue.Number)
+
+	// Step 3.5: Verify (host-mode). Runs between guard rails and quality review.
+	if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
+		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
+		verifyResult := RunVerify(ctx, verifyChecks, newHostRunner())
+		if verifyResult.AllPassed {
+			logger.Info("verify step passed", "issue_number", issue.Number)
+		} else {
+			var failedNames []string
+			for _, cr := range verifyResult.Checks {
+				if !cr.Passed {
+					failedNames = append(failedNames, cr.Name)
+				}
+			}
+			if cfg.Verify.Blocking {
+				outcome.Status = "failed"
+				outcome.Err = fmt.Errorf("verify failed: %s", strings.Join(failedNames, ", "))
+				return outcome
+			}
+			logger.Warn("verify step failed (non-blocking), proceeding to review",
+				"issue_number", issue.Number,
+				"failed_checks", failedNames,
+			)
+		}
+	}
 
 	// Step 4: Quality review gate (if prompt is configured).
 	if prompts.QualityReviewer != "" {
@@ -400,6 +428,39 @@ func checkDriftAndClose(baseSHA string, cfg *config.Config, prNum int, logger *s
 		logger.Warn("failed to close PR", "error", closeErr)
 	}
 	return fmt.Errorf("protected path drift: %v", touched)
+}
+
+// buildVerifyChecks constructs the ordered list of verify checks from non-empty
+// config commands. Empty commands are omitted.
+func buildVerifyChecks(cfg *config.Config) []Check {
+	var checks []Check
+	if cfg.BuildCommand != "" {
+		checks = append(checks, Check{Name: "build", Command: cfg.BuildCommand})
+	}
+	if cfg.LintCommand != "" {
+		checks = append(checks, Check{Name: "lint", Command: cfg.LintCommand})
+	}
+	if cfg.TestCommand != "" {
+		checks = append(checks, Check{Name: "test", Command: cfg.TestCommand})
+	}
+	return checks
+}
+
+// newHostRunner returns a CommandRunner that executes commands on the host
+// via GuardRunner("sh", "-c", command). Exit codes are extracted from
+// exec.ExitError when available; other errors return exit code 1.
+func newHostRunner() CommandRunner {
+	return func(ctx context.Context, command string) ([]byte, []byte, int, error) {
+		out, err := GuardRunner("sh", "-c", command)
+		if err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return out, nil, exitErr.ExitCode(), nil
+			}
+			return out, nil, 1, err
+		}
+		return out, nil, 0, nil
+	}
 }
 
 func trimOutput(b []byte) string {

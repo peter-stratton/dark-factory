@@ -1667,3 +1667,358 @@ func TestProcessIssue_FunctionalReviewApproved_WritesToTopLevel(t *testing.T) {
 		t.Errorf("WriteReviewResult(\"functional\") called %d times, want 1; kinds: %v", functionalTopLevel, hook.topLevelFunctionalKinds)
 	}
 }
+
+// verifyLoopConfig returns a loop config with a build command and the given blocking setting.
+func verifyLoopConfig(blocking bool) *config.Config {
+	cfg := loopConfig()
+	cfg.BuildCommand = "go build ./..."
+	cfg.Verify.Blocking = blocking
+	return cfg
+}
+
+// TestBuildVerifyChecks_AllCommands verifies that all three non-empty commands produce checks.
+func TestBuildVerifyChecks_AllCommands(t *testing.T) {
+	cfg := &config.Config{
+		BuildCommand: "go build ./...",
+		LintCommand:  "golangci-lint run",
+		TestCommand:  "go test ./...",
+	}
+	checks := buildVerifyChecks(cfg)
+	if len(checks) != 3 {
+		t.Fatalf("len = %d, want 3", len(checks))
+	}
+	if checks[0].Name != "build" || checks[0].Command != "go build ./..." {
+		t.Errorf("checks[0] = %+v, want {build go build ./...}", checks[0])
+	}
+	if checks[1].Name != "lint" || checks[1].Command != "golangci-lint run" {
+		t.Errorf("checks[1] = %+v, want {lint golangci-lint run}", checks[1])
+	}
+	if checks[2].Name != "test" || checks[2].Command != "go test ./..." {
+		t.Errorf("checks[2] = %+v, want {test go test ./...}", checks[2])
+	}
+}
+
+// TestBuildVerifyChecks_SkipsEmpty verifies that empty commands are omitted.
+func TestBuildVerifyChecks_SkipsEmpty(t *testing.T) {
+	cfg := &config.Config{
+		BuildCommand: "go build ./...",
+		LintCommand:  "",
+		TestCommand:  "go test ./...",
+	}
+	checks := buildVerifyChecks(cfg)
+	if len(checks) != 2 {
+		t.Fatalf("len = %d, want 2 (lint skipped)", len(checks))
+	}
+	if checks[0].Name != "build" {
+		t.Errorf("checks[0].Name = %q, want build", checks[0].Name)
+	}
+	if checks[1].Name != "test" {
+		t.Errorf("checks[1].Name = %q, want test", checks[1].Name)
+	}
+}
+
+// TestBuildVerifyChecks_NoneConfigured verifies that an empty config produces no checks.
+func TestBuildVerifyChecks_NoneConfigured(t *testing.T) {
+	checks := buildVerifyChecks(&config.Config{})
+	if len(checks) != 0 {
+		t.Fatalf("len = %d, want 0", len(checks))
+	}
+}
+
+// TestNewHostRunner_SuccessOnZeroExit verifies that a nil-error GuardRunner response maps to exit 0.
+func TestNewHostRunner_SuccessOnZeroExit(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte("build output"), nil
+	})
+
+	runner := newHostRunner()
+	stdout, _, exitCode, err := runner(context.Background(), "go build ./...")
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Errorf("exitCode = %d, want 0", exitCode)
+	}
+	if string(stdout) != "build output" {
+		t.Errorf("stdout = %q, want %q", string(stdout), "build output")
+	}
+}
+
+// TestNewHostRunner_FailsOnError verifies that a non-nil GuardRunner error maps to non-zero exit.
+func TestNewHostRunner_FailsOnError(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte("build error"), fmt.Errorf("exit status 1")
+	})
+
+	runner := newHostRunner()
+	_, _, exitCode, _ := runner(context.Background(), "go build ./...")
+
+	if exitCode == 0 {
+		t.Error("exitCode = 0, want non-zero on error")
+	}
+}
+
+// TestNewHostRunner_UsesShC verifies the runner invokes GuardRunner with sh -c.
+func TestNewHostRunner_UsesShC(t *testing.T) {
+	var capturedName string
+	var capturedArgs []string
+
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		capturedName = name
+		capturedArgs = args
+		return []byte(""), nil
+	})
+
+	runner := newHostRunner()
+	runner(context.Background(), "go build ./...") //nolint
+
+	if capturedName != "sh" {
+		t.Errorf("name = %q, want sh", capturedName)
+	}
+	if len(capturedArgs) != 2 || capturedArgs[0] != "-c" || capturedArgs[1] != "go build ./..." {
+		t.Errorf("args = %v, want [-c go build ./...]", capturedArgs)
+	}
+}
+
+// TestProcessIssue_VerifyPassedProceedsToReview verifies that when verify passes
+// the issue proceeds to review and is ultimately implemented.
+func TestProcessIssue_VerifyPassedProceedsToReview(t *testing.T) {
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil // sh -c and everything else succeeds
+	})
+	_ = stubs
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), verifyLoopConfig(true), testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+}
+
+// TestProcessIssue_VerifySkippedWhenNoCommands verifies that when no commands are
+// configured the verify step is skipped entirely (no sh calls made).
+func TestProcessIssue_VerifySkippedWhenNoCommands(t *testing.T) {
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+	for _, call := range stubs.guardCalls {
+		if len(call) > 0 && call[0] == "sh" {
+			t.Errorf("expected no sh calls when no verify commands configured, got: %v", call)
+		}
+	}
+}
+
+// TestProcessIssue_VerifyHostMode verifies that verify commands are run on the host
+// via sh -c.
+func TestProcessIssue_VerifyHostMode(t *testing.T) {
+	var verifyCmds []string
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 1 && args[0] == "-c" {
+			verifyCmds = append(verifyCmds, args[1])
+			return []byte("ok"), nil
+		}
+		return []byte(""), nil
+	})
+
+	cfg := verifyLoopConfig(true)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+	if len(verifyCmds) == 0 {
+		t.Error("expected verify commands to be run via sh -c")
+	}
+	if len(verifyCmds) > 0 && verifyCmds[0] != "go build ./..." {
+		t.Errorf("verifyCmds[0] = %q, want %q", verifyCmds[0], "go build ./...")
+	}
+}
+
+// TestProcessIssue_VerifyBlockingFailure verifies that when verify fails and
+// Blocking is true, the issue status is "failed".
+func TestProcessIssue_VerifyBlockingFailure(t *testing.T) {
+	setupLoopTest(t, []string{
+		"implementer output",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			return []byte("build failed"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	})
+
+	cfg := verifyLoopConfig(true) // Blocking = true
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed", outcome.Status)
+	}
+	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "verify") {
+		t.Errorf("Err = %v, want error containing 'verify'", outcome.Err)
+	}
+}
+
+// TestProcessIssue_VerifyNonBlockingProceedsToReview verifies that when verify
+// fails and Blocking is false, the issue proceeds to review with a warning.
+func TestProcessIssue_VerifyNonBlockingProceedsToReview(t *testing.T) {
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			return []byte("build failed"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	})
+
+	cfg := verifyLoopConfig(false) // Blocking = false → proceeds to review despite failure
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+}
+
+// TestProcessIssue_VerifyRunsAfterGuardRails verifies that guard rail drift detection
+// occurs before verify — if drift is detected, verify (sh -c) is never called.
+func TestProcessIssue_VerifyRunsAfterGuardRails(t *testing.T) {
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			// Protected drift — guard rails should fail before verify runs.
+			return []byte("CLAUDE.md\n"), nil
+		}
+		return []byte(""), nil
+	})
+
+	cfg := verifyLoopConfig(true)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed (guard rails drift)", outcome.Status)
+	}
+	for _, call := range stubs.guardCalls {
+		if len(call) > 0 && call[0] == "sh" {
+			t.Errorf("expected verify (sh -c) not to run after guard rail failure, but got: %v", call)
+		}
+	}
+}
+
+// TestProcessIssue_VerifyRunsBeforeQualityReview verifies that a blocking verify
+// failure prevents quality review from running (only 1 agent call: implementer).
+func TestProcessIssue_VerifyRunsBeforeQualityReview(t *testing.T) {
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+		// No quality review output — should never be reached.
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			return []byte("build failed"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	})
+
+	cfg := verifyLoopConfig(true) // Blocking = true → fails at verify
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed", outcome.Status)
+	}
+	// Only 1 agent call (implementer) — quality review never reached.
+	if stubs.agentCalls != 1 {
+		t.Errorf("agentCalls = %d, want 1 (quality review should not run when verify blocks)", stubs.agentCalls)
+	}
+}
