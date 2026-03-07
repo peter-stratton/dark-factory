@@ -96,7 +96,7 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	// 3. docker wait (with context timeout)
 	result := &RunResult{}
 	waitStart := time.Now()
-	out, err = commandRunnerWithContext(ctx, "docker", "wait", name)
+	out, err = CommandRunnerWithContext(ctx, "docker", "wait", name)
 	wallElapsed := time.Since(waitStart)
 	if ctx.Err() != nil || (opts.Timeout > 0 && wallElapsed > opts.Timeout+30*time.Second) {
 		// Timed out or cancelled — stop the container. The wall-clock check
@@ -130,10 +130,10 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	return result, nil
 }
 
-// commandRunnerWithContext executes a command that respects context cancellation.
+// CommandRunnerWithContext executes a command that respects context cancellation.
 // Unlike CommandRunner, this monitors the context and kills the process if the
-// context is cancelled.
-var commandRunnerWithContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+// context is cancelled. Replaceable for testing.
+var CommandRunnerWithContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	return cmd.CombinedOutput()
 }
