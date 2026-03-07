@@ -547,7 +547,7 @@ wait_for_checks:
   required: [golangci-lint]
 ```
 
-**Issues**: TBD
+**Issues**: #216–#226
 
 **Planning doc**: `docs/planning/phase-12-complex-project-support.md`
 

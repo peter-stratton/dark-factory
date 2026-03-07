@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Config fields for code generation
+## Issue 216: Config fields for code generation
 
 ### Description
 
@@ -53,9 +53,9 @@ enforcement, and prompt integration are handled in follow-on issues.
 
 ---
 
-## Issue: Generated path protection in PreToolUse hook
+## Issue 220: Generated path protection in PreToolUse hook
 
-**Blocked by**: Config fields for code generation
+**Blocked by**: #216
 
 ### Description
 
@@ -111,9 +111,9 @@ Directory prefixes use simple `strings.HasPrefix` matching (same as
 
 ---
 
-## Issue: Generate step in verify pipeline
+## Issue 221: Generate step in verify pipeline
 
-**Blocked by**: Config fields for code generation
+**Blocked by**: #216
 
 ### Description
 
@@ -150,7 +150,7 @@ behavior as existing checks).
 
 ---
 
-## Issue: Config fields for modules block
+## Issue 217: Config fields for modules block
 
 ### Description
 
@@ -204,9 +204,9 @@ issue.
 
 ---
 
-## Issue: Per-module verify pipeline
+## Issue 223: Per-module verify pipeline
 
-**Blocked by**: Generate step in verify pipeline, Config fields for modules block
+**Blocked by**: #221, #217
 
 ### Description
 
@@ -259,7 +259,7 @@ In v1, all modules are verified unconditionally (no change detection).
 
 ---
 
-## Issue: Config fields for required_env
+## Issue 218: Config fields for required_env
 
 ### Description
 
@@ -298,9 +298,9 @@ This is config-only — the startup validation is handled in a follow-on issue.
 
 ---
 
-## Issue: Required env validation at startup
+## Issue 222: Required env validation at startup
 
-**Blocked by**: Config fields for required_env
+**Blocked by**: #218
 
 ### Description
 
@@ -342,7 +342,7 @@ container due to missing credentials.
 
 ---
 
-## Issue: Config fields for wait_for_checks
+## Issue 219: Config fields for wait_for_checks
 
 ### Description
 
@@ -391,9 +391,9 @@ issue.
 
 ---
 
-## Issue: CI check gate in merge flow
+## Issue 224: CI check gate in merge flow
 
-**Blocked by**: Config fields for wait_for_checks
+**Blocked by**: #219
 
 ### Description
 
@@ -461,10 +461,9 @@ within the timeout, fail the issue with a descriptive error.
 
 ---
 
-## Issue: `/godark-configure-project` skill
+## Issue 225: `/godark-configure-project` skill
 
-**Blocked by**: Config fields for code generation, Config fields for modules
-block, Config fields for required_env, Config fields for wait_for_checks
+**Blocked by**: #216, #217, #218, #219
 
 ### Description
 
@@ -519,7 +518,7 @@ confirmation before writing.
 
 ---
 
-## Issue: Update architecture.json for new packages
+## Issue 226: Update architecture.json for new packages
 
 ### Description
 
