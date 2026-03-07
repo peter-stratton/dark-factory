@@ -153,7 +153,7 @@
               {{if eq .Role "implementer"}}&#128295;{{else}}&#128064;{{end}}
               {{.Role}} &middot; Round {{.Round}}
             </summary>
-            <pre class="code-block" style="white-space: pre-wrap; word-break: break-word; margin-top: var(--space-2);">{{.Body}}</pre>
+            <div class="markdown-body" style="margin-top: var(--space-2);">{{renderMarkdown .Body}}</div>
           </details>
           {{end}}
         </div>
