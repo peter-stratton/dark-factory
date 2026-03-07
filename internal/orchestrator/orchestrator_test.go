@@ -612,7 +612,7 @@ func TestBuildDialogueEntries_SingleRound(t *testing.T) {
 		{Raw: "review body 1"},
 	}
 
-	entries := buildDialogueEntries(implNotes, reviewNotes)
+	entries := BuildDialogueEntries(implNotes, reviewNotes)
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
@@ -634,7 +634,7 @@ func TestBuildDialogueEntries_MultipleRounds(t *testing.T) {
 		{Raw: "review 2"},
 	}
 
-	entries := buildDialogueEntries(implNotes, reviewNotes)
+	entries := BuildDialogueEntries(implNotes, reviewNotes)
 	if len(entries) != 4 {
 		t.Fatalf("expected 4 entries, got %d", len(entries))
 	}
@@ -658,7 +658,7 @@ func TestBuildDialogueEntries_MultipleRounds(t *testing.T) {
 }
 
 func TestBuildDialogueEntries_Empty(t *testing.T) {
-	entries := buildDialogueEntries(nil, nil)
+	entries := BuildDialogueEntries(nil, nil)
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for empty input, got %d", len(entries))
 	}
