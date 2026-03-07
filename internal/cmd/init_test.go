@@ -39,13 +39,13 @@ func TestInitWritesSkillFiles(t *testing.T) {
 
 	runInit(t)
 
-	skillPath := filepath.Join(".claude", "skills", "godark-create-scenario", "SKILL.md")
+	skillPath := filepath.Join(".claude", "skills", "godark-create-scenarios", "SKILL.md")
 	data, err := os.ReadFile(skillPath)
 	if err != nil {
 		t.Fatalf("skill file not created: %v", err)
 	}
 
-	if !strings.Contains(string(data), "name: godark-create-scenario") {
+	if !strings.Contains(string(data), "name: godark-create-scenarios") {
 		t.Error("SKILL.md missing expected frontmatter")
 	}
 }
@@ -98,7 +98,7 @@ func TestInitIdempotent(t *testing.T) {
 	runInit(t)
 	runInit(t)
 
-	skillPath := filepath.Join(".claude", "skills", "godark-create-scenario", "SKILL.md")
+	skillPath := filepath.Join(".claude", "skills", "godark-create-scenarios", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Error("skill file missing after second init")
 	}

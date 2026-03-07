@@ -21,7 +21,7 @@ prints the execution plan. No agent execution in this phase.
 - Orchestration loop with dry-run mode
 - CLAUDE.md and scenario specs for Phase 2 validation
 - `godark init` command — installs skills and default config into a project
-- Planning skills: `/godark-create-roadmap`, `/godark-create-planning-doc`, `/godark-create-issues`, `/godark-create-scenario`
+- Planning skills: `/godark-create-roadmap`, `/godark-create-planning-doc`, `/godark-create-issues`, `/godark-create-scenarios`
 
 **Issues**: #1–#7 (all closed), init + skills added post-milestone
 

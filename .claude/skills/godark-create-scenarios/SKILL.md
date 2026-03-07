@@ -1,5 +1,5 @@
 ---
-name: godark-create-scenario
+name: godark-create-scenarios
 description: Generate scenario spec files for a phase or individual issue
 argument-hint: "<phase-number> or <issue-number>"
 disable-model-invocation: true

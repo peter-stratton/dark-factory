@@ -146,7 +146,7 @@ prepare issues for agent execution:
 | 1 | `/godark-create-roadmap <project-goal>` | Create a phased roadmap and GitHub milestones |
 | 2 | `/godark-create-planning-doc <phase-number>` | Write a detailed planning doc for a roadmap phase |
 | 3 | `/godark-create-issues <phase-number>` | Create GitHub issues from the planning doc |
-| 4 | `/godark-create-scenario <issue-number>` | Generate a scenario spec for each issue |
+| 4 | `/godark-create-scenarios <phase-number>` | Generate scenario specs for a phase |
 | 5 | `godark vet issues --repo owner/repo --tag phase-N` | Validate issues are agent-ready |
 | 6 | `godark vet scenarios --repo owner/repo --tag phase-N` | Validate scenario specs |
 

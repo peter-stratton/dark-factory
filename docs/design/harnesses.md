@@ -217,7 +217,7 @@ implementation.
 - `/godark-create-planning-doc` creates planning docs with acceptance
   criteria and test cases per issue.
 - `/godark-create-issues` creates GitHub issues with structured format.
-- `/godark-create-scenario` creates scenario spec files for issues.
+- `/godark-create-scenarios` creates scenario spec files for issues.
 
 ### Updated
 
@@ -464,7 +464,7 @@ godark vet              validates architecture (no cycles), scenarios,
 /godark-create-issues   creates GitHub issues from planning docs
   |
   v
-/godark-create-scenario creates scenario specs for issues
+/godark-create-scenarios creates scenario specs for issues
   |
   v
 godark vet              re-validate before execution

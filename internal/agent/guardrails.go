@@ -168,7 +168,7 @@ func WarnMissingScenario(repo string, prNum, issueNum int, scenarioDir string, l
 		logger.Warn("scenario directory not found", "dir", scenarioDir)
 	}
 
-	comment := fmt.Sprintf("Warning: no scenario spec found referencing issue #%d in %s. Consider creating one with `godark create-scenario %d`.", issueNum, scenarioDir, issueNum)
+	comment := fmt.Sprintf("Warning: no scenario spec found referencing issue #%d in %s. Consider creating one with `godark create-scenarios %d`.", issueNum, scenarioDir, issueNum)
 	_, err := GuardRunner("gh", "pr", "comment", strconv.Itoa(prNum), "--repo", repo, "--body", comment)
 	if err != nil {
 		return fmt.Errorf("posting scenario warning: %w", err)

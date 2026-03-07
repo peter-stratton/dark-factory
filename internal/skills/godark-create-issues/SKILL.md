@@ -71,6 +71,6 @@ consumption. Update the planning doc and roadmap with assigned issue numbers.
   dependency issues first, then use their numbers.
 - Apply the phase label (e.g., `phase-2`) to every issue.
 - All issues must be assigned to the correct milestone.
-- Do not modify scenario specs — that is handled by `/godark-create-scenario`.
+- Do not modify scenario specs — that is handled by `/godark-create-scenarios`.
 - If some issues already exist and some are new, only create the new ones and
   update the planning doc with all numbers (existing + new).
