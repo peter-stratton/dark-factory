@@ -231,6 +231,53 @@ func TestImplement_ProtectedPathsInEnv(t *testing.T) {
 	}
 }
 
+func TestNewRunOpts_SetsDeniedCommandsEnv(t *testing.T) {
+	cfg := testConfig()
+	cfg.DeniedCommands = []string{"rm -rf", "git push --force"}
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	got := opts.Env["GODARK_DENIED_COMMANDS"]
+	if got != "rm -rf,git push --force" {
+		t.Errorf("GODARK_DENIED_COMMANDS = %q, want %q", got, "rm -rf,git push --force")
+	}
+}
+
+func TestNewRunOpts_EmptyDeniedCommandsEnv(t *testing.T) {
+	cfg := testConfig()
+	cfg.DeniedCommands = nil
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	got := opts.Env["GODARK_DENIED_COMMANDS"]
+	if got != "" {
+		t.Errorf("GODARK_DENIED_COMMANDS = %q, want empty string", got)
+	}
+}
+
+func TestImplement_DeniedCommandsInEnv(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	cfg := testConfig()
+	cfg.DeniedCommands = []string{"rm -rf", "git reset --hard"}
+
+	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
+	}
+
+	got := capturedEnv["GODARK_DENIED_COMMANDS"]
+	if got != "rm -rf,git reset --hard" {
+		t.Errorf("GODARK_DENIED_COMMANDS = %q, want %q", got, "rm -rf,git reset --hard")
+	}
+}
+
 func TestNewRunOpts_DoesNotMutateAuthEnv(t *testing.T) {
 	cfg := testConfig()
 	authEnv := map[string]string{"GH_TOKEN": "tok-xyz"}

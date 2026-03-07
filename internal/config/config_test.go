@@ -684,6 +684,63 @@ prompts:
 	}
 }
 
+func TestDeniedCommandsDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defaults := []string{"rm -rf", "git push --force", "git push -f", "git reset --hard", "git clean -f"}
+	if len(cfg.DeniedCommands) != len(defaults) {
+		t.Fatalf("DeniedCommands len = %d, want %d", len(cfg.DeniedCommands), len(defaults))
+	}
+	for i, want := range defaults {
+		if cfg.DeniedCommands[i] != want {
+			t.Errorf("DeniedCommands[%d] = %q, want %q", i, cfg.DeniedCommands[i], want)
+		}
+	}
+}
+
+func TestDeniedCommandsFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+denied_commands:
+  - "rm -rf"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.DeniedCommands) != 1 {
+		t.Fatalf("DeniedCommands len = %d, want 1", len(cfg.DeniedCommands))
+	}
+	if cfg.DeniedCommands[0] != "rm -rf" {
+		t.Errorf("DeniedCommands[0] = %q, want %q", cfg.DeniedCommands[0], "rm -rf")
+	}
+}
+
+func TestDeniedCommandsEmptyFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+denied_commands: []
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.DeniedCommands) != 0 {
+		t.Errorf("DeniedCommands = %v, want empty slice", cfg.DeniedCommands)
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

@@ -6,12 +6,13 @@ Streams all messages to stdout as newline-delimited JSON and prints a final
 structured result line.
 
 Environment variables:
-  GODARK_PROMPT          The prompt text to send to the agent
-  GODARK_ROLE            Agent role: implementer, implementer_retry, reviewer, quality_reviewer, or spec_generator
-  GODARK_SESSION_ID      Session ID for resuming a previous session
-  GODARK_WORKDIR         Working directory (default: /workspace)
-  GODARK_PROTECTED_PATHS Comma-separated list of protected paths (exact or dir prefix)
-  GH_TOKEN               GitHub token forwarded to the agent environment
+  GODARK_PROMPT            The prompt text to send to the agent
+  GODARK_ROLE              Agent role: implementer, implementer_retry, reviewer, quality_reviewer, or spec_generator
+  GODARK_SESSION_ID        Session ID for resuming a previous session
+  GODARK_WORKDIR           Working directory (default: /workspace)
+  GODARK_PROTECTED_PATHS   Comma-separated list of protected paths (exact or dir prefix)
+  GODARK_DENIED_COMMANDS   Comma-separated list of denied Bash command patterns (substring match)
+  GH_TOKEN                 GitHub token forwarded to the agent environment
 """
 
 import asyncio
@@ -127,6 +128,40 @@ def make_protected_path_hook(protected_paths: list[str]):
     return hook
 
 
+def make_denied_commands_hook(denied_patterns: list[str]):
+    """Return an async PreToolUse hook that blocks Bash commands matching denied patterns.
+
+    Checks the Bash tool's ``command`` input against each denied pattern using
+    substring match. On match, the hook blocks the command and returns a system
+    message explaining which pattern matched and why the command is blocked.
+    """
+
+    async def hook(hook_input: PreToolUseHookInput, matcher: str | None, ctx) -> dict:
+        tool_name = hook_input.get("tool_name", "")
+        if tool_name != "Bash":
+            return {}
+
+        tool_input = hook_input.get("tool_input", {})
+        command = tool_input.get("command", "")
+        if not command:
+            return {}
+
+        for pattern in denied_patterns:
+            if pattern in command:
+                return {
+                    "decision": "block",
+                    "systemMessage": (
+                        f"Cannot run Bash command matching denied pattern: {pattern!r}. "
+                        f"The command {command!r} contains a pattern that is blocked by "
+                        "GODARK_DENIED_COMMANDS to prevent destructive operations. "
+                        "Please adjust your approach to avoid this command."
+                    ),
+                }
+        return {}
+
+    return hook
+
+
 def make_audit_hook():
     """Return an async PostToolUse hook that logs tool calls to stderr as JSON."""
 
@@ -157,6 +192,7 @@ async def main() -> None:
     session_id = os.environ.get("GODARK_SESSION_ID", "")
     work_dir = os.environ.get("GODARK_WORKDIR", "/workspace")
     protected_paths_raw = os.environ.get("GODARK_PROTECTED_PATHS", "")
+    denied_commands_raw = os.environ.get("GODARK_DENIED_COMMANDS", "")
 
     if role not in _ROLE_PERMISSIONS:
         valid = ", ".join(sorted(_ROLE_PERMISSIONS.keys()))
@@ -176,17 +212,29 @@ async def main() -> None:
     if os.environ.get("GH_TOKEN"):
         env["GH_TOKEN"] = os.environ["GH_TOKEN"]
 
-    # Build hooks: PreToolUse guard for protected paths + PostToolUse audit log.
+    # Build hooks: PreToolUse guard for protected paths + denied commands + PostToolUse audit log.
     protected_paths = [p.strip() for p in protected_paths_raw.split(",") if p.strip()]
+    denied_commands = [c.strip() for c in denied_commands_raw.split(",") if c.strip()]
 
-    hooks: dict = {}
+    pre_tool_use_hooks: list = []
     if protected_paths:
-        hooks["PreToolUse"] = [
+        pre_tool_use_hooks.append(
             HookMatcher(
                 matcher="Write|Edit|Bash",
                 hooks=[make_protected_path_hook(protected_paths)],
             )
-        ]
+        )
+    if denied_commands:
+        pre_tool_use_hooks.append(
+            HookMatcher(
+                matcher="Bash",
+                hooks=[make_denied_commands_hook(denied_commands)],
+            )
+        )
+
+    hooks: dict = {}
+    if pre_tool_use_hooks:
+        hooks["PreToolUse"] = pre_tool_use_hooks
     hooks["PostToolUse"] = [
         HookMatcher(
             matcher=None,

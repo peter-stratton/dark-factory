@@ -39,7 +39,8 @@ type Config struct {
 	SandboxEnv   map[string]string `yaml:"sandbox_env"`
 	Runtime      Runtime           `yaml:"runtime"`
 
-	ProtectedPaths []string `yaml:"protected_paths"`
+	ProtectedPaths  []string `yaml:"protected_paths"`
+	DeniedCommands  []string `yaml:"denied_commands"`
 	RoadmapPath    string   `yaml:"roadmap_path"`
 	PlanningDir    string   `yaml:"planning_dir"`
 	ScenarioDir    string   `yaml:"scenario_dir"`
@@ -126,6 +127,13 @@ func defaults() *Config {
 	return &Config{
 		MaxRetries:             3,
 		RoadmapPath:            "docs/ROADMAP.md",
+		DeniedCommands:         []string{
+			"rm -rf",
+			"git push --force",
+			"git push -f",
+			"git reset --hard",
+			"git clean -f",
+		},
 		PlanningDir:            "docs/planning/",
 		ScenarioDir:            "tests/scenarios/",
 		ReviewDir:              "tests/review/",
