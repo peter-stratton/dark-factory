@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
@@ -232,11 +233,10 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		blocked          int
 	}
 
-	type processedItem struct {
-		issue   github.Issue
-		outcome agent.IssueOutcome
-	}
-	var processed []processedItem
+	// Punchlist entries are enriched in the background as each issue completes.
+	var plMu sync.Mutex
+	var plEntries []punchlist.Entry
+	var plWg sync.WaitGroup
 
 	// Locking: create a locker and track all locked issue numbers across waves.
 	locker := lock.New(cfg.Repo, logger)
@@ -359,7 +359,42 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			)
 
 			if outcome.PRNumber > 0 {
-				processed = append(processed, processedItem{issue, outcome})
+				// Enrich punchlist in the background so it's available as
+				// soon as possible without blocking the next issue.
+				plWg.Add(1)
+				go func(iss github.Issue, oc agent.IssueOutcome) {
+					defer plWg.Done()
+					entry := buildPunchlistEntry(ctx, iss, oc, cfg, prompts, authEnv, logger)
+					plMu.Lock()
+					plEntries = append(plEntries, entry)
+					plMu.Unlock()
+
+					// Write run data immediately.
+					if writer != nil {
+						status := punchlistEnrichmentStatus(prompts, entry.AcceptanceTests)
+						plData := rundata.PunchlistData{
+							VerificationSteps: entry.ExtractVerificationSteps(),
+							ScenarioCases:     entry.ExtractScenarioCases(),
+							AcceptanceTests:   entry.AcceptanceTests,
+							ChangedFiles:      entry.ChangedFiles,
+							EnrichmentStatus:  status,
+						}
+						if err := writer.WritePunchlist(entry.IssueNumber, plData); err != nil {
+							logger.Warn("failed to write punchlist data",
+								"issue_number", entry.IssueNumber, "error", err)
+						}
+					}
+
+					// Print this entry's punchlist to stdout immediately.
+					text := punchlist.Generate([]punchlist.Entry{entry})
+					if text != "" {
+						fmt.Print(text)
+					}
+					logger.Info("punchlist acceptance tests generated",
+						"issue_number", iss.Number,
+						"count", len(entry.AcceptanceTests),
+					)
+				}(issue, outcome)
 			}
 
 			// After a merge, break out of the inner loop to re-resolve.
@@ -401,50 +436,12 @@ done:
 		}
 	}
 
-	if len(processed) > 0 {
-		entries := make([]punchlist.Entry, 0, len(processed))
-		for _, p := range processed {
-			files, err := punchlist.FetchChangedFiles(cfg.Repo, p.outcome.PRNumber)
-			if err != nil {
-				logger.Warn("failed to fetch changed files for punchlist",
-					"pr_number", p.outcome.PRNumber, "error", err)
-			}
-			spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, p.issue.Number)
-			if err != nil {
-				logger.Warn("failed to read scenario spec for punchlist",
-					"issue_number", p.issue.Number, "error", err)
-			}
-			entries = append(entries, punchlist.Entry{
-				IssueNumber:  p.issue.Number,
-				IssueTitle:   p.issue.Title,
-				IssueBody:    p.issue.Body,
-				PRNumber:     p.outcome.PRNumber,
-				Repo:         cfg.Repo,
-				ScenarioSpec: spec,
-				ChangedFiles: files,
-			})
-		}
-		agent.EnrichPunchlistEntries(ctx, entries, prompts, cfg, authEnv, logger)
+	// Wait for all background punchlist enrichments to finish.
+	plWg.Wait()
 
-		if writer != nil {
-			for _, e := range entries {
-				status := punchlistEnrichmentStatus(prompts, e.AcceptanceTests)
-				plData := rundata.PunchlistData{
-					VerificationSteps: e.ExtractVerificationSteps(),
-					ScenarioCases:     e.ExtractScenarioCases(),
-					AcceptanceTests:   e.AcceptanceTests,
-					ChangedFiles:      e.ChangedFiles,
-					EnrichmentStatus:  status,
-				}
-				if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
-					logger.Warn("failed to write punchlist data",
-						"issue_number", e.IssueNumber, "error", err)
-				}
-			}
-		}
-
-		text := punchlist.Generate(entries)
-		fmt.Println()
+	// Write consolidated punchlist to file if a path was given.
+	if len(plEntries) > 0 && punchlistPath != "" {
+		text := punchlist.Generate(plEntries)
 		if err := punchlist.Write(text, punchlistPath); err != nil {
 			logger.Warn("failed to write punchlist", "error", err)
 		}
@@ -535,6 +532,36 @@ func PullAfterMerge(logger *slog.Logger) error {
 
 	logger.Warn("failed to pull after merge", "error", err)
 	return fmt.Errorf("pull after merge failed: %w", err)
+}
+
+// buildPunchlistEntry creates and enriches a single punchlist entry for an issue.
+func buildPunchlistEntry(ctx context.Context, issue github.Issue, outcome agent.IssueOutcome, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) punchlist.Entry {
+	files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
+	if err != nil {
+		logger.Warn("failed to fetch changed files for punchlist",
+			"pr_number", outcome.PRNumber, "error", err)
+	}
+	spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issue.Number)
+	if err != nil {
+		logger.Warn("failed to read scenario spec for punchlist",
+			"issue_number", issue.Number, "error", err)
+	}
+	entry := punchlist.Entry{
+		IssueNumber:  issue.Number,
+		IssueTitle:   issue.Title,
+		IssueBody:    issue.Body,
+		PRNumber:     outcome.PRNumber,
+		Repo:         cfg.Repo,
+		ScenarioSpec: spec,
+		ChangedFiles: files,
+	}
+
+	// Enrich with LLM-generated acceptance tests (single entry).
+	// EnrichPunchlistEntries modifies slice elements in place, so pass
+	// a slice containing a pointer-like reference via index.
+	entries := []punchlist.Entry{entry}
+	agent.EnrichPunchlistEntries(ctx, entries, prompts, cfg, authEnv, logger)
+	return entries[0]
 }
 
 // punchlistEnrichmentStatus derives the enrichment status string for a single
