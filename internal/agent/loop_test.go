@@ -2737,3 +2737,154 @@ func TestProcessIssue_VerifySandboxContainerFailure(t *testing.T) {
 		t.Errorf("Err = %v, want error containing 'verify'", outcome.Err)
 	}
 }
+
+// --- Session ID tests for quality-review retries ---
+
+// TestProcessIssue_QualityRetryHasNoSessionID verifies that when the quality
+// reviewer requests changes, Retry is called with an empty prevSessionID
+// (GODARK_SESSION_ID must not be set in the retry agent's environment).
+func TestProcessIssue_QualityRetryHasNoSessionID(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var qualityRetryEnv map[string]string
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer — returns a session ID
+			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 3: // quality retry — capture env
+			qualityRetryEnv = make(map[string]string, len(env))
+			for k, v := range env {
+				qualityRetryEnv[k] = v
+			}
+			out := `{"session_id":"sess-qual-retry","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 4: // quality reviewer — approves after retry
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer — approves
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
+
+	if qualityRetryEnv == nil {
+		t.Fatal("quality retry was never called")
+	}
+	if _, ok := qualityRetryEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("quality retry should not receive GODARK_SESSION_ID, got %q", qualityRetryEnv["GODARK_SESSION_ID"])
+	}
+}
+
+// TestProcessIssue_FunctionalRetryHasSessionID verifies that when the functional
+// reviewer requests changes, Retry is called with the implementer's session ID
+// (GODARK_SESSION_ID must be set in the retry agent's environment).
+func TestProcessIssue_FunctionalRetryHasSessionID(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var functionalRetryEnv map[string]string
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer — returns a session ID
+			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // quality reviewer — approves
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		case 3: // functional reviewer — requests changes
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 4: // functional retry — capture env
+			functionalRetryEnv = make(map[string]string, len(env))
+			for k, v := range env {
+				functionalRetryEnv[k] = v
+			}
+			out := `{"session_id":"sess-func-retry","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		default: // functional reviewer — approves after retry
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
+
+	if functionalRetryEnv == nil {
+		t.Fatal("functional retry was never called")
+	}
+	if functionalRetryEnv["GODARK_SESSION_ID"] != "sess-impl-001" {
+		t.Errorf("GODARK_SESSION_ID passed to functional retry = %q, want %q", functionalRetryEnv["GODARK_SESSION_ID"], "sess-impl-001")
+	}
+}
+
+// TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry verifies that after a
+// quality-review retry, the retry's session ID is captured and used by a subsequent
+// functional retry (so it resumes the most recent context, not the original implementer's).
+func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var functionalRetryEnv map[string]string
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer — returns original session ID
+			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 2: // quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 3: // quality retry — returns its own session ID
+			out := `{"session_id":"sess-qual-retry","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		case 4: // quality reviewer — approves
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		case 5: // functional reviewer — requests changes
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 6: // functional retry — capture env; should have quality retry's session ID
+			functionalRetryEnv = make(map[string]string, len(env))
+			for k, v := range env {
+				functionalRetryEnv[k] = v
+			}
+			out := `{"session_id":"sess-func-retry","result":"ok","cost_usd":0,"is_error":false}`
+			return []byte(out), []byte(""), 0, nil
+		default: // functional reviewer — approves
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if functionalRetryEnv == nil {
+		t.Fatal("functional retry was never called")
+	}
+	if functionalRetryEnv["GODARK_SESSION_ID"] != "sess-qual-retry" {
+		t.Errorf("GODARK_SESSION_ID passed to functional retry = %q, want %q (quality retry's session ID)", functionalRetryEnv["GODARK_SESSION_ID"], "sess-qual-retry")
+	}
+}

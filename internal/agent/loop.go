@@ -285,7 +285,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					"retries_left", retriesLeft,
 				)
 
-				retryResult, err := Retry(ctx, issue, prNum, sessionID, cfg, prompts, authEnv, logger)
+				retryResult, err := Retry(ctx, issue, prNum, "", cfg, prompts, authEnv, logger)
 				if err != nil {
 					outcome.Status = "failed"
 					outcome.Err = fmt.Errorf("retry agent (quality): %w", err)
