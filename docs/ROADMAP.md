@@ -386,7 +386,9 @@ and tokens. Agents are also restricted from running destructive shell commands.
   fix attempt count)
 - Quality flags for verify failures surfaced in dashboard
 
-**Issues**: TBD
+**Issues**: #176–#182
+
+**Planning doc**: `docs/planning/phase-10-deterministic-verification-pipeline.md`
 
 ---
 
@@ -421,7 +423,9 @@ loop between agent execution and prompt engineering.
 - Trend charts: success rate, average retries, cost per issue over time
 - Drill-down from aggregate patterns to specific failing runs
 
-**Issues**: TBD
+**Issues**: #183–#190
+
+**Planning doc**: `docs/planning/phase-11-run-analysis-and-prompt-feedback.md`
 
 ---
 

@@ -10,7 +10,7 @@
 
 ---
 
-## Issue: Update architecture.json for analysis package
+## Issue 183: Update architecture.json for analysis package
 
 ### Description
 
@@ -41,9 +41,9 @@ with no external service dependencies.
 
 ---
 
-## Issue: Analysis aggregation package
+## Issue 184: Analysis aggregation package
 
-**Blocked by**: Update architecture.json for analysis package
+**Blocked by**: #183
 
 ### Description
 
@@ -136,9 +136,9 @@ This is pure new code — no existing files are modified.
 
 ---
 
-## Issue: Prompt gap detection
+## Issue 185: Prompt gap detection
 
-**Blocked by**: Analysis aggregation package
+**Blocked by**: #184
 
 ### Description
 
@@ -204,9 +204,9 @@ have a given condition vs runs that don't.
 
 ---
 
-## Issue: Analyze command
+## Issue 187: Analyze command
 
-**Blocked by**: Analysis aggregation package, Prompt gap detection
+**Blocked by**: #184, #185
 
 ### Description
 
@@ -265,9 +265,9 @@ output formats.
 
 ---
 
-## Issue: Trend computation function
+## Issue 186: Trend computation function
 
-**Blocked by**: Analysis aggregation package
+**Blocked by**: #184
 
 ### Description
 
@@ -322,9 +322,9 @@ This is pure new code added to the existing analysis package.
 
 ---
 
-## Issue: Dashboard analysis page
+## Issue 188: Dashboard analysis page
 
-**Blocked by**: Analysis aggregation package
+**Blocked by**: #184
 
 ### Description
 
@@ -375,9 +375,9 @@ via the existing `rundata.Reader`.
 
 ---
 
-## Issue: Dashboard trend charts
+## Issue 189: Dashboard trend charts
 
-**Blocked by**: Trend computation function, Dashboard analysis page
+**Blocked by**: #186, #188
 
 ### Description
 
@@ -424,9 +424,9 @@ in the template as JSON.
 
 ---
 
-## Issue: Homepage analytics summary
+## Issue 190: Homepage analytics summary
 
-**Blocked by**: Trend computation function, Dashboard analysis page
+**Blocked by**: #186, #188
 
 ### Description
 

@@ -12,7 +12,7 @@
 
 ---
 
-## Issue: Lint command and verify config block
+## Issue 176: Lint command and verify config block
 
 ### Description
 
@@ -60,7 +60,7 @@ fix cycle prompt can be configured or overridden.
 
 ---
 
-## Issue: Verify step execution logic
+## Issue 177: Verify step execution logic
 
 ### Description
 
@@ -141,7 +141,7 @@ This is pure new code — no existing files are modified.
 
 ---
 
-## Issue: Verify fix prompt template
+## Issue 178: Verify fix prompt template
 
 ### Description
 
@@ -190,10 +190,9 @@ render the structured failure summary, and loads the new prompt in
 
 ---
 
-## Issue: Wire verify step into agent loop
+## Issue 181: Wire verify step into agent loop
 
-**Blocked by**: Lint command and verify config block, Verify step execution
-logic, Verify fix prompt template
+**Blocked by**: #176, #177, #178
 
 ### Description
 
@@ -266,7 +265,7 @@ commands run directly on the host after fetching and checking out the branch.
 
 ---
 
-## Issue: Bash deny-list in agent runner
+## Issue 179: Bash deny-list in agent runner
 
 ### Description
 
@@ -319,9 +318,9 @@ pattern, the hook blocks it and returns a system message explaining why.
 
 ---
 
-## Issue: Verify step run data integration
+## Issue 182: Verify step run data integration
 
-**Blocked by**: Wire verify step into agent loop
+**Blocked by**: #181
 
 ### Description
 
