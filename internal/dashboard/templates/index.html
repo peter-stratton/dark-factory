@@ -114,7 +114,7 @@
         <canvas id="index-chart-success-rate" style="width:100%;max-height:120px;"></canvas>
       </div>
       <script>
-      (function() {
+      document.addEventListener('DOMContentLoaded', function() {
         var raw = document.getElementById('index-trend-data').textContent;
         var points = JSON.parse(raw);
         var canvas = document.getElementById('index-chart-success-rate');
@@ -143,7 +143,7 @@
             }
           }
         });
-      })();
+      });
       </script>
       {{end}}
       {{end}}
