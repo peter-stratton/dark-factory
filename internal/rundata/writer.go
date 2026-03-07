@@ -185,6 +185,9 @@ type PunchlistData struct {
 	ScenarioCases     []string `json:"scenario_cases,omitempty"`
 	AcceptanceTests   []string `json:"acceptance_tests,omitempty"`
 	ChangedFiles      []string `json:"changed_files,omitempty"`
+	// EnrichmentStatus records whether LLM enrichment was skipped, failed, or succeeded.
+	// Values: "skipped" (no prompt configured), "failed" (LLM call or parse error), "success".
+	EnrichmentStatus string `json:"enrichment_status,omitempty"`
 }
 
 // WritePunchlist writes the punchlist data for the given issue.

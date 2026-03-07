@@ -31,7 +31,8 @@ const maxPRDiffLen = 30_000
 // for a single punchlist entry. Returns nil on any failure (graceful degradation).
 func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts *Prompts, cfg *config.Config, authEnv map[string]string, logger *slog.Logger) []string {
 	if prompts.Punchlist == "" {
-		logger.Debug("no punchlist prompt loaded, skipping acceptance test generation")
+		logger.Info("punchlist acceptance test generation skipped: no prompt configured",
+			"issue_number", entry.IssueNumber)
 		return nil
 	}
 
@@ -89,6 +90,14 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 		// Try stdout as fallback.
 		tests = parseAcceptanceTests(result.Stdout, logger)
 	}
+	if tests != nil {
+		logger.Info("punchlist acceptance tests generated",
+			"issue_number", entry.IssueNumber,
+			"count", len(tests))
+	} else {
+		logger.Warn("punchlist acceptance tests could not be parsed from LLM output",
+			"issue_number", entry.IssueNumber)
+	}
 	return tests
 }
 
@@ -96,6 +105,7 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 // (bounded to 3 goroutines) and populates AcceptanceTests on each entry in place.
 func EnrichPunchlistEntries(ctx context.Context, entries []punchlist.Entry, prompts *Prompts, cfg *config.Config, authEnv map[string]string, logger *slog.Logger) {
 	if prompts.Punchlist == "" {
+		logger.Info("punchlist enrichment skipped: no prompt configured")
 		return
 	}
 
@@ -150,11 +160,11 @@ func parseAcceptanceTests(text string, logger *slog.Logger) []string {
 		end := strings.LastIndex(text, "]")
 		if start >= 0 && end > start {
 			if err2 := json.Unmarshal([]byte(text[start:end+1]), &tests); err2 != nil {
-				logger.Debug("failed to parse acceptance tests JSON", "error", err2, "text", text)
+				logger.Warn("failed to parse acceptance tests JSON", "error", err2, "raw_response", text)
 				return nil
 			}
 		} else {
-			logger.Debug("failed to parse acceptance tests JSON", "error", err, "text", text)
+			logger.Warn("failed to parse acceptance tests JSON", "error", err, "raw_response", text)
 			return nil
 		}
 	}
