@@ -4,8 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+
+	"github.com/phs/dark-factory/internal/sandbox"
 )
+
+// sandboxRunContainer is a testability seam for sandbox.RunContainer.
+// Replaceable for testing.
+var sandboxRunContainer = sandbox.RunContainer
 
 // Check defines a single verification command to run.
 type Check struct {
@@ -75,6 +82,30 @@ func truncateVerifyOutput(b []byte) string {
 		return string(b)
 	}
 	return string(b[len(b)-verifyOutputLimit:])
+}
+
+// sandboxCommandRunner returns a CommandRunner that executes verify commands
+// inside a Docker container. The container clones the repo, checks out the
+// PR branch, and runs the verify command via sh. The verify command is passed
+// through the GODARK_VERIFY_CMD environment variable to avoid shell quoting issues.
+func sandboxCommandRunner(image, repo, branch string, logger *slog.Logger) CommandRunner {
+	return func(ctx context.Context, command string) ([]byte, []byte, int, error) {
+		script := "#!/bin/sh\nset -e\ngit clone \"https://github.com/${GODARK_REPO}.git\" /workspace && cd /workspace && git checkout \"${GODARK_BRANCH}\" && sh -c \"$GODARK_VERIFY_CMD\"\n"
+		opts := sandbox.RunOpts{
+			Image: image,
+			Cmd:   []string{"sh", "-c", script},
+			Env: map[string]string{
+				"GODARK_REPO":       repo,
+				"GODARK_BRANCH":     branch,
+				"GODARK_VERIFY_CMD": command,
+			},
+		}
+		result, err := sandboxRunContainer(ctx, opts, logger)
+		if err != nil {
+			return nil, nil, 1, fmt.Errorf("running verify container: %w", err)
+		}
+		return []byte(result.Stdout), []byte(result.Stderr), result.ExitCode, nil
+	}
 }
 
 // formatVerifyErrors formats the failed checks from a VerifyResult as a

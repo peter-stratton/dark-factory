@@ -15,7 +15,45 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/quality"
 	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/phs/dark-factory/internal/sandbox"
 )
+
+// setupSandboxDockerStubs stubs sandbox.CommandRunner, sandbox.CommandRunnerWithContext,
+// and sandbox.SplitRunner to simulate Docker for agent runs in sandbox mode.
+// The agentOutputs slice provides the stdout for successive agent container runs.
+// It returns a cleanup function.
+func setupSandboxDockerStubs(t *testing.T, agentOutputs []string) {
+	t.Helper()
+	agentCallIdx := 0
+
+	origCmd := sandbox.CommandRunner
+	origWait := sandbox.CommandRunnerWithContext
+	origSplit := sandbox.SplitRunner
+	t.Cleanup(func() {
+		sandbox.CommandRunner = origCmd
+		sandbox.CommandRunnerWithContext = origWait
+		sandbox.SplitRunner = origSplit
+	})
+
+	sandbox.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("fake-container-id\n"), nil
+		}
+		return []byte(""), nil
+	}
+	sandbox.CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	sandbox.SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		// Return the next agent output as the container stdout.
+		var out string
+		if agentCallIdx < len(agentOutputs) {
+			out = wrapRunnerJSON(agentOutputs[agentCallIdx])
+			agentCallIdx++
+		}
+		return []byte(out), []byte(""), nil
+	}
+}
 
 // loopTestSetup stubs both Runner (for agent invocations) and GuardRunner
 // (for git/gh commands) and returns the config. The caller configures
@@ -2562,5 +2600,140 @@ func TestProcessIssue_VerifyFixSkippedWhenNoPrompt(t *testing.T) {
 	// Only 1 agent call — fix cycle never triggered.
 	if callIdx != 1 {
 		t.Errorf("callIdx = %d, want 1 (no fix agents when VerifyFix prompt is empty)", callIdx)
+	}
+}
+
+// sandboxLoopConfig returns a loop config with NoSandbox=false and a Docker image set.
+func sandboxLoopConfig() *config.Config {
+	cfg := verifyLoopConfig(true)
+	cfg.NoSandbox = false
+	cfg.Docker.Image = "test-image:latest"
+	return cfg
+}
+
+// sandboxGuardFn returns a GuardRunner stub suitable for sandbox loop tests.
+// It handles git rev-parse, gh pr view, and git diff.
+func sandboxGuardFn(name string, args ...string) ([]byte, error) {
+	joined := strings.Join(args, " ")
+	if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+		return []byte("abc123\n"), nil
+	}
+	if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+		return []byte(`{"number": 10}`), nil
+	}
+	if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+		return []byte(`{"body": "Closes #5"}`), nil
+	}
+	if name == "git" && strings.Contains(joined, "diff --name-only") {
+		return []byte("src/main.go\n"), nil
+	}
+	return []byte(""), nil
+}
+
+// TestProcessIssue_VerifySandboxMode verifies that when NoSandbox is false the
+// sandboxCommandRunner is used (sandboxRunContainer is called instead of GuardRunner sh).
+func TestProcessIssue_VerifySandboxMode(t *testing.T) {
+	var sandboxCalled bool
+	var capturedImage string
+	var capturedEnv map[string]string
+
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		sandboxCalled = true
+		capturedImage = opts.Image
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{ExitCode: 0, Stdout: "build ok"}, nil
+	}
+
+	// Agent runs go through Docker in sandbox mode; stub Docker infrastructure.
+	setupSandboxDockerStubs(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	})
+
+	// git/gh commands still run on the host.
+	stubGuardRunner(t, sandboxGuardFn)
+
+	cfg := sandboxLoopConfig()
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+	if !sandboxCalled {
+		t.Error("sandboxRunContainer was not called; expected sandbox verify runner to be used")
+	}
+	if capturedImage != "test-image:latest" {
+		t.Errorf("Image = %q, want %q", capturedImage, "test-image:latest")
+	}
+	// Repo should be passed via environment variable, not embedded in the script.
+	if capturedEnv["GODARK_REPO"] != "owner/repo" {
+		t.Errorf("GODARK_REPO = %q, want %q", capturedEnv["GODARK_REPO"], "owner/repo")
+	}
+}
+
+// TestProcessIssue_VerifyHostModeUnchangedWithNoSandbox verifies that NoSandbox=true
+// still routes through the host runner (GuardRunner sh -c) and not the sandbox runner.
+func TestProcessIssue_VerifyHostModeUnchangedWithNoSandbox(t *testing.T) {
+	var sandboxCalled bool
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		sandboxCalled = true
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	}
+
+	var shCalled bool
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			shCalled = true
+			return []byte("ok"), nil
+		}
+		return sandboxGuardFn(name, args...)
+	})
+
+	cfg := verifyLoopConfig(true) // NoSandbox: true (default from loopConfig)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+	if sandboxCalled {
+		t.Error("sandboxRunContainer was called; host mode should not use the sandbox runner")
+	}
+	if !shCalled {
+		t.Error("sh -c was not called; host mode should run verify commands via sh")
+	}
+}
+
+// TestProcessIssue_VerifySandboxContainerFailure verifies that a non-zero exit code
+// from the sandbox container causes the verify check to fail.
+func TestProcessIssue_VerifySandboxContainerFailure(t *testing.T) {
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stderr: "build failed in container"}, nil
+	}
+
+	// Agent runs go through Docker in sandbox mode.
+	setupSandboxDockerStubs(t, []string{
+		"implementer output",
+	})
+	stubGuardRunner(t, sandboxGuardFn)
+
+	cfg := sandboxLoopConfig() // NoSandbox: false, Blocking: true
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed when container returns non-zero exit", outcome.Status)
+	}
+	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "verify") {
+		t.Errorf("Err = %v, want error containing 'verify'", outcome.Err)
 	}
 }

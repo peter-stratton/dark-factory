@@ -10,15 +10,15 @@ import (
 )
 
 // saveRunners saves the current CommandRunner, SplitRunner, and
-// commandRunnerWithContext values and returns a restore function.
+// CommandRunnerWithContext values and returns a restore function.
 func saveRunners() func() {
 	origCmd := CommandRunner
 	origSplit := SplitRunner
-	origCtx := commandRunnerWithContext
+	origCtx := CommandRunnerWithContext
 	return func() {
 		CommandRunner = origCmd
 		SplitRunner = origSplit
-		commandRunnerWithContext = origCtx
+		CommandRunnerWithContext = origCtx
 	}
 }
 
@@ -34,7 +34,7 @@ func TestRunContainerSuccess(t *testing.T) {
 		}
 		return []byte{}, nil
 	}
-	commandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		calls = append(calls, name+" "+strings.Join(args, " "))
 		return []byte("0\n"), nil
 	}
@@ -82,7 +82,7 @@ func TestRunContainerFailedCommand(t *testing.T) {
 		}
 		return []byte{}, nil
 	}
-	commandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("1\n"), nil
 	}
 	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
@@ -110,7 +110,7 @@ func TestRunContainerStderrCapture(t *testing.T) {
 		}
 		return []byte{}, nil
 	}
-	commandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("0\n"), nil
 	}
 	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
@@ -143,7 +143,7 @@ func TestRunContainerEnvironmentVariables(t *testing.T) {
 		}
 		return []byte{}, nil
 	}
-	commandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("0\n"), nil
 	}
 	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
@@ -174,7 +174,7 @@ func TestRunContainerMount(t *testing.T) {
 		}
 		return []byte{}, nil
 	}
-	commandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("0\n"), nil
 	}
 	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
@@ -207,7 +207,7 @@ func TestRunContainerTimeout(t *testing.T) {
 		}
 		return []byte{}, nil
 	}
-	commandRunnerWithContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	CommandRunnerWithContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		// Simulate docker wait blocking until context is cancelled.
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -279,7 +279,7 @@ func TestRunContainerCleanupOnContextCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	commandRunnerWithContext = func(c context.Context, name string, args ...string) ([]byte, error) {
+	CommandRunnerWithContext = func(c context.Context, name string, args ...string) ([]byte, error) {
 		cancel() // Simulate external cancellation.
 		<-c.Done()
 		return nil, c.Err()

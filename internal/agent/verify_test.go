@@ -2,8 +2,12 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/phs/dark-factory/internal/sandbox"
 )
 
 func makeRunner(exitCode int, stdout, stderr string) CommandRunner {
@@ -385,5 +389,159 @@ func TestFormatVerifyErrors_EmptyWhenAllPassed(t *testing.T) {
 
 	if got != "" {
 		t.Errorf("expected empty string when all checks passed, got: %q", got)
+	}
+}
+
+// stubSandboxRunContainer replaces sandboxRunContainer with a custom function
+// for the duration of the test.
+func stubSandboxRunContainer(t *testing.T, fn func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error)) {
+	t.Helper()
+	orig := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = orig })
+	sandboxRunContainer = fn
+}
+
+func TestSandboxCommandRunner_UsesCorrectImage(t *testing.T) {
+	var capturedOpts sandbox.RunOpts
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		capturedOpts = opts
+		return &sandbox.RunResult{ExitCode: 0, Stdout: "ok"}, nil
+	})
+
+	runner := sandboxCommandRunner("myimage:latest", "owner/repo", "feature-branch", slog.Default())
+	_, _, _, err := runner(context.Background(), "go build ./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedOpts.Image != "myimage:latest" {
+		t.Errorf("Image = %q, want %q", capturedOpts.Image, "myimage:latest")
+	}
+}
+
+func TestSandboxCommandRunner_RepoAndBranchPassedViaEnv(t *testing.T) {
+	var capturedOpts sandbox.RunOpts
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		capturedOpts = opts
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/myrepo", "pr-branch-42", slog.Default())
+	_, _, _, err := runner(context.Background(), "go test ./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedOpts.Env["GODARK_REPO"] != "owner/myrepo" {
+		t.Errorf("GODARK_REPO = %q, want %q", capturedOpts.Env["GODARK_REPO"], "owner/myrepo")
+	}
+	if capturedOpts.Env["GODARK_BRANCH"] != "pr-branch-42" {
+		t.Errorf("GODARK_BRANCH = %q, want %q", capturedOpts.Env["GODARK_BRANCH"], "pr-branch-42")
+	}
+}
+
+func TestSandboxCommandRunner_CommandPassedViaEnv(t *testing.T) {
+	var capturedOpts sandbox.RunOpts
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		capturedOpts = opts
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", slog.Default())
+	const cmd = "go build ./..."
+	_, _, _, err := runner(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedOpts.Env["GODARK_VERIFY_CMD"] != cmd {
+		t.Errorf("GODARK_VERIFY_CMD = %q, want %q", capturedOpts.Env["GODARK_VERIFY_CMD"], cmd)
+	}
+}
+
+func TestSandboxCommandRunner_ReturnsStdoutAndStderr(t *testing.T) {
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 0, Stdout: "build ok\n", Stderr: "warning: x\n"}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", slog.Default())
+	stdout, stderr, exitCode, err := runner(context.Background(), "go build ./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if string(stdout) != "build ok\n" {
+		t.Errorf("stdout = %q, want %q", stdout, "build ok\n")
+	}
+	if string(stderr) != "warning: x\n" {
+		t.Errorf("stderr = %q, want %q", stderr, "warning: x\n")
+	}
+	if exitCode != 0 {
+		t.Errorf("exitCode = %d, want 0", exitCode)
+	}
+}
+
+func TestSandboxCommandRunner_NonZeroExitCode(t *testing.T) {
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 2, Stdout: "", Stderr: "build failed\n"}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", slog.Default())
+	_, _, exitCode, err := runner(context.Background(), "go build ./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if exitCode != 2 {
+		t.Errorf("exitCode = %d, want 2", exitCode)
+	}
+}
+
+func TestSandboxCommandRunner_ContainerError(t *testing.T) {
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return nil, fmt.Errorf("docker create failed")
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", slog.Default())
+	_, _, exitCode, err := runner(context.Background(), "go build ./...")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "running verify container") {
+		t.Errorf("error = %q, want to contain 'running verify container'", err)
+	}
+	if exitCode != 1 {
+		t.Errorf("exitCode = %d, want 1 on container error", exitCode)
+	}
+}
+
+func TestSandboxCommandRunner_CheckIsPassedWhenExitZero(t *testing.T) {
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 0, Stdout: "ok"}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", slog.Default())
+	checks := []Check{{Name: "build", Command: "go build ./..."}}
+	result := RunVerify(context.Background(), checks, runner)
+
+	if !result.AllPassed {
+		t.Errorf("AllPassed = false, want true for exit code 0")
+	}
+}
+
+func TestSandboxCommandRunner_CheckFailsWhenExitNonZero(t *testing.T) {
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stderr: "error output"}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", slog.Default())
+	checks := []Check{{Name: "build", Command: "go build ./..."}}
+	result := RunVerify(context.Background(), checks, runner)
+
+	if result.AllPassed {
+		t.Errorf("AllPassed = true, want false for non-zero exit code")
+	}
+	if len(result.Checks) != 1 || result.Checks[0].ExitCode != 1 {
+		t.Errorf("unexpected check result: %+v", result.Checks)
 	}
 }

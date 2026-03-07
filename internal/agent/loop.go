@@ -151,10 +151,16 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// functional reviewer's quality check: tests are only expected when a spec exists.
 	hasSpec := specGenerated || HasScenarioSpec(cfg.ScenarioDir, issue.Number)
 
-	// Step 3.5: Verify (host-mode). Runs between guard rails and quality review.
+	// Step 3.5: Verify. Runs between guard rails and quality review.
 	if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
+		var verifyRunner CommandRunner
+		if cfg.NoSandbox {
+			verifyRunner = newHostRunner()
+		} else {
+			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, logger)
+		}
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
-		verifyResult := RunVerify(ctx, verifyChecks, newHostRunner())
+		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner)
 		if hook != nil {
 			if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
 				logger.Warn("failed to write verify result", "error", err)
@@ -197,7 +203,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				}
 
 				// Re-run verify.
-				verifyResult = RunVerify(ctx, verifyChecks, newHostRunner())
+				verifyResult = RunVerify(ctx, verifyChecks, verifyRunner)
 				if hook != nil {
 					if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
 						logger.Warn("failed to write verify result", "error", err)
