@@ -61,6 +61,7 @@ type IssueDetailData struct {
 	Timestamp   string
 	IssueNumber int
 	Title       string
+	Description string
 	PRNumber    int
 	PRLink      string
 	IssueLink   string
@@ -332,6 +333,7 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		Timestamp:   timestamp,
 		IssueNumber: issueNum,
 		Title:       found.Outcome.Title,
+		Description: found.Outcome.Description,
 		PRNumber:    found.Outcome.PRNumber,
 		PRLink:      prLink,
 		IssueLink:   issueLink,

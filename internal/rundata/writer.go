@@ -48,6 +48,7 @@ type StepResult struct {
 type Outcome struct {
 	IssueNumber int    `json:"issue_number"`
 	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
 	Status      string `json:"status"`
 	PRNumber    int    `json:"pr_number"`
 }

@@ -978,6 +978,89 @@ func TestServer_IssueDetail_SpecGeneratorInTimeline(t *testing.T) {
 	}
 }
 
+func TestServer_IssueDetail_DescriptionDisplayed(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{30},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "30")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{
+			IssueNumber: 30,
+			Status:      "implemented",
+			Description: "This is the issue description body text.",
+		})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "done", DurationSeconds: 5})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/30", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Issue Description") {
+		t.Errorf("body missing 'Issue Description' section header")
+	}
+	if !strings.Contains(body, "This is the issue description body text.") {
+		t.Errorf("body missing description content")
+	}
+	// Should be rendered inside a <details> element (collapsed by default).
+	if !strings.Contains(body, "<details") {
+		t.Errorf("body missing <details> element for collapsible description")
+	}
+}
+
+func TestServer_IssueDetail_NoDescriptionHidesSection(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{31},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "31")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	// Outcome with no Description field.
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 31, Status: "implemented"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "done", DurationSeconds: 5})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/31", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	// The Issue Description card should not appear when description is empty.
+	if strings.Contains(body, `card__title">Issue Description`) {
+		t.Errorf("body should not contain 'Issue Description' card when description is absent")
+	}
+}
+
 func TestServer_IssueDetail_SpecGeneratorAbsentOmitted(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now().UTC()

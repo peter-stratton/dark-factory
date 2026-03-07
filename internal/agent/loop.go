@@ -34,6 +34,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if err := hook.WriteOutcome(rundata.Outcome{
 				IssueNumber: outcome.IssueNumber,
 				Title:       issue.Title,
+				Description: issue.Body,
 				Status:      outcome.Status,
 				PRNumber:    outcome.PRNumber,
 			}); err != nil {
