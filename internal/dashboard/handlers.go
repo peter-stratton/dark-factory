@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/phs/dark-factory/internal/analysis"
 	"github.com/phs/dark-factory/internal/rundata"
 )
 
@@ -499,6 +500,164 @@ func formatDuration(seconds float64) string {
 	mins := int(d.Minutes())
 	secs := int(d.Seconds()) % 60
 	return fmt.Sprintf("%dm%ds", mins, secs)
+}
+
+// OutcomeRow is one row in the outcome distribution table on the analysis page.
+type OutcomeRow struct {
+	Status  string
+	Count   int
+	Percent float64
+}
+
+// GapView is the view model for one prompt gap on the analysis page.
+type GapView struct {
+	Finding        string
+	FailPctWith    float64 // fail rate as a percentage (0–100)
+	FailPctWithout float64
+	SamplesWith    int
+	SamplesWithout int
+}
+
+// AnalysisData is the data passed to the analysis template.
+type AnalysisData struct {
+	Report     analysis.Report
+	Gaps       []GapView
+	Outcomes   []OutcomeRow // sorted by count desc
+	Repos      []string
+	RepoFilter string
+	HasData    bool
+}
+
+func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	data, err := s.buildAnalysisData(repo)
+	if err != nil {
+		s.cfg.Logger.Error("building analysis data", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "analysis.html", data); err != nil {
+		s.cfg.Logger.Error("rendering analysis template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+func (s *Server) handleAnalysisStats(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	data, err := s.buildAnalysisData(repo)
+	if err != nil {
+		s.cfg.Logger.Error("building analysis stats", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "analysis-stats", data); err != nil {
+		s.cfg.Logger.Error("rendering analysis-stats template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+func (s *Server) buildAnalysisData(repoFilter string) (*AnalysisData, error) {
+	allMetas, err := s.reader.ListRuns()
+	if err != nil {
+		return nil, err
+	}
+
+	// Build repo list for the filter dropdown.
+	repoSet := make(map[string]struct{})
+	for _, m := range allMetas {
+		repoSet[m.Repo] = struct{}{}
+	}
+	repos := make([]string, 0, len(repoSet))
+	for repo := range repoSet {
+		repos = append(repos, repo)
+	}
+	sort.Strings(repos)
+
+	// Filter metas by repo if requested.
+	var filteredMetas []rundata.RunMeta
+	for _, m := range allMetas {
+		if repoFilter != "" && m.Repo != repoFilter {
+			continue
+		}
+		filteredMetas = append(filteredMetas, m)
+	}
+
+	// Load full run details for each filtered meta.
+	var runs []rundata.RunDetail
+	for _, m := range filteredMetas {
+		parts := strings.SplitN(m.Repo, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		timestamp := m.StartedAt.UTC().Format("20060102-150405")
+		detail, err := s.reader.LoadRun(parts[0], parts[1], timestamp)
+		if err != nil {
+			s.cfg.Logger.Warn("loading run detail for analysis", "repo", m.Repo, "error", err)
+			continue
+		}
+		runs = append(runs, *detail)
+	}
+
+	report := analysis.Aggregate(runs)
+	rawGaps := analysis.DetectGaps(runs)
+	outcomes := buildOutcomeRows(report)
+	gaps := buildGapViews(rawGaps)
+
+	return &AnalysisData{
+		Report:     report,
+		Gaps:       gaps,
+		Outcomes:   outcomes,
+		Repos:      repos,
+		RepoFilter: repoFilter,
+		HasData:    len(runs) > 0,
+	}, nil
+}
+
+// buildGapViews converts raw PromptGap slices to GapView with pre-computed percentages.
+func buildGapViews(gaps []analysis.PromptGap) []GapView {
+	views := make([]GapView, 0, len(gaps))
+	for _, g := range gaps {
+		views = append(views, GapView{
+			Finding:        g.Finding,
+			FailPctWith:    g.FailRateWith * 100,
+			FailPctWithout: g.FailRateWithout * 100,
+			SamplesWith:    g.SamplesWith,
+			SamplesWithout: g.SamplesWithout,
+		})
+	}
+	return views
+}
+
+// buildOutcomeRows converts the outcome map in a Report to a sorted slice with
+// pre-computed percentages, ready for template rendering.
+func buildOutcomeRows(report analysis.Report) []OutcomeRow {
+	rows := make([]OutcomeRow, 0, len(report.Outcomes))
+	for status, count := range report.Outcomes {
+		var pct float64
+		if report.IssueCount > 0 {
+			pct = float64(count) / float64(report.IssueCount) * 100
+		}
+		rows = append(rows, OutcomeRow{
+			Status:  status,
+			Count:   count,
+			Percent: pct,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Count != rows[j].Count {
+			return rows[i].Count > rows[j].Count
+		}
+		return rows[i].Status < rows[j].Status
+	})
+	return rows
 }
 
 func humanizeAge(t time.Time) string {
