@@ -63,3 +63,144 @@ func TestImplementCmd_PunchlistFlagRegistered(t *testing.T) {
 		t.Errorf("punchlist default = %q, want %q", f.DefValue, "")
 	}
 }
+
+func TestImplementCmd_IssuesFlagRegistered(t *testing.T) {
+	f := implementCmd.Flags().Lookup("issues")
+	if f == nil {
+		t.Fatal("implement command missing --issues flag")
+	}
+	if f.DefValue != "" {
+		t.Errorf("issues default = %q, want %q", f.DefValue, "")
+	}
+}
+
+func TestImplementCmd_ArbitraryArgs(t *testing.T) {
+	// implementCmd must accept zero or more positional args (not ExactArgs(1)).
+	// Calling Args validator with 0, 1, and 2 args must not return an error.
+	for _, n := range []int{0, 1, 2, 5} {
+		args := make([]string, n)
+		for i := range args {
+			args[i] = "1"
+		}
+		if err := implementCmd.Args(implementCmd, args); err != nil {
+			t.Errorf("Args(%d positional args) = %v, want nil", n, err)
+		}
+	}
+}
+
+func TestParseIssueNumbers(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    []int
+		wantErr bool
+	}{
+		{"160", []int{160}, false},
+		{"160,161,162", []int{160, 161, 162}, false},
+		{" 160 , 161 , 162 ", []int{160, 161, 162}, false},
+		{"", nil, false},
+		{",", nil, false},
+		{"abc", nil, true},
+		{"160,abc", nil, true},
+		{"160,", []int{160}, false},
+	}
+
+	for _, tc := range tests {
+		got, err := parseIssueNumbers(tc.input)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("parseIssueNumbers(%q) = %v, nil; want error", tc.input, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("parseIssueNumbers(%q) unexpected error: %v", tc.input, err)
+			continue
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("parseIssueNumbers(%q) = %v, want %v", tc.input, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("parseIssueNumbers(%q)[%d] = %d, want %d", tc.input, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+func TestCollectIssueNumbers(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		issuesFlag string
+		want       []int
+		wantErr    bool
+	}{
+		{
+			name:    "single positional arg",
+			args:    []string{"160"},
+			want:    []int{160},
+		},
+		{
+			name:    "multiple positional args",
+			args:    []string{"160", "161", "162"},
+			want:    []int{160, 161, 162},
+		},
+		{
+			name:       "issues flag only",
+			issuesFlag: "160,161",
+			want:       []int{160, 161},
+		},
+		{
+			name:       "positional args and flag combined",
+			args:       []string{"160"},
+			issuesFlag: "161,162",
+			want:       []int{160, 161, 162},
+		},
+		{
+			name:       "duplicates deduplicated",
+			args:       []string{"160", "161"},
+			issuesFlag: "160,162",
+			want:       []int{160, 161, 162},
+		},
+		{
+			name:    "neither provided returns error",
+			wantErr: true,
+		},
+		{
+			name:    "invalid positional arg",
+			args:    []string{"abc"},
+			wantErr: true,
+		},
+		{
+			name:       "invalid issues flag",
+			issuesFlag: "160,abc",
+			wantErr:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := collectIssueNumbers(tc.args, tc.issuesFlag)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("collectIssueNumbers(%v, %q) = %v, nil; want error", tc.args, tc.issuesFlag, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("collectIssueNumbers(%v, %q) unexpected error: %v", tc.args, tc.issuesFlag, err)
+				return
+			}
+			if len(got) != len(tc.want) {
+				t.Errorf("collectIssueNumbers(%v, %q) = %v, want %v", tc.args, tc.issuesFlag, got, tc.want)
+				return
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("collectIssueNumbers(%v, %q)[%d] = %d, want %d", tc.args, tc.issuesFlag, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
