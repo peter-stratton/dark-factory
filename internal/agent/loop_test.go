@@ -107,6 +107,7 @@ func loopConfig() *config.Config {
 	return &config.Config{
 		Repo:           "owner/repo",
 		NoSandbox:      true,
+		AutoMerge:      "all",
 		MaxRetries:     2,
 		AgentTimeout:   "10m",
 		ProtectedPaths: []string{"CLAUDE.md"},
@@ -705,10 +706,10 @@ func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
 	}
 }
 
-func TestProcessIssue_NoMerge_SkipsMergeOnApproval(t *testing.T) {
+func TestProcessIssue_AutoMergeNone_SkipsMergeOnApproval(t *testing.T) {
 	var mergeCallCount int
 	cfg := loopConfig()
-	cfg.NoMerge = true
+	cfg.AutoMerge = "none"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -740,16 +741,16 @@ func TestProcessIssue_NoMerge_SkipsMergeOnApproval(t *testing.T) {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "ready-to-merge", outcome.Err)
 	}
 	if mergeCallCount != 0 {
-		t.Errorf("gh pr merge was called %d time(s), want 0 when NoMerge=true", mergeCallCount)
+		t.Errorf("gh pr merge was called %d time(s), want 0 when AutoMerge=none", mergeCallCount)
 	}
 	if outcome.PRNumber != 10 {
 		t.Errorf("PRNumber = %d, want 10", outcome.PRNumber)
 	}
 }
 
-func TestProcessIssue_NoMerge_OutcomeStatus(t *testing.T) {
+func TestProcessIssue_AutoMergeNone_OutcomeStatus(t *testing.T) {
 	cfg := loopConfig()
-	cfg.NoMerge = true
+	cfg.AutoMerge = "none"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -764,10 +765,10 @@ func TestProcessIssue_NoMerge_OutcomeStatus(t *testing.T) {
 	}
 }
 
-func TestProcessIssue_NoMerge_DefaultMerges(t *testing.T) {
-	// Without NoMerge, approved PR should still be merged.
+func TestProcessIssue_AutoMergeAll_Merges(t *testing.T) {
+	// With AutoMerge=all, approved PR should be merged.
 	var mergeCallCount int
-	cfg := loopConfig() // NoMerge defaults to false
+	cfg := loopConfig() // AutoMerge defaults to "all" in loopConfig
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -799,14 +800,14 @@ func TestProcessIssue_NoMerge_DefaultMerges(t *testing.T) {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
 	}
 	if mergeCallCount != 1 {
-		t.Errorf("gh pr merge was called %d time(s), want 1 when NoMerge=false", mergeCallCount)
+		t.Errorf("gh pr merge was called %d time(s), want 1 when AutoMerge=all", mergeCallCount)
 	}
 }
 
-func TestProcessIssue_NoMerge_QualityReviewStillRuns(t *testing.T) {
-	// With NoMerge=true, quality review should still execute normally.
+func TestProcessIssue_AutoMergeNone_QualityReviewStillRuns(t *testing.T) {
+	// With AutoMerge=none, quality review should still execute normally.
 	cfg := loopConfig()
-	cfg.NoMerge = true
+	cfg.AutoMerge = "none"
 
 	agentCallCount := 0
 	origRunner := Runner
