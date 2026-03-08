@@ -24,6 +24,7 @@ type LogEntry struct {
 	LevelClass string // badge class suffix: "neutral", "info", "warning", "danger"
 	Msg        string // log message
 	Fields     string // remaining structured fields as compact JSON, may be empty
+	Notable    bool   // true for milestone messages (verdicts, stage transitions, etc.)
 }
 
 // LogViewerData is the data passed to the log-viewer template and log-entries partial.
@@ -242,6 +243,7 @@ func parseLogLine(line []byte) (LogEntry, bool) {
 		LevelClass: levelToClass(level),
 		Msg:        msg,
 		Fields:     fieldsStr,
+		Notable:    isNotableMsg(msg),
 	}, true
 }
 
@@ -259,6 +261,33 @@ func levelToClass(level string) string {
 	default:
 		return "neutral"
 	}
+}
+
+// notableMessages are log message prefixes that represent key milestones in a run.
+var notableMessages = []string{
+	"starting orchestration",
+	"starting implementer agent",
+	"starting implementer retry agent",
+	"starting quality reviewer agent",
+	"starting functional reviewer agent",
+	"starting spec generator agent",
+	"quality reviewer finished",
+	"functional reviewer finished",
+	"quality review requested changes",
+	"processing issue",
+	"run lock acquired",
+	"fetched issues",
+}
+
+// isNotableMsg reports whether a log message represents a key milestone.
+func isNotableMsg(msg string) bool {
+	lower := strings.ToLower(msg)
+	for _, prefix := range notableMessages {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // filterLogEntries applies level and search filters to a slice of log entries.

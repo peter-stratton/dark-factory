@@ -130,7 +130,7 @@
 {{define "log-entries"}}
 {{if .Entries}}
 {{range .Entries}}
-<tr>
+<tr{{if .Notable}} class="log-notable"{{end}}>
   <td class="text-muted" style="white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs);">{{.Timestamp}}</td>
   <td>
     <span class="badge badge--{{.LevelClass}}">{{.Level}}</span>
