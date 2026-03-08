@@ -48,7 +48,11 @@ reference real code, real config fields, and real command output.
    `phase-01`, `phase-12`). The slug should match the phase name from the
    roadmap in kebab-case.
 
-6. **Print summary** -- Show the file path and feature count.
+6. **Update the README** -- Add a row to the "Phase overviews" table in
+   `README.md` for the new phase. Match the existing format: phase number,
+   linked title, and a short description. Insert the row in phase-number order.
+
+7. **Print summary** -- Show the file path and feature count.
 
 ## Format
 
@@ -88,7 +92,7 @@ config field names, actual CLI flags, actual log messages.>
 - Do not document features that were planned but not implemented. If the code
   doesn't exist, the feature doesn't go in the overview.
 - Do not add features from other phases. Each overview covers exactly one phase.
-- Do not modify the roadmap or any other files -- only write the overview.
+- Do not modify the roadmap or any other files besides the overview and README.
 - If an overview already exists for this phase, ask the user whether to replace
   it or skip.
 - No emojis.
