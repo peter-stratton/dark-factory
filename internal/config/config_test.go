@@ -1061,6 +1061,152 @@ required_env:
 	}
 }
 
+// --- WaitForChecks tests ---
+
+func TestWaitForChecksDefaultNil(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WaitForChecks != nil {
+		t.Errorf("WaitForChecks = %v, want nil", cfg.WaitForChecks)
+	}
+}
+
+func TestWaitForChecksValidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "10m"
+  required:
+    - golangci-lint
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WaitForChecks == nil {
+		t.Fatal("WaitForChecks = nil, want non-nil")
+	}
+	if cfg.WaitForChecks.Timeout != "10m" {
+		t.Errorf("WaitForChecks.Timeout = %q, want %q", cfg.WaitForChecks.Timeout, "10m")
+	}
+	if len(cfg.WaitForChecks.Required) != 1 || cfg.WaitForChecks.Required[0] != "golangci-lint" {
+		t.Errorf("WaitForChecks.Required = %v, want [golangci-lint]", cfg.WaitForChecks.Required)
+	}
+}
+
+func TestWaitForChecksMultipleRequired(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "10m"
+  required:
+    - lint
+    - test
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WaitForChecks == nil {
+		t.Fatal("WaitForChecks = nil, want non-nil")
+	}
+	want := []string{"lint", "test"}
+	if len(cfg.WaitForChecks.Required) != len(want) {
+		t.Fatalf("WaitForChecks.Required len = %d, want %d", len(cfg.WaitForChecks.Required), len(want))
+	}
+	for i, w := range want {
+		if cfg.WaitForChecks.Required[i] != w {
+			t.Errorf("WaitForChecks.Required[%d] = %q, want %q", i, cfg.WaitForChecks.Required[i], w)
+		}
+	}
+}
+
+func TestWaitForChecksInvalidTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "not-a-duration"
+  required:
+    - lint
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait_for_checks.timeout") {
+		t.Errorf("error = %q, want mention of 'wait_for_checks.timeout'", err.Error())
+	}
+}
+
+func TestWaitForChecksEmptyRequired(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "5m"
+  required: []
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for empty required, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait_for_checks.required") {
+		t.Errorf("error = %q, want mention of 'wait_for_checks.required'", err.Error())
+	}
+}
+
+func TestWaitForChecksZeroTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "0"
+  required:
+    - lint
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for zero timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait_for_checks.timeout") {
+		t.Errorf("error = %q, want mention of 'wait_for_checks.timeout'", err.Error())
+	}
+}
+
+func TestWaitForChecksNegativeTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "-5m"
+  required:
+    - lint
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for negative timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait_for_checks.timeout") {
+		t.Errorf("error = %q, want mention of 'wait_for_checks.timeout'", err.Error())
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

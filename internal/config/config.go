@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -25,6 +26,14 @@ type Quality struct {
 type Verify struct {
 	MaxFixAttempts int  `yaml:"max_fix_attempts"`
 	Blocking       bool `yaml:"blocking"`
+}
+
+// WaitForChecks holds CI check gating configuration. When non-nil, godark
+// polls GitHub status checks after the review cycle and only merges once all
+// required checks succeed.
+type WaitForChecks struct {
+	Timeout  string   `yaml:"timeout"`  // duration string, e.g. "10m"
+	Required []string `yaml:"required"` // check names to wait for
 }
 
 // Module holds per-module build/test/lint/generate commands and dependency
@@ -86,6 +95,10 @@ type Config struct {
 	// run starts. Their values are forwarded to the sandbox alongside auth env
 	// vars. Nil (absent) means no required env vars.
 	RequiredEnv []string `yaml:"required_env"`
+
+	// WaitForChecks configures CI check gating before merge. Nil means merge
+	// immediately after the review cycle (current behavior).
+	WaitForChecks *WaitForChecks `yaml:"wait_for_checks"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -198,6 +211,27 @@ func validate(cfg *Config) error {
 	}
 	if err := validateModules(cfg.Modules); err != nil {
 		return err
+	}
+	if err := validateWaitForChecks(cfg.WaitForChecks); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateWaitForChecks ensures WaitForChecks fields are valid when set.
+func validateWaitForChecks(w *WaitForChecks) error {
+	if w == nil {
+		return nil
+	}
+	d, err := time.ParseDuration(w.Timeout)
+	if err != nil {
+		return fmt.Errorf("wait_for_checks.timeout %q is not a valid duration: %w", w.Timeout, err)
+	}
+	if d <= 0 {
+		return fmt.Errorf("wait_for_checks.timeout must be a positive duration, got %q", w.Timeout)
+	}
+	if len(w.Required) == 0 {
+		return fmt.Errorf("wait_for_checks.required must be non-empty when wait_for_checks is set")
 	}
 	return nil
 }
