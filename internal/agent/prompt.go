@@ -48,6 +48,9 @@ type PromptData struct {
 	// ModuleContext describes the configured modules and their dependency
 	// relationships. Empty when no modules are configured.
 	ModuleContext string
+	// ReviewFeedback holds human reviewer comments injected directly into the
+	// retry prompt. Non-empty only for watch-initiated fix cycles.
+	ReviewFeedback string
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from

@@ -4,6 +4,11 @@ Issue title: {{.IssueTitle}}
 Issue body:
 {{.IssueBody}}
 
+{{- if .ReviewFeedback}}
+Human reviewer feedback:
+{{.ReviewFeedback}}
+
+{{end -}}
 Steps:
 1. Check out the PR branch: gh pr checkout {{.PRNumber}} --repo {{.Repo}}
 2. Read all PR comments to find the reviewer's feedback:

@@ -71,3 +71,29 @@ func FetchPRReviews(repo string, prNum int) ([]PRReview, error) {
 	}
 	return reviews, nil
 }
+
+// FetchReviewComments returns the body text of all inline comments on a
+// specific pull request review identified by reviewID.
+func FetchReviewComments(repo string, prNum int, reviewID int) ([]string, error) {
+	out, err := CommandRunner("gh", "api",
+		fmt.Sprintf("repos/%s/pulls/%d/reviews/%d/comments", repo, prNum, reviewID),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetching review comments for PR #%d review #%d: %w", prNum, reviewID, err)
+	}
+
+	var raw []struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parsing review comments for PR #%d: %w", prNum, err)
+	}
+
+	bodies := make([]string, 0, len(raw))
+	for _, c := range raw {
+		if c.Body != "" {
+			bodies = append(bodies, c.Body)
+		}
+	}
+	return bodies, nil
+}

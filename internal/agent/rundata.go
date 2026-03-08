@@ -12,6 +12,7 @@ func ResultToStep(r *Result) rundata.StepResult {
 		Output:    r.ResultText,
 		CostUSD:   r.CostUSD,
 		ToolTrace: r.ToolTrace,
+		SessionID: r.SessionID,
 	}
 	if !r.StartedAt.IsZero() {
 		t := r.StartedAt
