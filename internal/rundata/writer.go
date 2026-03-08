@@ -34,9 +34,10 @@ type IssueStatus struct {
 
 // RunSummary holds the outcome summary written by FinalizeRun.
 type RunSummary struct {
-	Total       int `json:"total"`
-	Implemented int `json:"implemented"`
-	Failed      int `json:"failed"`
+	Total       int    `json:"total"`
+	Implemented int    `json:"implemented"`
+	Failed      int    `json:"failed"`
+	AbortReason string `json:"abort_reason,omitempty"`
 }
 
 // Flag records a quality issue detected in a review step.

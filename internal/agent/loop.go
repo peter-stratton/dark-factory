@@ -662,9 +662,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			// Remove all lifecycle labels after merge (best-effort). This cleans up
 			// labels applied in a previous run or manually, not just the current run.
 			for _, lbl := range label.All() {
-				if err := github.RemoveIssueLabel(cfg.Repo, prNum, lbl); err != nil {
-					logger.Warn("failed to remove lifecycle label after merge", "label", lbl, "error", err)
-				}
+				_ = github.RemoveIssueLabel(cfg.Repo, prNum, lbl)
 			}
 			outcome.Status = "implemented"
 			outcome.Retries = attempt

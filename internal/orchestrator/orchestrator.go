@@ -255,6 +255,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		needsHumanReview int
 		failed           int
 		blocked          int
+		abortReason      string
 	}
 
 	// Punchlist entries are enriched in the background as each issue completes.
@@ -356,6 +357,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
 				if err := PullAfterMerge(logger); err != nil {
 					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
+					stats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
 					goto done
 				}
 				merged = true
@@ -454,6 +456,7 @@ done:
 			Total:       stats.implemented + stats.readyToMerge + stats.needsHumanReview + stats.failed,
 			Implemented: stats.implemented,
 			Failed:      stats.failed,
+			AbortReason: stats.abortReason,
 		}
 		if err := writer.FinalizeRun(summary); err != nil {
 			logger.Warn("failed to finalize run data", "error", err)

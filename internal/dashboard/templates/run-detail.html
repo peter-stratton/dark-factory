@@ -73,6 +73,18 @@
         <p class="page-header__subtitle">{{.Meta.Milestone}} &middot; {{.Timestamp}}</p>
       </div>
 
+      {{if and .Meta.Summary .Meta.Summary.AbortReason}}
+      <!-- Abort Reason Banner -->
+      <div class="card animate-in animate-in-0" style="border-left: 3px solid var(--color-danger, #f87171); background: rgba(248,113,113,0.06);">
+        <div class="card__header">
+          <span class="card__title">Run Aborted</span>
+        </div>
+        <div class="card__body" style="padding: var(--space-3) var(--space-5); font-size: var(--text-sm);">
+          {{.Meta.Summary.AbortReason}}
+        </div>
+      </div>
+      {{end}}
+
       {{if .AwaitingReview}}
       <!-- PRs Awaiting Review -->
       <div class="card animate-in animate-in-0" style="border-left: 3px solid var(--color-warning);">

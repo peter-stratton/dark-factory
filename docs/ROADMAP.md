@@ -553,7 +553,7 @@ wait_for_checks:
 
 ---
 
-## Phase 13: Human-in-the-Loop Review
+## Phase 13: Human-in-the-Loop Review ✅
 
 **Goal**: Humans can review godark-created PRs and request changes that the
 agent automatically picks up and fixes. Teams adopt godark with full human
@@ -607,22 +607,33 @@ critical path for org adoption — most teams will not start with auto-merge.
 - PRs awaiting human review surfaced prominently in run detail view
 - Filter/sort by `awaiting_human` state across all runs
 - Human feedback rounds visible in the issue detail dialogue timeline
-- Notification hooks (configurable: Slack webhook, email) when PRs are
-  ready for human review
+
+### Notifications
+- Pluggable notification provider model (`Notifier` interface) supporting
+  multiple channels (Telegram at launch, extensible to Slack, email, etc.)
+- Events: `run_complete`, `implementation_complete`, `abort`
+- Provider-specific settings use `${VAR}` environment variable expansion
+  for secrets
+- Best-effort delivery — notification failures are logged, never block
+  execution
 
 ### Config
 ```yaml
 auto_merge: none  # none | low_risk | all
 watch:
   poll_interval: 60s
-  notify:
-    slack_webhook: ""  # optional
 risk_thresholds:
   max_lines: 200
   max_files: 10
+notify:
+  - provider: telegram
+    events: [run_complete, abort]
+    settings:
+      bot_token: ${TELEGRAM_BOT_TOKEN}
+      chat_id: "123456789"
 ```
 
-**Issues**: #238–#249
+**Issues**: #238–#249, #270–#272
 
 **Planning doc**: `docs/planning/phase-13-human-in-the-loop-review.md`
 
