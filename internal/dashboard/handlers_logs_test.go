@@ -187,9 +187,9 @@ func TestServer_RunLogs_LogParsing_100Lines(t *testing.T) {
 	}
 	body := rr.Body.String()
 
-	// First page messages should be visible.
-	if !strings.Contains(body, "message 0") {
-		t.Error("body missing first log entry")
+	// Newest entries should appear first (reverse chronological).
+	if !strings.Contains(body, "message 99") {
+		t.Error("body missing newest log entry")
 	}
 
 	// With 100 entries and page size 50, a "load more" button is present.
@@ -408,7 +408,7 @@ func TestServer_RunLogs_Pagination_LoadMore(t *testing.T) {
 
 	srv := newServer(t, tmpDir)
 
-	// First page: should show entries 0-49 and a load more button.
+	// First page: newest entries (99-50) in reverse chronological order.
 	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/logs", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -418,20 +418,20 @@ func TestServer_RunLogs_Pagination_LoadMore(t *testing.T) {
 	}
 	body := rr.Body.String()
 
-	if !strings.Contains(body, "entry 0") {
-		t.Error("first page missing entry 0")
+	if !strings.Contains(body, "entry 99") {
+		t.Error("first page missing entry 99 (newest)")
 	}
-	if !strings.Contains(body, "entry 49") {
-		t.Error("first page missing entry 49")
+	if !strings.Contains(body, "entry 50") {
+		t.Error("first page missing entry 50")
 	}
-	if strings.Contains(body, "entry 50") {
-		t.Error("first page should not contain entry 50 (second page)")
+	if strings.Contains(body, "entry 49") {
+		t.Error("first page should not contain entry 49 (second page)")
 	}
 	if !strings.Contains(body, "Load more") {
 		t.Error("first page missing load more button")
 	}
 
-	// Second page (htmx partial): should show entries 50-99 and no load more.
+	// Second page (htmx partial): older entries (49-0) and no load more.
 	req2 := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/logs/entries?page=2", nil)
 	rr2 := httptest.NewRecorder()
 	srv.ServeHTTP(rr2, req2)
@@ -441,11 +441,11 @@ func TestServer_RunLogs_Pagination_LoadMore(t *testing.T) {
 	}
 	body2 := rr2.Body.String()
 
-	if !strings.Contains(body2, "entry 50") {
-		t.Error("second page missing entry 50")
+	if !strings.Contains(body2, "entry 49") {
+		t.Error("second page missing entry 49")
 	}
-	if !strings.Contains(body2, "entry 99") {
-		t.Error("second page missing entry 99")
+	if !strings.Contains(body2, "entry 0") {
+		t.Error("second page missing entry 0 (oldest)")
 	}
 	if strings.Contains(body2, "Load more") {
 		t.Error("second page should not show load more (no more entries)")

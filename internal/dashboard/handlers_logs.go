@@ -137,6 +137,11 @@ func (s *Server) buildLogViewerData(owner, repo, timestamp, level, search string
 
 	filtered := filterLogEntries(allEntries, level, search)
 
+	// Reverse so newest entries appear first.
+	for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
+		filtered[i], filtered[j] = filtered[j], filtered[i]
+	}
+
 	total := len(filtered)
 	hasMore := page*logPageSize < total
 	start := (page - 1) * logPageSize
