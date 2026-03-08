@@ -1437,39 +1437,6 @@ repo: owner/repo
 	}
 }
 
-func TestNotifyValidTelegramConfig(t *testing.T) {
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `
-repo: owner/repo
-notify:
-  - provider: telegram
-    events: [run_complete, abort]
-    settings:
-      bot_token: "mytoken"
-      chat_id: "123456789"
-`)
-
-	cfg, err := Load(path, CLIFlags{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cfg.Notify) != 1 {
-		t.Fatalf("Notify len = %d, want 1", len(cfg.Notify))
-	}
-	n := cfg.Notify[0]
-	if n.Provider != "telegram" {
-		t.Errorf("Notify[0].Provider = %q, want %q", n.Provider, "telegram")
-	}
-	if len(n.Events) != 2 || n.Events[0] != "run_complete" || n.Events[1] != "abort" {
-		t.Errorf("Notify[0].Events = %v, want [run_complete abort]", n.Events)
-	}
-	if n.Settings["bot_token"] != "mytoken" {
-		t.Errorf("Notify[0].Settings[bot_token] = %q, want %q", n.Settings["bot_token"], "mytoken")
-	}
-	if n.Settings["chat_id"] != "123456789" {
-		t.Errorf("Notify[0].Settings[chat_id] = %q, want %q", n.Settings["chat_id"], "123456789")
-	}
-}
 
 func TestNotifyUnknownProvider(t *testing.T) {
 	dir := t.TempDir()
@@ -1494,7 +1461,7 @@ func TestNotifyUnknownEvent(t *testing.T) {
 	path := writeYAML(t, dir, `
 repo: owner/repo
 notify:
-  - provider: telegram
+  - provider: carrier_pigeon
     events: [unknown_event]
 `)
 
@@ -1525,23 +1492,12 @@ notify: []
 
 func TestNotifyEnvExpansion(t *testing.T) {
 	t.Setenv("FOO", "expanded_value")
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `
-repo: owner/repo
-notify:
-  - provider: telegram
-    events: [run_complete]
-    settings:
-      bot_token: "${FOO}"
-`)
-
-	cfg, err := Load(path, CLIFlags{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	cfg := &Config{
+		Notify: []NotifyProviderConfig{
+			{Provider: "any", Events: []string{"run_complete"}, Settings: map[string]string{"bot_token": "${FOO}"}},
+		},
 	}
-	if len(cfg.Notify) != 1 {
-		t.Fatalf("Notify len = %d, want 1", len(cfg.Notify))
-	}
+	expandNotifySettings(cfg)
 	got := cfg.Notify[0].Settings["bot_token"]
 	if got != "expanded_value" {
 		t.Errorf("Settings[bot_token] = %q, want %q", got, "expanded_value")
@@ -1549,45 +1505,17 @@ notify:
 }
 
 func TestNotifyMissingEnvVarResolvesToEmpty(t *testing.T) {
-	os.Unsetenv("MISSING_NOTIFY_VAR_XYZ")
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `
-repo: owner/repo
-notify:
-  - provider: telegram
-    events: [run_complete]
-    settings:
-      bot_token: "${MISSING_NOTIFY_VAR_XYZ}"
-`)
-
-	cfg, err := Load(path, CLIFlags{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// MISSING_NOTIFY_VAR_XYZ is expected to be absent from the environment;
+	// the uniquely-named variable requires no explicit unset.
+	cfg := &Config{
+		Notify: []NotifyProviderConfig{
+			{Provider: "any", Events: []string{"run_complete"}, Settings: map[string]string{"bot_token": "${MISSING_NOTIFY_VAR_XYZ}"}},
+		},
 	}
-	if len(cfg.Notify) != 1 {
-		t.Fatalf("Notify len = %d, want 1", len(cfg.Notify))
-	}
+	expandNotifySettings(cfg)
 	got := cfg.Notify[0].Settings["bot_token"]
 	if got != "" {
 		t.Errorf("Settings[bot_token] = %q, want empty string for missing env var", got)
-	}
-}
-
-func TestNotifyAllValidEvents(t *testing.T) {
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `
-repo: owner/repo
-notify:
-  - provider: telegram
-    events: [run_complete, implementation_complete, abort]
-`)
-
-	cfg, err := Load(path, CLIFlags{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cfg.Notify[0].Events) != 3 {
-		t.Errorf("Events len = %d, want 3", len(cfg.Notify[0].Events))
 	}
 }
 

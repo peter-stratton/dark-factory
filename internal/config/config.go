@@ -10,9 +10,9 @@ import (
 )
 
 // validNotifyProviders lists the recognized notify provider names.
-var validNotifyProviders = map[string]bool{
-	"telegram": true,
-}
+// A provider is added here atomically with its constructor in the notify
+// package. Do not add a provider name here before its constructor exists.
+var validNotifyProviders = map[string]bool{}
 
 // validNotifyEvents lists the recognized notify event names.
 var validNotifyEvents = map[string]bool{
@@ -446,13 +446,13 @@ func expandNotifySettings(cfg *Config) {
 // provider's own constructor, not here.
 func validateNotify(notify []NotifyProviderConfig) error {
 	for i, n := range notify {
-		if !validNotifyProviders[n.Provider] {
-			return fmt.Errorf("notify[%d]: unknown provider %q", i, n.Provider)
-		}
 		for _, event := range n.Events {
 			if !validNotifyEvents[event] {
 				return fmt.Errorf("notify[%d]: unknown event %q", i, event)
 			}
+		}
+		if !validNotifyProviders[n.Provider] {
+			return fmt.Errorf("notify[%d]: unknown provider %q", i, n.Provider)
 		}
 	}
 	return nil
