@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends unzip xz-utils 
     && rm -rf /var/lib/apt/lists/*
 RUN git clone --branch {{.RuntimeVersion}} https://github.com/flutter/flutter /usr/local/flutter
 ENV PATH="/usr/local/flutter/bin:${PATH}"
+RUN git config --system --add safe.directory /usr/local/flutter
 RUN flutter precache
 {{else if eq .RuntimeName "rust"}}
 # Install Rust
