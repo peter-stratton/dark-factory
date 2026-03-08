@@ -80,6 +80,14 @@ type Watch struct {
 	PollInterval string `yaml:"poll_interval"`
 }
 
+// RiskThresholds holds the thresholds used by the low_risk auto-merge
+// classifier. Nil means the classifier uses its built-in defaults
+// (MaxLines: 200, MaxFiles: 10).
+type RiskThresholds struct {
+	MaxLines int `yaml:"max_lines"`
+	MaxFiles int `yaml:"max_files"`
+}
+
 // Config holds all configuration for a godark run.
 type Config struct {
 	Repo       string `yaml:"repo"`
@@ -137,6 +145,10 @@ type Config struct {
 	// Watch configures polling settings for the watch command. Nil means
 	// the watch command uses its hardcoded default poll interval ("60s").
 	Watch *Watch `yaml:"watch"`
+
+	// RiskThresholds configures thresholds for the low_risk auto-merge
+	// classifier. Nil means the classifier uses its built-in defaults.
+	RiskThresholds *RiskThresholds `yaml:"risk_thresholds"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -263,6 +275,9 @@ func validate(cfg *Config) error {
 	if err := validateWatch(cfg.Watch); err != nil {
 		return err
 	}
+	if err := validateRiskThresholds(cfg.RiskThresholds); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -297,6 +312,20 @@ func validateWatch(w *Watch) error {
 		if d <= 0 {
 			return fmt.Errorf("watch.poll_interval must be a positive duration, got %q", w.PollInterval)
 		}
+	}
+	return nil
+}
+
+// validateRiskThresholds ensures RiskThresholds fields are positive when set.
+func validateRiskThresholds(r *RiskThresholds) error {
+	if r == nil {
+		return nil
+	}
+	if r.MaxLines <= 0 {
+		return fmt.Errorf("risk_thresholds.max_lines must be a positive integer, got %d", r.MaxLines)
+	}
+	if r.MaxFiles <= 0 {
+		return fmt.Errorf("risk_thresholds.max_files must be a positive integer, got %d", r.MaxFiles)
 	}
 	return nil
 }
