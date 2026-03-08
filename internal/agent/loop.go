@@ -500,6 +500,60 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Retries = attempt
 				return outcome
 			}
+			// Step 5.5: Wait for CI checks if configured.
+			if cfg.WaitForChecks != nil {
+				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
+				ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
+				if err != nil {
+					outcome.Status = "failed"
+					outcome.Err = fmt.Errorf("waiting for CI checks: %w", err)
+					return outcome
+				}
+				for ciAttempt := 0; len(ciFailures) > 0; ciAttempt++ {
+					if ciAttempt >= cfg.Verify.MaxFixAttempts || prompts.VerifyFix == "" {
+						var names []string
+						for _, f := range ciFailures {
+							names = append(names, f.Name)
+						}
+						outcome.Status = "failed"
+						outcome.Err = fmt.Errorf("CI checks failed: %s", strings.Join(names, ", "))
+						return outcome
+					}
+
+					logger.Info("CI check failed, triggering fix cycle",
+						"issue_number", issue.Number,
+						"attempt", ciAttempt+1,
+						"max_attempts", cfg.Verify.MaxFixAttempts,
+					)
+
+					ciErrors := formatCheckFailures(ciFailures)
+					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, sessionID, cfg, prompts, authEnv, logger)
+					if err != nil {
+						outcome.Status = "failed"
+						outcome.Err = fmt.Errorf("CI fix agent: %w", err)
+						return outcome
+					}
+					if fixResult.TimedOut {
+						outcome.Status = "failed"
+						outcome.Err = fmt.Errorf("CI fix agent timed out")
+						return outcome
+					}
+					sessionID = fixResult.SessionID
+
+					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+						outcome.Status = "failed"
+						outcome.Err = driftErr
+						return outcome
+					}
+
+					ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
+					if err != nil {
+						outcome.Status = "failed"
+						outcome.Err = fmt.Errorf("waiting for CI checks: %w", err)
+						return outcome
+					}
+				}
+			}
 			// Merge the PR.
 			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
 				outcome.Status = "failed"
