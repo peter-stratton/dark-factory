@@ -326,11 +326,11 @@
   <div style="position:relative;height:300px;"><canvas id="chart-avg-retries"></canvas></div>
 </div>
 
-<!-- Cost Per Run Chart -->
+<!-- Cost Per Issue Chart -->
 <div class="card animate-in animate-in-3">
   <div class="card__header">
-    <span class="card__title">Cost Per Run Over Time</span>
-    <span class="text-muted">Total USD cost per finished run</span>
+    <span class="card__title">Cost Per Issue Over Time</span>
+    <span class="text-muted">Average USD cost per issue per run</span>
   </div>
   <div style="position:relative;height:300px;"><canvas id="chart-cost"></canvas></div>
 </div>
@@ -406,8 +406,8 @@ document.addEventListener('DOMContentLoaded', function() {
     { max: 100, ticks: { color: '#94a3b8', callback: function(v) { return v + '%'; }, stepSize: 25 } });
   makeChart('chart-avg-retries', 'Avg Retries',
     function(p) { return +p.avg_retries.toFixed(2); }, '#f59e0b');
-  makeChart('chart-cost', 'Total Cost (USD)',
-    function(p) { return +p.total_cost_usd.toFixed(2); }, '#60a5fa',
+  makeChart('chart-cost', 'Avg Cost / Issue (USD)',
+    function(p) { return +p.avg_cost_per_issue_usd.toFixed(4); }, '#60a5fa',
     { ticks: { color: '#94a3b8', callback: function(v) { return '$' + v; } } });
 });
 </script>

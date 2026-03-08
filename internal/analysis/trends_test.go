@@ -128,6 +128,9 @@ func TestComputeTrendsCostSummed(t *testing.T) {
 	if !nearlyEqual(got[0].TotalCostUSD, 0.30, 0.0001) {
 		t.Errorf("TotalCostUSD = %f, want 0.30", got[0].TotalCostUSD)
 	}
+	if !nearlyEqual(got[0].AvgCostPerIssueUSD, 0.10, 0.0001) {
+		t.Errorf("AvgCostPerIssueUSD = %f, want 0.10", got[0].AvgCostPerIssueUSD)
+	}
 }
 
 func TestComputeTrendsUnfinishedExcluded(t *testing.T) {

@@ -14,9 +14,10 @@ type TrendPoint struct {
 	Repo         string    `json:"repo"`
 	Milestone    string    `json:"milestone"`
 	IssueCount   int       `json:"issue_count"`
-	SuccessRate  float64   `json:"success_rate"`  // 0.0–1.0
-	AvgRetries   float64   `json:"avg_retries"`
-	TotalCostUSD float64   `json:"total_cost_usd"`
+	SuccessRate        float64   `json:"success_rate"`  // 0.0–1.0
+	AvgRetries         float64   `json:"avg_retries"`
+	TotalCostUSD       float64   `json:"total_cost_usd"`
+	AvgCostPerIssueUSD float64   `json:"avg_cost_per_issue_usd"`
 }
 
 // ComputeTrends returns one TrendPoint per run, sorted chronologically
@@ -53,20 +54,22 @@ func ComputeTrends(runs []rundata.RunDetail) []TrendPoint {
 			}
 		}
 
-		var successRate, avgRetries float64
+		var successRate, avgRetries, avgCostPerIssue float64
 		if issueCount > 0 {
 			successRate = float64(implemented) / float64(issueCount)
 			avgRetries = float64(totalRetries) / float64(issueCount)
+			avgCostPerIssue = totalCost / float64(issueCount)
 		}
 
 		points = append(points, TrendPoint{
-			Timestamp:    run.StartedAt,
-			Repo:         run.Repo,
-			Milestone:    run.Milestone,
-			IssueCount:   issueCount,
-			SuccessRate:  successRate,
-			AvgRetries:   avgRetries,
-			TotalCostUSD: totalCost,
+			Timestamp:          run.StartedAt,
+			Repo:               run.Repo,
+			Milestone:          run.Milestone,
+			IssueCount:         issueCount,
+			SuccessRate:        successRate,
+			AvgRetries:         avgRetries,
+			TotalCostUSD:       totalCost,
+			AvgCostPerIssueUSD: avgCostPerIssue,
 		})
 	}
 
