@@ -1277,6 +1277,40 @@ watch:
 	}
 }
 
+func TestWatchZeroPollInterval(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+watch:
+  poll_interval: "0s"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for zero poll_interval, got nil")
+	}
+	if !strings.Contains(err.Error(), "watch.poll_interval") {
+		t.Errorf("error = %q, want mention of 'watch.poll_interval'", err.Error())
+	}
+}
+
+func TestWatchNegativePollInterval(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+watch:
+  poll_interval: "-30s"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for negative poll_interval, got nil")
+	}
+	if !strings.Contains(err.Error(), "watch.poll_interval") {
+		t.Errorf("error = %q, want mention of 'watch.poll_interval'", err.Error())
+	}
+}
+
 func TestWatchNotConfigured(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `

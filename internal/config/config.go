@@ -290,8 +290,12 @@ func validateWatch(w *Watch) error {
 		return nil
 	}
 	if w.PollInterval != "" {
-		if _, err := time.ParseDuration(w.PollInterval); err != nil {
+		d, err := time.ParseDuration(w.PollInterval)
+		if err != nil {
 			return fmt.Errorf("watch.poll_interval %q is not a valid duration: %w", w.PollInterval, err)
+		}
+		if d <= 0 {
+			return fmt.Errorf("watch.poll_interval must be a positive duration, got %q", w.PollInterval)
 		}
 	}
 	return nil
