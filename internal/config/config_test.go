@@ -1437,6 +1437,33 @@ repo: owner/repo
 	}
 }
 
+func TestNotifyValidTelegramConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify:
+  - provider: telegram
+    events: [run_complete, abort]
+    settings:
+      bot_token: mytoken
+      chat_id: "123456789"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error for valid telegram config: %v", err)
+	}
+	if len(cfg.Notify) != 1 {
+		t.Fatalf("Notify len = %d, want 1", len(cfg.Notify))
+	}
+	n := cfg.Notify[0]
+	if n.Provider != "telegram" {
+		t.Errorf("Notify[0].Provider = %q, want %q", n.Provider, "telegram")
+	}
+	if len(n.Events) != 2 {
+		t.Errorf("Notify[0].Events = %v, want [run_complete abort]", n.Events)
+	}
+}
 
 func TestNotifyUnknownProvider(t *testing.T) {
 	dir := t.TempDir()

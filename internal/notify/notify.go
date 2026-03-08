@@ -41,5 +41,11 @@ func NewFromConfig(configs []config.NotifyProviderConfig) ([]Notifier, error) {
 
 // newProvider dispatches to the appropriate provider constructor.
 func newProvider(cfg config.NotifyProviderConfig) (Notifier, error) {
-	return nil, fmt.Errorf("notify: unknown provider %q", cfg.Provider)
+	switch cfg.Provider {
+	case "telegram":
+		// Telegram provider constructor will be added in a follow-up issue.
+		return nil, fmt.Errorf("notify: telegram provider not yet implemented")
+	default:
+		return nil, fmt.Errorf("notify: unknown provider %q", cfg.Provider)
+	}
 }

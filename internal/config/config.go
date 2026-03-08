@@ -10,9 +10,11 @@ import (
 )
 
 // validNotifyProviders lists the recognized notify provider names.
-// A provider is added here atomically with its constructor in the notify
-// package. Do not add a provider name here before its constructor exists.
-var validNotifyProviders = map[string]bool{}
+// A provider name and its constructor in the notify package are added
+// atomically — config validation and runtime dispatch stay in sync.
+var validNotifyProviders = map[string]bool{
+	"telegram": true,
+}
 
 // validNotifyEvents lists the recognized notify event names.
 var validNotifyEvents = map[string]bool{
