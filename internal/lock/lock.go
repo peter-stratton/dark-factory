@@ -1,7 +1,7 @@
 // Package lock provides a distributed run lock using GitHub labels as the
 // visible signal and a local JSON file for stale-lock detection metadata.
 //
-// When a godark run starts, it applies the LockLabel to all issues it will
+// When a godark run starts, it applies the lock label to all issues it will
 // process. Other instances see the label and refuse to start. When the run
 // finishes (or is interrupted), the label is removed.
 //
@@ -18,12 +18,10 @@ import (
 	"time"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 )
 
 const (
-	// LockLabel is the GitHub label applied to issues during an active godark run.
-	LockLabel = "godark-in-progress"
-
 	// LockLabelColor is the hex color (without #) for the coordination label.
 	LockLabelColor = "FF6B35"
 
@@ -57,7 +55,7 @@ type Locker struct {
 func New(repo string, logger *slog.Logger) *Locker {
 	return &Locker{
 		repo:         repo,
-		label:        LockLabel,
+		label:        label.InProgress,
 		lockFilePath: defaultLockFilePath,
 		logger:       logger,
 	}
@@ -164,7 +162,7 @@ func (l *Locker) IsLocked() (bool, *RunInfo, error) {
 // EnsureLabelExists creates the lock label in the repo if it doesn't exist.
 // Intended to be called by `godark init` to pre-create the label.
 func EnsureLabelExists(repo string) error {
-	return github.EnsureLabel(repo, LockLabel, LockLabelColor, LockLabelDescription)
+	return github.EnsureLabel(repo, label.InProgress, LockLabelColor, LockLabelDescription)
 }
 
 func (l *Locker) releaseFromIssues(issueNumbers []int) error {

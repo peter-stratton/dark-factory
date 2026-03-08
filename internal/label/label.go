@@ -1,5 +1,8 @@
 package label
 
+// InProgress is the GitHub label applied to issues during an active godark run.
+const InProgress = "godark-in-progress"
+
 // PR lifecycle label constants communicate state to humans at a glance.
 const (
 	AwaitingHumanReview  = "godark:awaiting-human-review"
