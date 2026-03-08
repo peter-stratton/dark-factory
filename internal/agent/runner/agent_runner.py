@@ -305,7 +305,7 @@ async def main() -> None:
 
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
-        setting_sources=["project"],
+        setting_sources=[],
         system_prompt={"type": "preset", "preset": "claude_code"},
         cwd=work_dir,
         env=env if env else None,
