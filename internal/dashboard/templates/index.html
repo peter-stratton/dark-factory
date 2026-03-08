@@ -218,7 +218,7 @@
               <th>Milestone</th>
               <th>Issues</th>
               <th>Result</th>
-              <th>Flags</th>
+              <th>Awaiting</th>
               <th class="cell-num">Cost</th>
               <th>When</th>
             </tr>
@@ -280,7 +280,13 @@
       {{.StatusLabel}}
     </span>
   </td>
-  <td class="text-muted">—</td>
+  <td>
+    {{if gt .AwaitingCount 0}}
+    <span class="badge badge--warning">{{.AwaitingCount}} awaiting</span>
+    {{else}}
+    <span class="text-muted">—</span>
+    {{end}}
+  </td>
   <td class="cell-num text-muted">—</td>
   <td class="text-secondary">{{.When}}</td>
 </tr>
