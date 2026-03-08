@@ -206,6 +206,21 @@ func handleChangesRequested(ctx context.Context, cfg *config.Config, prompts *ag
 		logger.Warn("failed to create run data writer", "err", writerErr)
 	}
 
+	// finalizeWriter writes a completed run.json on all exit paths after writer creation.
+	succeeded := false
+	defer func() {
+		if writer == nil {
+			return
+		}
+		summary := rundata.RunSummary{Total: 1, Failed: 1}
+		if succeeded {
+			summary = rundata.RunSummary{Total: 1, Implemented: 1}
+		}
+		if err := writer.FinalizeRun(summary); err != nil {
+			logger.Warn("failed to finalize run", "err", err)
+		}
+	}()
+
 	logger.Info("invoking implementer retry for human review",
 		"pr", pr.Number,
 		"issue_number", issueNum,
@@ -236,6 +251,7 @@ func handleChangesRequested(ctx context.Context, cfg *config.Config, prompts *ag
 		return
 	}
 
+	succeeded = true
 	logger.Info("fix cycle complete, awaiting human re-review",
 		"pr", pr.Number,
 		"issue_number", issueNum,
@@ -301,7 +317,7 @@ var watchFindSessionIDFn = func(repo string, prNum int) (string, error) {
 		return "", fmt.Errorf("getting home dir: %w", err)
 	}
 	runsDir := filepath.Join(home, ".godark", "runs")
-	return rundata.FindSessionID(runsDir, repo, prNum)
+	return rundata.FindSessionID(runsDir, repo, prNum, slog.Default())
 }
 
 var watchNewWriterFn = rundata.New

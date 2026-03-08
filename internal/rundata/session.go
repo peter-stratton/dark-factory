@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 )
 
 // FindSessionID scans run directories under runsDir for the given repo and
@@ -16,12 +15,15 @@ import (
 // It inspects outcome.json files to match the PR, then reads the session ID
 // from the latest retry step or the initial implement step.
 // Returns ("", nil) when no matching session ID is found (caller should cold-start).
-func FindSessionID(runsDir, repo string, prNum int) (string, error) {
-	parts := strings.SplitN(repo, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", fmt.Errorf("repo must be in owner/name format, got %q", repo)
+// If logger is nil, slog.Default() is used.
+func FindSessionID(runsDir, repo string, prNum int, logger *slog.Logger) (string, error) {
+	owner, repoName, err := validateRepo(repo)
+	if err != nil {
+		return "", err
 	}
-	owner, repoName := parts[0], parts[1]
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	repoDir := filepath.Join(runsDir, owner, repoName)
 	tsEntries, err := os.ReadDir(repoDir)
@@ -38,7 +40,7 @@ func FindSessionID(runsDir, repo string, prNum int) (string, error) {
 		return tsEntries[i].Name() > tsEntries[j].Name()
 	})
 
-	r := &Reader{logger: slog.Default(), baseDir: runsDir}
+	r := &Reader{logger: logger, baseDir: runsDir}
 
 	for _, tsEntry := range tsEntries {
 		if !tsEntry.IsDir() {

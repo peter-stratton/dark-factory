@@ -9,7 +9,7 @@ import (
 
 func TestFindSessionID_NoRunsDir(t *testing.T) {
 	base := t.TempDir()
-	sid, err := FindSessionID(filepath.Join(base, "nonexistent"), "owner/repo", 42)
+	sid, err := FindSessionID(filepath.Join(base, "nonexistent"), "owner/repo", 42, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -20,7 +20,7 @@ func TestFindSessionID_NoRunsDir(t *testing.T) {
 
 func TestFindSessionID_InvalidRepo(t *testing.T) {
 	base := t.TempDir()
-	_, err := FindSessionID(base, "noslash", 42)
+	_, err := FindSessionID(base, "noslash", 42, nil)
 	if err == nil {
 		t.Error("expected error for invalid repo format, got nil")
 	}
@@ -48,7 +48,7 @@ func TestFindSessionID_NoPRMatch(t *testing.T) {
 		t.Fatalf("writing implement: %v", err)
 	}
 
-	sid, err := FindSessionID(base, "owner/repo", 42)
+	sid, err := FindSessionID(base, "owner/repo", 42, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestFindSessionID_FromImplementStep(t *testing.T) {
 		t.Fatalf("writing implement: %v", err)
 	}
 
-	sid, err := FindSessionID(base, "owner/repo", 42)
+	sid, err := FindSessionID(base, "owner/repo", 42, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestFindSessionID_FromLatestRetry(t *testing.T) {
 		t.Fatalf("writing retry 2: %v", err)
 	}
 
-	sid, err := FindSessionID(base, "owner/repo", 42)
+	sid, err := FindSessionID(base, "owner/repo", 42, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestFindSessionID_MostRecentRunFirst(t *testing.T) {
 		t.Fatalf("writing new implement: %v", err)
 	}
 
-	sid, err := FindSessionID(base, "owner/repo", 42)
+	sid, err := FindSessionID(base, "owner/repo", 42, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestFindSessionID_MissingSessionIDInImplement(t *testing.T) {
 		t.Fatalf("writing implement: %v", err)
 	}
 
-	sid, err := FindSessionID(base, "owner/repo", 42)
+	sid, err := FindSessionID(base, "owner/repo", 42, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
