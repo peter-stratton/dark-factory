@@ -1420,6 +1420,177 @@ build_command: "go build ./..."
 	}
 }
 
+// --- Notify tests ---
+
+func TestNotifyDefaultNil(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Notify != nil {
+		t.Errorf("Notify = %v, want nil", cfg.Notify)
+	}
+}
+
+func TestNotifyValidTelegramConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify:
+  - provider: telegram
+    events: [run_complete, abort]
+    settings:
+      bot_token: "mytoken"
+      chat_id: "123456789"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Notify) != 1 {
+		t.Fatalf("Notify len = %d, want 1", len(cfg.Notify))
+	}
+	n := cfg.Notify[0]
+	if n.Provider != "telegram" {
+		t.Errorf("Notify[0].Provider = %q, want %q", n.Provider, "telegram")
+	}
+	if len(n.Events) != 2 || n.Events[0] != "run_complete" || n.Events[1] != "abort" {
+		t.Errorf("Notify[0].Events = %v, want [run_complete abort]", n.Events)
+	}
+	if n.Settings["bot_token"] != "mytoken" {
+		t.Errorf("Notify[0].Settings[bot_token] = %q, want %q", n.Settings["bot_token"], "mytoken")
+	}
+	if n.Settings["chat_id"] != "123456789" {
+		t.Errorf("Notify[0].Settings[chat_id] = %q, want %q", n.Settings["chat_id"], "123456789")
+	}
+}
+
+func TestNotifyUnknownProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify:
+  - provider: carrier_pigeon
+    events: [run_complete]
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for unknown provider, got nil")
+	}
+	if !strings.Contains(err.Error(), "carrier_pigeon") {
+		t.Errorf("error = %q, want mention of 'carrier_pigeon'", err.Error())
+	}
+}
+
+func TestNotifyUnknownEvent(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify:
+  - provider: telegram
+    events: [unknown_event]
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for unknown event, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown_event") {
+		t.Errorf("error = %q, want mention of 'unknown_event'", err.Error())
+	}
+}
+
+func TestNotifyEmptyListValid(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify: []
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error for empty notify list: %v", err)
+	}
+	if len(cfg.Notify) != 0 {
+		t.Errorf("Notify len = %d, want 0", len(cfg.Notify))
+	}
+}
+
+func TestNotifyEnvExpansion(t *testing.T) {
+	t.Setenv("FOO", "expanded_value")
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify:
+  - provider: telegram
+    events: [run_complete]
+    settings:
+      bot_token: "${FOO}"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Notify) != 1 {
+		t.Fatalf("Notify len = %d, want 1", len(cfg.Notify))
+	}
+	got := cfg.Notify[0].Settings["bot_token"]
+	if got != "expanded_value" {
+		t.Errorf("Settings[bot_token] = %q, want %q", got, "expanded_value")
+	}
+}
+
+func TestNotifyMissingEnvVarResolvesToEmpty(t *testing.T) {
+	os.Unsetenv("MISSING_NOTIFY_VAR_XYZ")
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify:
+  - provider: telegram
+    events: [run_complete]
+    settings:
+      bot_token: "${MISSING_NOTIFY_VAR_XYZ}"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Notify) != 1 {
+		t.Fatalf("Notify len = %d, want 1", len(cfg.Notify))
+	}
+	got := cfg.Notify[0].Settings["bot_token"]
+	if got != "" {
+		t.Errorf("Settings[bot_token] = %q, want empty string for missing env var", got)
+	}
+}
+
+func TestNotifyAllValidEvents(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+notify:
+  - provider: telegram
+    events: [run_complete, implementation_complete, abort]
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Notify[0].Events) != 3 {
+		t.Errorf("Events len = %d, want 3", len(cfg.Notify[0].Events))
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

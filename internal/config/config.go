@@ -9,6 +9,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// validNotifyProviders lists the recognized notify provider names.
+var validNotifyProviders = map[string]bool{
+	"telegram": true,
+}
+
+// validNotifyEvents lists the recognized notify event names.
+var validNotifyEvents = map[string]bool{
+	"run_complete":            true,
+	"implementation_complete": true,
+	"abort":                   true,
+}
+
+// NotifyProviderConfig holds configuration for a single notification provider.
+type NotifyProviderConfig struct {
+	Provider string            `yaml:"provider"`            // "telegram", future: "slack", etc.
+	Events   []string          `yaml:"events"`              // "run_complete", "implementation_complete", "abort"
+	Settings map[string]string `yaml:"settings,omitempty"`  // provider-specific key-value pairs
+}
+
 // safeModuleNameChar reports whether ch is a permitted character in a module
 // name. Only alphanumerics, hyphens, underscores, and dots are allowed so that
 // module names are safe to embed in shell commands via "cd <name> && …".
@@ -149,6 +168,10 @@ type Config struct {
 	// RiskThresholds configures thresholds for the low_risk auto-merge
 	// classifier. Nil means the classifier uses its built-in defaults.
 	RiskThresholds *RiskThresholds `yaml:"risk_thresholds"`
+
+	// Notify holds zero or more notification provider configurations.
+	// An absent or empty list disables all notifications.
+	Notify []NotifyProviderConfig `yaml:"notify"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -199,6 +222,7 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 		}
 	}
 
+	expandNotifySettings(cfg)
 	applyFlags(cfg, flags)
 
 	if err := validate(cfg); err != nil {
@@ -276,6 +300,9 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if err := validateRiskThresholds(cfg.RiskThresholds); err != nil {
+		return err
+	}
+	if err := validateNotify(cfg.Notify); err != nil {
 		return err
 	}
 	return nil
@@ -390,6 +417,41 @@ func validateModules(modules map[string]Module) error {
 		if color[name] == white {
 			if err := visit(name); err != nil {
 				return err
+			}
+		}
+	}
+	return nil
+}
+
+// expandNotifySettings expands ${VAR} references in each provider's Settings
+// map using the current process environment. Missing variables resolve to "".
+// Expansion happens in-place after YAML parsing so that downstream code
+// (including the notify package) always receives literal values.
+func expandNotifySettings(cfg *Config) {
+	for i := range cfg.Notify {
+		s := cfg.Notify[i].Settings
+		if len(s) == 0 {
+			continue
+		}
+		expanded := make(map[string]string, len(s))
+		for k, v := range s {
+			expanded[k] = os.Expand(v, os.Getenv)
+		}
+		cfg.Notify[i].Settings = expanded
+	}
+}
+
+// validateNotify checks that every provider name and event name in the notify
+// list is recognized. Provider-specific settings are validated by the
+// provider's own constructor, not here.
+func validateNotify(notify []NotifyProviderConfig) error {
+	for i, n := range notify {
+		if !validNotifyProviders[n.Provider] {
+			return fmt.Errorf("notify[%d]: unknown provider %q", i, n.Provider)
+		}
+		for _, event := range n.Events {
+			if !validNotifyEvents[event] {
+				return fmt.Errorf("notify[%d]: unknown event %q", i, event)
 			}
 		}
 	}
