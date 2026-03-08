@@ -193,39 +193,39 @@
           {{if .Punchlist.VerificationSteps}}
           <details style="margin-bottom: var(--space-4);">
             <summary class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2); cursor: pointer;">Verification Steps ({{len .Punchlist.VerificationSteps}})</summary>
-            <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
+            <ol class="punchlist">
               {{range .Punchlist.VerificationSteps}}
-              <li style="margin-bottom: var(--space-1);">☐ <span class="markdown-body markdown-inline">{{renderMarkdown .}}</span></li>
+              <li class="punchlist__item"><span class="markdown-body markdown-inline">{{renderMarkdown .}}</span></li>
               {{end}}
-            </ul>
+            </ol>
           </details>
           {{end}}
           {{if .Punchlist.ScenarioCases}}
           <details style="margin-bottom: var(--space-4);">
             <summary class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2); cursor: pointer;">Scenario Test Cases ({{len .Punchlist.ScenarioCases}})</summary>
-            <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
+            <ol class="punchlist">
               {{range .Punchlist.ScenarioCases}}
-              <li style="margin-bottom: var(--space-1);">☐ <span class="markdown-body markdown-inline">{{renderMarkdown .}}</span></li>
+              <li class="punchlist__item"><span class="markdown-body markdown-inline">{{renderMarkdown .}}</span></li>
               {{end}}
-            </ul>
+            </ol>
           </details>
           {{end}}
           {{if .Punchlist.AcceptanceTests}}
           <div style="margin-bottom: var(--space-4);">
             <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Suggested Acceptance Tests</div>
-            <ul style="margin: 0; padding-left: var(--space-5); list-style: none;">
+            <ol class="punchlist">
               {{range .Punchlist.AcceptanceTests}}
-              <li style="margin-bottom: var(--space-1);">☐ <span class="markdown-body markdown-inline">{{renderMarkdown .}}</span></li>
+              <li class="punchlist__item"><span class="markdown-body markdown-inline">{{renderMarkdown .}}</span></li>
               {{end}}
-            </ul>
+            </ol>
           </div>
           {{end}}
           {{if .Punchlist.ChangedFiles}}
           <div>
             <div class="text-secondary" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">Changed Files</div>
-            <ul style="margin: 0; padding-left: var(--space-5);">
+            <ul class="punchlist punchlist--files">
               {{range .Punchlist.ChangedFiles}}
-              <li style="margin-bottom: var(--space-1);"><code>{{.}}</code></li>
+              <li class="punchlist__file"><code>{{.}}</code></li>
               {{end}}
             </ul>
           </div>
