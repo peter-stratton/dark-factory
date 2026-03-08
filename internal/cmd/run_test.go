@@ -173,3 +173,30 @@ func TestNoSandboxWarning(t *testing.T) {
 		t.Errorf("stderr = %q, want warning containing 'without sandbox'", out.String())
 	}
 }
+
+// TestTagResolutionSurfacesConfigError verifies that config.Load returns a
+// real error when the config file is syntactically valid YAML but fails
+// validation (e.g. wait_for_checks as a flat list instead of the struct
+// format). This is the error that the tag resolution code in RunE now surfaces
+// via "loading config to resolve --tag: ..." instead of silently swallowing it
+// and emitting the misleading "--repo is required when using --tag" message.
+func TestTagResolutionSurfacesConfigError(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "godark.yaml")
+	// This config has repo set correctly but wait_for_checks in the old flat-list
+	// format, which fails config validation.
+	err := os.WriteFile(p, []byte("repo: owner/repo\nwait_for_checks:\n  - test\n  - lint\n"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = config.Load(p, config.CLIFlags{})
+	if err == nil {
+		t.Fatal("expected config.Load to return an error for invalid wait_for_checks format, got nil")
+	}
+	// The error should not be a "repo is required" message — it should describe
+	// the actual config problem so users can fix their godark.yaml.
+	if strings.Contains(err.Error(), "repo is required") {
+		t.Errorf("config.Load error should describe the real problem, got: %v", err)
+	}
+}

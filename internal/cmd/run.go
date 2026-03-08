@@ -57,7 +57,10 @@ each unblocked issue through the implement → review → merge loop.`,
 			repo := flags.Repo
 			if repo == nil {
 				cfgOnly, err := config.Load(configPath, config.CLIFlags{Config: configPath})
-				if err == nil && cfgOnly.Repo != "" {
+				if err != nil {
+					return fmt.Errorf("loading config to resolve --tag: %w", err)
+				}
+				if cfgOnly.Repo != "" {
 					r := cfgOnly.Repo
 					repo = &r
 				}
