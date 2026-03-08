@@ -448,6 +448,9 @@ func expandNotifySettings(cfg *Config) {
 // provider's own constructor, not here.
 func validateNotify(notify []NotifyProviderConfig) error {
 	for i, n := range notify {
+		if len(n.Events) == 0 {
+			return fmt.Errorf("notify[%d]: events list must not be empty", i)
+		}
 		for _, event := range n.Events {
 			if !validNotifyEvents[event] {
 				return fmt.Errorf("notify[%d]: unknown event %q", i, event)

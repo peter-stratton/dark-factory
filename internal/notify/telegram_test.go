@@ -190,8 +190,14 @@ func TestNewFromConfigTelegramRegistered(t *testing.T) {
 	if len(notifiers) != 1 {
 		t.Fatalf("len(notifiers) = %d, want 1", len(notifiers))
 	}
-	if _, ok := notifiers[0].(*TelegramNotifier); !ok {
-		t.Errorf("notifiers[0] type = %T, want *TelegramNotifier", notifiers[0])
+	// NewFromConfig wraps each provider in a filteredNotifier for event
+	// subscription filtering. Verify the outer wrapper and inner provider types.
+	fn, ok := notifiers[0].(*filteredNotifier)
+	if !ok {
+		t.Fatalf("notifiers[0] type = %T, want *filteredNotifier", notifiers[0])
+	}
+	if _, ok := fn.notifier.(*TelegramNotifier); !ok {
+		t.Errorf("filteredNotifier.notifier type = %T, want *TelegramNotifier", fn.notifier)
 	}
 }
 

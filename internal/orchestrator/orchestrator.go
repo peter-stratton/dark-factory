@@ -17,6 +17,7 @@ import (
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/notify"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
@@ -37,6 +38,14 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		if err := CheckWorkingTree(); err != nil {
 			return err
 		}
+	}
+
+	// Initialize notifiers from config. Construction failures are logged but
+	// never abort the run — notifications are best-effort.
+	notifiers, err := notify.NewFromConfig(cfg.Notify)
+	if err != nil {
+		logger.Warn("failed to initialize notifiers, continuing without notifications", "error", err)
+		notifiers = nil
 	}
 
 	// Auto-detect project type when no runtime/commands are explicitly configured.
@@ -108,7 +117,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, cfg, logger, writer, force, punchlistPath, milestone)
+	return processIssues(ctx, issues, closedSet, cfg, logger, writer, force, punchlistPath, milestone, notifiers)
 }
 
 // categorizeIssues splits issues into processable and blocked based on the
@@ -194,7 +203,7 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // re-resolution after each merge. When an issue is successfully merged,
 // the closed set is refreshed and dependencies re-resolved so that newly
 // unblocked issues can be processed in the same run.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, writer *rundata.Writer, force bool, punchlistPath string, milestone string) error {
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
 	// Initial categorization.
 	processable, blocked := categorizeIssues(allIssues, closedSet)
 
@@ -449,6 +458,15 @@ done:
 	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
 		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
 
+	// Fire abort notification if the run stopped early.
+	if stats.abortReason != "" {
+		notify.Fire(ctx, notifiers, notify.Event{
+			Type:    "abort",
+			Repo:    cfg.Repo,
+			Message: fmt.Sprintf("Run aborted: %s", stats.abortReason),
+		}, logger)
+	}
+
 	// Finalize run data.
 	if writer != nil {
 		summary := rundata.RunSummary{
@@ -460,6 +478,16 @@ done:
 		if err := writer.FinalizeRun(summary); err != nil {
 			logger.Warn("failed to finalize run data", "error", err)
 		}
+	}
+
+	// Fire run_complete notification after finalization — only when not aborted.
+	if stats.abortReason == "" {
+		notify.Fire(ctx, notifiers, notify.Event{
+			Type: "run_complete",
+			Repo: cfg.Repo,
+			Message: fmt.Sprintf("%d implemented, %d failed, %d blocked",
+				stats.implemented, stats.failed, stats.blocked),
+		}, logger)
 	}
 
 	// Wait for all background punchlist enrichments to finish.

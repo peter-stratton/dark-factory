@@ -1,11 +1,29 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/notify"
 )
+
+// stubNotifier records sent events and optionally returns an error.
+type stubNotifier struct {
+	received []notify.Event
+	err      error
+}
+
+func (s *stubNotifier) Send(_ context.Context, event notify.Event) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.received = append(s.received, event)
+	return nil
+}
 
 func TestFetchPRCommentBodiesFnDefault(t *testing.T) {
 	// The package-level variable must default to the real GitHub implementation
@@ -246,4 +264,41 @@ func TestCollectIssueNumbers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFireImplementNotification_SendsEvent(t *testing.T) {
+	stub := &stubNotifier{}
+	event := notify.Event{
+		Type:    "implementation_complete",
+		Repo:    "owner/repo",
+		Message: "issue #123: status=implemented, PR #456",
+	}
+
+	notify.Fire(context.Background(), []notify.Notifier{stub}, event, slog.Default())
+
+	if len(stub.received) != 1 {
+		t.Fatalf("got %d events, want 1", len(stub.received))
+	}
+	if stub.received[0].Type != "implementation_complete" {
+		t.Errorf("event type = %q, want %q", stub.received[0].Type, "implementation_complete")
+	}
+}
+
+func TestFireImplementNotification_LogsErrorAndContinues(t *testing.T) {
+	failing := &stubNotifier{err: errors.New("send failed")}
+	ok := &stubNotifier{}
+	event := notify.Event{Type: "implementation_complete", Repo: "owner/repo", Message: "done"}
+
+	// Should not panic even if first notifier fails; second should still receive.
+	notify.Fire(context.Background(), []notify.Notifier{failing, ok}, event, slog.Default())
+
+	if len(ok.received) != 1 {
+		t.Errorf("ok notifier got %d events, want 1", len(ok.received))
+	}
+}
+
+func TestFireImplementNotification_NoNotifiers(t *testing.T) {
+	// Should not panic with nil or empty slice.
+	notify.Fire(context.Background(), nil, notify.Event{Type: "implementation_complete"}, slog.Default())
+	notify.Fire(context.Background(), []notify.Notifier{}, notify.Event{Type: "implementation_complete"}, slog.Default())
 }

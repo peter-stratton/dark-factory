@@ -15,6 +15,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/notify"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/pypi"
@@ -116,6 +117,14 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 
 		if writerErr != nil {
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
+		}
+
+		// Initialize notifiers from config. Construction failures are logged but
+		// never abort the run — notifications are best-effort.
+		notifiers, notifyErr := notify.NewFromConfig(cfg.Notify)
+		if notifyErr != nil {
+			logger.Warn("failed to initialize notifiers, continuing without notifications", "error", notifyErr)
+			notifiers = nil
 		}
 
 		pypi.WarnIfSDKOutdated(os.Stderr, logger)
@@ -226,6 +235,17 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 				"retries", outcome.Retries,
 				"error", outcome.Err,
 			)
+
+			// Fire implementation_complete notification for each processed issue.
+			notifyMsg := fmt.Sprintf("issue #%d: status=%s", issueNumber, outcome.Status)
+			if outcome.PRNumber > 0 {
+				notifyMsg += fmt.Sprintf(", PR #%d", outcome.PRNumber)
+			}
+			notify.Fire(ctx, notifiers, notify.Event{
+				Type:    "implementation_complete",
+				Repo:    cfg.Repo,
+				Message: notifyMsg,
+			}, logger)
 
 			if outcome.PRNumber > 0 {
 				files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
