@@ -109,6 +109,7 @@ func loopConfig() *config.Config {
 		NoSandbox:      true,
 		MaxRetries:     2,
 		AgentTimeout:   "10m",
+		AutoMerge:      "all",
 		ProtectedPaths: []string{"CLAUDE.md"},
 		ScenarioDir:    "/nonexistent-scenario-dir",
 		ReviewDir:      "tests/review/",
