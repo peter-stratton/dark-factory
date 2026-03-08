@@ -3161,7 +3161,7 @@ func TestProcessIssue_AllModeSkipsLifecycleLabel(t *testing.T) {
 	}
 }
 
-func TestProcessIssue_MergeNoLifecycleLabels(t *testing.T) {
+func TestProcessIssue_MergeRemovesLifecycleLabels(t *testing.T) {
 	added, removed := setupGHLabelTracker(t)
 
 	cfg := loopConfig()
@@ -3179,8 +3179,9 @@ func TestProcessIssue_MergeNoLifecycleLabels(t *testing.T) {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
 	}
 
-	// auto_merge: all skips lifecycle labeling entirely — no label is applied
-	// before merge, so none need to be removed after. Verify neither happens.
+	// auto_merge: all does not apply lifecycle labels before merge, but after
+	// merge all lifecycle labels are removed unconditionally (to clean up labels
+	// applied by a previous run or manually).
 	all := label.All()
 	allSet := make(map[string]bool, len(all))
 	for _, lbl := range all {
@@ -3191,9 +3192,13 @@ func TestProcessIssue_MergeNoLifecycleLabels(t *testing.T) {
 			t.Errorf("unexpected lifecycle label applied on auto_merge=all path: %q", lbl)
 		}
 	}
+	removedSet := make(map[string]bool, len(*removed))
 	for _, lbl := range *removed {
-		if allSet[lbl] {
-			t.Errorf("unexpected lifecycle label removal on auto_merge=all path: %q", lbl)
+		removedSet[lbl] = true
+	}
+	for _, lbl := range all {
+		if !removedSet[lbl] {
+			t.Errorf("expected lifecycle label %q to be removed after merge, but it was not", lbl)
 		}
 	}
 }
