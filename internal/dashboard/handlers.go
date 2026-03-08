@@ -212,9 +212,13 @@ func filteredRuns(metas []rundata.RunMeta, repoFilter string, awaitingCounts map
 	return views
 }
 
-// loadAwaitingCounts loads full run details for each meta and returns a map
-// from run detail URL to the count of issues with ready-to-merge status.
+// loadAwaitingCounts loads full run details for up to maxSummaryRuns metas and
+// returns a map from run detail URL to the count of issues with ready-to-merge status.
 func (s *Server) loadAwaitingCounts(metas []rundata.RunMeta) map[string]int {
+	const maxSummaryRuns = 50
+	if len(metas) > maxSummaryRuns {
+		metas = metas[:maxSummaryRuns]
+	}
 	counts := make(map[string]int)
 	for _, m := range metas {
 		parts := strings.SplitN(m.Repo, "/", 2)
@@ -224,6 +228,7 @@ func (s *Server) loadAwaitingCounts(metas []rundata.RunMeta) map[string]int {
 		timestamp := m.StartedAt.UTC().Format("20060102-150405")
 		detail, err := s.reader.LoadRun(parts[0], parts[1], timestamp)
 		if err != nil {
+			s.cfg.Logger.Warn("loading run detail for awaiting counts", "repo", m.Repo, "error", err)
 			continue
 		}
 		count := 0
@@ -314,9 +319,8 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		RunURL:    runURL,
 	}
 	for _, issue := range detail.Issues {
-		data.Issues = append(data.Issues, issueToRowView(issue, owner, repo, timestamp))
-	}
-	for _, row := range data.Issues {
+		row := issueToRowView(issue, owner, repo, timestamp)
+		data.Issues = append(data.Issues, row)
 		if row.AwaitingHuman {
 			data.AwaitingReview = append(data.AwaitingReview, row)
 		}

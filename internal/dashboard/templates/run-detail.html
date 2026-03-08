@@ -113,7 +113,8 @@
       <!-- Filter Controls -->
       <div class="controls animate-in animate-in-1">
         <div class="control-group">
-          <select class="filter-select"
+          <select id="filter-select"
+                  class="filter-select"
                   name="filter"
                   aria-label="Filter issues by state"
                   hx-get="{{.RunURL}}/issues-table"
@@ -143,7 +144,7 @@
                  hx-get="{{.RunURL}}/issues-table"
                  hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
                  hx-swap="innerHTML"
-                 hx-include="[name='filter']">
+                 hx-include="#filter-select">
             {{template "issues-rows" .Issues}}
           </tbody>
         </table>
