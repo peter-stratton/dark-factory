@@ -39,6 +39,9 @@ Steps:
 CRITICAL RULES:
 - Do NOT modify any protected paths: {{.ProtectedPaths}}
 - Do NOT modify files in {{.ScenarioDir}}
+{{- if .GeneratedPaths}}
+- Do NOT edit generated files directly ({{.GeneratedPaths}}); edit source files or re-run code generation instead
+{{- end}}
 {{- if .HasScenarioSpec}}
 - You MUST write integration tests to {{.ReviewDir}} (step 9) before making your verdict. This is non-negotiable.
 - Judging existing tests sufficient is NOT acceptable — you must write your own ephemeral tests in {{.ReviewDir}}.

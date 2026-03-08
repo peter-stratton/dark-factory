@@ -34,6 +34,7 @@ type PromptData struct {
 	BuildCommand   string
 	TestCommand    string
 	ProtectedPaths string
+	GeneratedPaths string
 	ScenarioDir    string
 	ReviewDir      string
 	VerifyErrors           string

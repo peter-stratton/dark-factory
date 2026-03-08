@@ -573,3 +573,73 @@ func TestVerifyFix_SetsImplementerRetryRole(t *testing.T) {
 		t.Errorf("GODARK_ROLE = %q, want %q", capturedEnv["GODARK_ROLE"], "implementer_retry")
 	}
 }
+
+func TestNewRunOpts_SetsGeneratedPathsEnv(t *testing.T) {
+	cfg := testConfig()
+	cfg.GeneratedPaths = []string{"service/api/grpc/gen/", "**/*.freezed.dart"}
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	got := opts.Env["GODARK_GENERATED_PATHS"]
+	if got != "service/api/grpc/gen/,**/*.freezed.dart" {
+		t.Errorf("GODARK_GENERATED_PATHS = %q, want %q", got, "service/api/grpc/gen/,**/*.freezed.dart")
+	}
+}
+
+func TestNewRunOpts_EmptyGeneratedPathsEnv(t *testing.T) {
+	cfg := testConfig()
+	cfg.GeneratedPaths = nil
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	got := opts.Env["GODARK_GENERATED_PATHS"]
+	if got != "" {
+		t.Errorf("GODARK_GENERATED_PATHS = %q, want empty string", got)
+	}
+}
+
+func TestImplement_GeneratedPathsInEnv(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	cfg := testConfig()
+	cfg.GeneratedPaths = []string{"gen/", "**/*.pb.go"}
+
+	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
+	}
+
+	got := capturedEnv["GODARK_GENERATED_PATHS"]
+	if got != "gen/,**/*.pb.go" {
+		t.Errorf("GODARK_GENERATED_PATHS = %q, want %q", got, "gen/,**/*.pb.go")
+	}
+}
+
+func TestNewPromptData_GeneratedPathsJoined(t *testing.T) {
+	cfg := testConfig()
+	cfg.GeneratedPaths = []string{"service/api/grpc/gen/", "**/*.freezed.dart"}
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	want := "service/api/grpc/gen/, **/*.freezed.dart"
+	if data.GeneratedPaths != want {
+		t.Errorf("GeneratedPaths = %q, want %q", data.GeneratedPaths, want)
+	}
+}
+
+func TestNewPromptData_EmptyGeneratedPaths(t *testing.T) {
+	cfg := testConfig()
+	cfg.GeneratedPaths = nil
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.GeneratedPaths != "" {
+		t.Errorf("GeneratedPaths = %q, want empty string", data.GeneratedPaths)
+	}
+}

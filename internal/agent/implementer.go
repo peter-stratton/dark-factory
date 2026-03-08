@@ -124,6 +124,7 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		BuildCommand:    cfg.BuildCommand,
 		TestCommand:     cfg.TestCommand,
 		ProtectedPaths:  strings.Join(cfg.ProtectedPaths, ", "),
+		GeneratedPaths:  strings.Join(cfg.GeneratedPaths, ", "),
 		ScenarioDir:     cfg.ScenarioDir,
 		ReviewDir:       cfg.ReviewDir,
 		HasScenarioSpec: HasScenarioSpec(cfg.ScenarioDir, issue.Number),
@@ -163,6 +164,7 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 		env[k] = v
 	}
 	env["GODARK_PROTECTED_PATHS"] = strings.Join(cfg.ProtectedPaths, ",")
+	env["GODARK_GENERATED_PATHS"] = strings.Join(cfg.GeneratedPaths, ",")
 	env["GODARK_DENIED_COMMANDS"] = strings.Join(cfg.DeniedCommands, ",")
 
 	return RunOpts{

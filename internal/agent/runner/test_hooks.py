@@ -9,9 +9,11 @@ from unittest.mock import patch
 
 # Import helpers directly from agent_runner
 from agent_runner import (
+    _is_generated,
     _is_protected,
     make_audit_hook,
     make_denied_commands_hook,
+    make_generated_path_hook,
     make_protected_path_hook,
 )
 
@@ -149,6 +151,100 @@ class TestProtectedPathHookBash(unittest.TestCase):
     def test_bash_empty_command_allowed(self):
         hook = make_protected_path_hook(["CLAUDE.md"])
         result = self._call_bash(hook, "")
+        self.assertNotEqual(result.get("decision"), "block")
+
+
+class TestIsGenerated(unittest.TestCase):
+    """Tests for the _is_generated path-matching helper."""
+
+    def test_directory_prefix_blocked(self):
+        result = _is_generated("service/api/grpc/gen/foo.go", ["service/api/grpc/gen/"])
+        self.assertEqual(result, "service/api/grpc/gen/")
+
+    def test_directory_prefix_without_trailing_slash(self):
+        result = _is_generated("service/api/grpc/gen/foo.go", ["service/api/grpc/gen"])
+        self.assertEqual(result, "service/api/grpc/gen")
+
+    def test_glob_pattern_blocked(self):
+        result = _is_generated("lib/models/load.freezed.dart", ["**/*.freezed.dart"])
+        self.assertEqual(result, "**/*.freezed.dart")
+
+    def test_glob_pattern_no_match(self):
+        result = _is_generated("lib/models/load.dart", ["**/*.freezed.dart"])
+        self.assertIsNone(result)
+
+    def test_non_matching_path_returns_none(self):
+        result = _is_generated(
+            "service/api/graph/resolver.go", ["service/api/grpc/gen/", "**/*.freezed.dart"]
+        )
+        self.assertIsNone(result)
+
+    def test_empty_generated_paths(self):
+        result = _is_generated("service/api/grpc/gen/foo.go", [])
+        self.assertIsNone(result)
+
+    def test_exact_match(self):
+        result = _is_generated("service/api/grpc/gen", ["service/api/grpc/gen/"])
+        self.assertEqual(result, "service/api/grpc/gen/")
+
+    def test_partial_prefix_not_matched(self):
+        result = _is_generated("service/api/grpc/gen_extra/foo.go", ["service/api/grpc/gen/"])
+        self.assertIsNone(result)
+
+
+class TestGeneratedPathHook(unittest.TestCase):
+    """Tests for the make_generated_path_hook PreToolUse hook."""
+
+    def _call(self, hook, tool_name: str, tool_input: dict) -> dict:
+        hook_input = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "tool_use_id": "tu_010",
+            "session_id": "sess_001",
+            "transcript_path": "/tmp/transcript",
+            "cwd": "/workspace",
+        }
+        return run(hook(hook_input, "Write|Edit", None))
+
+    def test_directory_prefix_write_blocked(self):
+        hook = make_generated_path_hook(["service/api/grpc/gen/"])
+        result = self._call(hook, "Write", {"file_path": "service/api/grpc/gen/foo.go"})
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_directory_prefix_edit_blocked(self):
+        hook = make_generated_path_hook(["service/api/grpc/gen/"])
+        result = self._call(hook, "Edit", {"file_path": "service/api/grpc/gen/foo.go"})
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_glob_pattern_blocked(self):
+        hook = make_generated_path_hook(["**/*.freezed.dart"])
+        result = self._call(hook, "Write", {"file_path": "lib/models/load.freezed.dart"})
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_non_matching_path_allowed(self):
+        hook = make_generated_path_hook(["service/api/grpc/gen/", "**/*.freezed.dart"])
+        result = self._call(hook, "Write", {"file_path": "service/api/graph/resolver.go"})
+        self.assertNotEqual(result.get("decision"), "block")
+
+    def test_empty_generated_paths_allows_all(self):
+        hook = make_generated_path_hook([])
+        result = self._call(hook, "Write", {"file_path": "service/api/grpc/gen/foo.go"})
+        self.assertNotEqual(result.get("decision"), "block")
+
+    def test_system_message_contains_generated(self):
+        hook = make_generated_path_hook(["service/api/grpc/gen/"])
+        result = self._call(hook, "Write", {"file_path": "service/api/grpc/gen/foo.go"})
+        self.assertIn("generated", result.get("systemMessage", ""))
+
+    def test_missing_file_path_allowed(self):
+        hook = make_generated_path_hook(["service/api/grpc/gen/"])
+        result = self._call(hook, "Write", {})
+        self.assertNotEqual(result.get("decision"), "block")
+
+    def test_bash_tool_not_blocked(self):
+        hook = make_generated_path_hook(["service/api/grpc/gen/"])
+        result = self._call(hook, "Bash", {"command": "cat service/api/grpc/gen/foo.go"})
         self.assertNotEqual(result.get("decision"), "block")
 
 

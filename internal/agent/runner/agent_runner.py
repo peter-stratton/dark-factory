@@ -11,12 +11,14 @@ Environment variables:
   GODARK_SESSION_ID        Session ID for resuming a previous session
   GODARK_WORKDIR           Working directory (default: /workspace)
   GODARK_PROTECTED_PATHS   Comma-separated list of protected paths (exact or dir prefix)
+  GODARK_GENERATED_PATHS   Comma-separated list of generated paths (dir prefix or glob pattern)
   GODARK_DENIED_COMMANDS   Comma-separated list of denied Bash command patterns (substring match)
   GH_TOKEN                 GitHub token forwarded to the agent environment
 """
 
 import asyncio
 import datetime
+import fnmatch
 import json
 import os
 import random
@@ -128,6 +130,56 @@ def make_protected_path_hook(protected_paths: list[str]):
     return hook
 
 
+def _is_generated(file_path: str, generated_paths: list[str]) -> str | None:
+    """Return the first matching generated path if file_path is generated, else None.
+
+    Matching rules:
+    - Glob pattern (entry contains '*'): fnmatch match against file_path
+    - Directory prefix (no '*'): file_path starts with entry (with trailing slash normalised)
+    """
+    for p in generated_paths:
+        if "*" in p:
+            if fnmatch.fnmatch(file_path, p):
+                return p
+        else:
+            prefix = p.rstrip("/")
+            if file_path == prefix or file_path.startswith(prefix + "/"):
+                return p
+    return None
+
+
+def make_generated_path_hook(generated_paths: list[str]):
+    """Return an async PreToolUse hook that blocks writes to generated paths.
+
+    For Write/Edit tools: checks tool_input.file_path against generated paths.
+    Directory prefixes (no '*') use startswith matching; glob patterns (contain
+    '*') use fnmatch matching.
+    """
+
+    async def hook(hook_input: PreToolUseHookInput, matcher: str | None, ctx) -> dict:
+        tool_name = hook_input.get("tool_name", "")
+        if tool_name not in ("Write", "Edit"):
+            return {}
+
+        tool_input = hook_input.get("tool_input", {})
+        file_path = tool_input.get("file_path", "")
+        if not file_path:
+            return {}
+
+        matched = _is_generated(file_path, generated_paths)
+        if matched is None:
+            return {}
+
+        return {
+            "decision": "block",
+            "systemMessage": (
+                "this file is generated — edit the source file or re-run code generation instead"
+            ),
+        }
+
+    return hook
+
+
 def make_denied_commands_hook(denied_patterns: list[str]):
     """Return an async PreToolUse hook that blocks Bash commands matching denied patterns.
 
@@ -192,6 +244,7 @@ async def main() -> None:
     session_id = os.environ.get("GODARK_SESSION_ID", "")
     work_dir = os.environ.get("GODARK_WORKDIR", "/workspace")
     protected_paths_raw = os.environ.get("GODARK_PROTECTED_PATHS", "")
+    generated_paths_raw = os.environ.get("GODARK_GENERATED_PATHS", "")
     denied_commands_raw = os.environ.get("GODARK_DENIED_COMMANDS", "")
 
     if role not in _ROLE_PERMISSIONS:
@@ -212,8 +265,9 @@ async def main() -> None:
     if os.environ.get("GH_TOKEN"):
         env["GH_TOKEN"] = os.environ["GH_TOKEN"]
 
-    # Build hooks: PreToolUse guard for protected paths + denied commands + PostToolUse audit log.
+    # Build hooks: PreToolUse guard for protected paths + generated paths + denied commands + PostToolUse audit log.
     protected_paths = [p.strip() for p in protected_paths_raw.split(",") if p.strip()]
+    generated_paths = [p.strip() for p in generated_paths_raw.split(",") if p.strip()]
     denied_commands = [c.strip() for c in denied_commands_raw.split(",") if c.strip()]
 
     pre_tool_use_hooks: list = []
@@ -222,6 +276,13 @@ async def main() -> None:
             HookMatcher(
                 matcher="Write|Edit|Bash",
                 hooks=[make_protected_path_hook(protected_paths)],
+            )
+        )
+    if generated_paths:
+        pre_tool_use_hooks.append(
+            HookMatcher(
+                matcher="Write|Edit",
+                hooks=[make_generated_path_hook(generated_paths)],
             )
         )
     if denied_commands:
