@@ -31,6 +31,13 @@ import (
 // crashed instances). punchlistPath is the optional file path to write the
 // punchlist to (always printed to stdout as well).
 func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
+	// Preflight: fail fast if working tree is dirty (skip in dry-run mode).
+	if !dryRun {
+		if err := CheckWorkingTree(); err != nil {
+			return err
+		}
+	}
+
 	// Auto-detect project type when no runtime/commands are explicitly configured.
 	detect.ApplyToConfig(cfg, ".", logger)
 
@@ -512,6 +519,20 @@ var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int) (*rund
 // Replaceable for testing.
 var CommandRunner = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
+}
+
+// CheckWorkingTree returns an error if the git working tree has uncommitted
+// changes. The error message includes the list of dirty files from
+// `git status --porcelain`.
+func CheckWorkingTree() error {
+	out, err := CommandRunner("git", "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("checking working tree: %w", err)
+	}
+	if dirty := strings.TrimSpace(string(out)); dirty != "" {
+		return fmt.Errorf("working tree is dirty — commit or stash your changes before running:\n%s", dirty)
+	}
+	return nil
 }
 
 // PullAfterMerge syncs the local repo with the remote after a successful merge.

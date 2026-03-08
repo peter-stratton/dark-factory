@@ -208,6 +208,13 @@ func TestAllBlocked(t *testing.T) {
 	}
 	setupFakeGH(t, openIssues, nil)
 
+	// Stub CommandRunner so CheckWorkingTree sees a clean working tree.
+	origCmd := CommandRunner
+	t.Cleanup(func() { CommandRunner = origCmd })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(""), nil
+	}
+
 	// Run creates a RunDataWriter when dryRun=false; disable it for this test.
 	origWriter := newRunDataWriterFn
 	t.Cleanup(func() { newRunDataWriterFn = origWriter })
@@ -756,6 +763,146 @@ func TestPunchlistEnrichmentStatus_SuccessEmptySlice(t *testing.T) {
 	if status != "success" {
 		t.Errorf("expected %q for empty non-nil slice, got %q", "success", status)
 	}
+}
+
+func TestCheckWorkingTree_DirtyReturnsError(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(" M docs/README.md\n?? scratch.txt\n"), nil
+	}
+
+	err := CheckWorkingTree()
+	if err == nil {
+		t.Fatal("expected error for dirty working tree")
+	}
+	if !strings.Contains(err.Error(), "working tree is dirty") {
+		t.Errorf("error should mention 'working tree is dirty', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "docs/README.md") {
+		t.Errorf("error should list dirty files, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "scratch.txt") {
+		t.Errorf("error should list all dirty files, got: %v", err)
+	}
+}
+
+func TestCheckWorkingTree_CleanReturnsNil(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(""), nil
+	}
+
+	if err := CheckWorkingTree(); err != nil {
+		t.Errorf("expected nil error for clean tree, got: %v", err)
+	}
+}
+
+func TestCheckWorkingTree_StagedFilesBlocked(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	// git status --porcelain shows staged files with 'A' or 'M' in the first column.
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("A  staged-new-file.go\nM  modified-staged.go\n"), nil
+	}
+
+	err := CheckWorkingTree()
+	if err == nil {
+		t.Fatal("expected error for staged (uncommitted) changes")
+	}
+	if !strings.Contains(err.Error(), "working tree is dirty") {
+		t.Errorf("expected 'working tree is dirty', got: %v", err)
+	}
+}
+
+func TestCheckWorkingTree_CommandError(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("git not found")
+	}
+
+	err := CheckWorkingTree()
+	if err == nil {
+		t.Fatal("expected error when git command fails")
+	}
+	if !strings.Contains(err.Error(), "checking working tree") {
+		t.Errorf("expected 'checking working tree' in error, got: %v", err)
+	}
+}
+
+func TestRun_DirtyTreeBlocksRun(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "test", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(" M docs/README.md\n"), nil
+	}
+
+	captureStdout(t, func() {
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, false, false, "")
+		if err == nil {
+			t.Fatal("expected error for dirty working tree")
+		}
+		if !strings.Contains(err.Error(), "working tree is dirty") {
+			t.Errorf("expected 'working tree is dirty', got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "docs/README.md") {
+			t.Errorf("expected dirty file name in error, got: %v", err)
+		}
+	})
+}
+
+func TestRun_DirtyTreeErrorListsFiles(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "test", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(" M file-a.go\n?? file-b.txt\n"), nil
+	}
+
+	captureStdout(t, func() {
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, false, false, "")
+		if err == nil {
+			t.Fatal("expected error for dirty working tree")
+		}
+		if !strings.Contains(err.Error(), "file-a.go") {
+			t.Errorf("expected 'file-a.go' in error, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "file-b.txt") {
+			t.Errorf("expected 'file-b.txt' in error, got: %v", err)
+		}
+	})
+}
+
+func TestRun_DryRunSkipsDirtyCheck(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "test", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	// CommandRunner would return dirty if called, but dry-run must skip the check.
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(" M dirty.txt\n"), nil
+	}
+
+	captureStdout(t, func() {
+		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		if err != nil {
+			t.Fatalf("dry-run should not fail on dirty tree: %v", err)
+		}
+	})
 }
 
 // Suppress unused import warnings.

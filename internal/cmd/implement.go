@@ -85,6 +85,11 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return nil
 		}
 
+		// Preflight: fail fast if working tree is dirty.
+		if err := checkWorkingTreeFn(); err != nil {
+			return err
+		}
+
 		if cfg.NoSandbox {
 			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}
@@ -351,6 +356,10 @@ func parseIssueNumbers(s string) ([]int, error) {
 // fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
 // Replaceable for testing.
 var fetchPRCommentBodiesFn = github.FetchPRCommentBodies
+
+// checkWorkingTreeFn checks whether the working tree has uncommitted changes.
+// Replaceable for testing.
+var checkWorkingTreeFn = orchestrator.CheckWorkingTree
 
 func init() {
 	f := implementCmd.Flags()

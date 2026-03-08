@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/phs/dark-factory/internal/github"
@@ -71,6 +72,48 @@ func TestImplementCmd_IssuesFlagRegistered(t *testing.T) {
 	}
 	if f.DefValue != "" {
 		t.Errorf("issues default = %q, want %q", f.DefValue, "")
+	}
+}
+
+func TestCheckWorkingTreeFnDefault(t *testing.T) {
+	// checkWorkingTreeFn must default to a non-nil function.
+	if checkWorkingTreeFn == nil {
+		t.Fatal("checkWorkingTreeFn is nil, want orchestrator.CheckWorkingTree")
+	}
+}
+
+func TestCheckWorkingTreeFnReplaceable(t *testing.T) {
+	orig := checkWorkingTreeFn
+	t.Cleanup(func() { checkWorkingTreeFn = orig })
+
+	called := false
+	checkWorkingTreeFn = func() error {
+		called = true
+		return nil
+	}
+
+	if err := checkWorkingTreeFn(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("replaced checkWorkingTreeFn was not called")
+	}
+}
+
+func TestCheckWorkingTreeFnBlocksOnDirty(t *testing.T) {
+	orig := checkWorkingTreeFn
+	t.Cleanup(func() { checkWorkingTreeFn = orig })
+
+	checkWorkingTreeFn = func() error {
+		return fmt.Errorf("working tree is dirty — commit or stash your changes before running:\n M dirty.go")
+	}
+
+	err := checkWorkingTreeFn()
+	if err == nil {
+		t.Fatal("expected error when working tree is dirty")
+	}
+	if err.Error() == "" {
+		t.Error("expected non-empty error message")
 	}
 }
 
