@@ -73,6 +73,59 @@
         <p class="page-header__subtitle">{{.Meta.Milestone}} &middot; {{.Timestamp}}</p>
       </div>
 
+      {{if .AwaitingReview}}
+      <!-- PRs Awaiting Review -->
+      <div class="card animate-in animate-in-0" style="border-left: 3px solid var(--color-warning);">
+        <div class="card__header">
+          <span class="card__title">PRs Awaiting Review</span>
+          <span class="badge badge--warning">
+            <span class="badge__dot"></span>
+            {{len .AwaitingReview}} awaiting
+          </span>
+        </div>
+        <table class="data-table data-table--clickable">
+          <thead>
+            <tr>
+              <th>Issue</th>
+              <th>PR</th>
+              <th class="cell-num">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .AwaitingReview}}
+            <tr data-href="{{.URL}}" onclick="location.href=this.dataset.href">
+              <td><span class="text-secondary">#{{.IssueNumber}}</span>{{if .Title}} {{.Title}}{{end}}</td>
+              <td>
+                {{if .PRNumber}}
+                <a class="pr-link" href="{{.PRLink}}" target="_blank" rel="noopener" onclick="event.stopPropagation()">#{{.PRNumber}}</a>
+                {{else}}
+                <span class="text-muted">—</span>
+                {{end}}
+              </td>
+              <td class="cell-num text-secondary">{{.Cost}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
+
+      <!-- Filter Controls -->
+      <div class="controls animate-in animate-in-1">
+        <div class="control-group">
+          <select class="filter-select"
+                  name="filter"
+                  aria-label="Filter issues by state"
+                  hx-get="{{.RunURL}}/issues-table"
+                  hx-target="#issues-tbody"
+                  hx-trigger="change"
+                  hx-swap="innerHTML">
+            <option value="">All Issues</option>
+            <option value="awaiting_human">Awaiting Human Review</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Issues Table -->
       <div class="card animate-in animate-in-1">
         <table class="data-table data-table--clickable">
@@ -89,7 +142,8 @@
           <tbody id="issues-tbody"
                  hx-get="{{.RunURL}}/issues-table"
                  hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
-                 hx-swap="innerHTML">
+                 hx-swap="innerHTML"
+                 hx-include="[name='filter']">
             {{template "issues-rows" .Issues}}
           </tbody>
         </table>

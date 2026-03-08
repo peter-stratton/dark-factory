@@ -17,42 +17,45 @@ import (
 
 // RunView is the view model for a single run in the list.
 type RunView struct {
-	Repo        string
-	Milestone   string
-	IssueCount  int
-	Passed      int
-	Failed      int
-	PassPct     int    // 0–100, for the progress bar
-	FailPct     int    // 0–100, for the progress bar
-	StatusClass string // "success", "danger", or "info"
-	StatusLabel string // "Passed", "Failed", or "Running"
-	When        string // human-readable relative time
-	StartedAt   time.Time
-	URL         string // link to run detail page, e.g. /runs/owner/repo/20260305-123456
+	Repo          string
+	Milestone     string
+	IssueCount    int
+	Passed        int
+	Failed        int
+	PassPct       int    // 0–100, for the progress bar
+	FailPct       int    // 0–100, for the progress bar
+	StatusClass   string // "success", "danger", or "info"
+	StatusLabel   string // "Passed", "Failed", or "Running"
+	When          string // human-readable relative time
+	StartedAt     time.Time
+	URL           string // link to run detail page, e.g. /runs/owner/repo/20260305-123456
+	AwaitingCount int    // count of PRs awaiting human review (ready-to-merge)
 }
 
 // RunDetailData is the data passed to the run-detail template.
 type RunDetailData struct {
-	Owner     string
-	Repo      string
-	Timestamp string
-	Meta      rundata.RunMeta
-	Issues    []IssueRowView
-	RunURL    string // canonical URL for this run detail page
+	Owner          string
+	Repo           string
+	Timestamp      string
+	Meta           rundata.RunMeta
+	Issues         []IssueRowView
+	AwaitingReview []IssueRowView // issues with ready-to-merge status
+	RunURL         string         // canonical URL for this run detail page
 }
 
 // IssueRowView is the view model for one issue row in the run detail table.
 type IssueRowView struct {
-	IssueNumber int
-	Title       string // issue title, e.g. "Architecture layer parser"
-	Status      string // "Implemented", "Failed", "Running"
-	StatusClass string // "success", "danger", "info"
-	PRNumber    int
-	PRLink      string // GitHub PR URL, empty if no PR
-	RetryCount  int
-	FlagCount   int    // total quality flags across all steps
-	Cost        string // formatted total cost, e.g. "$0.0042" or "—"
-	URL         string // link to issue detail page
+	IssueNumber   int
+	Title         string // issue title, e.g. "Architecture layer parser"
+	Status        string // "Implemented", "Failed", "Running"
+	StatusClass   string // "success", "danger", "info"
+	PRNumber      int
+	PRLink        string // GitHub PR URL, empty if no PR
+	RetryCount    int
+	FlagCount     int    // total quality flags across all steps
+	Cost          string // formatted total cost, e.g. "$0.0042" or "—"
+	URL           string // link to issue detail page
+	AwaitingHuman bool   // true when outcome status is "ready-to-merge"
 }
 
 // IssueDetailData is the data passed to the issue-detail template.
@@ -124,7 +127,8 @@ func (s *Server) handleRunsTable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	runs := filteredRuns(metas, repo)
+	awaitingCounts := s.loadAwaitingCounts(metas)
+	runs := filteredRuns(metas, repo, awaitingCounts)
 	var buf bytes.Buffer
 	if err := s.tmpl.ExecuteTemplate(&buf, "runs-rows", runs); err != nil {
 		s.cfg.Logger.Error("rendering runs-rows template", "error", err)
@@ -151,7 +155,8 @@ func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
 	}
 	sort.Strings(repos)
 
-	runs := filteredRuns(allMetas, repoFilter)
+	awaitingCounts := s.loadAwaitingCounts(allMetas)
+	runs := filteredRuns(allMetas, repoFilter, awaitingCounts)
 
 	// Load up to 50 most recent full run details for the analytics summary.
 	const maxSummaryRuns = 50
@@ -194,15 +199,43 @@ func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
 	}, nil
 }
 
-func filteredRuns(metas []rundata.RunMeta, repoFilter string) []RunView {
+func filteredRuns(metas []rundata.RunMeta, repoFilter string, awaitingCounts map[string]int) []RunView {
 	views := make([]RunView, 0, len(metas))
 	for _, m := range metas {
 		if repoFilter != "" && m.Repo != repoFilter {
 			continue
 		}
-		views = append(views, metaToView(m))
+		v := metaToView(m)
+		v.AwaitingCount = awaitingCounts[v.URL]
+		views = append(views, v)
 	}
 	return views
+}
+
+// loadAwaitingCounts loads full run details for each meta and returns a map
+// from run detail URL to the count of issues with ready-to-merge status.
+func (s *Server) loadAwaitingCounts(metas []rundata.RunMeta) map[string]int {
+	counts := make(map[string]int)
+	for _, m := range metas {
+		parts := strings.SplitN(m.Repo, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		timestamp := m.StartedAt.UTC().Format("20060102-150405")
+		detail, err := s.reader.LoadRun(parts[0], parts[1], timestamp)
+		if err != nil {
+			continue
+		}
+		count := 0
+		for _, issue := range detail.Issues {
+			if issue.Outcome.Status == "ready-to-merge" {
+				count++
+			}
+		}
+		url := runDetailURL(m.Repo, m.StartedAt)
+		counts[url] = count
+	}
+	return counts
 }
 
 func metaToView(m rundata.RunMeta) RunView {
@@ -283,6 +316,11 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	for _, issue := range detail.Issues {
 		data.Issues = append(data.Issues, issueToRowView(issue, owner, repo, timestamp))
 	}
+	for _, row := range data.Issues {
+		if row.AwaitingHuman {
+			data.AwaitingReview = append(data.AwaitingReview, row)
+		}
+	}
 
 	var buf bytes.Buffer
 	if err := s.tmpl.ExecuteTemplate(&buf, "run-detail.html", data); err != nil {
@@ -298,6 +336,7 @@ func (s *Server) handleIssuesTable(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repo := r.PathValue("repo")
 	timestamp := r.PathValue("timestamp")
+	filter := r.URL.Query().Get("filter")
 
 	detail, err := s.reader.LoadRun(owner, repo, timestamp)
 	if err != nil {
@@ -312,7 +351,11 @@ func (s *Server) handleIssuesTable(w http.ResponseWriter, r *http.Request) {
 
 	var rows []IssueRowView
 	for _, issue := range detail.Issues {
-		rows = append(rows, issueToRowView(issue, owner, repo, timestamp))
+		row := issueToRowView(issue, owner, repo, timestamp)
+		if filter == "awaiting_human" && !row.AwaitingHuman {
+			continue
+		}
+		rows = append(rows, row)
 	}
 
 	var buf bytes.Buffer
@@ -412,16 +455,17 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 	issueURL := fmt.Sprintf("/runs/%s/%s/%s/issues/%d", owner, repo, timestamp, issue.IssueNumber)
 
 	return IssueRowView{
-		IssueNumber: issue.IssueNumber,
-		Title:       issue.Outcome.Title,
-		Status:      statusLabel,
-		StatusClass: statusClass,
-		PRNumber:    issue.Outcome.PRNumber,
-		PRLink:      prLink,
-		RetryCount:  len(issue.Retries),
-		FlagCount:   flagCount,
-		Cost:        formatCost(totalCost),
-		URL:         issueURL,
+		IssueNumber:   issue.IssueNumber,
+		Title:         issue.Outcome.Title,
+		Status:        statusLabel,
+		StatusClass:   statusClass,
+		PRNumber:      issue.Outcome.PRNumber,
+		PRLink:        prLink,
+		RetryCount:    len(issue.Retries),
+		FlagCount:     flagCount,
+		Cost:          formatCost(totalCost),
+		URL:           issueURL,
+		AwaitingHuman: issue.Outcome.Status == "ready-to-merge",
 	}
 }
 
