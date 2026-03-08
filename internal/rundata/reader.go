@@ -34,6 +34,7 @@ type IssueDetail struct {
 	Punchlist        *PunchlistData
 	Dialogue         []DialogueEntry
 	VerifyResults    []VerifyStepResult
+	FailureAnalysis  *FailureAnalysis // from failure-analysis.json; nil if not present
 }
 
 // RunDetail holds the full data for one run, including per-issue details.
@@ -279,7 +280,28 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		Punchlist:        r.readPunchlist(filepath.Join(issueDir, "punchlist.json")),
 		Dialogue:         r.readDialogue(filepath.Join(issueDir, "dialogue.json")),
 		VerifyResults:    r.loadVerifyResults(issueDir),
+		FailureAnalysis:  r.readFailureAnalysis(filepath.Join(issueDir, "failure-analysis.json")),
 	}
+}
+
+// readFailureAnalysis reads a FailureAnalysis from path. Returns nil if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readFailureAnalysis(path string) *FailureAnalysis {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping failure analysis file", "path", path, "error", err)
+		return nil
+	}
+
+	var fa FailureAnalysis
+	if err := json.Unmarshal(data, &fa); err != nil {
+		r.logger.Warn("corrupt failure analysis file, skipping", "path", path, "error", err)
+		return nil
+	}
+	return &fa
 }
 
 // readIssueStatus reads an IssueStatus from path. Returns zero value if the

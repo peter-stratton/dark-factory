@@ -272,6 +272,38 @@ func (w *Writer) WriteRiskAssessment(issueNum int, assessment RiskAssessment) er
 	return writeJSONMkdirs(path, assessment)
 }
 
+// FailurePattern records a single detected failure pattern from log analysis.
+type FailurePattern struct {
+	Code     string `json:"code"`
+	Count    int    `json:"count"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
+
+// FailureAnalysis holds the post-mortem analysis for a failed issue.
+type FailureAnalysis struct {
+	Patterns          []FailurePattern `json:"patterns"`
+	LogLinesCaptured  int              `json:"log_lines_captured"`
+	ContainerExitCode int              `json:"container_exit_code"`
+}
+
+// WriteFailureAnalysis writes the failure analysis for the given issue.
+// Path: issues/<issueNum>/failure-analysis.json
+func (w *Writer) WriteFailureAnalysis(issueNum int, analysis FailureAnalysis) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "failure-analysis.json")
+	return writeJSONMkdirs(path, analysis)
+}
+
+// WriteContainerLog writes the raw container log for the given issue.
+// Path: issues/<issueNum>/container-log.txt
+func (w *Writer) WriteContainerLog(issueNum int, log string) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "container-log.txt")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("creating directories for %s: %w", path, err)
+	}
+	return os.WriteFile(path, []byte(log), 0o644)
+}
+
 // PunchlistData holds the per-issue punchlist content persisted to punchlist.json.
 type PunchlistData struct {
 	VerificationSteps []string `json:"verification_steps,omitempty"`

@@ -941,6 +941,8 @@ func (h *testRunDataHook) WriteRiskAssessment(_ int, a rundata.RiskAssessment) e
 	h.riskAssessments = append(h.riskAssessments, a)
 	return nil
 }
+func (h *testRunDataHook) WriteFailureAnalysis(_ int, _ rundata.FailureAnalysis) error { return nil }
+func (h *testRunDataHook) WriteContainerLog(_ int, _ string) error                     { return nil }
 
 func TestProcessIssue_HookCalledOnImplement(t *testing.T) {
 	hook := &testRunDataHook{}

@@ -28,17 +28,18 @@ type RunOpts struct {
 
 // Result holds the outcome of an agent run.
 type Result struct {
-	ExitCode   int
-	Stdout     string
-	Stderr     string
-	TimedOut   bool
-	SessionID  string
-	CostUSD    float64
-	ResultText string   // agent's final text output (from SDK result message)
-	Verdict    string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
-	ToolTrace  []string // summary of tool calls made by the agent
-	StartedAt  time.Time
-	FinishedAt time.Time
+	ExitCode     int
+	Stdout       string
+	Stderr       string
+	TimedOut     bool
+	SessionID    string
+	CostUSD      float64
+	ResultText   string   // agent's final text output (from SDK result message)
+	Verdict      string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
+	ToolTrace    []string // summary of tool calls made by the agent
+	StartedAt    time.Time
+	FinishedAt   time.Time
+	ContainerLog string // bounded combined log for post-mortem; only populated on failure
 }
 
 // Runner executes a command on the host with the given environment. Replaceable for testing.
@@ -151,6 +152,12 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 		}
 	}
 
+	// Capture bounded log for post-mortem on failure only.
+	if res.TimedOut || res.ExitCode != 0 {
+		combined := string(stdout) + string(stderr)
+		res.ContainerLog = boundLog(combined, maxPostMortemLines, maxPostMortemBytes)
+	}
+
 	logger.Info("host agent finished", "exit_code", res.ExitCode)
 	return res, nil
 }
@@ -209,6 +216,12 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		TimedOut:   result.TimedOut,
 		StartedAt:  startedAt,
 		FinishedAt: finishedAt,
+	}
+
+	// Capture bounded container log for post-mortem on failure only.
+	if result.TimedOut || result.ExitCode != 0 {
+		combined := result.Stdout + result.Stderr
+		res.ContainerLog = boundLog(combined, maxPostMortemLines, maxPostMortemBytes)
 	}
 
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {

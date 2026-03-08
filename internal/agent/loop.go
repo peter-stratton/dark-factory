@@ -112,6 +112,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return outcome
 	}
 	if implResult.TimedOut {
+		runPostMortem(issue.Number, implResult, hook, logger)
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("implementer agent timed out")
 		return outcome
@@ -133,6 +134,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return outcome
 	}
 	if prNum == 0 {
+		runPostMortem(issue.Number, implResult, hook, logger)
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("implementer agent did not create a PR")
 		return outcome
@@ -934,6 +936,25 @@ func hasQualityFlag(flags []quality.Flag, code string) bool {
 		}
 	}
 	return false
+}
+
+// runPostMortem performs best-effort post-mortem analysis on a failed agent result
+// and writes the findings to the hook. It is a no-op when hook is nil, when the
+// result has no container log, or when writing fails (errors are logged as warnings).
+func runPostMortem(issueNum int, result *Result, hook RunDataHook, logger *slog.Logger) {
+	if hook == nil || result == nil || result.ContainerLog == "" {
+		return
+	}
+
+	if err := hook.WriteContainerLog(issueNum, result.ContainerLog); err != nil {
+		logger.Warn("failed to write container log", "issue_number", issueNum, "error", err)
+		// best-effort; continue to write analysis even if raw log write fails
+	}
+
+	analysis := AnalyzeFailure(result.ContainerLog, result.ExitCode)
+	if err := hook.WriteFailureAnalysis(issueNum, analysis); err != nil {
+		logger.Warn("failed to write failure analysis", "issue_number", issueNum, "error", err)
+	}
 }
 
 // logAndRecordFlags logs each flag as a warning and returns a []rundata.Flag for storage.

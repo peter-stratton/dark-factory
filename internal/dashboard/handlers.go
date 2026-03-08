@@ -60,19 +60,20 @@ type IssueRowView struct {
 
 // IssueDetailData is the data passed to the issue-detail template.
 type IssueDetailData struct {
-	Owner       string
-	Repo        string
-	Timestamp   string
-	IssueNumber int
-	Title       string
-	Description string
-	PRNumber    int
-	PRLink      string
-	IssueLink   string
-	RunURL      string // link back to run detail page
-	Timeline    []TimelineStepView
-	Punchlist   *rundata.PunchlistData
-	Dialogue    []rundata.DialogueEntry
+	Owner           string
+	Repo            string
+	Timestamp       string
+	IssueNumber     int
+	Title           string
+	Description     string
+	PRNumber        int
+	PRLink          string
+	IssueLink       string
+	RunURL          string // link back to run detail page
+	Timeline        []TimelineStepView
+	Punchlist       *rundata.PunchlistData
+	Dialogue        []rundata.DialogueEntry
+	FailureAnalysis *rundata.FailureAnalysis
 }
 
 // TimelineStepView is the view model for one step in the issue timeline.
@@ -415,19 +416,20 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 	issueLink := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, issueNum)
 
 	data := IssueDetailData{
-		Owner:       owner,
-		Repo:        repo,
-		Timestamp:   timestamp,
-		IssueNumber: issueNum,
-		Title:       found.Outcome.Title,
-		Description: found.Outcome.Description,
-		PRNumber:    found.Outcome.PRNumber,
-		PRLink:      prLink,
-		IssueLink:   issueLink,
-		RunURL:      runURL,
-		Timeline:    buildTimeline(*found),
-		Punchlist:   found.Punchlist,
-		Dialogue:    found.Dialogue,
+		Owner:           owner,
+		Repo:            repo,
+		Timestamp:       timestamp,
+		IssueNumber:     issueNum,
+		Title:           found.Outcome.Title,
+		Description:     found.Outcome.Description,
+		PRNumber:        found.Outcome.PRNumber,
+		PRLink:          prLink,
+		IssueLink:       issueLink,
+		RunURL:          runURL,
+		Timeline:        buildTimeline(*found),
+		Punchlist:       found.Punchlist,
+		Dialogue:        found.Dialogue,
+		FailureAnalysis: found.FailureAnalysis,
 	}
 
 	var buf bytes.Buffer

@@ -163,6 +163,38 @@
         </div>
       </div>
 
+      {{if .FailureAnalysis}}
+      <!-- Failure Analysis -->
+      <div class="card animate-in animate-in-2">
+        <div class="card__header">
+          <span class="card__title">Failure Analysis</span>
+        </div>
+        <div class="card__body" style="padding: var(--space-4) var(--space-5);">
+          {{if .FailureAnalysis.Patterns}}
+          <ul style="list-style: none; margin: 0; padding: 0;">
+            {{range .FailureAnalysis.Patterns}}
+            <li style="display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-3); padding: var(--space-3); background: var(--bg-surface-1); border-radius: var(--radius-sm);">
+              <span class="badge badge--{{if eq .Severity "high"}}danger{{else if eq .Severity "medium"}}warning{{else}}secondary{{end}}" style="flex-shrink: 0; margin-top: 2px;">
+                <span class="badge__dot"></span>
+                {{.Severity}}
+              </span>
+              <div>
+                <div style="font-size: var(--text-sm); font-weight: 500; font-family: monospace; margin-bottom: var(--space-1);">{{.Code}}</div>
+                <div style="font-size: var(--text-sm); color: var(--text-secondary);">{{.Message}}</div>
+              </div>
+            </li>
+            {{end}}
+          </ul>
+          {{else}}
+          <p class="text-secondary" style="font-size: var(--text-sm);">No known failure patterns detected in container logs.</p>
+          {{end}}
+          <div style="margin-top: var(--space-3); font-size: var(--text-xs); color: var(--text-muted);">
+            {{.FailureAnalysis.LogLinesCaptured}} log lines captured &middot; container exit code {{.FailureAnalysis.ContainerExitCode}}
+          </div>
+        </div>
+      </div>
+      {{end}}
+
       {{if .Dialogue}}
       <!-- Dialogue Timeline -->
       <div class="card animate-in animate-in-2">
