@@ -342,7 +342,7 @@ post structured dialogue on PRs, and the reviewer checks layer compliance
 
 ---
 
-## Phase 10: Deterministic Verification Pipeline
+## Phase 10: Deterministic Verification Pipeline ✅
 
 **Goal**: Agent implementation passes through a deterministic verify step
 (build + lint + test) run by Go code — not by the agent — before review begins.
@@ -392,7 +392,7 @@ and tokens. Agents are also restricted from running destructive shell commands.
 
 ---
 
-## Phase 11: Run Analysis & Prompt Feedback
+## Phase 11: Run Analysis & Prompt Feedback ✅
 
 **Goal**: `godark analyze` reads run data across multiple runs to surface
 failure patterns, common quality flags, and prompt gaps — closing the feedback
@@ -429,7 +429,7 @@ loop between agent execution and prompt engineering.
 
 ---
 
-## Phase 12: Complex Project Support
+## Phase 12: Complex Project Support ✅
 
 **Goal**: `godark` handles production repos with multiple modules, code
 generation pipelines, compose-based test infrastructure, and build secrets.
