@@ -622,7 +622,7 @@ risk_thresholds:
   max_files: 10
 ```
 
-**Issues**: TBD
+**Issues**: #238–#249
 
 **Planning doc**: `docs/planning/phase-13-human-in-the-loop-review.md`
 

@@ -110,6 +110,7 @@ Each issue must be small enough for an agent to implement in a single run
 (~15 minutes). An issue is too large if any of these apply:
 
 - **More than 5 acceptance criteria** — split into separate deliverables.
+- **More than 7 test cases** — this usually means multiple concerns are bundled.
 - **Creates new code AND modifies existing code** — split "add new package" from
   "wire it into existing code" from "remove/migrate old code."
 - **Touches more than 3 existing files** — the agent loses context and makes
@@ -117,13 +118,30 @@ Each issue must be small enough for an agent to implement in a single run
 - **Combines additive and destructive changes** — adding a new system and
   removing the old one should be separate issues so each is independently
   verifiable.
+- **Multiple execution modes** — if the description says "in mode X do A, in
+  mode Y do B" (e.g., host mode vs sandbox mode, sync vs async), split each
+  mode into its own issue. The first mode establishes the interface, subsequent
+  modes add variants.
+- **Wiring + retry/loop logic** — if an issue both integrates a new subsystem
+  AND adds retry/fix/fallback behavior around it, split the basic integration
+  (happy path + fail-fast) from the retry loop.
+
+When an issue triggers multiple flags, ask the user whether to split it. Present
+the natural seams you see (e.g., "this issue has 9 test cases and two execution
+modes — would you like to split host-mode wiring from sandbox-mode?") and let
+them decide. Don't auto-split without confirmation.
 
 When an issue is too large, split it along natural boundaries:
 
 1. **New package/module** — pure new code with its own tests, no existing files
    modified.
-2. **Integration/wiring** — connect the new code to existing callers.
-3. **Migration/cleanup** — remove old code, update config, rename fields.
+2. **Integration/wiring** — connect the new code to existing callers. Happy path
+   and fail-fast only.
+3. **Retry/fix loops** — add retry, fix cycle, or fallback behavior on top of
+   the basic wiring.
+4. **Variant modes** — add alternative execution paths (sandbox, async, etc.)
+   that share the same interface.
+5. **Migration/cleanup** — remove old code, update config, rename fields.
 
 Each sub-issue should be independently deployable and testable. Use `Blocked by`
 dependencies to enforce ordering.

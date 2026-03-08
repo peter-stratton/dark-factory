@@ -1,5 +1,5 @@
 repo: peter-stratton/dark-factory
-milestone: "Phase 6"
+auto_merge: all
 protected_paths: ["CLAUDE.md", "tests/scenarios/"]
 
 runtime:
