@@ -1207,6 +1207,75 @@ wait_for_checks:
 	}
 }
 
+// --- Watch tests ---
+
+func TestWatchDefaultNil(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Watch != nil {
+		t.Errorf("Watch = %v, want nil", cfg.Watch)
+	}
+}
+
+func TestWatchValidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+watch:
+  poll_interval: "30s"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Watch == nil {
+		t.Fatal("Watch = nil, want non-nil")
+	}
+	if cfg.Watch.PollInterval != "30s" {
+		t.Errorf("Watch.PollInterval = %q, want %q", cfg.Watch.PollInterval, "30s")
+	}
+}
+
+func TestWatchInvalidPollInterval(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+watch:
+  poll_interval: "not-a-duration"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid poll_interval, got nil")
+	}
+	if !strings.Contains(err.Error(), "watch.poll_interval") {
+		t.Errorf("error = %q, want mention of 'watch.poll_interval'", err.Error())
+	}
+}
+
+func TestWatchNotConfigured(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Watch != nil {
+		t.Errorf("Watch = %v, want nil (not configured)", cfg.Watch)
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

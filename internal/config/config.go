@@ -64,6 +64,12 @@ type WaitForChecks struct {
 	Required []string `yaml:"required"` // check names to wait for
 }
 
+// Watch holds polling configuration for the godark watch command. When nil,
+// the watch command uses a hardcoded default interval of "60s".
+type Watch struct {
+	PollInterval string `yaml:"poll_interval"`
+}
+
 // Module holds per-module build/test/lint/generate commands and dependency
 // relationships. All fields are optional.
 type Module struct {
@@ -127,6 +133,10 @@ type Config struct {
 	// WaitForChecks configures CI check gating before merge. Nil means merge
 	// immediately after the review cycle (current behavior).
 	WaitForChecks *WaitForChecks `yaml:"wait_for_checks"`
+
+	// Watch configures polling settings for the godark watch command. Nil
+	// means the watch command uses its hardcoded default interval ("60s").
+	Watch *Watch `yaml:"watch"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -243,6 +253,9 @@ func validate(cfg *Config) error {
 	if err := validateWaitForChecks(cfg.WaitForChecks); err != nil {
 		return err
 	}
+	if err := validateWatch(cfg.Watch); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -260,6 +273,19 @@ func validateWaitForChecks(w *WaitForChecks) error {
 	}
 	if len(w.Required) == 0 {
 		return fmt.Errorf("wait_for_checks.required must be non-empty when wait_for_checks is set")
+	}
+	return nil
+}
+
+// validateWatch ensures Watch fields are valid when set.
+func validateWatch(w *Watch) error {
+	if w == nil {
+		return nil
+	}
+	if w.PollInterval != "" {
+		if _, err := time.ParseDuration(w.PollInterval); err != nil {
+			return fmt.Errorf("watch.poll_interval %q is not a valid duration: %w", w.PollInterval, err)
+		}
 	}
 	return nil
 }
