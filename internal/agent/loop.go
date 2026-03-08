@@ -510,6 +510,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					return outcome
 				}
 				for ciAttempt := 0; len(ciFailures) > 0; ciAttempt++ {
+					if ctx.Err() != nil {
+						outcome.Status = "failed"
+						outcome.Err = ctx.Err()
+						return outcome
+					}
 					if ciAttempt >= cfg.Verify.MaxFixAttempts || prompts.VerifyFix == "" {
 						var names []string
 						for _, f := range ciFailures {
