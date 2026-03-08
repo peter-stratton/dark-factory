@@ -317,6 +317,9 @@ func TestGenerateDockerfileFlutterRuntime(t *testing.T) {
 	if !strings.Contains(df, "flutter precache") {
 		t.Error("Flutter Dockerfile missing flutter precache")
 	}
+	if !strings.Contains(df, "chown -R devloop:devloop /usr/local/flutter") {
+		t.Error("Flutter Dockerfile missing chown for non-root user")
+	}
 }
 
 func TestGenerateDockerfileNodeRuntime(t *testing.T) {

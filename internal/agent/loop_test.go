@@ -1281,10 +1281,10 @@ func TestComputeReviewFlags_QualityReviewerExemptFromTestExecution(t *testing.T)
 		ReviewDir:   "tests/review/",
 	}
 
-	// Quality reviewer (checkTestExecution=false): should NOT produce test-execution flags.
+	// Quality reviewer (checkTestExecution=false): should NOT produce test-execution or test-run flags.
 	qFlags := computeReviewFlags(result, cfg, false, false)
 	for _, f := range qFlags {
-		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
+		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" || f.Code == "no_tests_run" {
 			t.Errorf("quality reviewer should be exempt from %q, got flag: %+v", f.Code, f)
 		}
 	}

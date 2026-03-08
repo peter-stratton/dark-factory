@@ -239,6 +239,7 @@ func defaults() *Config {
 		MaxRetries:             3,
 		AutoMerge:              "none",
 		RoadmapPath:            "docs/ROADMAP.md",
+		ProtectedPaths:         []string{"godark.yaml"},
 		DeniedCommands:         []string{
 			"rm -rf",
 			"git push --force",

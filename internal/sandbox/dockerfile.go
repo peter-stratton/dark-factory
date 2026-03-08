@@ -80,6 +80,9 @@ COPY agent_runner.py /usr/local/bin/agent_runner.py
 
 # Create non-root user
 RUN useradd -m -s /bin/bash {{.User}}
+{{- if eq .RuntimeName "flutter"}}
+RUN chown -R {{.User}}:{{.User}} /usr/local/flutter
+{{- end}}
 USER {{.User}}
 WORKDIR /workspace
 `))
