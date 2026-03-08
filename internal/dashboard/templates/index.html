@@ -126,7 +126,7 @@
             datasets: [{
               label: 'Success Rate',
               data: points.map(function(p) {
-                return { x: p.timestamp, y: +(p.success_rate * 100).toFixed(1) };
+                return +(p.success_rate * 100).toFixed(1);
               }),
               borderColor: '#4ade80',
               backgroundColor: '#4ade8020',
