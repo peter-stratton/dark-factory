@@ -100,7 +100,7 @@ content.
 
 ### foundation
 
-**Paths:** `internal/config/`, `internal/logging/`
+**Paths:** `internal/config/`, `internal/logging/`, `internal/label/`
 
 **Purpose:** Zero-dependency utilities that any layer may import. Configuration
 loading and structured logging.
