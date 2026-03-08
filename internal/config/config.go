@@ -81,6 +81,11 @@ type Config struct {
 	// Modules maps module names to per-module build/test/lint/generate commands
 	// and dependency relationships. Nil (absent) means single-module mode.
 	Modules map[string]Module `yaml:"modules"`
+
+	// RequiredEnv lists environment variable names that must be set before a
+	// run starts. Their values are forwarded to the sandbox alongside auth env
+	// vars. Nil (absent) means no required env vars.
+	RequiredEnv []string `yaml:"required_env"`
 }
 
 // Docker holds Docker sandbox configuration.

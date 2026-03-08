@@ -115,7 +115,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		// Auto-detect project type when no runtime/commands are explicitly configured.
 		detect.ApplyToConfig(cfg, ".", logger)
 
-		authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference)
+		authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
 		if err != nil {
 			return fmt.Errorf("collecting auth: %w", err)
 		}
