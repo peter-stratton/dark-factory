@@ -73,9 +73,9 @@ findings for user confirmation before writing.
    - Identify jobs that represent required checks (any job that runs tests,
      linting, building, or static analysis — e.g. jobs named `test`, `build`,
      `lint`, `ci`, `check`, `verify`, `validate`).
-   - Prepare a `wait_for_checks:` list with the GitHub Actions check names.
-     The check name for a job is typically the job key or its `name:` field
-     if set.
+   - Prepare a `wait_for_checks:` block with `timeout` (e.g. `"10m"`) and
+     `required` (list of check names). The check name for a job is typically
+     the job key or its `name:` field if set.
 
 6. **Detect Docker Compose usage** — Check for `docker-compose.yml`,
    `docker-compose.yaml`, `docker-compose*.yml`, or `compose.yml` files at
@@ -130,9 +130,11 @@ required_env:
   - SECRET_TOKEN
 
 wait_for_checks:
-  - test
-  - lint
-  - build
+  timeout: "10m"
+  required:
+    - test
+    - lint
+    - build
 
 runtime:
   no_sandbox: true  # required for integration tests run via Docker Compose
