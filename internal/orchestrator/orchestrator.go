@@ -226,18 +226,9 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 	// Ensure all PR lifecycle labels exist in the repo at startup.
-	lifecycleLabels := []struct {
-		name        string
-		color       string
-		description string
-	}{
-		{label.AwaitingHumanReview, "4A90E2", "PR approved by AI, awaiting human review"},
-		{label.FixingReviewFeedback, "F5D76E", "AI is addressing review feedback"},
-		{label.ReadyToMerge, "50C878", "All reviews passed, ready to merge"},
-	}
-	for _, lc := range lifecycleLabels {
-		if err := github.EnsureLabel(cfg.Repo, lc.name, lc.color, lc.description); err != nil {
-			logger.Warn("failed to ensure lifecycle label", "label", lc.name, "error", err)
+	for _, spec := range label.Specs {
+		if err := github.EnsureLabel(cfg.Repo, spec.Name, spec.Color, spec.Description); err != nil {
+			logger.Warn("failed to ensure lifecycle label", "label", spec.Name, "error", err)
 		}
 	}
 
