@@ -162,6 +162,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			return outcome
 		}
 
+		var verifyRunner CommandRunner
+		if cfg.NoSandbox {
+			verifyRunner = newHostRunner()
+		} else {
+			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, logger)
+		}
+
 		moduleFailed := false
 		var failedModName string
 
@@ -170,13 +177,6 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			moduleChecks := buildModuleVerifyChecks(modName, mod, cfg)
 			if len(moduleChecks) == 0 {
 				continue
-			}
-
-			var verifyRunner CommandRunner
-			if cfg.NoSandbox {
-				verifyRunner = newHostRunner()
-			} else {
-				verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, logger)
 			}
 
 			logger.Info("running verify step for module",

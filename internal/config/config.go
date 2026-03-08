@@ -9,6 +9,34 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// safeModuleNameChar reports whether ch is a permitted character in a module
+// name. Only alphanumerics, hyphens, underscores, and dots are allowed so that
+// module names are safe to embed in shell commands via "cd <name> && …".
+func safeModuleNameChar(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '-' || ch == '_' || ch == '.'
+}
+
+// validateModuleName returns an error if name is not a safe, unambiguous
+// filesystem path component. Rejected: empty, the special directory "..", and
+// any name containing characters outside [a-zA-Z0-9._-].
+func validateModuleName(name string) error {
+	if name == "" {
+		return fmt.Errorf("module name must not be empty")
+	}
+	if name == ".." {
+		return fmt.Errorf("module name %q is not a safe path component", name)
+	}
+	for _, ch := range name {
+		if !safeModuleNameChar(ch) {
+			return fmt.Errorf("module name %q contains unsafe character %q", name, string(ch))
+		}
+	}
+	return nil
+}
+
 // Runtime identifies the project's toolchain and optional version.
 type Runtime struct {
 	Name    string `yaml:"name"`    // go, flutter, node, rust, python
@@ -236,19 +264,32 @@ func validateWaitForChecks(w *WaitForChecks) error {
 	return nil
 }
 
-// validateModules checks that all depends_on references name existing modules
-// and that there are no dependency cycles.
+// validateModules checks that module names are safe, that all depends_on
+// references name existing modules (with no duplicates), and that there are no
+// dependency cycles.
 func validateModules(modules map[string]Module) error {
 	if len(modules) == 0 {
 		return nil
 	}
 
-	// Check all depends_on entries reference known modules.
+	// Validate every module name is a safe filesystem path component.
+	for name := range modules {
+		if err := validateModuleName(name); err != nil {
+			return err
+		}
+	}
+
+	// Check all depends_on entries reference known modules and are unique.
 	for name, mod := range modules {
+		seen := make(map[string]bool, len(mod.DependsOn))
 		for _, dep := range mod.DependsOn {
 			if _, ok := modules[dep]; !ok {
 				return fmt.Errorf("module %q depends_on unknown module %q", name, dep)
 			}
+			if seen[dep] {
+				return fmt.Errorf("module %q depends_on %q more than once", name, dep)
+			}
+			seen[dep] = true
 		}
 	}
 
