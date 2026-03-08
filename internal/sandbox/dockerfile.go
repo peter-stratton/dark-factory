@@ -100,6 +100,10 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 	case "flutter":
 		if runtimeVersion == "" {
 			runtimeVersion = "stable"
+		} else {
+			// Strip semver range operators (^, >=, ~, etc.) — git clone
+			// needs an exact tag, not a constraint from pubspec.yaml.
+			runtimeVersion = strings.TrimLeft(runtimeVersion, "^~><=")
 		}
 	case "elixir":
 		// Strip spaces to normalise Elixir version constraints (e.g. "~> 1.14" → "~>1.14").

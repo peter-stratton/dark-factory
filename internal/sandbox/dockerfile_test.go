@@ -403,6 +403,32 @@ func TestGenerateDockerfileFlutterNoVersionUsesStable(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileFlutterSemverRange(t *testing.T) {
+	tests := []struct {
+		version string
+		want    string
+	}{
+		{"^3.11.0", "--branch 3.11.0"},
+		{">=3.11.0", "--branch 3.11.0"},
+		{"~3.11.0", "--branch 3.11.0"},
+		{"3.11.0", "--branch 3.11.0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			cfg := DefaultDockerConfig()
+			cfg.Runtime = config.Runtime{Name: "flutter", Version: tt.version}
+
+			df, err := GenerateDockerfile(cfg, slog.Default())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(df, tt.want) {
+				t.Errorf("expected %q in Dockerfile, got:\n%s", tt.want, df)
+			}
+		})
+	}
+}
+
 func TestGenerateDockerfileSandboxEnv(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.SandboxEnv = map[string]string{"GOOS": "linux"}
