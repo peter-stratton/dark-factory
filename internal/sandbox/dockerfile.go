@@ -98,12 +98,12 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 			return "", fmt.Errorf("Go runtime requires a version (Runtime.Version must be set)")
 		}
 	case "flutter":
-		if runtimeVersion == "" {
+		// pubspec.yaml's environment.sdk is a Dart SDK constraint (e.g.
+		// ^3.11.0), not a Flutter version. Flutter tags don't correspond
+		// to Dart SDK versions, so always clone the stable channel unless
+		// the user explicitly configures an exact Flutter tag.
+		if runtimeVersion == "" || strings.ContainsAny(runtimeVersion, "^~><=") {
 			runtimeVersion = "stable"
-		} else {
-			// Strip semver range operators (^, >=, ~, etc.) — git clone
-			// needs an exact tag, not a constraint from pubspec.yaml.
-			runtimeVersion = strings.TrimLeft(runtimeVersion, "^~><=")
 		}
 	case "elixir":
 		// Strip spaces to normalise Elixir version constraints (e.g. "~> 1.14" → "~>1.14").

@@ -403,29 +403,35 @@ func TestGenerateDockerfileFlutterNoVersionUsesStable(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfileFlutterSemverRange(t *testing.T) {
-	tests := []struct {
-		version string
-		want    string
-	}{
-		{"^3.11.0", "--branch 3.11.0"},
-		{">=3.11.0", "--branch 3.11.0"},
-		{"~3.11.0", "--branch 3.11.0"},
-		{"3.11.0", "--branch 3.11.0"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
+func TestGenerateDockerfileFlutterDartSDKFallsBackToStable(t *testing.T) {
+	// Dart SDK constraints from pubspec.yaml are not Flutter versions,
+	// so any version with range operators should fall back to stable.
+	for _, v := range []string{"^3.11.0", ">=3.11.0", "~3.11.0"} {
+		t.Run(v, func(t *testing.T) {
 			cfg := DefaultDockerConfig()
-			cfg.Runtime = config.Runtime{Name: "flutter", Version: tt.version}
+			cfg.Runtime = config.Runtime{Name: "flutter", Version: v}
 
 			df, err := GenerateDockerfile(cfg, slog.Default())
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !strings.Contains(df, tt.want) {
-				t.Errorf("expected %q in Dockerfile, got:\n%s", tt.want, df)
+			if !strings.Contains(df, "--branch stable") {
+				t.Errorf("expected stable branch for Dart SDK constraint %q", v)
 			}
 		})
+	}
+}
+
+func TestGenerateDockerfileFlutterExactVersion(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "flutter", Version: "3.7.12"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "--branch 3.7.12") {
+		t.Error("exact Flutter version should be used as-is")
 	}
 }
 
