@@ -177,6 +177,10 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// functional reviewer's quality check: tests are only expected when a spec exists.
 	hasSpec := specGenerated || HasScenarioSpec(cfg.ScenarioDir, issue.Number)
 
+	// fixCycles counts the total number of verify-fix attempts used across all
+	// modules. Used by the risk classifier to assess PR safety.
+	fixCycles := 0
+
 	// Step 3.5: Verify. Runs between guard rails and quality review.
 	if cfg.Modules != nil {
 		// Per-module verification in dependency order.
@@ -223,6 +227,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 						outcome.Err = ctx.Err()
 						return outcome
 					}
+					fixCycles++
 
 					verifyErrors := fmt.Sprintf("Module: %s\n\n%s", modName, formatVerifyErrors(verifyResult))
 					logger.Info("running verify-fix attempt",
@@ -316,6 +321,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					outcome.Err = ctx.Err()
 					return outcome
 				}
+				fixCycles++
 
 				verifyErrors := formatVerifyErrors(verifyResult)
 				logger.Info("running verify-fix attempt",
@@ -533,12 +539,60 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				return outcome
 			}
 			if cfg.AutoMerge == "low_risk" {
-				// Risk classifier not yet wired; label for human review in the interim.
-				logger.Info("PR approved, skipping merge (auto_merge=low_risk, risk classifier pending)", "pr_number", prNum)
-				applyLifecycleLabel(label.AwaitingHumanReview)
-				outcome.Status = "ready-to-merge"
-				outcome.Retries = attempt
-				return outcome
+				additions, deletions, fileCount, statsErr := github.FetchPRStats(cfg.Repo, prNum)
+				if statsErr != nil {
+					logger.Warn("failed to fetch PR stats for risk classification, labeling for human review",
+						"pr_number", prNum, "error", statsErr)
+					applyLifecycleLabel(label.AwaitingHumanReview)
+					outcome.Status = "ready-to-merge"
+					outcome.Retries = attempt
+					return outcome
+				}
+				changedFiles, filesErr := github.FetchPRChangedFiles(cfg.Repo, prNum)
+				if filesErr != nil {
+					logger.Warn("failed to fetch PR changed files for risk classification, labeling for human review",
+						"pr_number", prNum, "error", filesErr)
+					applyLifecycleLabel(label.AwaitingHumanReview)
+					outcome.Status = "ready-to-merge"
+					outcome.Retries = attempt
+					return outcome
+				}
+
+				var maxLines, maxFiles int
+				if cfg.RiskThresholds != nil {
+					maxLines = cfg.RiskThresholds.MaxLines
+					maxFiles = cfg.RiskThresholds.MaxFiles
+				}
+				riskInput := quality.RiskInput{
+					LinesChanged:   additions + deletions,
+					FilesChanged:   fileCount,
+					ChangedFiles:   changedFiles,
+					ProtectedPaths: cfg.ProtectedPaths,
+					FixCycles:      fixCycles,
+					QualityFlags:   fFlags,
+				}
+				assessment := quality.ClassifyRisk(riskInput, maxLines, maxFiles)
+
+				if hook != nil {
+					if err := hook.WriteRiskAssessment(issue.Number, toRundataRiskAssessment(assessment)); err != nil {
+						logger.Warn("failed to write risk assessment", "error", err)
+					}
+				}
+
+				logger.Info("risk classification result",
+					"issue_number", issue.Number,
+					"pr_number", prNum,
+					"is_low_risk", assessment.IsLowRisk,
+				)
+
+				if !assessment.IsLowRisk {
+					logger.Info("PR is not low-risk, labeling for human review", "pr_number", prNum)
+					applyLifecycleLabel(label.AwaitingHumanReview)
+					outcome.Status = "ready-to-merge"
+					outcome.Retries = attempt
+					return outcome
+				}
+				// PR is low-risk — fall through to merge.
 			}
 			// Step 5.5: Wait for CI checks if configured.
 			if cfg.WaitForChecks != nil {

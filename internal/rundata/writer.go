@@ -245,6 +245,26 @@ func (w *Writer) WriteVerifyResult(issueNum int, step VerifyStepResult) error {
 	return writeJSONMkdirs(path, step)
 }
 
+// RiskGate records the outcome of a single risk gate evaluation.
+type RiskGate struct {
+	Name   string `json:"name"`
+	Passed bool   `json:"passed"`
+	Detail string `json:"detail"`
+}
+
+// RiskAssessment holds the result of the risk classifier for a PR.
+type RiskAssessment struct {
+	IsLowRisk bool       `json:"is_low_risk"`
+	Gates     []RiskGate `json:"gates"`
+}
+
+// WriteRiskAssessment writes the risk assessment for the given issue.
+// Path: issues/<issueNum>/risk-assessment.json
+func (w *Writer) WriteRiskAssessment(issueNum int, assessment RiskAssessment) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "risk-assessment.json")
+	return writeJSONMkdirs(path, assessment)
+}
+
 // PunchlistData holds the per-issue punchlist content persisted to punchlist.json.
 type PunchlistData struct {
 	VerificationSteps []string `json:"verification_steps,omitempty"`
