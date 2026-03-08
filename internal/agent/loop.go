@@ -492,8 +492,12 @@ func checkDriftAndClose(baseSHA string, cfg *config.Config, prNum int, logger *s
 
 // buildVerifyChecks constructs the ordered list of verify checks from non-empty
 // config commands. Empty commands are omitted.
+// Order: generate → build → lint → test.
 func buildVerifyChecks(cfg *config.Config) []Check {
 	var checks []Check
+	if cfg.GenerateCommand != "" {
+		checks = append(checks, Check{Name: "generate", Command: cfg.GenerateCommand})
+	}
 	if cfg.BuildCommand != "" {
 		checks = append(checks, Check{Name: "build", Command: cfg.BuildCommand})
 	}
