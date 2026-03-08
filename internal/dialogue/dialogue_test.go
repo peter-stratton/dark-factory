@@ -242,3 +242,147 @@ func TestParseComments_NoMatchingComments(t *testing.T) {
 		t.Errorf("len(reviewNotes) = %d, want 0", len(reviewNotes))
 	}
 }
+
+// ParseCommentsInOrder tests
+
+const qualityComment = `## Quality Review Notes
+
+### Issues Found
+- Missing error handling.
+
+### Changes Requested
+Yes
+`
+
+func implComment(approach string) string {
+	return "## Implementation Notes\n\n### Approach\n" + approach + "\n\n### Key Decisions\nDecision.\n\n### Known Limitations\nNone.\n\n### Architecture\nDomain.\n"
+}
+
+func reviewComment(approved string) string {
+	return "## Review Notes\n\n### Approved\n" + approved + "\n\n### Changes Requested\n\n### Architecture Compliance\nGood.\n"
+}
+
+func checkEntry(t *testing.T, got Entry, wantRole string, wantRound int, wantBody string) {
+	t.Helper()
+	if got.Role != wantRole {
+		t.Errorf("Role = %q, want %q", got.Role, wantRole)
+	}
+	if got.Round != wantRound {
+		t.Errorf("Round = %d, want %d", got.Round, wantRound)
+	}
+	if got.Body != wantBody {
+		t.Errorf("Body = %q, want %q", got.Body, wantBody)
+	}
+}
+
+func TestParseCommentsInOrder_Empty(t *testing.T) {
+	entries := ParseCommentsInOrder([]string{})
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(entries))
+	}
+}
+
+func TestParseCommentsInOrder_NoRetries(t *testing.T) {
+	// Impl, Quality (pass), Functional (pass) → 3 entries in order
+	impl := implComment("First implementation.")
+	quality := qualityComment
+	review := reviewComment("Approved.")
+	entries := ParseCommentsInOrder([]string{impl, quality, review})
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	checkEntry(t, entries[0], "implementer", 1, impl)
+	checkEntry(t, entries[1], "quality_reviewer", 1, quality)
+	checkEntry(t, entries[2], "reviewer", 1, review)
+}
+
+func TestParseCommentsInOrder_QualityRetry(t *testing.T) {
+	// Impl, Quality (fail), Impl (fix), Quality (pass), Functional (pass)
+	impl1 := implComment("First implementation.")
+	impl2 := implComment("Fixed implementation.")
+	quality1 := qualityComment
+	quality2 := qualityComment
+	review1 := reviewComment("Approved.")
+
+	entries := ParseCommentsInOrder([]string{impl1, quality1, impl2, quality2, review1})
+
+	if len(entries) != 5 {
+		t.Fatalf("expected 5 entries, got %d", len(entries))
+	}
+	checkEntry(t, entries[0], "implementer", 1, impl1)
+	checkEntry(t, entries[1], "quality_reviewer", 1, quality1)
+	checkEntry(t, entries[2], "implementer", 2, impl2)
+	checkEntry(t, entries[3], "quality_reviewer", 2, quality2)
+	checkEntry(t, entries[4], "reviewer", 1, review1)
+}
+
+func TestParseCommentsInOrder_MultipleRetries(t *testing.T) {
+	// Impl, Quality (fail), Impl, Quality (fail), Impl, Quality (pass), Functional (pass)
+	impl1 := implComment("First.")
+	impl2 := implComment("Second.")
+	impl3 := implComment("Third.")
+	quality1 := qualityComment
+	quality2 := qualityComment
+	quality3 := qualityComment
+	review1 := reviewComment("Approved.")
+
+	entries := ParseCommentsInOrder([]string{impl1, quality1, impl2, quality2, impl3, quality3, review1})
+
+	if len(entries) != 7 {
+		t.Fatalf("expected 7 entries, got %d", len(entries))
+	}
+	checkEntry(t, entries[0], "implementer", 1, impl1)
+	checkEntry(t, entries[1], "quality_reviewer", 1, quality1)
+	checkEntry(t, entries[2], "implementer", 2, impl2)
+	checkEntry(t, entries[3], "quality_reviewer", 2, quality2)
+	checkEntry(t, entries[4], "implementer", 3, impl3)
+	checkEntry(t, entries[5], "quality_reviewer", 3, quality3)
+	checkEntry(t, entries[6], "reviewer", 1, review1)
+}
+
+func TestParseCommentsInOrder_MissingQualityReview(t *testing.T) {
+	// No quality reviewer configured → Impl, Functional only
+	impl := implComment("Only implementation.")
+	review := reviewComment("Approved.")
+	entries := ParseCommentsInOrder([]string{impl, review})
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	checkEntry(t, entries[0], "implementer", 1, impl)
+	checkEntry(t, entries[1], "reviewer", 1, review)
+}
+
+func TestParseCommentsInOrder_RoundNumbers(t *testing.T) {
+	// Two implementer entries → rounds 1 and 2; single functional → round 1
+	impl1 := implComment("Round one.")
+	impl2 := implComment("Round two.")
+	quality := qualityComment
+	review := reviewComment("Approved.")
+
+	entries := ParseCommentsInOrder([]string{impl1, quality, impl2, review})
+
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(entries))
+	}
+	if entries[0].Round != 1 {
+		t.Errorf("entries[0].Round = %d, want 1", entries[0].Round)
+	}
+	if entries[2].Round != 2 {
+		t.Errorf("entries[2].Round = %d, want 2", entries[2].Round)
+	}
+	if entries[3].Round != 1 {
+		t.Errorf("entries[3].Round = %d, want 1", entries[3].Round)
+	}
+}
+
+func TestParseCommentsInOrder_NonStructuredCommentsIgnored(t *testing.T) {
+	impl := implComment("Implementation.")
+	entries := ParseCommentsInOrder([]string{"Just a comment.", impl, "Another comment."})
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	checkEntry(t, entries[0], "implementer", 1, impl)
+}

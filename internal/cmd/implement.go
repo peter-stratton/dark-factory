@@ -12,7 +12,6 @@ import (
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
-	"github.com/phs/dark-factory/internal/dialogue"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
@@ -188,8 +187,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 					logger.Warn("failed to fetch PR comment bodies for dialogue",
 						"issue_number", issueNumber, "error", fetchErr)
 				} else {
-					implNotes, reviewNotes, qualityNotes := dialogue.ParseComments(bodies)
-					dialogueEntries := orchestrator.BuildDialogueEntries(implNotes, reviewNotes, qualityNotes)
+					dialogueEntries := orchestrator.BuildDialogueEntries(bodies)
 					if len(dialogueEntries) > 0 {
 						if err := writer.WriteDialogue(issueNumber, dialogueEntries); err != nil {
 							logger.Warn("failed to write dialogue",

@@ -339,8 +339,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 					logger.Warn("failed to fetch PR comment bodies for dialogue",
 						"issue_number", issue.Number, "error", fetchErr)
 				} else {
-					implNotes, reviewNotes, qualityNotes := dialogue.ParseComments(bodies)
-					entries := BuildDialogueEntries(implNotes, reviewNotes, qualityNotes)
+					entries := BuildDialogueEntries(bodies)
 					if len(entries) > 0 {
 						if err := writer.WriteDialogue(issue.Number, entries); err != nil {
 							logger.Warn("failed to write dialogue",
@@ -487,41 +486,18 @@ var processIssueFn = agent.ProcessIssue
 // Replaceable for testing.
 var fetchPRCommentBodiesFn = github.FetchPRCommentBodies
 
-// BuildDialogueEntries interleaves implementation, quality review, and
-// functional review notes by round, returning a slice of DialogueEntry
-// values suitable for persisting.
-func BuildDialogueEntries(implNotes []dialogue.ImplementationNotes, reviewNotes []dialogue.ReviewNotes, qualityNotes []dialogue.QualityReviewNotes) []rundata.DialogueEntry {
-	maxRounds := len(implNotes)
-	if len(reviewNotes) > maxRounds {
-		maxRounds = len(reviewNotes)
-	}
-	if len(qualityNotes) > maxRounds {
-		maxRounds = len(qualityNotes)
-	}
-
-	var entries []rundata.DialogueEntry
-	for round := 1; round <= maxRounds; round++ {
-		i := round - 1
-		if i < len(implNotes) {
-			entries = append(entries, rundata.DialogueEntry{
-				Role:  "implementer",
-				Round: round,
-				Body:  implNotes[i].Raw,
-			})
-		}
-		if i < len(qualityNotes) {
-			entries = append(entries, rundata.DialogueEntry{
-				Role:  "quality_reviewer",
-				Round: round,
-				Body:  qualityNotes[i].Raw,
-			})
-		}
-		if i < len(reviewNotes) {
-			entries = append(entries, rundata.DialogueEntry{
-				Role:  "reviewer",
-				Round: round,
-				Body:  reviewNotes[i].Raw,
-			})
+// BuildDialogueEntries parses PR comment bodies in their original chronological
+// order and returns a slice of DialogueEntry values suitable for persisting.
+// Round numbers within each role are sequential (implementer round 1, 2, …)
+// regardless of interleaving with other roles.
+func BuildDialogueEntries(bodies []string) []rundata.DialogueEntry {
+	parsed := dialogue.ParseCommentsInOrder(bodies)
+	entries := make([]rundata.DialogueEntry, len(parsed))
+	for i, e := range parsed {
+		entries[i] = rundata.DialogueEntry{
+			Role:  e.Role,
+			Round: e.Round,
+			Body:  e.Body,
 		}
 	}
 	return entries
