@@ -895,6 +895,7 @@ type testRunDataHook struct {
 	retryFunctionalReviewCalls int
 	verifyResults              []rundata.VerifyStepResult
 	outcomes                   []rundata.Outcome
+	issueStatuses              []rundata.IssueStatus
 }
 
 func (h *testRunDataHook) WriteSpecGeneratorResult(_ int, _ rundata.StepResult) error {
@@ -927,6 +928,10 @@ func (h *testRunDataHook) WriteVerifyResult(_ int, step rundata.VerifyStepResult
 }
 func (h *testRunDataHook) WriteOutcome(o rundata.Outcome) error {
 	h.outcomes = append(h.outcomes, o)
+	return nil
+}
+func (h *testRunDataHook) WriteIssueStatus(_ int, s rundata.IssueStatus) error {
+	h.issueStatuses = append(h.issueStatuses, s)
 	return nil
 }
 
@@ -1009,6 +1014,38 @@ func TestProcessIssue_NilHookSafe(t *testing.T) {
 	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+}
+
+func TestProcessIssue_HookWritesImplementingAndInReviewStatuses(t *testing.T) {
+	hook := &testRunDataHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
+
+	if len(hook.issueStatuses) < 2 {
+		t.Fatalf("WriteIssueStatus called %d times, want at least 2", len(hook.issueStatuses))
+	}
+
+	// First status should be "implementing".
+	if hook.issueStatuses[0].Status != "implementing" {
+		t.Errorf("issueStatuses[0].Status = %q, want %q", hook.issueStatuses[0].Status, "implementing")
+	}
+
+	// One of the statuses should be "in_review".
+	foundInReview := false
+	for _, s := range hook.issueStatuses {
+		if s.Status == "in_review" {
+			foundInReview = true
+			break
+		}
+	}
+	if !foundInReview {
+		t.Errorf("WriteIssueStatus(%q) not called; statuses: %v", "in_review", hook.issueStatuses)
 	}
 }
 

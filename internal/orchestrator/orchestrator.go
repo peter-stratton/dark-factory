@@ -197,6 +197,15 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	// Initial categorization.
 	processable, blocked := categorizeIssues(allIssues, closedSet)
 
+	// Write the dependency graph to run metadata so the dashboard can derive
+	// pending vs blocked status for issues without a final outcome.
+	if writer != nil {
+		issueDeps := buildIssueDepsForRundata(allIssues)
+		if err := writer.WriteIssueDeps(issueDeps); err != nil {
+			logger.Warn("failed to write issue deps to run metadata", "error", err)
+		}
+	}
+
 	if len(processable) == 0 {
 		fmt.Println("All issues are blocked — nothing to process.")
 		printSummary(len(allIssues), len(blocked), 0)
@@ -617,6 +626,23 @@ func issueNumbers(issues []github.Issue) []int {
 		nums[i] = iss.Number
 	}
 	return nums
+}
+
+// buildIssueDepsForRundata extracts the dependency graph for all issues so it
+// can be persisted to run.json. Only issues with at least one dependency are
+// included.
+func buildIssueDepsForRundata(issues []github.Issue) []rundata.IssueDep {
+	var issueDeps []rundata.IssueDep
+	for _, issue := range issues {
+		depNums := deps.ParseDeps(issue.Body)
+		if len(depNums) > 0 {
+			issueDeps = append(issueDeps, rundata.IssueDep{
+				IssueNumber: issue.Number,
+				DependsOn:   depNums,
+			})
+		}
+	}
+	return issueDeps
 }
 
 // formatIssueRefs formats a slice of issue numbers as "#1, #2, #3".

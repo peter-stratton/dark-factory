@@ -402,16 +402,7 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 		totalCost += retry.Retry.CostUSD + retry.QualityReview.CostUSD + retry.FunctionalReview.CostUSD
 	}
 
-	statusLabel := "Running"
-	statusClass := "info"
-	switch issue.Outcome.Status {
-	case "implemented":
-		statusLabel = "Implemented"
-		statusClass = "success"
-	case "failed":
-		statusLabel = "Failed"
-		statusClass = "danger"
-	}
+	statusLabel, statusClass := issueStatusLabelAndClass(issue)
 
 	prLink := ""
 	if issue.Outcome.PRNumber > 0 {
@@ -432,6 +423,37 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 		Cost:        formatCost(totalCost),
 		URL:         issueURL,
 	}
+}
+
+// issueStatusLabelAndClass returns the display label and CSS badge class for
+// an issue row. Final outcomes take precedence; live status is checked for
+// in-progress issues; pending/blocked is derived from dependency info.
+func issueStatusLabelAndClass(issue rundata.IssueDetail) (label, class string) {
+	// Final outcomes take precedence over live status.
+	switch issue.Outcome.Status {
+	case "implemented":
+		return "Implemented", "success"
+	case "ready-to-merge":
+		return "Ready to Merge", "success"
+	case "needs-human-review":
+		return "Needs Human Review", "warning"
+	case "failed":
+		return "Failed", "danger"
+	}
+
+	// No final outcome — check live status file for in-progress issues.
+	switch issue.LiveStatus.Status {
+	case "implementing":
+		return "Implementing", "info"
+	case "in_review":
+		return "In Review", "info"
+	}
+
+	// No live status — derive pending vs blocked from dependency info.
+	if len(issue.BlockedBy) > 0 {
+		return "Blocked", "warning"
+	}
+	return "Pending", "secondary"
 }
 
 // buildTimeline constructs the ordered list of timeline steps for one issue.

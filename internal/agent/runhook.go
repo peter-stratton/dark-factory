@@ -14,4 +14,5 @@ type RunDataHook interface {
 	WriteRetryFunctionalReviewResult(issueNumber int, attempt int, step rundata.StepResult) error
 	WriteVerifyResult(issueNumber int, step rundata.VerifyStepResult) error
 	WriteOutcome(outcome rundata.Outcome) error
+	WriteIssueStatus(issueNumber int, status rundata.IssueStatus) error
 }

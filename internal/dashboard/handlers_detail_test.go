@@ -1061,6 +1061,272 @@ func TestServer_IssueDetail_NoDescriptionHidesSection(t *testing.T) {
 	}
 }
 
+func TestServer_RunDetail_GranularStatus_Pending(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	// Issue 5 has no outcome and no status file — should show "Pending".
+	buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{5},
+		StartedAt:    now,
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Pending") {
+		t.Errorf("body missing 'Pending' status for issue with no outcome/status; got: %q", truncate(body, 500))
+	}
+	if strings.Contains(body, "Running") {
+		t.Errorf("body should not contain old 'Running' status label; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_GranularStatus_Blocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	// Issue 2 depends on issue 1, which has no outcome — should show "Blocked".
+	buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{1, 2},
+		IssueDeps:    []rundata.IssueDep{{IssueNumber: 2, DependsOn: []int{1}}},
+		StartedAt:    now,
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Blocked") {
+		t.Errorf("body missing 'Blocked' status for issue with unresolved dep; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_GranularStatus_Implementing(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{3},
+		StartedAt:    now,
+	})
+
+	// Write a status.json with "implementing".
+	issueDir := filepath.Join(runDir, "issues", "3")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "status.json"), rundata.IssueStatus{Status: "implementing"})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Implementing") {
+		t.Errorf("body missing 'Implementing' status; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_GranularStatus_InReview(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{4},
+		StartedAt:    now,
+	})
+
+	// Write a status.json with "in_review".
+	issueDir := filepath.Join(runDir, "issues", "4")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "status.json"), rundata.IssueStatus{Status: "in_review"})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "In Review") {
+		t.Errorf("body missing 'In Review' status; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_GranularStatus_ReadyToMerge(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{5},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 5,
+		rundata.Outcome{IssueNumber: 5, Status: "ready-to-merge", PRNumber: 42},
+		rundata.StepResult{},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Ready to Merge") {
+		t.Errorf("body missing 'Ready to Merge' status; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "badge--success") {
+		t.Errorf("body missing badge--success for ready-to-merge issue; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_GranularStatus_NeedsHumanReview(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{6},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 6,
+		rundata.Outcome{IssueNumber: 6, Status: "needs-human-review", PRNumber: 77},
+		rundata.StepResult{},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Needs Human Review") {
+		t.Errorf("body missing 'Needs Human Review' status; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "badge--warning") {
+		t.Errorf("body missing badge--warning for needs-human-review issue; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_FinalOutcomeTakesPrecedenceOverStatus(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{7},
+		StartedAt:    now,
+	})
+
+	// Write both an outcome and a live status — outcome should win.
+	writeIssueFiles(t, runDir, 7,
+		rundata.Outcome{IssueNumber: 7, Status: "implemented", PRNumber: 99},
+		rundata.StepResult{},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+	issueDir := filepath.Join(runDir, "issues", "7")
+	writeJSON(t, filepath.Join(issueDir, "status.json"), rundata.IssueStatus{Status: "implementing"})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "Implemented") {
+		t.Errorf("body missing 'Implemented' status (outcome should win over status file); got: %q", truncate(body, 500))
+	}
+	if strings.Contains(body, "Implementing") {
+		t.Errorf("body should not show 'Implementing' when outcome is set; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_GranularStatus_BlockedToPendingAfterDepCompletes(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	// Issue 2 depends on issue 1, which HAS an outcome — so issue 2 should be "Pending", not "Blocked".
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{1, 2},
+		IssueDeps:    []rundata.IssueDep{{IssueNumber: 2, DependsOn: []int{1}}},
+		StartedAt:    now,
+	})
+
+	// Issue 1 is complete.
+	writeIssueFiles(t, runDir, 1,
+		rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+		rundata.StepResult{},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "Blocked") {
+		t.Errorf("body should not show 'Blocked' when dep is completed; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "Pending") {
+		t.Errorf("body should show 'Pending' for issue whose dep has completed; got: %q", truncate(body, 500))
+	}
+}
+
 func TestServer_IssueDetail_SpecGeneratorAbsentOmitted(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now().UTC()
