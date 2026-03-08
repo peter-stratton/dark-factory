@@ -77,7 +77,7 @@ func TestClassifyRisk_FixCyclesUsed(t *testing.T) {
 	if got.IsLowRisk {
 		t.Error("expected IsLowRisk: false, got true")
 	}
-	assertGateFailed(t, got.Gates, "fix_cycles")
+	assertGateFailed(t, got.Gates, "no_fix_cycles")
 }
 
 func TestClassifyRisk_QualityFlagsRaised(t *testing.T) {
@@ -91,7 +91,7 @@ func TestClassifyRisk_QualityFlagsRaised(t *testing.T) {
 	if got.IsLowRisk {
 		t.Error("expected IsLowRisk: false, got true")
 	}
-	assertGateFailed(t, got.Gates, "quality_flags")
+	assertGateFailed(t, got.Gates, "no_quality_flags")
 }
 
 func TestClassifyRisk_MultipleGatesFail(t *testing.T) {
@@ -133,7 +133,7 @@ func TestClassifyRisk_AllGatesPresent(t *testing.T) {
 	input := RiskInput{}
 	got := ClassifyRisk(input, 200, 10)
 
-	wantGates := []string{"max_lines", "max_files", "protected_paths", "fix_cycles", "quality_flags"}
+	wantGates := []string{"max_lines", "max_files", "protected_paths", "no_fix_cycles", "no_quality_flags"}
 	if len(got.Gates) != len(wantGates) {
 		t.Fatalf("expected %d gates, got %d", len(wantGates), len(got.Gates))
 	}

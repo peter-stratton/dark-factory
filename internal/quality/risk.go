@@ -97,19 +97,19 @@ func evalProtectedPathsGate(changedFiles, protectedPaths []string) RiskGate {
 func evalFixCyclesGate(fixCycles int) RiskGate {
 	passed := fixCycles == 0
 	detail := fmt.Sprintf("%d fix cycle(s) used", fixCycles)
-	return RiskGate{Name: "fix_cycles", Passed: passed, Detail: detail}
+	return RiskGate{Name: "no_fix_cycles", Passed: passed, Detail: detail}
 }
 
 func evalQualityFlagsGate(flags []Flag) RiskGate {
 	if len(flags) == 0 {
-		return RiskGate{Name: "quality_flags", Passed: true, Detail: "no quality flags raised"}
+		return RiskGate{Name: "no_quality_flags", Passed: true, Detail: "no quality flags raised"}
 	}
 	codes := make([]string, len(flags))
 	for i, f := range flags {
 		codes[i] = f.Code
 	}
 	return RiskGate{
-		Name:   "quality_flags",
+		Name:   "no_quality_flags",
 		Passed: false,
 		Detail: fmt.Sprintf("%d quality flag(s) raised: %s", len(flags), strings.Join(codes, ", ")),
 	}
