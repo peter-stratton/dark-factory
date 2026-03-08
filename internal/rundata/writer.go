@@ -14,9 +14,22 @@ type RunMeta struct {
 	Repo         string      `json:"repo"`
 	Milestone    string      `json:"milestone"`
 	IssueNumbers []int       `json:"issue_numbers"`
+	IssueDeps    []IssueDep  `json:"issue_deps,omitempty"`
 	StartedAt    time.Time   `json:"started_at"`
 	FinishedAt   *time.Time  `json:"finished_at,omitempty"`
 	Summary      *RunSummary `json:"summary,omitempty"`
+}
+
+// IssueDep records the dependency info for a single issue.
+type IssueDep struct {
+	IssueNumber int   `json:"issue_number"`
+	DependsOn   []int `json:"depends_on"`
+}
+
+// IssueStatus records the live execution status for a single issue.
+// Written to status.json during processing; distinct from the final outcome.
+type IssueStatus struct {
+	Status string `json:"status"`
 }
 
 // RunSummary holds the outcome summary written by FinalizeRun.
@@ -163,6 +176,35 @@ func (w *Writer) WriteRetryFunctionalReviewResult(issueNum, retryNum int, step S
 func (w *Writer) WriteOutcome(outcome Outcome) error {
 	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", outcome.IssueNumber), "outcome.json")
 	return writeJSONMkdirs(path, outcome)
+}
+
+// WriteIssueStatus writes the live execution status for the given issue.
+// Path: issues/<issueNum>/status.json
+func (w *Writer) WriteIssueStatus(issueNum int, status IssueStatus) error {
+	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "status.json")
+	return writeJSONMkdirs(path, status)
+}
+
+// WriteIssueDeps updates run.json with the dependency graph for all issues.
+// It reads the current run.json, sets IssueDeps, and writes it back.
+func (w *Writer) WriteIssueDeps(deps []IssueDep) error {
+	path := filepath.Join(w.dir, "run.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading run.json: %w", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("parsing run.json: %w", err)
+	}
+
+	meta.IssueDeps = deps
+	if err := writeJSON(path, meta); err != nil {
+		return fmt.Errorf("updating run.json with issue deps: %w", err)
+	}
+	return nil
 }
 
 // DialogueEntry records one turn in the agent dialogue for an issue.

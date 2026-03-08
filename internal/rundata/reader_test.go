@@ -836,3 +836,156 @@ func TestLoadRunVerifyResultsSortedByAttempt(t *testing.T) {
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }
+
+func TestLoadRun_LiveStatusPopulated(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{7},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "7")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "status.json"), IssueStatus{Status: "implementing"}); err != nil {
+		t.Fatalf("writing status.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	if detail.Issues[0].LiveStatus.Status != "implementing" {
+		t.Errorf("LiveStatus.Status: got %q, want %q", detail.Issues[0].LiveStatus.Status, "implementing")
+	}
+}
+
+func TestLoadRun_LiveStatusMissingReturnsEmpty(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{7},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "7")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if detail.Issues[0].LiveStatus.Status != "" {
+		t.Errorf("LiveStatus.Status: got %q, want empty", detail.Issues[0].LiveStatus.Status)
+	}
+}
+
+func TestLoadRun_BlockedByComputedFromDeps(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{1, 2},
+		IssueDeps:    []IssueDep{{IssueNumber: 2, DependsOn: []int{1}}},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	// Issue 1 has no outcome yet (still in progress), issue 2 depends on it.
+	issueDir1 := filepath.Join(runDir, "issues", "1")
+	if err := os.MkdirAll(issueDir1, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	// Find issue 2.
+	var issue2 *IssueDetail
+	for i := range detail.Issues {
+		if detail.Issues[i].IssueNumber == 2 {
+			issue2 = &detail.Issues[i]
+			break
+		}
+	}
+	if issue2 == nil {
+		t.Fatal("issue 2 not found")
+	}
+	if len(issue2.BlockedBy) != 1 || issue2.BlockedBy[0] != 1 {
+		t.Errorf("BlockedBy: got %v, want [1]", issue2.BlockedBy)
+	}
+}
+
+func TestLoadRun_BlockedByEmptyWhenDepCompleted(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{1, 2},
+		IssueDeps:    []IssueDep{{IssueNumber: 2, DependsOn: []int{1}}},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	// Issue 1 has a completed outcome.
+	issueDir1 := filepath.Join(runDir, "issues", "1")
+	if err := os.MkdirAll(issueDir1, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir1, "outcome.json"), Outcome{IssueNumber: 1, Status: "implemented"}); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	// Find issue 2.
+	var issue2 *IssueDetail
+	for i := range detail.Issues {
+		if detail.Issues[i].IssueNumber == 2 {
+			issue2 = &detail.Issues[i]
+			break
+		}
+	}
+	if issue2 == nil {
+		t.Fatal("issue 2 not found")
+	}
+	if len(issue2.BlockedBy) != 0 {
+		t.Errorf("BlockedBy: got %v, want empty (dep is completed)", issue2.BlockedBy)
+	}
+}
+
+func TestLoadRun_NoDepsNoBlockedBy(t *testing.T) {
+	base := t.TempDir()
+	makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{1, 2},
+		StartedAt:    time.Now().UTC(),
+		// No IssueDeps set.
+	})
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	for _, issue := range detail.Issues {
+		if len(issue.BlockedBy) != 0 {
+			t.Errorf("issue %d BlockedBy: got %v, want empty (no deps)", issue.IssueNumber, issue.BlockedBy)
+		}
+	}
+}

@@ -99,6 +99,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	}
 
 	// Step 1: Implement.
+	if hook != nil {
+		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "implementing"}); err != nil {
+			logger.Warn("failed to write issue status", "error", err)
+		}
+	}
 	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger)
 	if err != nil {
 		outcome.Status = "failed"
@@ -453,6 +458,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	}
 
 	// Step 5: Review/retry loop.
+	if hook != nil {
+		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "in_review"}); err != nil {
+			logger.Warn("failed to write issue status", "error", err)
+		}
+	}
 	maxAttempts := cfg.MaxRetries + 1
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if ctx.Err() != nil {

@@ -24,6 +24,8 @@ type RetryDetail struct {
 type IssueDetail struct {
 	IssueNumber      int
 	Outcome          Outcome
+	LiveStatus       IssueStatus  // from status.json; empty Status if not present
+	BlockedBy        []int        // open (not-yet-completed) dependencies; derived by LoadRun
 	SpecGenerator    StepResult
 	Implement        StepResult
 	QualityReview    StepResult
@@ -200,7 +202,47 @@ func (r *Reader) LoadRun(owner, repo, timestamp string) (*RunDetail, error) {
 		}
 	}
 
+	// Compute BlockedBy for each incomplete issue using the stored dep graph.
+	r.computeBlockedBy(detail.Issues, meta.IssueDeps)
+
 	return detail, nil
+}
+
+// computeBlockedBy populates BlockedBy on each issue that has unresolved
+// dependencies. An issue is considered resolved if its Outcome.Status is
+// non-empty (i.e., outcome.json has been written).
+func (r *Reader) computeBlockedBy(issues []IssueDetail, deps []IssueDep) {
+	if len(deps) == 0 {
+		return
+	}
+
+	// Build a set of completed issue numbers.
+	completed := make(map[int]bool, len(issues))
+	for _, issue := range issues {
+		if issue.Outcome.Status != "" {
+			completed[issue.IssueNumber] = true
+		}
+	}
+
+	// Build a map from issue number to its declared dependencies.
+	depsMap := make(map[int][]int, len(deps))
+	for _, d := range deps {
+		depsMap[d.IssueNumber] = d.DependsOn
+	}
+
+	// Populate BlockedBy for each issue without a final outcome.
+	for i := range issues {
+		if issues[i].Outcome.Status != "" {
+			continue // already finished
+		}
+		var openDeps []int
+		for _, depNum := range depsMap[issues[i].IssueNumber] {
+			if !completed[depNum] {
+				openDeps = append(openDeps, depNum)
+			}
+		}
+		issues[i].BlockedBy = openDeps
+	}
 }
 
 // readRunMeta reads and parses run.json from runDir. Returns (meta, true) on
@@ -232,11 +274,32 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		QualityReview:    r.readStep(filepath.Join(issueDir, "quality-review.json")),
 		FunctionalReview: r.readStep(filepath.Join(issueDir, "functional-review.json")),
 		Outcome:          r.readOutcome(filepath.Join(issueDir, "outcome.json")),
+		LiveStatus:       r.readIssueStatus(filepath.Join(issueDir, "status.json")),
 		Retries:          r.loadRetries(filepath.Join(issueDir, "retries")),
 		Punchlist:        r.readPunchlist(filepath.Join(issueDir, "punchlist.json")),
 		Dialogue:         r.readDialogue(filepath.Join(issueDir, "dialogue.json")),
 		VerifyResults:    r.loadVerifyResults(issueDir),
 	}
+}
+
+// readIssueStatus reads an IssueStatus from path. Returns zero value if the
+// file is missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readIssueStatus(path string) IssueStatus {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return IssueStatus{}
+	}
+	if err != nil {
+		r.logger.Warn("skipping status file", "path", path, "error", err)
+		return IssueStatus{}
+	}
+
+	var status IssueStatus
+	if err := json.Unmarshal(data, &status); err != nil {
+		r.logger.Warn("corrupt status file, using zero value", "path", path, "error", err)
+		return IssueStatus{}
+	}
+	return status
 }
 
 // readPunchlist reads a PunchlistData from path. Returns nil if the file is

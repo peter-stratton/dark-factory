@@ -662,6 +662,106 @@ func TestWriteVerifyResultContents(t *testing.T) {
 	}
 }
 
+func TestWriteIssueStatus(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	status := IssueStatus{Status: "implementing"}
+	if err := w.WriteIssueStatus(42, status); err != nil {
+		t.Fatalf("WriteIssueStatus() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "status.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading status.json: %v", err)
+	}
+
+	var written IssueStatus
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing status.json: %v", err)
+	}
+
+	if written.Status != "implementing" {
+		t.Errorf("Status: got %q, want %q", written.Status, "implementing")
+	}
+}
+
+func TestWriteIssueDepsUpdatesRunJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1, 2, 3})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	deps := []IssueDep{
+		{IssueNumber: 3, DependsOn: []int{1, 2}},
+	}
+	if err := w.WriteIssueDeps(deps); err != nil {
+		t.Fatalf("WriteIssueDeps() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if len(meta.IssueDeps) != 1 {
+		t.Fatalf("IssueDeps: got %d entries, want 1", len(meta.IssueDeps))
+	}
+	if meta.IssueDeps[0].IssueNumber != 3 {
+		t.Errorf("IssueDeps[0].IssueNumber: got %d, want 3", meta.IssueDeps[0].IssueNumber)
+	}
+	if len(meta.IssueDeps[0].DependsOn) != 2 {
+		t.Fatalf("IssueDeps[0].DependsOn: got %d entries, want 2", len(meta.IssueDeps[0].DependsOn))
+	}
+	if meta.IssueDeps[0].DependsOn[0] != 1 || meta.IssueDeps[0].DependsOn[1] != 2 {
+		t.Errorf("IssueDeps[0].DependsOn: got %v, want [1 2]", meta.IssueDeps[0].DependsOn)
+	}
+}
+
+func TestWriteIssueDepsPreservesExistingRunJSONFields(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1, 2})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	deps := []IssueDep{{IssueNumber: 2, DependsOn: []int{1}}}
+	if err := w.WriteIssueDeps(deps); err != nil {
+		t.Fatalf("WriteIssueDeps() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	// Ensure pre-existing fields are unchanged.
+	if meta.Repo != "owner/repo" {
+		t.Errorf("Repo: got %q, want %q", meta.Repo, "owner/repo")
+	}
+	if meta.Milestone != "Phase 7" {
+		t.Errorf("Milestone: got %q, want %q", meta.Milestone, "Phase 7")
+	}
+	if len(meta.IssueNumbers) != 2 {
+		t.Errorf("IssueNumbers: got %v, want [1 2]", meta.IssueNumbers)
+	}
+}
+
 func TestPathTraversalRejected(t *testing.T) {
 	cases := []string{
 		"../evil/../../path",

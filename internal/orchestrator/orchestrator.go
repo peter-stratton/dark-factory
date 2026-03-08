@@ -197,6 +197,15 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	// Initial categorization.
 	processable, blocked := categorizeIssues(allIssues, closedSet)
 
+	// Write the dependency graph to run metadata so the dashboard can derive
+	// pending vs blocked status for issues without a final outcome.
+	if writer != nil {
+		issueDeps := buildIssueDepsForRundata(allIssues, closedSet)
+		if err := writer.WriteIssueDeps(issueDeps); err != nil {
+			logger.Warn("failed to write issue deps to run metadata", "error", err)
+		}
+	}
+
 	if len(processable) == 0 {
 		fmt.Println("All issues are blocked — nothing to process.")
 		printSummary(len(allIssues), len(blocked), 0)
@@ -617,6 +626,32 @@ func issueNumbers(issues []github.Issue) []int {
 		nums[i] = iss.Number
 	}
 	return nums
+}
+
+// buildIssueDepsForRundata extracts the dependency graph for all issues so it
+// can be persisted to run.json. Only issues with at least one open (intra-run)
+// dependency are included. Deps that are already in closedSet are excluded
+// because computeBlockedBy resolves blockers against the current run's issue
+// list only — a closed dep is already resolved and must not be counted as a
+// blocker.
+func buildIssueDepsForRundata(issues []github.Issue, closedSet map[int]bool) []rundata.IssueDep {
+	var issueDeps []rundata.IssueDep
+	for _, issue := range issues {
+		allDepNums := deps.ParseDeps(issue.Body)
+		var openDepNums []int
+		for _, n := range allDepNums {
+			if !closedSet[n] {
+				openDepNums = append(openDepNums, n)
+			}
+		}
+		if len(openDepNums) > 0 {
+			issueDeps = append(issueDeps, rundata.IssueDep{
+				IssueNumber: issue.Number,
+				DependsOn:   openDepNums,
+			})
+		}
+	}
+	return issueDeps
 }
 
 // formatIssueRefs formats a slice of issue numbers as "#1, #2, #3".
