@@ -223,8 +223,12 @@ func validateWaitForChecks(w *WaitForChecks) error {
 	if w == nil {
 		return nil
 	}
-	if _, err := time.ParseDuration(w.Timeout); err != nil {
+	d, err := time.ParseDuration(w.Timeout)
+	if err != nil {
 		return fmt.Errorf("wait_for_checks.timeout %q is not a valid duration: %w", w.Timeout, err)
+	}
+	if d <= 0 {
+		return fmt.Errorf("wait_for_checks.timeout must be a positive duration, got %q", w.Timeout)
 	}
 	if len(w.Required) == 0 {
 		return fmt.Errorf("wait_for_checks.required must be non-empty when wait_for_checks is set")

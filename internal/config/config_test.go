@@ -1169,6 +1169,44 @@ wait_for_checks:
 	}
 }
 
+func TestWaitForChecksZeroTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "0"
+  required:
+    - lint
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for zero timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait_for_checks.timeout") {
+		t.Errorf("error = %q, want mention of 'wait_for_checks.timeout'", err.Error())
+	}
+}
+
+func TestWaitForChecksNegativeTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+wait_for_checks:
+  timeout: "-5m"
+  required:
+    - lint
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for negative timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait_for_checks.timeout") {
+		t.Errorf("error = %q, want mention of 'wait_for_checks.timeout'", err.Error())
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.
