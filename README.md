@@ -401,6 +401,29 @@ prompts:
   punchlist: ""
 ```
 
+## Phase overviews
+
+Each completed phase has a practical overview with real-world examples showing
+what was built and how users experience it. These live in
+[`docs/phase-overviews/`](docs/phase-overviews/):
+
+| Phase | Overview |
+|-------|----------|
+| 1 | [Skeleton & Orchestration](docs/phase-overviews/phase-01-skeleton-and-orchestration.md) — CLI scaffold, config, deps, dry-run |
+| 2 | [Quality & Vetting](docs/phase-overviews/phase-02-quality-and-vetting.md) — `godark vet` validation framework |
+| 3 | [Docker Sandbox](docs/phase-overviews/phase-03-docker-sandbox.md) — container isolation, auth, cloning |
+| 4 | [Agent Execution](docs/phase-overviews/phase-04-agent-execution.md) — implementer, reviewer, guard rails, retry loop |
+| 5 | [Agent SDK Migration](docs/phase-overviews/phase-05-agent-sdk-migration.md) — SDK wrapper, role permissions, session resumption |
+| 6 | [Multi-Language Support](docs/phase-overviews/phase-06-multi-language-support.md) — auto-detect, runtime config, pluggable Dockerfiles |
+| 7 | [Review Quality & Dashboard](docs/phase-overviews/phase-07-review-quality-and-dashboard.md) — run data, quality flags, web dashboard |
+| 8 | [Harness Engineering](docs/phase-overviews/phase-08-harness-engineering.md) — harness templates, `godark new`, vet architecture |
+| 9 | [Harness-Aware Agent Execution](docs/phase-overviews/phase-09-harness-aware-agent-execution.md) — harness injection, dialogue, enforcement |
+| 10 | [Deterministic Verification Pipeline](docs/phase-overviews/phase-10-deterministic-verification-pipeline.md) — verify step, auto-fix, bash deny-list |
+| 11 | [Run Analysis & Prompt Feedback](docs/phase-overviews/phase-11-run-analysis-and-prompt-feedback.md) — `godark analyze`, trends, prompt gaps |
+| 12 | [Complex Project Support](docs/phase-overviews/phase-12-complex-project-support.md) — multi-module, codegen, secrets, CI checks |
+
+To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
+
 ## Building
 
 ```bash
