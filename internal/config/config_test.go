@@ -1022,6 +1022,45 @@ modules:
 	}
 }
 
+func TestRequiredEnvDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.RequiredEnv != nil {
+		t.Errorf("RequiredEnv = %v, want nil", cfg.RequiredEnv)
+	}
+}
+
+func TestRequiredEnvFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+required_env:
+  - CLOUDSMITH_TOKEN
+  - PUBSUB_EMULATOR_HOST
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"CLOUDSMITH_TOKEN", "PUBSUB_EMULATOR_HOST"}
+	if len(cfg.RequiredEnv) != len(want) {
+		t.Fatalf("RequiredEnv len = %d, want %d", len(cfg.RequiredEnv), len(want))
+	}
+	for i, w := range want {
+		if cfg.RequiredEnv[i] != w {
+			t.Errorf("RequiredEnv[%d] = %q, want %q", i, cfg.RequiredEnv[i], w)
+		}
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.

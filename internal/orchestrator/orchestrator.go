@@ -197,7 +197,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 	// Collect auth tokens once at the start.
-	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference)
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
 	if err != nil {
 		return fmt.Errorf("collecting auth: %w", err)
 	}

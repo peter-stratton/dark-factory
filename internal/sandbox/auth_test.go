@@ -23,7 +23,7 @@ func TestCollectAuthEnv_APIKey(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_test")
 
-	env, err := CollectAuthEnv(slog.Default(), "oauth")
+	env, err := CollectAuthEnv(slog.Default(), "oauth", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestCollectAuthEnv_NoAuthTokens(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
-	_, err := CollectAuthEnv(slog.Default(), "oauth")
+	_, err := CollectAuthEnv(slog.Default(), "oauth", nil)
 	if err == nil {
 		t.Fatal("expected error when no auth tokens set")
 	}
@@ -59,7 +59,7 @@ func TestCollectAuthEnv_OAuthTokenOnly(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-abc")
 	t.Setenv("GH_TOKEN", "gho_test")
 
-	env, err := CollectAuthEnv(slog.Default(), "oauth")
+	env, err := CollectAuthEnv(slog.Default(), "oauth", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestCollectAuthEnv_OAuthPreferredOverAPIKey(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-abc")
 	t.Setenv("GH_TOKEN", "gho_test")
 
-	env, err := CollectAuthEnv(slog.Default(), "oauth")
+	env, err := CollectAuthEnv(slog.Default(), "oauth", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestCollectAuthEnv_APIKeyPreferredOverOAuth(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-abc")
 	t.Setenv("GH_TOKEN", "gho_test")
 
-	env, err := CollectAuthEnv(slog.Default(), "api_key")
+	env, err := CollectAuthEnv(slog.Default(), "api_key", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestCollectAuthEnv_APIKeyPreference_FallsBackToOAuth(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-abc")
 	t.Setenv("GH_TOKEN", "gho_test")
 
-	env, err := CollectAuthEnv(slog.Default(), "api_key")
+	env, err := CollectAuthEnv(slog.Default(), "api_key", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestCollectAuthEnv_GHTokenFromEnv(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_from_env")
 
-	env, err := CollectAuthEnv(slog.Default(), "oauth")
+	env, err := CollectAuthEnv(slog.Default(), "oauth", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestCollectAuthEnv_GHTokenFallback(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
-	env, err := CollectAuthEnv(slog.Default(), "oauth")
+	env, err := CollectAuthEnv(slog.Default(), "oauth", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestCollectAuthEnv_GHTokenMissing(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 
-	_, err := CollectAuthEnv(slog.Default(), "oauth")
+	_, err := CollectAuthEnv(slog.Default(), "oauth", nil)
 	if err == nil {
 		t.Fatal("expected error when GH_TOKEN missing")
 	}
@@ -205,7 +205,7 @@ func TestCollectAuthEnv_NoSecretsInLog(t *testing.T) {
 	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger := slog.New(handler)
 
-	env, err := CollectAuthEnv(logger, "oauth")
+	env, err := CollectAuthEnv(logger, "oauth", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,5 +221,68 @@ func TestCollectAuthEnv_NoSecretsInLog(t *testing.T) {
 	}
 	if strings.Contains(logOutput, env["GH_TOKEN"]) {
 		t.Error("log should not contain raw GH_TOKEN value")
+	}
+}
+
+func TestCollectAuthEnv_RequiredEnvForwarded(t *testing.T) {
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("gho_fake\n"), nil
+	})()
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+	t.Setenv("GH_TOKEN", "gho_test")
+	t.Setenv("FOO", "secret-value")
+
+	env, err := CollectAuthEnv(slog.Default(), "oauth", []string{"FOO"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env["FOO"] != "secret-value" {
+		t.Errorf("FOO = %q, want %q", env["FOO"], "secret-value")
+	}
+}
+
+func TestCollectAuthEnv_RequiredEnvMissingSkipped(t *testing.T) {
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("gho_fake\n"), nil
+	})()
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+	t.Setenv("GH_TOKEN", "gho_test")
+	t.Setenv("MISSING_VAR", "")
+
+	env, err := CollectAuthEnv(slog.Default(), "oauth", []string{"MISSING_VAR"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := env["MISSING_VAR"]; ok {
+		t.Error("MISSING_VAR should not appear in env when unset")
+	}
+}
+
+func TestCollectAuthEnv_RequiredEnvNotLogged(t *testing.T) {
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("gho_fake\n"), nil
+	})()
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+	t.Setenv("GH_TOKEN", "gho_test")
+	t.Setenv("CLOUDSMITH_TOKEN", "super-secret-cloudsmith")
+
+	var buf strings.Builder
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	logger := slog.New(handler)
+
+	_, err := CollectAuthEnv(logger, "oauth", []string{"CLOUDSMITH_TOKEN"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	logOutput := buf.String()
+	if strings.Contains(logOutput, "super-secret-cloudsmith") {
+		t.Error("log should not contain raw CLOUDSMITH_TOKEN value")
 	}
 }
