@@ -336,7 +336,11 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+(function initCharts() {
+  if (typeof Chart === 'undefined') {
+    document.addEventListener('DOMContentLoaded', initCharts);
+    return;
+  }
   var raw = document.getElementById('trend-data').textContent;
   var points = JSON.parse(raw);
 
@@ -409,7 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
   makeChart('chart-cost', 'Avg Cost / Issue (USD)',
     function(p) { return +p.avg_cost_per_issue_usd.toFixed(4); }, '#60a5fa',
     { ticks: { color: '#94a3b8', callback: function(v) { return '$' + v; } } });
-});
+})();
 </script>
 
 {{else}}
