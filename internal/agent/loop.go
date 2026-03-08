@@ -12,6 +12,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/quality"
 	"github.com/phs/dark-factory/internal/rundata"
 )
@@ -447,6 +448,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
 				logger.Warn("failed to label PR", "error", err)
 			}
+			if err := github.AddIssueLabel(cfg.Repo, prNum, label.AwaitingHumanReview); err != nil {
+				logger.Warn("failed to apply awaiting-human-review label", "pr_number", prNum, "error", err)
+			}
 			comment := fmt.Sprintf("Exhausted %d quality review/retry cycles. Labeling for human review.", qualityMaxAttempts)
 			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
 				logger.Warn("failed to comment on PR", "error", err)
@@ -506,6 +510,19 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if cfg.AutoMerge == "none" {
 				// Skip merge — human will review and merge manually.
 				logger.Info("PR approved, skipping merge (auto_merge=none)", "pr_number", prNum)
+				if err := github.AddIssueLabel(cfg.Repo, prNum, label.AwaitingHumanReview); err != nil {
+					logger.Warn("failed to apply awaiting-human-review label", "pr_number", prNum, "error", err)
+				}
+				outcome.Status = "ready-to-merge"
+				outcome.Retries = attempt
+				return outcome
+			}
+			if cfg.AutoMerge == "low_risk" {
+				// Risk classifier not yet wired; label for human review in the interim.
+				logger.Info("PR approved, skipping merge (auto_merge=low_risk, risk classifier pending)", "pr_number", prNum)
+				if err := github.AddIssueLabel(cfg.Repo, prNum, label.AwaitingHumanReview); err != nil {
+					logger.Warn("failed to apply awaiting-human-review label", "pr_number", prNum, "error", err)
+				}
 				outcome.Status = "ready-to-merge"
 				outcome.Retries = attempt
 				return outcome
@@ -574,6 +591,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("merging PR: %w", err)
 				return outcome
+			}
+			// Remove all PR lifecycle labels after merge (best-effort).
+			for _, lbl := range label.All() {
+				if err := github.RemoveIssueLabel(cfg.Repo, prNum, lbl); err != nil {
+					logger.Warn("failed to remove lifecycle label after merge", "label", lbl, "pr_number", prNum, "error", err)
+				}
 			}
 			outcome.Status = "implemented"
 			outcome.Retries = attempt
@@ -647,6 +670,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// Exhausted retries.
 	if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
 		logger.Warn("failed to label PR", "error", err)
+	}
+	if err := github.AddIssueLabel(cfg.Repo, prNum, label.AwaitingHumanReview); err != nil {
+		logger.Warn("failed to apply awaiting-human-review label", "pr_number", prNum, "error", err)
 	}
 	comment := fmt.Sprintf("Exhausted %d review/retry cycles. Labeling for human review.", maxAttempts)
 	if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {

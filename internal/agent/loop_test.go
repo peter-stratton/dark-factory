@@ -13,6 +13,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/quality"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
@@ -3026,5 +3027,230 @@ func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
 	}
 	if functionalRetryEnv["GODARK_SESSION_ID"] != "sess-qual-retry" {
 		t.Errorf("GODARK_SESSION_ID passed to functional retry = %q, want %q (quality retry's session ID)", functionalRetryEnv["GODARK_SESSION_ID"], "sess-qual-retry")
+	}
+}
+
+// --- PR lifecycle label tests ---
+
+// setupGHLabelTracker replaces github.CommandRunner with a wrapper that
+// captures --add-label and --remove-label values from issue edit calls.
+// Returns slices that are populated as calls occur.
+func setupGHLabelTracker(t *testing.T) (added *[]string, removed *[]string) {
+	t.Helper()
+	var addedLabels, removedLabels []string
+	orig := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = orig })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		for i, a := range args {
+			if a == "--add-label" && i+1 < len(args) {
+				addedLabels = append(addedLabels, args[i+1])
+			}
+			if a == "--remove-label" && i+1 < len(args) {
+				removedLabels = append(removedLabels, args[i+1])
+			}
+		}
+		return []byte(""), nil
+	}
+	return &addedLabels, &removedLabels
+}
+
+// standardLoopGuard returns a guard function that satisfies the minimum
+// responses needed for a successful loop run (SHA, PR number, PR body,
+// drift diff). All other calls return empty success.
+func standardLoopGuard() func(string, ...string) ([]byte, error) {
+	return func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+}
+
+func TestProcessIssue_NoneModeLabelsAwaitingReview(t *testing.T) {
+	added, _ := setupGHLabelTracker(t)
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "none"
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+	}, standardLoopGuard())
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "ready-to-merge", outcome.Err)
+	}
+
+	found := false
+	for _, l := range *added {
+		if l == label.AwaitingHumanReview {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %q label to be added, got: %v", label.AwaitingHumanReview, *added)
+	}
+}
+
+func TestProcessIssue_LowRiskModeLabelsAwaitingReview(t *testing.T) {
+	added, _ := setupGHLabelTracker(t)
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "low_risk"
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+	}, standardLoopGuard())
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "ready-to-merge", outcome.Err)
+	}
+
+	found := false
+	for _, l := range *added {
+		if l == label.AwaitingHumanReview {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %q label to be added, got: %v", label.AwaitingHumanReview, *added)
+	}
+}
+
+func TestProcessIssue_AllModeSkipsLifecycleLabel(t *testing.T) {
+	added, _ := setupGHLabelTracker(t)
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "all"
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+	}, standardLoopGuard())
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+
+	for _, l := range *added {
+		if l == label.AwaitingHumanReview {
+			t.Errorf("expected no %q label for auto_merge=all, but it was added", label.AwaitingHumanReview)
+		}
+	}
+}
+
+func TestProcessIssue_MergeRemovesLifecycleLabels(t *testing.T) {
+	_, removed := setupGHLabelTracker(t)
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "all"
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+	}, standardLoopGuard())
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+
+	all := label.All()
+	for _, lbl := range all {
+		found := false
+		for _, r := range *removed {
+			if r == lbl {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected lifecycle label %q to be removed after merge, removed labels: %v", lbl, *removed)
+		}
+	}
+}
+
+func TestProcessIssue_FunctionalEscalationLabelsAwaitingReview(t *testing.T) {
+	added, _ := setupGHLabelTracker(t)
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "all"
+	cfg.MaxRetries = 0 // exhaust immediately
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+	}, standardLoopGuard())
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "needs-human-review" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
+	}
+
+	found := false
+	for _, l := range *added {
+		if l == label.AwaitingHumanReview {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %q label to be added on escalation, got: %v", label.AwaitingHumanReview, *added)
+	}
+}
+
+func TestProcessIssue_QualityEscalationLabelsAwaitingReview(t *testing.T) {
+	added, _ := setupGHLabelTracker(t)
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "all"
+	cfg.MaxRetries = 0 // exhaust quality retries immediately
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=CHANGES_REQUESTED",
+	}, standardLoopGuard())
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "needs-human-review" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
+	}
+
+	found := false
+	for _, l := range *added {
+		if l == label.AwaitingHumanReview {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %q label to be added on quality escalation, got: %v", label.AwaitingHumanReview, *added)
 	}
 }
