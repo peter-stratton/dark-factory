@@ -37,6 +37,8 @@ RUN curl -fsSL https://go.dev/dl/go{{.RuntimeVersion}}.linux-amd64.tar.gz \
 ENV PATH="/usr/local/go/bin:${PATH}"
 {{else if eq .RuntimeName "flutter"}}
 # Install Flutter SDK
+RUN apt-get update && apt-get install -y --no-install-recommends unzip xz-utils \
+    && rm -rf /var/lib/apt/lists/*
 RUN git clone --branch {{.RuntimeVersion}} https://github.com/flutter/flutter /usr/local/flutter
 ENV PATH="/usr/local/flutter/bin:${PATH}"
 RUN flutter precache
