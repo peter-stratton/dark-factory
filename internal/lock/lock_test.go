@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 )
 
 // newTestLocker creates a Locker with a temp-dir lock file path for isolation.
@@ -17,7 +18,7 @@ func newTestLocker(t *testing.T) *Locker {
 	t.Helper()
 	return &Locker{
 		repo:         "owner/repo",
-		label:        LockLabel,
+		label:        label.InProgress,
 		lockFilePath: filepath.Join(t.TempDir(), "lock.json"),
 		logger:       slog.Default(),
 	}

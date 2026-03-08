@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/phs/dark-factory/internal/harness/templates"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/skills"
 	"github.com/spf13/cobra"
@@ -168,6 +169,6 @@ func createLockLabel(cmd *cobra.Command) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create lock label: %v\n", err)
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "ensured label %q in %s\n", lock.LockLabel, repo)
+	fmt.Fprintf(cmd.OutOrStdout(), "ensured label %q in %s\n", label.InProgress, repo)
 	return nil
 }

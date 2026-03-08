@@ -14,6 +14,7 @@ import (
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/dialogue"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/punchlist"
@@ -306,7 +307,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		} else {
 			// Subsequent waves: we already hold the lock, just label new issues.
 			for _, n := range batchNums {
-				if err := github.AddIssueLabel(cfg.Repo, n, lock.LockLabel); err != nil {
+				if err := github.AddIssueLabel(cfg.Repo, n, label.InProgress); err != nil {
 					logger.Warn("failed to apply lock label to newly unblocked issue", "issue", n, "error", err)
 				}
 			}
