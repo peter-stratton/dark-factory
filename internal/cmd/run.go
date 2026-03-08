@@ -86,6 +86,10 @@ each unblocked issue through the implement → review → merge loop.`,
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		if err := config.ValidateRequiredEnv(cfg.RequiredEnv); err != nil {
+			return err
+		}
+
 		if cfg.NoSandbox {
 			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}

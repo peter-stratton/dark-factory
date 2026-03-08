@@ -67,6 +67,10 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		if err := config.ValidateRequiredEnv(cfg.RequiredEnv); err != nil {
+			return err
+		}
+
 		if dryRun {
 			for _, num := range issueNums {
 				issue, err := github.FetchIssue(cfg.Repo, num)
