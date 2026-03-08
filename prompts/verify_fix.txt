@@ -1,5 +1,8 @@
 The automated verify step for PR #{{.PRNumber}} (issue #{{.IssueNumber}}: {{.IssueTitle}}) in the {{.Repo}} repository has failed.
-
+{{if .ModuleContext}}
+Module structure:
+{{.ModuleContext}}
+{{end}}
 The following checks did not pass:
 
 {{.VerifyErrors}}

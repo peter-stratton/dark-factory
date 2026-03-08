@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -152,7 +153,123 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	hasSpec := specGenerated || HasScenarioSpec(cfg.ScenarioDir, issue.Number)
 
 	// Step 3.5: Verify. Runs between guard rails and quality review.
-	if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
+	if cfg.Modules != nil {
+		// Per-module verification in dependency order.
+		sortedMods, err := topologicalSortModules(cfg.Modules)
+		if err != nil {
+			outcome.Status = "failed"
+			outcome.Err = fmt.Errorf("sorting modules for verify: %w", err)
+			return outcome
+		}
+
+		var verifyRunner CommandRunner
+		if cfg.NoSandbox {
+			verifyRunner = newHostRunner()
+		} else {
+			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, logger)
+		}
+
+		moduleFailed := false
+		var failedModName string
+
+		for _, modName := range sortedMods {
+			mod := cfg.Modules[modName]
+			moduleChecks := buildModuleVerifyChecks(modName, mod, cfg)
+			if len(moduleChecks) == 0 {
+				continue
+			}
+
+			logger.Info("running verify step for module",
+				"issue_number", issue.Number,
+				"module", modName,
+				"check_count", len(moduleChecks),
+			)
+			verifyResult := RunVerify(ctx, moduleChecks, verifyRunner)
+			if hook != nil {
+				if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
+					logger.Warn("failed to write verify result", "error", err)
+				}
+			}
+
+			if !verifyResult.AllPassed && prompts.VerifyFix != "" && cfg.Verify.MaxFixAttempts > 0 {
+				for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
+					if ctx.Err() != nil {
+						outcome.Status = "failed"
+						outcome.Err = ctx.Err()
+						return outcome
+					}
+
+					verifyErrors := fmt.Sprintf("Module: %s\n\n%s", modName, formatVerifyErrors(verifyResult))
+					logger.Info("running verify-fix attempt",
+						"issue_number", issue.Number,
+						"module", modName,
+						"attempt", fixAttempt+1,
+						"max_attempts", cfg.Verify.MaxFixAttempts,
+					)
+
+					fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
+					if err != nil {
+						outcome.Status = "failed"
+						outcome.Err = fmt.Errorf("verify-fix agent: %w", err)
+						return outcome
+					}
+					if fixResult.TimedOut {
+						outcome.Status = "failed"
+						outcome.Err = fmt.Errorf("verify-fix agent timed out")
+						return outcome
+					}
+					sessionID = fixResult.SessionID
+
+					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+						outcome.Status = "failed"
+						outcome.Err = driftErr
+						return outcome
+					}
+
+					verifyResult = RunVerify(ctx, moduleChecks, verifyRunner)
+					if hook != nil {
+						if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
+							logger.Warn("failed to write verify result", "error", err)
+						}
+					}
+					if verifyResult.AllPassed {
+						break
+					}
+				}
+			}
+
+			if verifyResult.AllPassed {
+				logger.Info("verify step passed for module", "issue_number", issue.Number, "module", modName)
+			} else {
+				var failedNames []string
+				for _, cr := range verifyResult.Checks {
+					if !cr.Passed {
+						failedNames = append(failedNames, cr.Name)
+					}
+				}
+				logger.Warn("verify step failed for module",
+					"issue_number", issue.Number,
+					"module", modName,
+					"failed_checks", failedNames,
+				)
+				moduleFailed = true
+				failedModName = modName
+				break // Stop processing dependent modules.
+			}
+		}
+
+		if moduleFailed {
+			if cfg.Verify.Blocking {
+				outcome.Status = "failed"
+				outcome.Err = fmt.Errorf("verify failed for module %s", failedModName)
+				return outcome
+			}
+			logger.Warn("module verify failed (non-blocking), proceeding to review",
+				"issue_number", issue.Number,
+				"module", failedModName,
+			)
+		}
+	} else if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
 		var verifyRunner CommandRunner
 		if cfg.NoSandbox {
 			verifyRunner = newHostRunner()
@@ -488,6 +605,96 @@ func checkDriftAndClose(baseSHA string, cfg *config.Config, prNum int, logger *s
 		logger.Warn("failed to close PR", "error", closeErr)
 	}
 	return fmt.Errorf("protected path drift: %v", touched)
+}
+
+// topologicalSortModules returns module names sorted in dependency order
+// (dependencies before dependents). Uses Kahn's algorithm with alphabetical
+// tie-breaking for deterministic output. Returns an error if a cycle is
+// detected (though config.validateModules should have already caught this).
+func topologicalSortModules(modules map[string]config.Module) ([]string, error) {
+	// In-degree = number of dependencies each module has.
+	inDegree := make(map[string]int, len(modules))
+	for name, mod := range modules {
+		inDegree[name] = len(mod.DependsOn)
+	}
+
+	// Seed queue with zero-in-degree modules (no dependencies).
+	var queue []string
+	for name, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, name)
+		}
+	}
+	sort.Strings(queue)
+
+	result := make([]string, 0, len(modules))
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		result = append(result, name)
+
+		// Reduce in-degree for every module that lists name in depends_on.
+		var nowReady []string
+		for other, mod := range modules {
+			for _, dep := range mod.DependsOn {
+				if dep == name {
+					inDegree[other]--
+					if inDegree[other] == 0 {
+						nowReady = append(nowReady, other)
+					}
+					break
+				}
+			}
+		}
+		sort.Strings(nowReady)
+		queue = append(queue, nowReady...)
+	}
+
+	if len(result) != len(modules) {
+		return nil, fmt.Errorf("cycle detected in module dependencies")
+	}
+	return result, nil
+}
+
+// buildModuleVerifyChecks builds the ordered list of verify checks for a
+// single module. Module-level commands take precedence; empty fields fall back
+// to the root-level config commands. Each command is prefixed with
+// "cd <modName> && " so it runs in the module's subdirectory.
+// Order: generate → build → lint → test.
+func buildModuleVerifyChecks(modName string, mod config.Module, cfg *config.Config) []Check {
+	generate := mod.GenerateCommand
+	if generate == "" {
+		generate = cfg.GenerateCommand
+	}
+	build := mod.BuildCommand
+	if build == "" {
+		build = cfg.BuildCommand
+	}
+	lint := mod.LintCommand
+	if lint == "" {
+		lint = cfg.LintCommand
+	}
+	test := mod.TestCommand
+	if test == "" {
+		test = cfg.TestCommand
+	}
+
+	prefix := "cd " + modName + " && "
+
+	var checks []Check
+	if generate != "" {
+		checks = append(checks, Check{Name: "generate", Command: prefix + generate})
+	}
+	if build != "" {
+		checks = append(checks, Check{Name: "build", Command: prefix + build})
+	}
+	if lint != "" {
+		checks = append(checks, Check{Name: "lint", Command: prefix + lint})
+	}
+	if test != "" {
+		checks = append(checks, Check{Name: "test", Command: prefix + test})
+	}
+	return checks
 }
 
 // buildVerifyChecks constructs the ordered list of verify checks from non-empty
