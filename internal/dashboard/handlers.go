@@ -517,6 +517,9 @@ func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
 	if hasStepData(issue.Implement) {
 		steps = append(steps, stepToView("Implement", issue.Implement))
 	}
+	for _, vr := range issue.VerifyResults {
+		steps = append(steps, verifyToTimelineView(vr))
+	}
 	if hasStepData(issue.QualityReview) {
 		steps = append(steps, stepToView("Quality Review", issue.QualityReview))
 	}
@@ -588,6 +591,53 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 		HasOutput:    step.Output != "",
 		Output:       step.Output,
 		ToolTrace:    step.ToolTrace,
+	}
+}
+
+// verifyToTimelineView converts a VerifyStepResult to a TimelineStepView.
+func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
+	name := "Verify"
+	if vr.FixAttempted {
+		name = fmt.Sprintf("Verify (fix attempt %d)", vr.Attempt)
+	}
+
+	verdictClass := "success"
+	markerClass := "success"
+	verdict := "Passed"
+	if !vr.AllPassed {
+		verdictClass = "danger"
+		markerClass = "danger"
+		verdict = "Failed"
+	}
+
+	// Build output from check results.
+	var sb strings.Builder
+	for _, c := range vr.Checks {
+		status := "PASS"
+		if !c.Passed {
+			status = "FAIL"
+		}
+		sb.WriteString(fmt.Sprintf("**%s**: %s (exit code %d)\n", c.Name, status, c.ExitCode))
+		if c.Output != "" && !c.Passed {
+			sb.WriteString("```\n")
+			sb.WriteString(c.Output)
+			if !strings.HasSuffix(c.Output, "\n") {
+				sb.WriteString("\n")
+			}
+			sb.WriteString("```\n")
+		}
+	}
+	output := sb.String()
+
+	return TimelineStepView{
+		Name:         name,
+		MarkerClass:  markerClass,
+		Duration:     "—",
+		Cost:         "—",
+		Verdict:      verdict,
+		VerdictClass: verdictClass,
+		HasOutput:    output != "",
+		Output:       output,
 	}
 }
 
