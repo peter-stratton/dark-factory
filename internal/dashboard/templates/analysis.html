@@ -336,7 +336,7 @@
 </div>
 
 <script>
-(function() {
+document.addEventListener('DOMContentLoaded', function() {
   var raw = document.getElementById('trend-data').textContent;
   var points = JSON.parse(raw);
 
@@ -409,7 +409,7 @@
   makeChart('chart-cost', 'Total Cost (USD)',
     function(p) { return +p.total_cost_usd.toFixed(2); }, '#60a5fa',
     { ticks: { color: '#94a3b8', callback: function(v) { return '$' + v; } } });
-})();
+});
 </script>
 
 {{else}}
