@@ -18,13 +18,12 @@ const (
 // It is best-effort: the caller should not rely on this for correctness, only for
 // diagnostic signal.
 func AnalyzeFailure(log string, exitCode int) rundata.FailureAnalysis {
-	bounded := boundLog(log, maxPostMortemLines, maxPostMortemBytes)
-	lines := splitLines(bounded)
+	lines := splitLines(log)
 
 	var patterns []rundata.FailurePattern
 
 	// Pattern: stream_closed — API connection drops.
-	if n := countContaining(lines, "Stream closed", "stream closed"); n > 0 {
+	if n := countContaining(lines, "stream closed"); n > 0 {
 		severity := "medium"
 		if n >= 50 {
 			severity = "high"
@@ -107,7 +106,7 @@ func AnalyzeFailure(log string, exitCode int) rundata.FailureAnalysis {
 	if exitCode != 0 {
 		patterns = append(patterns, rundata.FailurePattern{
 			Code:     "nonzero_exit",
-			Count:    exitCode,
+			Count:    1,
 			Severity: "medium",
 			Message:  fmt.Sprintf("container exited with code %d", exitCode),
 		})

@@ -152,8 +152,8 @@ func TestAnalyzeFailure_NonzeroExitCode(t *testing.T) {
 
 	for _, p := range result.Patterns {
 		if p.Code == "nonzero_exit" {
-			if p.Count != 2 {
-				t.Errorf("nonzero_exit count = %d, want 2 (the exit code)", p.Count)
+			if p.Count != 1 {
+				t.Errorf("nonzero_exit count = %d, want 1 (one occurrence)", p.Count)
 			}
 			return
 		}

@@ -218,12 +218,6 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		FinishedAt: finishedAt,
 	}
 
-	// Capture bounded container log for post-mortem on failure only.
-	if result.TimedOut || result.ExitCode != 0 {
-		combined := result.Stdout + result.Stderr
-		res.ContainerLog = boundLog(combined, maxPostMortemLines, maxPostMortemBytes)
-	}
-
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {
 		res.SessionID = parsed.SessionID
 		res.CostUSD = parsed.CostUSD
@@ -233,6 +227,13 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}
+	}
+
+	// Capture bounded container log for post-mortem on failure only.
+	// Must run after parseRunnerOutput so ExitCode reflects IsError upgrades.
+	if res.TimedOut || res.ExitCode != 0 {
+		combined := result.Stdout + result.Stderr
+		res.ContainerLog = boundLog(combined, maxPostMortemLines, maxPostMortemBytes)
 	}
 
 	return res, nil
