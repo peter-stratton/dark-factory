@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,8 +15,23 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/notify"
 	"github.com/phs/dark-factory/internal/rundata"
 )
+
+// fakeNotifier records every event received and optionally returns an error.
+type fakeNotifier struct {
+	received []notify.Event
+	err      error
+}
+
+func (f *fakeNotifier) Send(_ context.Context, event notify.Event) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.received = append(f.received, event)
+	return nil
+}
 
 // ghIssue mirrors the JSON shape for test fixtures.
 type ghIssue struct {
@@ -474,7 +490,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone")
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -521,7 +537,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "")
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -570,7 +586,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone"); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -694,7 +710,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone"); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -928,7 +944,7 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone"); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -950,5 +966,173 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 		if !found {
 			t.Errorf("expected lifecycle label %q to be ensured (created), got: %v", want, ensuredLabels)
 		}
+	}
+}
+
+func TestFireNotifications_SendsEvent(t *testing.T) {
+	fn := &fakeNotifier{}
+	event := notify.Event{Type: "run_complete", Repo: "owner/repo", Message: "1 implemented, 0 failed, 0 blocked"}
+
+	fireNotifications(context.Background(), []notify.Notifier{fn}, event, testLogger(t))
+
+	if len(fn.received) != 1 {
+		t.Fatalf("got %d events, want 1", len(fn.received))
+	}
+	if fn.received[0].Type != "run_complete" {
+		t.Errorf("event type = %q, want %q", fn.received[0].Type, "run_complete")
+	}
+	if fn.received[0].Message != event.Message {
+		t.Errorf("event message = %q, want %q", fn.received[0].Message, event.Message)
+	}
+}
+
+func TestFireNotifications_LogsErrorAndContinues(t *testing.T) {
+	failing := &fakeNotifier{err: errors.New("network error")}
+	ok := &fakeNotifier{}
+	event := notify.Event{Type: "abort", Repo: "owner/repo", Message: "reason"}
+
+	// Should not panic or return an error; the ok notifier should still receive the event.
+	fireNotifications(context.Background(), []notify.Notifier{failing, ok}, event, testLogger(t))
+
+	if len(ok.received) != 1 {
+		t.Errorf("ok notifier got %d events, want 1", len(ok.received))
+	}
+}
+
+func TestFireNotifications_EmptyNotifiers(t *testing.T) {
+	// No notifiers — should not panic.
+	fireNotifications(context.Background(), nil, notify.Event{Type: "run_complete"}, testLogger(t))
+}
+
+func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome {
+			if issue.Number == 1 {
+				return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
+			}
+			return agent.IssueOutcome{IssueNumber: 2, Status: "failed", Err: fmt.Errorf("boom")}
+		})
+
+	fn := &fakeNotifier{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	// Must have received exactly one run_complete event.
+	var rcEvents []notify.Event
+	for _, e := range fn.received {
+		if e.Type == "run_complete" {
+			rcEvents = append(rcEvents, e)
+		}
+	}
+	if len(rcEvents) != 1 {
+		t.Fatalf("got %d run_complete events, want 1; all events: %v", len(rcEvents), fn.received)
+	}
+	// Message should mention implemented and failed counts.
+	msg := rcEvents[0].Message
+	if !strings.Contains(msg, "implemented") {
+		t.Errorf("run_complete message %q missing 'implemented'", msg)
+	}
+	if !strings.Contains(msg, "failed") {
+		t.Errorf("run_complete message %q missing 'failed'", msg)
+	}
+}
+
+func TestProcessIssues_AbortNotificationFired(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "will merge then fail to pull"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
+		})
+
+	// Override CommandRunner so PullAfterMerge fails (simulates network issue).
+	origCmdRunner := CommandRunner
+	t.Cleanup(func() { CommandRunner = origCmdRunner })
+	pullCallCount := 0
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pull" && args[1] == "--rebase" {
+			pullCallCount++
+			return nil, fmt.Errorf("pull failed: remote unreachable")
+		}
+		// git status --porcelain: clean tree (allows PullAfterMerge to return a clear error)
+		if len(args) >= 1 && args[0] == "status" {
+			return []byte(""), nil
+		}
+		return []byte("ok"), nil
+	}
+
+	fn := &fakeNotifier{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	// Must have received an abort event.
+	var abortEvents []notify.Event
+	for _, e := range fn.received {
+		if e.Type == "abort" {
+			abortEvents = append(abortEvents, e)
+		}
+	}
+	if len(abortEvents) != 1 {
+		t.Fatalf("got %d abort events, want 1; all events: %v", len(abortEvents), fn.received)
+	}
+	if !strings.Contains(abortEvents[0].Message, "abort") && !strings.Contains(abortEvents[0].Message, "sync") && !strings.Contains(abortEvents[0].Message, "Run aborted") {
+		t.Errorf("abort message %q should mention the abort reason", abortEvents[0].Message)
+	}
+}
+
+// filteringNotifier only accepts events whose Type is in the allowed set,
+// forwarding to the inner fakeNotifier. This simulates notify.filteredNotifier
+// for use in orchestrator-layer tests without depending on unexported types.
+type filteringNotifier struct {
+	inner  *fakeNotifier
+	events map[string]bool
+}
+
+func (f *filteringNotifier) Send(ctx context.Context, event notify.Event) error {
+	if !f.events[event.Type] {
+		return nil
+	}
+	return f.inner.Send(ctx, event)
+}
+
+func TestFireNotifications_EventFiltering(t *testing.T) {
+	// Notifier subscribed to "abort" only must not receive "run_complete".
+	inner := &fakeNotifier{}
+	abortOnly := &filteringNotifier{inner: inner, events: map[string]bool{"abort": true}}
+
+	fireNotifications(context.Background(), []notify.Notifier{abortOnly},
+		notify.Event{Type: "run_complete", Repo: "owner/repo", Message: "done"}, testLogger(t))
+
+	if len(inner.received) != 0 {
+		t.Errorf("abort-only notifier received %d events for run_complete, want 0", len(inner.received))
+	}
+
+	// Now fire an abort — it must be received.
+	fireNotifications(context.Background(), []notify.Notifier{abortOnly},
+		notify.Event{Type: "abort", Repo: "owner/repo", Message: "reason"}, testLogger(t))
+
+	if len(inner.received) != 1 {
+		t.Errorf("abort-only notifier received %d events for abort, want 1", len(inner.received))
 	}
 }

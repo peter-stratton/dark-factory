@@ -3,11 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
@@ -15,6 +17,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/notify"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/pypi"
@@ -116,6 +119,14 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 
 		if writerErr != nil {
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
+		}
+
+		// Initialize notifiers from config. Construction failures are logged but
+		// never abort the run — notifications are best-effort.
+		notifiers, notifyErr := notify.NewFromConfig(cfg.Notify)
+		if notifyErr != nil {
+			logger.Warn("failed to initialize notifiers, continuing without notifications", "error", notifyErr)
+			notifiers = nil
 		}
 
 		pypi.WarnIfSDKOutdated(os.Stderr, logger)
@@ -227,6 +238,17 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 				"error", outcome.Err,
 			)
 
+			// Fire implementation_complete notification for each processed issue.
+			notifyMsg := fmt.Sprintf("issue #%d: status=%s", issueNumber, outcome.Status)
+			if outcome.PRNumber > 0 {
+				notifyMsg += fmt.Sprintf(", PR #%d", outcome.PRNumber)
+			}
+			fireImplementNotification(ctx, notifiers, notify.Event{
+				Type:    "implementation_complete",
+				Repo:    cfg.Repo,
+				Message: notifyMsg,
+			}, logger)
+
 			if outcome.PRNumber > 0 {
 				files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
 				if err != nil {
@@ -294,6 +316,19 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 
 		return nil
 	},
+}
+
+// fireImplementNotification sends event to all notifiers with a 10s timeout.
+// Errors are logged as warnings and never block execution.
+func fireImplementNotification(ctx context.Context, notifiers []notify.Notifier, event notify.Event, logger *slog.Logger) {
+	for _, n := range notifiers {
+		sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		err := n.Send(sendCtx, event)
+		cancel()
+		if err != nil {
+			logger.Warn("notification send failed", "event_type", event.Type, "error", err)
+		}
+	}
 }
 
 // collectIssueNumbers merges positional args and the --issues flag value into
