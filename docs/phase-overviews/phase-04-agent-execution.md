@@ -228,11 +228,11 @@ $ godark implement 42 43 44
 $ godark implement --issues 42,43,44
 ```
 
-Both `run` and `implement` support `--no-merge` for cases where you want the
+Both `run` and `implement` support `--auto-merge none` for cases where you want the
 agent to get the PR approved but leave the merge to a human:
 
 ```
-$ godark implement 42 --no-merge
+$ godark implement 42 --auto-merge none
   #42 Add user auth -- ready-to-merge (PR #87, 0 retries)
 ```
 

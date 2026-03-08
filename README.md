@@ -223,7 +223,7 @@ Flags:
       --config string      Path to configuration file (default "godark.yaml")
       --dry-run            Print issue details and exit
       --max-retries int    Maximum review/fix retry cycles (default 3)
-      --no-merge           Skip PR merge after approval (human reviews and merges manually)
+      --auto-merge string  Merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything) (default "none")
       --no-sandbox         Run agents on host instead of in Docker
       --punchlist string   Write manual testing punchlist to this file (always printed to stdout)
       --repo string        GitHub repository (owner/repo)
