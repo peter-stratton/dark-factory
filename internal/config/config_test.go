@@ -328,7 +328,7 @@ no_sandbox: false
 	}
 }
 
-func TestNoMergeDefault(t *testing.T) {
+func TestAutoMergeDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
@@ -339,42 +339,58 @@ repo: owner/repo
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.NoMerge {
-		t.Error("NoMerge should default to false")
+	if cfg.AutoMerge != "none" {
+		t.Errorf("AutoMerge = %q, want %q", cfg.AutoMerge, "none")
 	}
 }
 
-func TestNoMergeFromYAML(t *testing.T) {
+func TestAutoMergeValidValues(t *testing.T) {
+	for _, value := range []string{"none", "low_risk", "all"} {
+		t.Run(value, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeYAML(t, dir, "repo: owner/repo\nauto_merge: "+value+"\n")
+			cfg, err := Load(path, CLIFlags{})
+			if err != nil {
+				t.Fatalf("unexpected error for auto_merge=%q: %v", value, err)
+			}
+			if cfg.AutoMerge != value {
+				t.Errorf("AutoMerge = %q, want %q", cfg.AutoMerge, value)
+			}
+		})
+	}
+}
+
+func TestAutoMergeInvalidValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+auto_merge: always
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid auto_merge, got nil")
+	}
+	if !strings.Contains(err.Error(), "auto_merge") {
+		t.Errorf("error = %q, want mention of 'auto_merge'", err.Error())
+	}
+}
+
+func TestAutoMergeFlagOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
 
-no_merge: true
+auto_merge: none
 `)
 
-	cfg, err := Load(path, CLIFlags{})
+	v := "all"
+	cfg, err := Load(path, CLIFlags{AutoMerge: &v})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cfg.NoMerge {
-		t.Error("NoMerge = false, want true from YAML")
-	}
-}
-
-func TestNoMergeFlagOverride(t *testing.T) {
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `
-repo: owner/repo
-
-no_merge: false
-`)
-
-	cfg, err := Load(path, CLIFlags{NoMerge: boolPtr(true)})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.NoMerge {
-		t.Error("NoMerge = false, want true (flag should override)")
+	if cfg.AutoMerge != "all" {
+		t.Errorf("AutoMerge = %q, want %q (flag should override)", cfg.AutoMerge, "all")
 	}
 }
 
