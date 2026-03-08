@@ -104,6 +104,40 @@ func TestInitIdempotent(t *testing.T) {
 	}
 }
 
+func TestInitWritesConfigureProjectSkill(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	skillPath := filepath.Join(".claude", "skills", "godark-configure-project", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("godark-configure-project skill not created: %v", err)
+	}
+
+	if !strings.Contains(string(data), "name: godark-configure-project") {
+		t.Error("SKILL.md missing expected frontmatter name")
+	}
+}
+
+func TestInitConfigureProjectSkillIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+	runInit(t)
+
+	skillPath := filepath.Join(".claude", "skills", "godark-configure-project", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Error("godark-configure-project skill file missing after second init")
+	}
+}
+
 func TestInitWritesHarnessDocs(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
