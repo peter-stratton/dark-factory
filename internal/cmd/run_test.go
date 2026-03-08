@@ -74,9 +74,9 @@ func TestNoSandboxFlagOverridesConfig(t *testing.T) {
 	}
 }
 
-func TestNoMergeFlagParsing(t *testing.T) {
-	// The --no-merge flag should be registered on both run and implement commands,
-	// and default to false.
+func TestAutoMergeFlagParsing(t *testing.T) {
+	// The --auto-merge flag should be registered on both run and implement commands,
+	// and default to "none".
 	for _, tc := range []struct {
 		name string
 		cmd  *cobra.Command
@@ -85,21 +85,21 @@ func TestNoMergeFlagParsing(t *testing.T) {
 		{"implement", implementCmd},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := tc.cmd.Flags().Lookup("no-merge")
+			f := tc.cmd.Flags().Lookup("auto-merge")
 			if f == nil {
-				t.Fatalf("%s command missing --no-merge flag", tc.name)
+				t.Fatalf("%s command missing --auto-merge flag", tc.name)
 			}
-			if f.DefValue != "false" {
-				t.Errorf("no-merge default = %q, want %q", f.DefValue, "false")
+			if f.DefValue != "none" {
+				t.Errorf("auto-merge default = %q, want %q", f.DefValue, "none")
 			}
 		})
 	}
 }
 
-func TestNoMergeConfigFile(t *testing.T) {
+func TestAutoMergeConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
-	err := os.WriteFile(p, []byte("repo: owner/repo\nno_merge: true\n"), 0o644)
+	err := os.WriteFile(p, []byte("repo: owner/repo\nauto_merge: all\n"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,12 +108,12 @@ func TestNoMergeConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cfg.NoMerge {
-		t.Error("NoMerge = false, want true from config file")
+	if cfg.AutoMerge != "all" {
+		t.Errorf("AutoMerge = %q, want %q from config file", cfg.AutoMerge, "all")
 	}
 }
 
-func TestNoMergeDefaultFalse(t *testing.T) {
+func TestAutoMergeDefaultNone(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
 	err := os.WriteFile(p, []byte("repo: owner/repo\n"), 0o644)
@@ -125,26 +125,26 @@ func TestNoMergeDefaultFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.NoMerge {
-		t.Error("NoMerge = true, want false by default")
+	if cfg.AutoMerge != "none" {
+		t.Errorf("AutoMerge = %q, want %q by default", cfg.AutoMerge, "none")
 	}
 }
 
-func TestNoMergeFlagOverridesConfig(t *testing.T) {
+func TestAutoMergeFlagOverridesConfig(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
-	err := os.WriteFile(p, []byte("repo: owner/repo\nno_merge: false\n"), 0o644)
+	err := os.WriteFile(p, []byte("repo: owner/repo\nauto_merge: none\n"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	noMerge := true
-	cfg, err := config.Load(p, config.CLIFlags{NoMerge: &noMerge})
+	autoMerge := "all"
+	cfg, err := config.Load(p, config.CLIFlags{AutoMerge: &autoMerge})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cfg.NoMerge {
-		t.Error("NoMerge = false, want true (flag should override config)")
+	if cfg.AutoMerge != "all" {
+		t.Errorf("AutoMerge = %q, want %q (flag should override config)", cfg.AutoMerge, "all")
 	}
 }
 

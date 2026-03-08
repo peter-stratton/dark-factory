@@ -493,9 +493,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					logger.Warn("failed to write functional review result", "error", err)
 				}
 			}
-			if cfg.NoMerge {
+			if cfg.AutoMerge == "none" {
 				// Skip merge — human will review and merge manually.
-				logger.Info("PR approved, skipping merge (--no-merge)", "pr_number", prNum)
+				logger.Info("PR approved, skipping merge (auto_merge=none)", "pr_number", prNum)
 				outcome.Status = "ready-to-merge"
 				outcome.Retries = attempt
 				return outcome

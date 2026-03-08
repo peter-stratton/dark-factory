@@ -100,9 +100,9 @@ type Config struct {
 	ArchitectureJSON string `yaml:"architecture_json"`
 	ConventionsDoc   string `yaml:"conventions_doc"`
 
-	NoSandbox              bool `yaml:"no_sandbox"`
-	NoMerge                bool `yaml:"no_merge"`
-	QualityStrictnessDecay bool `yaml:"quality_strictness_decay"`
+	NoSandbox              bool   `yaml:"no_sandbox"`
+	AutoMerge              string `yaml:"auto_merge"`
+	QualityStrictnessDecay bool   `yaml:"quality_strictness_decay"`
 	EnforceArchitecture    bool `yaml:"enforce_architecture"`
 
 	// AuthPreference controls which Anthropic auth token is preferred when both
@@ -156,7 +156,7 @@ type CLIFlags struct {
 	Repo       *string
 	MaxRetries *int
 	NoSandbox  *bool
-	NoMerge    *bool
+	AutoMerge  *string
 	Config     string
 }
 
@@ -189,6 +189,7 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 func defaults() *Config {
 	return &Config{
 		MaxRetries:             3,
+		AutoMerge:              "none",
 		RoadmapPath:            "docs/ROADMAP.md",
 		DeniedCommands:         []string{
 			"rm -rf",
@@ -222,8 +223,8 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	if flags.NoSandbox != nil {
 		cfg.NoSandbox = *flags.NoSandbox
 	}
-	if flags.NoMerge != nil {
-		cfg.NoMerge = *flags.NoMerge
+	if flags.AutoMerge != nil {
+		cfg.AutoMerge = *flags.AutoMerge
 	}
 }
 
@@ -236,6 +237,12 @@ func validate(cfg *Config) error {
 		// valid
 	default:
 		return fmt.Errorf("auth_preference must be \"oauth\" or \"api_key\", got %q", cfg.AuthPreference)
+	}
+	switch cfg.AutoMerge {
+	case "none", "low_risk", "all":
+		// valid
+	default:
+		return fmt.Errorf("auto_merge must be \"none\", \"low_risk\", or \"all\", got %q", cfg.AutoMerge)
 	}
 	if err := validateModules(cfg.Modules); err != nil {
 		return err
