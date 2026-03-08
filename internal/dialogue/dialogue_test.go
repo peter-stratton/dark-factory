@@ -155,7 +155,7 @@ None known.
 Same domain layer.
 `
 	bodies := []string{impl1, review1, impl2}
-	implNotes, reviewNotes := ParseComments(bodies)
+	implNotes, reviewNotes, _ := ParseComments(bodies)
 
 	if len(implNotes) != 2 {
 		t.Fatalf("len(implNotes) = %d, want 2", len(implNotes))
@@ -223,7 +223,7 @@ func TestParseReviewNotes_RawPreserved(t *testing.T) {
 }
 
 func TestParseComments_Empty(t *testing.T) {
-	implNotes, reviewNotes := ParseComments([]string{})
+	implNotes, reviewNotes, _ := ParseComments([]string{})
 	if len(implNotes) != 0 {
 		t.Errorf("len(implNotes) = %d, want 0", len(implNotes))
 	}
@@ -234,7 +234,7 @@ func TestParseComments_Empty(t *testing.T) {
 
 func TestParseComments_NoMatchingComments(t *testing.T) {
 	bodies := []string{"Just a regular comment.", "Another comment."}
-	implNotes, reviewNotes := ParseComments(bodies)
+	implNotes, reviewNotes, _ := ParseComments(bodies)
 	if len(implNotes) != 0 {
 		t.Errorf("len(implNotes) = %d, want 0", len(implNotes))
 	}

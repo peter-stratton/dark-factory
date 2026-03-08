@@ -167,7 +167,7 @@ func (w *Writer) WriteOutcome(outcome Outcome) error {
 
 // DialogueEntry records one turn in the agent dialogue for an issue.
 type DialogueEntry struct {
-	Role  string `json:"role"`  // "implementer" or "reviewer"
+	Role  string `json:"role"`  // "implementer", "quality_reviewer", or "reviewer"
 	Round int    `json:"round"` // 1-indexed retry round
 	Body  string `json:"body"`  // raw comment text
 }

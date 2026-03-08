@@ -49,7 +49,10 @@ CRITICAL RULES:
 - After running tests, delete the {{.ReviewDir}} directory before finishing.
 {{- end}}
 
-Based on your findings:
+Based on your findings, always write your full analysis (test results, acceptance
+criteria check, architecture compliance) to your output — even if you also post
+a PR comment. This analysis is captured for operational review in the run dashboard.
+
 - If ALL tests pass and the implementation meets acceptance criteria:
   Delete the {{.ReviewDir}} directory, approve the PR, and print REVIEW_RESULT=APPROVED
 - If ANY tests fail or acceptance criteria are not met:

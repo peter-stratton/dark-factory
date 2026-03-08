@@ -26,14 +26,17 @@ Steps:
    - Appropriate abstraction level
    - Testability (injectable dependencies, no global state)
 
-Based on your findings:
+Based on your findings, always write your full analysis (security, correctness,
+performance, code craft) to your output — even if you also post a PR comment.
+This analysis is captured for operational review in the run dashboard.
+
 - If the code has NO significant quality issues:
   Print QUALITY_RESULT=APPROVED
 - If the code has security, performance, or quality issues that should be fixed:
   Post a PR comment with the following format so the implementer agent can find
   your feedback, then print QUALITY_RESULT=CHANGES_REQUESTED
 
-## Review Notes
+## Quality Review Notes
 
 ### Changes Requested
 State that changes are requested, with a brief summary.

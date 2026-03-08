@@ -56,20 +56,46 @@ func ParseReviewNotes(body string) *ReviewNotes {
 	}
 }
 
+// QualityReviewNotes holds the structured content from a "## Quality Review Notes"
+// PR comment posted by the quality reviewer agent.
+type QualityReviewNotes struct {
+	ChangesRequested string
+	IssuesFound      string
+	Raw              string // full comment text
+}
+
+// ParseQualityReviewNotes extracts Quality Review Notes sections from a PR
+// comment body. Returns nil if the comment does not contain a
+// "## Quality Review Notes" header.
+func ParseQualityReviewNotes(body string) *QualityReviewNotes {
+	sections := parseSections(body, "## Quality Review Notes")
+	if sections == nil {
+		return nil
+	}
+	return &QualityReviewNotes{
+		ChangesRequested: sections["### Changes Requested"],
+		IssuesFound:      sections["### Issues Found"],
+		Raw:              body,
+	}
+}
+
 // ParseComments scans a slice of comment bodies and returns all implementation
-// notes and review notes found, in order.
-func ParseComments(bodies []string) ([]ImplementationNotes, []ReviewNotes) {
+// notes, review notes, and quality review notes found, in order.
+func ParseComments(bodies []string) ([]ImplementationNotes, []ReviewNotes, []QualityReviewNotes) {
 	var implNotes []ImplementationNotes
 	var reviewNotes []ReviewNotes
+	var qualityNotes []QualityReviewNotes
 	for _, body := range bodies {
 		if n := ParseImplementationNotes(body); n != nil {
 			implNotes = append(implNotes, *n)
 		}
-		if n := ParseReviewNotes(body); n != nil {
+		if n := ParseQualityReviewNotes(body); n != nil {
+			qualityNotes = append(qualityNotes, *n)
+		} else if n := ParseReviewNotes(body); n != nil {
 			reviewNotes = append(reviewNotes, *n)
 		}
 	}
-	return implNotes, reviewNotes
+	return implNotes, reviewNotes, qualityNotes
 }
 
 // parseSections scans body for the given top-level header and returns a map of

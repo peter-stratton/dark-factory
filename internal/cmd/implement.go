@@ -183,8 +183,8 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 					logger.Warn("failed to fetch PR comment bodies for dialogue",
 						"issue_number", issueNumber, "error", fetchErr)
 				} else {
-					implNotes, reviewNotes := dialogue.ParseComments(bodies)
-					dialogueEntries := orchestrator.BuildDialogueEntries(implNotes, reviewNotes)
+					implNotes, reviewNotes, qualityNotes := dialogue.ParseComments(bodies)
+					dialogueEntries := orchestrator.BuildDialogueEntries(implNotes, reviewNotes, qualityNotes)
 					if len(dialogueEntries) > 0 {
 						if err := writer.WriteDialogue(issueNumber, dialogueEntries); err != nil {
 							logger.Warn("failed to write dialogue",
