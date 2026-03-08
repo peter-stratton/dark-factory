@@ -88,17 +88,21 @@ func truncateVerifyOutput(b []byte) string {
 // inside a Docker container. The container clones the repo, checks out the
 // PR branch, and runs the verify command via sh. The verify command is passed
 // through the GODARK_VERIFY_CMD environment variable to avoid shell quoting issues.
-func sandboxCommandRunner(image, repo, branch string, logger *slog.Logger) CommandRunner {
+func sandboxCommandRunner(image, repo, branch string, authEnv map[string]string, logger *slog.Logger) CommandRunner {
 	return func(ctx context.Context, command string) ([]byte, []byte, int, error) {
-		script := "#!/bin/sh\nset -e\ngit clone \"https://github.com/${GODARK_REPO}.git\" /workspace && cd /workspace && git checkout \"${GODARK_BRANCH}\" && sh -c \"$GODARK_VERIFY_CMD\"\n"
+		script := "#!/bin/sh\nset -e\ngh auth setup-git\ngit clone \"https://github.com/${GODARK_REPO}.git\" /workspace && cd /workspace && git checkout \"${GODARK_BRANCH}\" && sh -c \"$GODARK_VERIFY_CMD\"\n"
+		env := map[string]string{
+			"GODARK_REPO":       repo,
+			"GODARK_BRANCH":     branch,
+			"GODARK_VERIFY_CMD": command,
+		}
+		for k, v := range authEnv {
+			env[k] = v
+		}
 		opts := sandbox.RunOpts{
 			Image: image,
 			Cmd:   []string{"sh", "-c", script},
-			Env: map[string]string{
-				"GODARK_REPO":       repo,
-				"GODARK_BRANCH":     branch,
-				"GODARK_VERIFY_CMD": command,
-			},
+			Env:   env,
 		}
 		result, err := sandboxRunContainer(ctx, opts, logger)
 		if err != nil {
