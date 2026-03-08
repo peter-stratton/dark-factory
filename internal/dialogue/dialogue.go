@@ -98,6 +98,42 @@ func ParseComments(bodies []string) ([]ImplementationNotes, []ReviewNotes, []Qua
 	return implNotes, reviewNotes, qualityNotes
 }
 
+// Entry is a single turn in the agent dialogue, preserving execution order.
+type Entry struct {
+	Role  string // "implementer", "quality_reviewer", or "reviewer"
+	Round int    // 1-indexed round within this role
+	Body  string // raw comment text
+}
+
+// ParseCommentsInOrder scans comment bodies in their original order (which
+// matches GitHub's chronological ordering) and returns one Entry per
+// recognised structured comment. The Round field reflects how many times
+// that particular role has appeared so far, so two implementer comments
+// get rounds 1 and 2 regardless of what comes between them.
+func ParseCommentsInOrder(bodies []string) []Entry {
+	roundCounters := map[string]int{}
+	var entries []Entry
+	for _, body := range bodies {
+		var role string
+		if ParseImplementationNotes(body) != nil {
+			role = "implementer"
+		} else if ParseQualityReviewNotes(body) != nil {
+			role = "quality_reviewer"
+		} else if ParseReviewNotes(body) != nil {
+			role = "reviewer"
+		} else {
+			continue
+		}
+		roundCounters[role]++
+		entries = append(entries, Entry{
+			Role:  role,
+			Round: roundCounters[role],
+			Body:  body,
+		})
+	}
+	return entries
+}
+
 // parseSections scans body for the given top-level header and returns a map of
 // subsection header → trimmed content. Returns nil if the top-level header is
 // not found.

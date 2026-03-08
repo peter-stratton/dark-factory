@@ -12,7 +12,6 @@ import (
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/dialogue"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/rundata"
@@ -611,37 +610,29 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	}
 }
 
-func TestBuildDialogueEntries_SingleRound(t *testing.T) {
-	implNotes := []dialogue.ImplementationNotes{
-		{Raw: "impl body 1"},
-	}
-	reviewNotes := []dialogue.ReviewNotes{
-		{Raw: "review body 1"},
-	}
+const testImplBody1 = "## Implementation Notes\n\n### Approach\nFirst implementation.\n\n### Key Decisions\nDecision A.\n\n### Known Limitations\nNone.\n\n### Architecture\nDomain layer.\n"
+const testImplBody2 = "## Implementation Notes\n\n### Approach\nFixed implementation.\n\n### Key Decisions\nDecision B.\n\n### Known Limitations\nNone.\n\n### Architecture\nDomain layer.\n"
+const testQualityBody = "## Quality Review Notes\n\n### Issues Found\nNeeds fixes.\n\n### Changes Requested\nYes.\n"
+const testReviewBody = "## Review Notes\n\n### Approved\nLooks good.\n\n### Changes Requested\n\n### Architecture Compliance\nCompliant.\n"
 
-	entries := BuildDialogueEntries(implNotes, reviewNotes, nil)
+func TestBuildDialogueEntries_SingleRound(t *testing.T) {
+	bodies := []string{testImplBody1, testReviewBody}
+	entries := BuildDialogueEntries(bodies)
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
-	if entries[0].Role != "implementer" || entries[0].Round != 1 || entries[0].Body != "impl body 1" {
+	if entries[0].Role != "implementer" || entries[0].Round != 1 || entries[0].Body != testImplBody1 {
 		t.Errorf("entries[0]: got {%s, %d, %q}", entries[0].Role, entries[0].Round, entries[0].Body)
 	}
-	if entries[1].Role != "reviewer" || entries[1].Round != 1 || entries[1].Body != "review body 1" {
+	if entries[1].Role != "reviewer" || entries[1].Round != 1 || entries[1].Body != testReviewBody {
 		t.Errorf("entries[1]: got {%s, %d, %q}", entries[1].Role, entries[1].Round, entries[1].Body)
 	}
 }
 
 func TestBuildDialogueEntries_MultipleRounds(t *testing.T) {
-	implNotes := []dialogue.ImplementationNotes{
-		{Raw: "impl 1"},
-		{Raw: "impl 2"},
-	}
-	reviewNotes := []dialogue.ReviewNotes{
-		{Raw: "review 1"},
-		{Raw: "review 2"},
-	}
-
-	entries := BuildDialogueEntries(implNotes, reviewNotes, nil)
+	// Quality retry: impl1 → quality(fail) → impl2 → review(pass)
+	bodies := []string{testImplBody1, testQualityBody, testImplBody2, testReviewBody}
+	entries := BuildDialogueEntries(bodies)
 	if len(entries) != 4 {
 		t.Fatalf("expected 4 entries, got %d", len(entries))
 	}
@@ -650,10 +641,10 @@ func TestBuildDialogueEntries_MultipleRounds(t *testing.T) {
 		round int
 		body  string
 	}{
-		{"implementer", 1, "impl 1"},
-		{"reviewer", 1, "review 1"},
-		{"implementer", 2, "impl 2"},
-		{"reviewer", 2, "review 2"},
+		{"implementer", 1, testImplBody1},
+		{"quality_reviewer", 1, testQualityBody},
+		{"implementer", 2, testImplBody2},
+		{"reviewer", 1, testReviewBody},
 	}
 	for i, w := range want {
 		if entries[i].Role != w.role || entries[i].Round != w.round || entries[i].Body != w.body {
@@ -665,7 +656,7 @@ func TestBuildDialogueEntries_MultipleRounds(t *testing.T) {
 }
 
 func TestBuildDialogueEntries_Empty(t *testing.T) {
-	entries := BuildDialogueEntries(nil, nil, nil)
+	entries := BuildDialogueEntries(nil)
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for empty input, got %d", len(entries))
 	}
