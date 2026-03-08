@@ -3,6 +3,7 @@ package sandbox
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 )
@@ -243,7 +244,7 @@ func TestCollectAuthEnv_RequiredEnvForwarded(t *testing.T) {
 	}
 }
 
-func TestCollectAuthEnv_RequiredEnvMissingSkipped(t *testing.T) {
+func TestCollectAuthEnv_RequiredEnvEmptySkipped(t *testing.T) {
 	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
 		return []byte("gho_fake\n"), nil
 	})()
@@ -251,14 +252,57 @@ func TestCollectAuthEnv_RequiredEnvMissingSkipped(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_test")
-	t.Setenv("MISSING_VAR", "")
+	t.Setenv("EMPTY_VAR", "")
 
-	env, err := CollectAuthEnv(slog.Default(), "oauth", []string{"MISSING_VAR"})
+	env, err := CollectAuthEnv(slog.Default(), "oauth", []string{"EMPTY_VAR"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := env["MISSING_VAR"]; ok {
-		t.Error("MISSING_VAR should not appear in env when unset")
+	if _, ok := env["EMPTY_VAR"]; ok {
+		t.Error("EMPTY_VAR should not appear in env when set to empty string")
+	}
+}
+
+func TestCollectAuthEnv_RequiredEnvAbsentSkipped(t *testing.T) {
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("gho_fake\n"), nil
+	})()
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+	t.Setenv("GH_TOKEN", "gho_test")
+	// Ensure ABSENT_VAR is genuinely absent from the process environment.
+	os.Unsetenv("ABSENT_VAR") //nolint:errcheck
+
+	env, err := CollectAuthEnv(slog.Default(), "oauth", []string{"ABSENT_VAR"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := env["ABSENT_VAR"]; ok {
+		t.Error("ABSENT_VAR should not appear in env when absent from host environment")
+	}
+}
+
+func TestCollectAuthEnv_RequiredEnvDoesNotOverrideAuth(t *testing.T) {
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("gho_fake\n"), nil
+	})()
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-real-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-abc")
+	t.Setenv("GH_TOKEN", "gho_test")
+
+	// With oauth preference, only CLAUDE_CODE_OAUTH_TOKEN is placed in env.
+	// Listing ANTHROPIC_API_KEY in required_env must not re-add it.
+	env, err := CollectAuthEnv(slog.Default(), "oauth", []string{"ANTHROPIC_API_KEY"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := env["ANTHROPIC_API_KEY"]; ok {
+		t.Error("ANTHROPIC_API_KEY must not be added via required_env when oauth preference excludes it")
+	}
+	if env["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-token-abc" {
+		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %q, want oauth-token-abc", env["CLAUDE_CODE_OAUTH_TOKEN"])
 	}
 }
 

@@ -55,9 +55,22 @@ func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []st
 		env["GH_TOKEN"] = token
 	}
 
+	// authManagedVars are controlled exclusively by auth preference logic.
+	// required_env must never add or override any of these — even when one
+	// was intentionally excluded (e.g. ANTHROPIC_API_KEY excluded under
+	// oauth preference) — to prevent auth_preference from being bypassed.
+	authManagedVars := map[string]struct{}{
+		"ANTHROPIC_API_KEY":       {},
+		"CLAUDE_CODE_OAUTH_TOKEN": {},
+		"GH_TOKEN":                {},
+	}
+
 	// Forward required env vars from the host. Values are not logged to avoid
 	// leaking secrets.
 	for _, name := range requiredEnv {
+		if _, isAuth := authManagedVars[name]; isAuth {
+			continue // auth_preference owns these vars exclusively
+		}
 		if v := os.Getenv(name); v != "" {
 			env[name] = v
 		}
