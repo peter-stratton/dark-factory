@@ -15,4 +15,5 @@ type RunDataHook interface {
 	WriteVerifyResult(issueNumber int, step rundata.VerifyStepResult) error
 	WriteOutcome(outcome rundata.Outcome) error
 	WriteIssueStatus(issueNumber int, status rundata.IssueStatus) error
+	WriteRiskAssessment(issueNumber int, assessment rundata.RiskAssessment) error
 }

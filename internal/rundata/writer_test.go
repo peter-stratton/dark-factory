@@ -779,3 +779,39 @@ func TestPathTraversalRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteRiskAssessmentCreatesFile(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	assessment := RiskAssessment{
+		IsLowRisk: true,
+		Gates: []RiskGate{
+			{Name: "max_lines", Passed: true, Detail: "10 lines changed (max 200)"},
+			{Name: "protected_paths", Passed: true, Detail: "no protected paths touched"},
+		},
+	}
+	if err := w.WriteRiskAssessment(42, assessment); err != nil {
+		t.Fatalf("WriteRiskAssessment() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "risk-assessment.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file at %s, got: %v", path, err)
+	}
+
+	var written RiskAssessment
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if written.IsLowRisk != true {
+		t.Errorf("IsLowRisk = %v, want true", written.IsLowRisk)
+	}
+	if len(written.Gates) != 2 {
+		t.Errorf("Gates length = %d, want 2", len(written.Gates))
+	}
+}

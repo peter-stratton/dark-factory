@@ -898,6 +898,7 @@ type testRunDataHook struct {
 	verifyResults              []rundata.VerifyStepResult
 	outcomes                   []rundata.Outcome
 	issueStatuses              []rundata.IssueStatus
+	riskAssessments            []rundata.RiskAssessment
 }
 
 func (h *testRunDataHook) WriteSpecGeneratorResult(_ int, _ rundata.StepResult) error {
@@ -934,6 +935,10 @@ func (h *testRunDataHook) WriteOutcome(o rundata.Outcome) error {
 }
 func (h *testRunDataHook) WriteIssueStatus(_ int, s rundata.IssueStatus) error {
 	h.issueStatuses = append(h.issueStatuses, s)
+	return nil
+}
+func (h *testRunDataHook) WriteRiskAssessment(_ int, a rundata.RiskAssessment) error {
+	h.riskAssessments = append(h.riskAssessments, a)
 	return nil
 }
 
@@ -3106,8 +3111,28 @@ func TestProcessIssue_NoneModeLabelsAwaitingReview(t *testing.T) {
 	}
 }
 
-func TestProcessIssue_LowRiskModeLabelsAwaitingReview(t *testing.T) {
-	added, _ := setupGHLabelTracker(t)
+func TestProcessIssue_LowRiskMode_HighRiskLabelsAwaitingReview(t *testing.T) {
+	// High-risk PR (400 lines changed > 200 default threshold) should be labeled
+	// awaiting-human-review and not auto-merged.
+	var addedLabels []string
+	orig := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = orig })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		for i, a := range args {
+			if a == "--add-label" && i+1 < len(args) {
+				addedLabels = append(addedLabels, args[i+1])
+			}
+		}
+		if strings.Contains(joined, "--json additions,deletions,changedFiles") {
+			// Return high-risk stats: 400 total lines changed (> 200 threshold).
+			return []byte(`{"additions":300,"deletions":100,"changedFiles":5}`), nil
+		}
+		if strings.Contains(joined, "pr diff") && strings.Contains(joined, "--name-only") {
+			return []byte("internal/agent/loop.go\n"), nil
+		}
+		return []byte(""), nil
+	}
 
 	cfg := loopConfig()
 	cfg.AutoMerge = "low_risk"
@@ -3125,14 +3150,248 @@ func TestProcessIssue_LowRiskModeLabelsAwaitingReview(t *testing.T) {
 	}
 
 	found := false
-	for _, l := range *added {
+	for _, l := range addedLabels {
 		if l == label.AwaitingHumanReview {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected %q label to be added, got: %v", label.AwaitingHumanReview, *added)
+		t.Errorf("expected %q label to be added for high-risk PR, got: %v", label.AwaitingHumanReview, addedLabels)
+	}
+}
+
+func TestProcessIssue_LowRiskMode_LowRiskMerges(t *testing.T) {
+	// Small PR (10 lines changed, 2 files, no protected paths, no quality flags) is
+	// low-risk and should be auto-merged. The reviewer includes a "Read" trace entry
+	// so the no_diff_read quality gate is satisfied, resulting in no quality flags.
+	var mergeCallCount int
+	orig := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = orig })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--json additions,deletions,changedFiles") {
+			return []byte(`{"additions":8,"deletions":2,"changedFiles":2}`), nil
+		}
+		if strings.Contains(joined, "pr diff") && strings.Contains(joined, "--name-only") {
+			return []byte("internal/agent/loop.go\ninternal/agent/loop_test.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "low_risk"
+	cfg.ProtectedPaths = []string{"CLAUDE.md"}
+
+	// Stub Runner directly so we can include a tool trace with a "Read" entry
+	// for the functional reviewer, preventing the no_diff_read quality flag.
+	callIdx := 0
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nREVIEW_RESULT=APPROVED\n", []string{"Read pr diff"})
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(reviewerOut), []byte(""), 0, nil
+		}
+	}
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			mergeCallCount++
+		}
+		return []byte(""), nil
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if mergeCallCount != 1 {
+		t.Errorf("gh pr merge called %d time(s), want 1 for low-risk PR", mergeCallCount)
+	}
+}
+
+func TestProcessIssue_LowRiskMode_ProtectedPathLabels(t *testing.T) {
+	// PR touching a protected path should be labeled awaiting-human-review even
+	// if total line/file counts are within risk thresholds.
+	var addedLabels []string
+	orig := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = orig })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		for i, a := range args {
+			if a == "--add-label" && i+1 < len(args) {
+				addedLabels = append(addedLabels, args[i+1])
+			}
+		}
+		if strings.Contains(joined, "--json additions,deletions,changedFiles") {
+			return []byte(`{"additions":5,"deletions":2,"changedFiles":2}`), nil
+		}
+		if strings.Contains(joined, "pr diff") && strings.Contains(joined, "--name-only") {
+			// One of the changed files is a protected path.
+			return []byte("CLAUDE.md\ninternal/agent/loop.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "low_risk"
+	cfg.ProtectedPaths = []string{"CLAUDE.md"}
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+	}, standardLoopGuard())
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "ready-to-merge", outcome.Err)
+	}
+
+	found := false
+	for _, l := range addedLabels {
+		if l == label.AwaitingHumanReview {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %q label for protected-path PR, got: %v", label.AwaitingHumanReview, addedLabels)
+	}
+}
+
+func TestProcessIssue_LowRiskMode_RiskAssessmentWritten(t *testing.T) {
+	// Risk assessment should be written to run data via the hook.
+	// Uses a reviewer output with a "Read" trace entry so no_diff_read is not raised,
+	// ensuring the PR qualifies as low-risk and the assessment records IsLowRisk=true.
+	hook := &testRunDataHook{}
+	orig := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = orig })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--json additions,deletions,changedFiles") {
+			return []byte(`{"additions":8,"deletions":2,"changedFiles":2}`), nil
+		}
+		if strings.Contains(joined, "pr diff") && strings.Contains(joined, "--name-only") {
+			return []byte("internal/agent/loop.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+
+	cfg := loopConfig()
+	cfg.AutoMerge = "low_risk"
+	cfg.ProtectedPaths = []string{"CLAUDE.md"}
+
+	// Stub Runner with a reviewer output that includes a "Read" trace entry.
+	callIdx := 0
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nREVIEW_RESULT=APPROVED\n", []string{"Read pr diff"})
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1:
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2:
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default:
+			return []byte(reviewerOut), []byte(""), 0, nil
+		}
+	}
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
+
+	if len(hook.riskAssessments) == 0 {
+		t.Fatal("expected risk assessment to be written to hook, but none recorded")
+	}
+	assessment := hook.riskAssessments[0]
+	if !assessment.IsLowRisk {
+		t.Errorf("expected IsLowRisk=true for small PR with no protected paths, got false (gates: %v)", assessment.Gates)
+	}
+}
+
+func TestProcessIssue_AllMode_IgnoresRisk(t *testing.T) {
+	// auto_merge: all should merge regardless of PR size — risk classifier not called.
+	var mergeCallCount int
+	cfg := loopConfig()
+	cfg.AutoMerge = "all"
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			mergeCallCount++
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if mergeCallCount != 1 {
+		t.Errorf("gh pr merge called %d time(s), want 1 when auto_merge=all", mergeCallCount)
 	}
 }
 
