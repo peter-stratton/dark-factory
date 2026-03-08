@@ -1816,25 +1816,30 @@ func verifyLoopConfig(blocking bool) *config.Config {
 	return cfg
 }
 
-// TestBuildVerifyChecks_AllCommands verifies that all three non-empty commands produce checks.
+// TestBuildVerifyChecks_AllCommands verifies that all four non-empty commands produce checks
+// in generate → build → lint → test order.
 func TestBuildVerifyChecks_AllCommands(t *testing.T) {
 	cfg := &config.Config{
-		BuildCommand: "go build ./...",
-		LintCommand:  "golangci-lint run",
-		TestCommand:  "go test ./...",
+		GenerateCommand: "go generate ./...",
+		BuildCommand:    "go build ./...",
+		LintCommand:     "golangci-lint run",
+		TestCommand:     "go test ./...",
 	}
 	checks := buildVerifyChecks(cfg)
-	if len(checks) != 3 {
-		t.Fatalf("len = %d, want 3", len(checks))
+	if len(checks) != 4 {
+		t.Fatalf("len = %d, want 4", len(checks))
 	}
-	if checks[0].Name != "build" || checks[0].Command != "go build ./..." {
-		t.Errorf("checks[0] = %+v, want {build go build ./...}", checks[0])
+	if checks[0].Name != "generate" || checks[0].Command != "go generate ./..." {
+		t.Errorf("checks[0] = %+v, want {generate go generate ./...}", checks[0])
 	}
-	if checks[1].Name != "lint" || checks[1].Command != "golangci-lint run" {
-		t.Errorf("checks[1] = %+v, want {lint golangci-lint run}", checks[1])
+	if checks[1].Name != "build" || checks[1].Command != "go build ./..." {
+		t.Errorf("checks[1] = %+v, want {build go build ./...}", checks[1])
 	}
-	if checks[2].Name != "test" || checks[2].Command != "go test ./..." {
-		t.Errorf("checks[2] = %+v, want {test go test ./...}", checks[2])
+	if checks[2].Name != "lint" || checks[2].Command != "golangci-lint run" {
+		t.Errorf("checks[2] = %+v, want {lint golangci-lint run}", checks[2])
+	}
+	if checks[3].Name != "test" || checks[3].Command != "go test ./..." {
+		t.Errorf("checks[3] = %+v, want {test go test ./...}", checks[3])
 	}
 }
 
@@ -1862,6 +1867,103 @@ func TestBuildVerifyChecks_NoneConfigured(t *testing.T) {
 	checks := buildVerifyChecks(&config.Config{})
 	if len(checks) != 0 {
 		t.Fatalf("len = %d, want 0", len(checks))
+	}
+}
+
+// TestBuildVerifyChecks_GenerateRunsFirst verifies generate is first when all commands are set.
+func TestBuildVerifyChecks_GenerateRunsFirst(t *testing.T) {
+	cfg := &config.Config{
+		GenerateCommand: "go generate ./...",
+		BuildCommand:    "go build ./...",
+		LintCommand:     "golangci-lint run",
+		TestCommand:     "go test ./...",
+	}
+	checks := buildVerifyChecks(cfg)
+	if len(checks) != 4 {
+		t.Fatalf("len = %d, want 4", len(checks))
+	}
+	if checks[0].Name != "generate" {
+		t.Errorf("checks[0].Name = %q, want generate", checks[0].Name)
+	}
+	if checks[1].Name != "build" {
+		t.Errorf("checks[1].Name = %q, want build", checks[1].Name)
+	}
+}
+
+// TestBuildVerifyChecks_GenerateSkippedWhenEmpty verifies that empty generate_command
+// produces no generate entry in the check list.
+func TestBuildVerifyChecks_GenerateSkippedWhenEmpty(t *testing.T) {
+	cfg := &config.Config{
+		GenerateCommand: "",
+		BuildCommand:    "go build ./...",
+		TestCommand:     "go test ./...",
+	}
+	checks := buildVerifyChecks(cfg)
+	if len(checks) != 2 {
+		t.Fatalf("len = %d, want 2", len(checks))
+	}
+	if checks[0].Name != "build" {
+		t.Errorf("checks[0].Name = %q, want build", checks[0].Name)
+	}
+	if checks[1].Name != "test" {
+		t.Errorf("checks[1].Name = %q, want test", checks[1].Name)
+	}
+}
+
+// TestBuildVerifyChecks_GenerateFailureStopsPipeline verifies that a failing generate
+// step prevents build from running (stop-on-failure via RunVerify).
+func TestBuildVerifyChecks_GenerateFailureStopsPipeline(t *testing.T) {
+	checks := []Check{
+		{Name: "generate", Command: "generate-cmd"},
+		{Name: "build", Command: "build-cmd"},
+	}
+
+	callLog := []string{}
+	runner := func(_ context.Context, command string) ([]byte, []byte, int, error) {
+		callLog = append(callLog, command)
+		if command == "generate-cmd" {
+			return []byte("generate error"), nil, 1, nil
+		}
+		return []byte(""), nil, 0, nil
+	}
+
+	result := RunVerify(context.Background(), checks, runner)
+
+	if result.AllPassed {
+		t.Error("AllPassed = true, want false (generate failed)")
+	}
+	if len(callLog) != 1 || callLog[0] != "generate-cmd" {
+		t.Errorf("callLog = %v, want [generate-cmd] (build must not run after generate fails)", callLog)
+	}
+	if len(result.Checks) != 1 {
+		t.Fatalf("len(result.Checks) = %d, want 1", len(result.Checks))
+	}
+	if result.Checks[0].Name != "generate" || result.Checks[0].Passed {
+		t.Errorf("result.Checks[0] = %+v, want {generate, passed=false}", result.Checks[0])
+	}
+}
+
+// TestBuildVerifyChecks_GenerateSuccessProceedsToBuild verifies that a passing generate
+// step allows build to run next.
+func TestBuildVerifyChecks_GenerateSuccessProceedsToBuild(t *testing.T) {
+	checks := []Check{
+		{Name: "generate", Command: "generate-cmd"},
+		{Name: "build", Command: "build-cmd"},
+	}
+
+	callLog := []string{}
+	runner := func(_ context.Context, command string) ([]byte, []byte, int, error) {
+		callLog = append(callLog, command)
+		return []byte(""), nil, 0, nil
+	}
+
+	result := RunVerify(context.Background(), checks, runner)
+
+	if !result.AllPassed {
+		t.Error("AllPassed = false, want true (both generate and build pass)")
+	}
+	if len(callLog) != 2 || callLog[0] != "generate-cmd" || callLog[1] != "build-cmd" {
+		t.Errorf("callLog = %v, want [generate-cmd build-cmd]", callLog)
 	}
 }
 
