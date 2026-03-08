@@ -49,10 +49,14 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 // It renders the retry prompt with the PR number and invokes Run.
 // prevSessionID, if non-empty, is passed as GODARK_SESSION_ID so the agent
 // can resume its previous session context.
-func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+// reviewFeedback, if non-empty, is injected into the retry prompt so the
+// agent sees reviewer comments without needing to fetch them from GitHub
+// (used for human review cycles initiated by the watch command).
+func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID string, reviewFeedback string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
 	data := newPromptData(issue, cfg, slug)
 	data.PRNumber = prNumber
+	data.ReviewFeedback = reviewFeedback
 
 	rendered, err := RenderPrompt(prompts.ImplementerRetry, data)
 	if err != nil {

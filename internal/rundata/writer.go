@@ -55,6 +55,7 @@ type StepResult struct {
 	CostUSD         float64    `json:"cost_usd,omitempty"`
 	Flags           []Flag     `json:"flags,omitempty"`
 	ToolTrace       []string   `json:"tool_trace,omitempty"`
+	SessionID       string     `json:"session_id,omitempty"`
 }
 
 // Outcome records the final result for a single issue.
@@ -79,19 +80,24 @@ type Writer struct {
 // an initial run.json. Repo must be in "owner/name" format; components
 // containing ".." or path separators are rejected.
 func New(repo, milestone string, issueNumbers []int) (*Writer, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("getting home dir: %w", err)
+	}
+	return NewWithBase(filepath.Join(home, ".godark", "runs"), repo, milestone, issueNumbers)
+}
+
+// NewWithBase creates a new Writer using a custom base directory instead of
+// the default ~/.godark/runs/. Intended for testing.
+func NewWithBase(baseDir, repo, milestone string, issueNumbers []int) (*Writer, error) {
 	owner, repoName, err := validateRepo(repo)
 	if err != nil {
 		return nil, err
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("getting home dir: %w", err)
-	}
-
 	now := time.Now().UTC()
 	timestamp := now.Format("20060102-150405")
-	dir := filepath.Join(home, ".godark", "runs", owner, repoName, timestamp)
+	dir := filepath.Join(baseDir, owner, repoName, timestamp)
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating run directory: %w", err)

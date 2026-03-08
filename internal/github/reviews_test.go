@@ -147,3 +147,86 @@ func TestFetchPRReviews_MalformedJSON(t *testing.T) {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
 }
+
+func TestFetchReviewComments_ReturnsBodies(t *testing.T) {
+	orig := CommandRunner
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`[
+			{"body":"Fix the error handling here."},
+			{"body":"This method name is unclear."}
+		]`), nil
+	}
+	defer func() { CommandRunner = orig }()
+
+	bodies, err := FetchReviewComments("owner/repo", 42, 101)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 bodies, got %d", len(bodies))
+	}
+	if bodies[0] != "Fix the error handling here." {
+		t.Errorf("bodies[0]: got %q, want %q", bodies[0], "Fix the error handling here.")
+	}
+	if bodies[1] != "This method name is unclear." {
+		t.Errorf("bodies[1]: got %q, want %q", bodies[1], "This method name is unclear.")
+	}
+}
+
+func TestFetchReviewComments_Empty(t *testing.T) {
+	orig := CommandRunner
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`[]`), nil
+	}
+	defer func() { CommandRunner = orig }()
+
+	bodies, err := FetchReviewComments("owner/repo", 42, 101)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bodies) != 0 {
+		t.Errorf("expected empty, got %v", bodies)
+	}
+}
+
+func TestFetchReviewComments_SkipsEmptyBodies(t *testing.T) {
+	orig := CommandRunner
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`[{"body":"real comment"},{"body":""},{"body":"another comment"}]`), nil
+	}
+	defer func() { CommandRunner = orig }()
+
+	bodies, err := FetchReviewComments("owner/repo", 42, 101)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 bodies (empty skipped), got %d", len(bodies))
+	}
+}
+
+func TestFetchReviewComments_CLIError(t *testing.T) {
+	orig := CommandRunner
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh api error")
+	}
+	defer func() { CommandRunner = orig }()
+
+	_, err := FetchReviewComments("owner/repo", 42, 101)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestFetchReviewComments_MalformedJSON(t *testing.T) {
+	orig := CommandRunner
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`not valid json`), nil
+	}
+	defer func() { CommandRunner = orig }()
+
+	_, err := FetchReviewComments("owner/repo", 42, 101)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
+	}
+}
