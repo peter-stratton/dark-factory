@@ -5,3 +5,10 @@ protected_paths: ["CLAUDE.md", "tests/scenarios/"]
 runtime:
   name: go
   version: "1.26.0"
+
+notify:
+  - provider: telegram
+    events: [run_complete, abort]
+    settings:
+      bot_token: ${TELEGRAM_BOT_TOKEN}
+      chat_id: ${TELEGRAM_CHAT_ID}
