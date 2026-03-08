@@ -27,6 +27,16 @@ type Verify struct {
 	Blocking       bool `yaml:"blocking"`
 }
 
+// Module holds per-module build/test/lint/generate commands and dependency
+// relationships. All fields are optional.
+type Module struct {
+	BuildCommand    string   `yaml:"build_command"`
+	TestCommand     string   `yaml:"test_command"`
+	LintCommand     string   `yaml:"lint_command"`
+	GenerateCommand string   `yaml:"generate_command"`
+	DependsOn       []string `yaml:"depends_on"`
+}
+
 // Config holds all configuration for a godark run.
 type Config struct {
 	Repo       string `yaml:"repo"`
@@ -67,6 +77,10 @@ type Config struct {
 	Prompts Prompts `yaml:"prompts"`
 	Quality Quality `yaml:"quality"`
 	Verify  Verify  `yaml:"verify"`
+
+	// Modules maps module names to per-module build/test/lint/generate commands
+	// and dependency relationships. Nil (absent) means single-module mode.
+	Modules map[string]Module `yaml:"modules"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -176,6 +190,62 @@ func validate(cfg *Config) error {
 		// valid
 	default:
 		return fmt.Errorf("auth_preference must be \"oauth\" or \"api_key\", got %q", cfg.AuthPreference)
+	}
+	if err := validateModules(cfg.Modules); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateModules checks that all depends_on references name existing modules
+// and that there are no dependency cycles.
+func validateModules(modules map[string]Module) error {
+	if len(modules) == 0 {
+		return nil
+	}
+
+	// Check all depends_on entries reference known modules.
+	for name, mod := range modules {
+		for _, dep := range mod.DependsOn {
+			if _, ok := modules[dep]; !ok {
+				return fmt.Errorf("module %q depends_on unknown module %q", name, dep)
+			}
+		}
+	}
+
+	// Detect cycles using DFS with three-color marking:
+	//   0 = white (unvisited), 1 = gray (in current path), 2 = black (done)
+	const (
+		white = 0
+		gray  = 1
+		black = 2
+	)
+	color := make(map[string]int, len(modules))
+
+	var visit func(name string) error
+	visit = func(name string) error {
+		if color[name] == gray {
+			return fmt.Errorf("cycle detected in module dependencies involving %q", name)
+		}
+		if color[name] == black {
+			return nil
+		}
+		color[name] = gray
+		for _, dep := range modules[name].DependsOn {
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+		color[name] = black
+		return nil
+	}
+
+	for name := range modules {
+		if color[name] == white {
+			if err := visit(name); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

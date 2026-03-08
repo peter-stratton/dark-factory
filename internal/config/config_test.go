@@ -835,6 +835,193 @@ generated_paths:
 	}
 }
 
+// --- Module tests ---
+
+func TestModulesDefaultNil(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Modules != nil {
+		t.Errorf("Modules = %v, want nil", cfg.Modules)
+	}
+}
+
+func TestSingleModuleConfigNoModulesKey(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+build_command: "go build ./..."
+test_command: "go test ./..."
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Modules != nil {
+		t.Errorf("Modules = %v, want nil (single-module mode)", cfg.Modules)
+	}
+	if cfg.BuildCommand != "go build ./..." {
+		t.Errorf("BuildCommand = %q, want %q", cfg.BuildCommand, "go build ./...")
+	}
+}
+
+func TestTwoModulesParseCorrectly(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+modules:
+  service:
+    build_command: "go build ./..."
+  admin-cli:
+    depends_on: [service]
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Modules) != 2 {
+		t.Fatalf("Modules len = %d, want 2", len(cfg.Modules))
+	}
+	svc, ok := cfg.Modules["service"]
+	if !ok {
+		t.Fatal("expected module 'service' to exist")
+	}
+	if svc.BuildCommand != "go build ./..." {
+		t.Errorf("service.BuildCommand = %q, want %q", svc.BuildCommand, "go build ./...")
+	}
+	admin, ok := cfg.Modules["admin-cli"]
+	if !ok {
+		t.Fatal("expected module 'admin-cli' to exist")
+	}
+	if len(admin.DependsOn) != 1 || admin.DependsOn[0] != "service" {
+		t.Errorf("admin-cli.DependsOn = %v, want [service]", admin.DependsOn)
+	}
+}
+
+func TestModulesUnknownDependencyFails(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+modules:
+  service:
+    depends_on: [nonexistent]
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for unknown depends_on, got nil")
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("error = %q, want mention of 'nonexistent'", err.Error())
+	}
+}
+
+func TestModulesCycleDetected(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+modules:
+  a:
+    depends_on: [b]
+  b:
+    depends_on: [a]
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for cycle in dependencies, got nil")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error = %q, want mention of 'cycle'", err.Error())
+	}
+}
+
+func TestModulesPerModuleCommandsIndependent(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+modules:
+  service:
+    build_command: "go build ./service/..."
+    test_command: "go test ./service/..."
+    lint_command: "golangci-lint run ./service/..."
+    generate_command: "go generate ./service/..."
+  admin-cli:
+    build_command: "go build ./admin/..."
+    test_command: "go test ./admin/..."
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	svc := cfg.Modules["service"]
+	if svc.BuildCommand != "go build ./service/..." {
+		t.Errorf("service.BuildCommand = %q", svc.BuildCommand)
+	}
+	if svc.TestCommand != "go test ./service/..." {
+		t.Errorf("service.TestCommand = %q", svc.TestCommand)
+	}
+	if svc.LintCommand != "golangci-lint run ./service/..." {
+		t.Errorf("service.LintCommand = %q", svc.LintCommand)
+	}
+	if svc.GenerateCommand != "go generate ./service/..." {
+		t.Errorf("service.GenerateCommand = %q", svc.GenerateCommand)
+	}
+	admin := cfg.Modules["admin-cli"]
+	if admin.BuildCommand != "go build ./admin/..." {
+		t.Errorf("admin-cli.BuildCommand = %q", admin.BuildCommand)
+	}
+	if admin.TestCommand != "go test ./admin/..." {
+		t.Errorf("admin-cli.TestCommand = %q", admin.TestCommand)
+	}
+}
+
+func TestModulesLongChainNoCycle(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+modules:
+  a:
+    depends_on: []
+  b:
+    depends_on: [a]
+  c:
+    depends_on: [b]
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error for valid chain a->b->c: %v", err)
+	}
+}
+
+func TestModulesSelfCycleDetected(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+modules:
+  a:
+    depends_on: [a]
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for self-cycle, got nil")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error = %q, want mention of 'cycle'", err.Error())
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.
