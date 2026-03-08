@@ -38,7 +38,7 @@
     {
       "name": "infrastructure",
       "description": "External service clients and process management. GitHub API, locking, sandbox execution.",
-      "paths": ["internal/github/", "internal/lock/", "internal/sandbox/", "internal/pypi/", "internal/agent/runner/"],
+      "paths": ["internal/github/", "internal/lock/", "internal/sandbox/", "internal/pypi/", "internal/agent/runner/", "internal/notify/"],
       "may_depend_on": ["foundation"],
       "must_not_depend_on": ["cmd", "orchestration", "service", "domain", "presentation", "content"]
     },
