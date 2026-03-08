@@ -42,8 +42,28 @@ func Transition(from, to string) bool {
 	return tos[to]
 }
 
+// Spec holds the full metadata for a PR lifecycle label.
+type Spec struct {
+	Name        string
+	Color       string
+	Description string
+}
+
+// Specs is the authoritative list of all PR lifecycle labels with their
+// metadata. Drive both EnsureLabel calls and the All helper from this slice
+// so that adding a new label only requires a single change here.
+var Specs = []Spec{
+	{Name: AwaitingHumanReview, Color: "4A90E2", Description: "PR approved by AI, awaiting human review"},
+	{Name: FixingReviewFeedback, Color: "F5D76E", Description: "AI is addressing review feedback"},
+	{Name: ReadyToMerge, Color: "50C878", Description: "All reviews passed, ready to merge"},
+}
+
 // All returns all PR lifecycle label strings. Useful for bulk operations such
 // as ensuring labels exist in the repository before applying them.
 func All() []string {
-	return []string{AwaitingHumanReview, FixingReviewFeedback, ReadyToMerge}
+	names := make([]string, len(Specs))
+	for i, s := range Specs {
+		names[i] = s.Name
+	}
+	return names
 }

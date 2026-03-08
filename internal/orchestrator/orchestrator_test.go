@@ -907,3 +907,57 @@ func TestRun_DryRunSkipsDirtyCheck(t *testing.T) {
 
 // Suppress unused import warnings.
 var _ = fmt.Sprintf
+
+func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "test issue"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
+		})
+
+	// Wrap github.CommandRunner to capture "gh label create" calls,
+	// which EnsureLabel invokes when a label is not found.
+	var ensuredLabels []string
+	prev := github.CommandRunner
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "label" && args[1] == "create" {
+			// args: "label" "create" "--repo" "<repo>" "<name>" "--color" ...
+			if len(args) >= 5 {
+				ensuredLabels = append(ensuredLabels, args[4])
+			}
+		}
+		return prev(name, args...)
+	}
+
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone"); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	// All three PR lifecycle labels must have been ensured.
+	wantLabels := []string{
+		"godark:awaiting-human-review",
+		"godark:fixing-review-feedback",
+		"godark:ready-to-merge",
+	}
+	for _, want := range wantLabels {
+		found := false
+		for _, got := range ensuredLabels {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected lifecycle label %q to be ensured (created), got: %v", want, ensuredLabels)
+		}
+	}
+}

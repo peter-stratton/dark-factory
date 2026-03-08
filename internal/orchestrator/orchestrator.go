@@ -225,6 +225,13 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		return fmt.Errorf("loading prompts: %w", err)
 	}
 
+	// Ensure all PR lifecycle labels exist in the repo at startup.
+	for _, spec := range label.Specs {
+		if err := github.EnsureLabel(cfg.Repo, spec.Name, spec.Color, spec.Description); err != nil {
+			logger.Warn("failed to ensure lifecycle label", "label", spec.Name, "error", err)
+		}
+	}
+
 	// Build Docker image once if using sandbox mode.
 	if !cfg.NoSandbox {
 		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
