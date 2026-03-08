@@ -314,7 +314,7 @@
     <span class="card__title">Success Rate Over Time</span>
     <span class="text-muted">Fraction of issues implemented per run</span>
   </div>
-  <canvas id="chart-success-rate" style="width:100%;max-height:300px;"></canvas>
+  <canvas id="chart-success-rate" style="width:100%;height:300px;"></canvas>
 </div>
 
 <!-- Avg Retries Chart -->
@@ -323,7 +323,7 @@
     <span class="card__title">Average Retries Over Time</span>
     <span class="text-muted">Mean retries per issue per run</span>
   </div>
-  <canvas id="chart-avg-retries" style="width:100%;max-height:300px;"></canvas>
+  <canvas id="chart-avg-retries" style="width:100%;height:300px;"></canvas>
 </div>
 
 <!-- Cost Per Run Chart -->
@@ -332,7 +332,7 @@
     <span class="card__title">Cost Per Run Over Time</span>
     <span class="text-muted">Total USD cost per finished run</span>
   </div>
-  <canvas id="chart-cost" style="width:100%;max-height:300px;"></canvas>
+  <canvas id="chart-cost" style="width:100%;height:300px;"></canvas>
 </div>
 
 <script>
@@ -340,41 +340,75 @@
   var raw = document.getElementById('trend-data').textContent;
   var points = JSON.parse(raw);
 
-  function makeChart(canvasId, label, getter, color) {
+  var labels = points.map(function(p) {
+    var d = new Date(p.timestamp);
+    return (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+      d.getHours() + ':' + ('0'+d.getMinutes()).slice(-2);
+  });
+
+  function makeChart(canvasId, label, getter, color, yOpts) {
     var canvas = document.getElementById(canvasId);
     if (!canvas) return;
     var ctx = canvas.getContext('2d');
     new Chart(ctx, {
       type: 'line',
       data: {
+        labels: labels,
         datasets: [{
           label: label,
-          data: points.map(function(p) {
-            return { x: p.timestamp, y: getter(p) };
-          }),
+          data: points.map(getter),
           borderColor: color,
-          backgroundColor: color + '33',
+          backgroundColor: color + '20',
           fill: true,
-          pointRadius: 4,
-          tension: 0.1
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          pointBackgroundColor: color,
+          borderWidth: 2,
+          tension: 0.3
         }]
       },
       options: {
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#e2e8f0',
+            padding: 10,
+            callbacks: {
+              title: function(items) {
+                var p = points[items[0].dataIndex];
+                return (p.repo || '') + (p.milestone ? ' — ' + p.milestone : '');
+              },
+              label: function(item) {
+                return label + ': ' + item.formattedValue;
+              }
+            }
+          }
+        },
         scales: {
-          y: { beginAtZero: true }
+          x: {
+            ticks: { color: '#94a3b8', maxRotation: 45, maxTicksLimit: 10, font: { size: 11 } },
+            grid: { color: '#1e293b' }
+          },
+          y: Object.assign({ beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }, yOpts || {})
         }
       }
     });
   }
 
-  makeChart('chart-success-rate', 'Success Rate (%)',
-    function(p) { return +(p.success_rate * 100).toFixed(1); }, '#4ade80');
+  makeChart('chart-success-rate', 'Success Rate',
+    function(p) { return +(p.success_rate * 100).toFixed(1); }, '#4ade80',
+    { max: 100, ticks: { color: '#94a3b8', callback: function(v) { return v + '%'; }, stepSize: 25 } });
   makeChart('chart-avg-retries', 'Avg Retries',
     function(p) { return +p.avg_retries.toFixed(2); }, '#f59e0b');
   makeChart('chart-cost', 'Total Cost (USD)',
-    function(p) { return +p.total_cost_usd.toFixed(4); }, '#60a5fa');
+    function(p) { return +p.total_cost_usd.toFixed(2); }, '#60a5fa',
+    { ticks: { color: '#94a3b8', callback: function(v) { return '$' + v; } } });
 })();
 </script>
 

@@ -111,7 +111,7 @@
           <span class="card__title">Success Rate Trend</span>
           <a href="/analysis" class="text-muted" style="font-size: var(--text-xs);">Full analysis →</a>
         </div>
-        <canvas id="index-chart-success-rate" style="width:100%;max-height:120px;"></canvas>
+        <canvas id="index-chart-success-rate" style="width:100%;height:240px;"></canvas>
       </div>
       <script>
       document.addEventListener('DOMContentLoaded', function() {
@@ -124,22 +124,65 @@
           type: 'line',
           data: {
             datasets: [{
-              label: 'Success Rate (%)',
+              label: 'Success Rate',
               data: points.map(function(p) {
                 return { x: p.timestamp, y: +(p.success_rate * 100).toFixed(1) };
               }),
               borderColor: '#4ade80',
-              backgroundColor: '#4ade8033',
+              backgroundColor: '#4ade8020',
               fill: true,
-              pointRadius: 4,
-              tension: 0.1
+              pointRadius: 5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: '#4ade80',
+              borderWidth: 2,
+              tension: 0.3
             }]
           },
           options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: '#1e293b',
+                borderColor: '#334155',
+                borderWidth: 1,
+                titleColor: '#e2e8f0',
+                bodyColor: '#e2e8f0',
+                padding: 10,
+                callbacks: {
+                  title: function(items) {
+                    var p = points[items[0].dataIndex];
+                    return (p.repo || '') + (p.milestone ? ' — ' + p.milestone : '');
+                  },
+                  label: function(item) {
+                    var p = points[item.dataIndex];
+                    return item.formattedValue + '% (' + p.issue_count + ' issues)';
+                  }
+                }
+              }
+            },
             scales: {
-              y: { beginAtZero: true, max: 100 }
+              x: {
+                type: 'category',
+                labels: points.map(function(p) {
+                  var d = new Date(p.timestamp);
+                  return (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+                    d.getHours() + ':' + ('0'+d.getMinutes()).slice(-2);
+                }),
+                ticks: { color: '#94a3b8', maxRotation: 45, maxTicksLimit: 10, font: { size: 11 } },
+                grid: { color: '#1e293b' }
+              },
+              y: {
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                  color: '#94a3b8',
+                  callback: function(v) { return v + '%'; },
+                  stepSize: 25
+                },
+                grid: { color: '#1e293b' }
+              }
             }
           }
         });
