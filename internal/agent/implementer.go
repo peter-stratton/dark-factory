@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -132,7 +133,36 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ArchitectureDocContent: readFileOrEmpty(cfg.ArchitectureDoc),
 		ArchitectureJSON:       readFileOrEmpty(cfg.ArchitectureJSON),
 		ConventionsDocContent:  readFileOrEmpty(cfg.ConventionsDoc),
+		ModuleContext:          buildModuleContext(cfg.Modules),
 	}
+}
+
+// buildModuleContext renders a human-readable summary of configured modules
+// and their dependency relationships for use in prompt templates.
+// Returns empty string when no modules are configured.
+func buildModuleContext(modules map[string]config.Module) string {
+	if len(modules) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(modules))
+	for name := range modules {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var sb strings.Builder
+	for _, name := range names {
+		mod := modules[name]
+		sb.WriteString("- ")
+		sb.WriteString(name)
+		if len(mod.DependsOn) > 0 {
+			sb.WriteString(" (depends_on: ")
+			sb.WriteString(strings.Join(mod.DependsOn, ", "))
+			sb.WriteString(")")
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // readFileOrEmpty reads the file at path and returns its contents as a string.
