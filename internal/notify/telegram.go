@@ -5,17 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
-
-// httpClient is the HTTP client used by TelegramNotifier. It is a
-// package-level variable so tests can substitute a mock transport.
-var httpClient = &http.Client{}
 
 // TelegramNotifier sends notifications via the Telegram Bot API.
 type TelegramNotifier struct {
 	botToken string
 	chatID   string
+	client   *http.Client
 }
 
 // NewTelegram constructs a TelegramNotifier from the given settings map.
@@ -30,7 +29,7 @@ func NewTelegram(settings map[string]string) (*TelegramNotifier, error) {
 	if chatID == "" {
 		return nil, fmt.Errorf("notify: telegram: missing required setting \"chat_id\"")
 	}
-	return &TelegramNotifier{botToken: botToken, chatID: chatID}, nil
+	return &TelegramNotifier{botToken: botToken, chatID: chatID, client: &http.Client{}}, nil
 }
 
 // Send delivers event to the configured Telegram chat via the Bot API
@@ -61,11 +60,17 @@ func (t *TelegramNotifier) Send(ctx context.Context, event Event) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := t.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("notify: telegram: send request: %w", err)
+		// Sanitize error to prevent the bot token from appearing in log output.
+		// Go's net/http embeds the request URL verbatim in transport errors.
+		sanitized := strings.ReplaceAll(err.Error(), t.botToken, "[REDACTED]")
+		return fmt.Errorf("notify: telegram: send request: %s", sanitized)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort close; ignore error
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain to allow TCP connection reuse
+		resp.Body.Close()                      //nolint:errcheck // best-effort close; ignore error
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("notify: telegram: unexpected status %d", resp.StatusCode)

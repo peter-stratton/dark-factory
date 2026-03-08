@@ -66,14 +66,6 @@ func TestNewTelegramSuccess(t *testing.T) {
 
 // --- Send tests ---
 
-// withMockServer replaces the package-level httpClient with one that routes all
-// requests through the given test server, then restores the original on return.
-func withMockServer(ts *httptest.Server) func() {
-	orig := httpClient
-	httpClient = ts.Client()
-	return func() { httpClient = orig }
-}
-
 func TestSendSuccess(t *testing.T) {
 	type telegramPayload struct {
 		ChatID    string `json:"chat_id"`
@@ -88,20 +80,12 @@ func TestSendSuccess(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
-	defer withMockServer(ts)()
 
-	n := &TelegramNotifier{botToken: "tok", chatID: "chat123"}
-	// Override the URL by injecting a transport that rewrites requests to the test server.
-	// The test server client already handles this via its transport.
-	// We need to point the URL at the test server, so we swap the client's transport.
-
-	// Actually we need a different approach: replace httpClient with a client
-	// that redirects the Telegram API URL to our test server.
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: rewriteTransport{base: ts.Client().Transport, target: ts.URL},
+	n := &TelegramNotifier{
+		botToken: "tok",
+		chatID:   "chat123",
+		client:   &http.Client{Transport: rewriteTransport{base: ts.Client().Transport, target: ts.URL}},
 	}
-	defer func() { httpClient = origClient }()
 
 	event := Event{Type: "run_complete", Repo: "owner/repo", Message: "all done"}
 	err := n.Send(context.Background(), event)
@@ -126,13 +110,11 @@ func TestSendFailureNon2xx(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: rewriteTransport{base: ts.Client().Transport, target: ts.URL},
+	n := &TelegramNotifier{
+		botToken: "tok",
+		chatID:   "chat123",
+		client:   &http.Client{Transport: rewriteTransport{base: ts.Client().Transport, target: ts.URL}},
 	}
-	defer func() { httpClient = origClient }()
-
-	n := &TelegramNotifier{botToken: "tok", chatID: "chat123"}
 	err := n.Send(context.Background(), Event{Type: "abort", Repo: "r", Message: "m"})
 	if err == nil {
 		t.Fatal("expected error for 403, got nil")
@@ -150,16 +132,15 @@ func TestSendContextCancelled(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: rewriteTransport{base: ts.Client().Transport, target: ts.URL},
+	n := &TelegramNotifier{
+		botToken: "tok",
+		chatID:   "chat123",
+		client:   &http.Client{Transport: rewriteTransport{base: ts.Client().Transport, target: ts.URL}},
 	}
-	defer func() { httpClient = origClient }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	n := &TelegramNotifier{botToken: "tok", chatID: "chat123"}
 	err := n.Send(ctx, Event{Type: "abort", Repo: "r", Message: "m"})
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
