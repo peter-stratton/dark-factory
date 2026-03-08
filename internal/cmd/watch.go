@@ -44,12 +44,12 @@ Runs as a long-lived foreground process. Press Ctrl+C to stop.`,
 		if err != nil {
 			return fmt.Errorf("creating temp log dir: %w", err)
 		}
-		defer os.RemoveAll(logDir)
 
 		logger, err := logging.NewLogger(logDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
+		logger.Info("logging to", "dir", logDir)
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
