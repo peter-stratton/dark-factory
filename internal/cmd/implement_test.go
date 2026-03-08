@@ -274,7 +274,7 @@ func TestFireImplementNotification_SendsEvent(t *testing.T) {
 		Message: "issue #123: status=implemented, PR #456",
 	}
 
-	fireImplementNotification(context.Background(), []notify.Notifier{stub}, event, slog.Default())
+	notify.Fire(context.Background(), []notify.Notifier{stub}, event, slog.Default())
 
 	if len(stub.received) != 1 {
 		t.Fatalf("got %d events, want 1", len(stub.received))
@@ -290,7 +290,7 @@ func TestFireImplementNotification_LogsErrorAndContinues(t *testing.T) {
 	event := notify.Event{Type: "implementation_complete", Repo: "owner/repo", Message: "done"}
 
 	// Should not panic even if first notifier fails; second should still receive.
-	fireImplementNotification(context.Background(), []notify.Notifier{failing, ok}, event, slog.Default())
+	notify.Fire(context.Background(), []notify.Notifier{failing, ok}, event, slog.Default())
 
 	if len(ok.received) != 1 {
 		t.Errorf("ok notifier got %d events, want 1", len(ok.received))
@@ -299,6 +299,6 @@ func TestFireImplementNotification_LogsErrorAndContinues(t *testing.T) {
 
 func TestFireImplementNotification_NoNotifiers(t *testing.T) {
 	// Should not panic with nil or empty slice.
-	fireImplementNotification(context.Background(), nil, notify.Event{Type: "implementation_complete"}, slog.Default())
-	fireImplementNotification(context.Background(), []notify.Notifier{}, notify.Event{Type: "implementation_complete"}, slog.Default())
+	notify.Fire(context.Background(), nil, notify.Event{Type: "implementation_complete"}, slog.Default())
+	notify.Fire(context.Background(), []notify.Notifier{}, notify.Event{Type: "implementation_complete"}, slog.Default())
 }

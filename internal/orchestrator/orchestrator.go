@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
@@ -461,7 +460,7 @@ done:
 
 	// Fire abort notification if the run stopped early.
 	if stats.abortReason != "" {
-		fireNotifications(ctx, notifiers, notify.Event{
+		notify.Fire(ctx, notifiers, notify.Event{
 			Type:    "abort",
 			Repo:    cfg.Repo,
 			Message: fmt.Sprintf("Run aborted: %s", stats.abortReason),
@@ -481,13 +480,15 @@ done:
 		}
 	}
 
-	// Fire run_complete notification after finalization.
-	fireNotifications(ctx, notifiers, notify.Event{
-		Type: "run_complete",
-		Repo: cfg.Repo,
-		Message: fmt.Sprintf("%d implemented, %d failed, %d blocked",
-			stats.implemented, stats.failed, stats.blocked),
-	}, logger)
+	// Fire run_complete notification after finalization — only when not aborted.
+	if stats.abortReason == "" {
+		notify.Fire(ctx, notifiers, notify.Event{
+			Type: "run_complete",
+			Repo: cfg.Repo,
+			Message: fmt.Sprintf("%d implemented, %d failed, %d blocked",
+				stats.implemented, stats.failed, stats.blocked),
+		}, logger)
+	}
 
 	// Wait for all background punchlist enrichments to finish.
 	plWg.Wait()
@@ -631,19 +632,6 @@ func punchlistEnrichmentStatus(prompts *agent.Prompts, acceptanceTests []string)
 		return "success"
 	}
 	return "failed"
-}
-
-// fireNotifications sends event to all notifiers. Each Send call gets a 10s
-// timeout. Errors are logged as warnings and never block execution.
-func fireNotifications(ctx context.Context, notifiers []notify.Notifier, event notify.Event, logger *slog.Logger) {
-	for _, n := range notifiers {
-		sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := n.Send(sendCtx, event)
-		cancel()
-		if err != nil {
-			logger.Warn("notification send failed", "event_type", event.Type, "error", err)
-		}
-	}
 }
 
 // issueNumbers extracts the issue numbers from a slice of issues.

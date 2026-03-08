@@ -3,13 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
@@ -243,7 +241,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			if outcome.PRNumber > 0 {
 				notifyMsg += fmt.Sprintf(", PR #%d", outcome.PRNumber)
 			}
-			fireImplementNotification(ctx, notifiers, notify.Event{
+			notify.Fire(ctx, notifiers, notify.Event{
 				Type:    "implementation_complete",
 				Repo:    cfg.Repo,
 				Message: notifyMsg,
@@ -316,19 +314,6 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 
 		return nil
 	},
-}
-
-// fireImplementNotification sends event to all notifiers with a 10s timeout.
-// Errors are logged as warnings and never block execution.
-func fireImplementNotification(ctx context.Context, notifiers []notify.Notifier, event notify.Event, logger *slog.Logger) {
-	for _, n := range notifiers {
-		sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := n.Send(sendCtx, event)
-		cancel()
-		if err != nil {
-			logger.Warn("notification send failed", "event_type", event.Type, "error", err)
-		}
-	}
 }
 
 // collectIssueNumbers merges positional args and the --issues flag value into

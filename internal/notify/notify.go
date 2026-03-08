@@ -3,6 +3,8 @@ package notify
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/phs/dark-factory/internal/config"
 )
@@ -60,6 +62,19 @@ func (f *filteredNotifier) Send(ctx context.Context, event Event) error {
 		return nil
 	}
 	return f.notifier.Send(ctx, event)
+}
+
+// Fire sends event to all notifiers. Each Send call gets a 10s timeout.
+// Errors are logged as warnings and never block execution.
+func Fire(ctx context.Context, notifiers []Notifier, event Event, logger *slog.Logger) {
+	for _, n := range notifiers {
+		sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		err := n.Send(sendCtx, event)
+		cancel()
+		if err != nil {
+			logger.Warn("notification send failed", "event_type", event.Type, "error", err)
+		}
+	}
 }
 
 // newProvider dispatches to the appropriate provider constructor.

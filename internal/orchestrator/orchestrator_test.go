@@ -973,7 +973,7 @@ func TestFireNotifications_SendsEvent(t *testing.T) {
 	fn := &fakeNotifier{}
 	event := notify.Event{Type: "run_complete", Repo: "owner/repo", Message: "1 implemented, 0 failed, 0 blocked"}
 
-	fireNotifications(context.Background(), []notify.Notifier{fn}, event, testLogger(t))
+	notify.Fire(context.Background(), []notify.Notifier{fn}, event, testLogger(t))
 
 	if len(fn.received) != 1 {
 		t.Fatalf("got %d events, want 1", len(fn.received))
@@ -992,7 +992,7 @@ func TestFireNotifications_LogsErrorAndContinues(t *testing.T) {
 	event := notify.Event{Type: "abort", Repo: "owner/repo", Message: "reason"}
 
 	// Should not panic or return an error; the ok notifier should still receive the event.
-	fireNotifications(context.Background(), []notify.Notifier{failing, ok}, event, testLogger(t))
+	notify.Fire(context.Background(), []notify.Notifier{failing, ok}, event, testLogger(t))
 
 	if len(ok.received) != 1 {
 		t.Errorf("ok notifier got %d events, want 1", len(ok.received))
@@ -1001,7 +1001,7 @@ func TestFireNotifications_LogsErrorAndContinues(t *testing.T) {
 
 func TestFireNotifications_EmptyNotifiers(t *testing.T) {
 	// No notifiers — should not panic.
-	fireNotifications(context.Background(), nil, notify.Event{Type: "run_complete"}, testLogger(t))
+	notify.Fire(context.Background(), nil, notify.Event{Type: "run_complete"}, testLogger(t))
 }
 
 func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
@@ -1121,7 +1121,7 @@ func TestFireNotifications_EventFiltering(t *testing.T) {
 	inner := &fakeNotifier{}
 	abortOnly := &filteringNotifier{inner: inner, events: map[string]bool{"abort": true}}
 
-	fireNotifications(context.Background(), []notify.Notifier{abortOnly},
+	notify.Fire(context.Background(), []notify.Notifier{abortOnly},
 		notify.Event{Type: "run_complete", Repo: "owner/repo", Message: "done"}, testLogger(t))
 
 	if len(inner.received) != 0 {
@@ -1129,7 +1129,7 @@ func TestFireNotifications_EventFiltering(t *testing.T) {
 	}
 
 	// Now fire an abort — it must be received.
-	fireNotifications(context.Background(), []notify.Notifier{abortOnly},
+	notify.Fire(context.Background(), []notify.Notifier{abortOnly},
 		notify.Event{Type: "abort", Repo: "owner/repo", Message: "reason"}, testLogger(t))
 
 	if len(inner.received) != 1 {
