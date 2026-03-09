@@ -180,14 +180,18 @@ Usage:
   godark [command]
 
 Available Commands:
+  analyze     Analyze run data and print aggregate report
   completion  Generate the autocompletion script for the specified shell
-  implement   Implement a single GitHub issue
+  doctor      Verify system dependencies and environment before running godark
+  implement   Implement one or more GitHub issues
   init        Initialize a project with godark skills and default config
-  new         Create a new harness-ready project directory
+  new         Create a new project with all harness files
   run         Run the development loop for a milestone or single issue
-  status      Show summary of the most recent run
+  status      Start the dashboard web server
+  unlock      Clear a stale run lock left by a crashed godark instance
   version     Print the version and build time
   vet         Validate roadmap docs and issue quality for agent consumption
+  watch       Poll for PRs awaiting human review and detect CHANGES_REQUESTED reviews
 ```
 
 ### godark run
@@ -200,33 +204,40 @@ Usage:
   godark run [flags]
 
 Flags:
-      --config string      Path to configuration file (default "godark.yaml")
-      --dry-run            Print execution plan without taking action
-      --issue int          Single issue number to process (instead of milestone)
-      --max-retries int    Maximum review/fix retry cycles per issue (default 3)
-      --milestone string   GitHub milestone to process (exact title)
-      --no-sandbox         Run agents on host instead of in Docker
-      --repo string        GitHub repository (owner/repo)
-      --tag string         Milestone tag (e.g., phase-3) — resolved to full milestone title
+      --auto-merge string   Merge strategy: none, low_risk, all (default "none")
+      --config string       Path to configuration file (default "godark.yaml")
+      --dry-run             Print execution plan without taking action
+      --force               Clear any existing run lock before starting
+      --issue int           Single issue number to process (instead of milestone)
+      --max-retries int     Maximum review/fix retry cycles per issue (default 3)
+      --milestone string    GitHub milestone to process (exact title)
+      --no-sandbox          Run agents on host instead of in Docker
+      --punchlist string    Write manual testing punchlist to this file
+      --repo string         GitHub repository (owner/repo)
+      --tag string          Milestone tag (e.g., phase-3) — resolved to full milestone title
 ```
 
 ### godark implement
 
 ```
-Fetch a GitHub issue by number and run the implement → review → merge
+Fetch one or more GitHub issues by number and run the implement → review → merge
 loop directly, without milestone or dependency resolution.
 
+Issue numbers may be provided as positional arguments, via --issues, or both.
+
 Usage:
-  godark implement <issue-number> [flags]
+  godark implement [issue-number...] [--issues 160,161,162] [flags]
 
 Flags:
-      --config string      Path to configuration file (default "godark.yaml")
-      --dry-run            Print issue details and exit
-      --max-retries int    Maximum review/fix retry cycles (default 3)
-      --auto-merge string  Merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything) (default "none")
-      --no-sandbox         Run agents on host instead of in Docker
-      --punchlist string   Write manual testing punchlist to this file (always printed to stdout)
-      --repo string        GitHub repository (owner/repo)
+      --auto-merge string   Merge strategy: none, low_risk, all (default "none")
+      --config string       Path to configuration file (default "godark.yaml")
+      --dry-run             Print issue details and exit
+      --force               Clear any existing run lock before starting
+      --issues string       Comma-separated list of issue numbers (e.g. 160,161,162)
+      --max-retries int     Maximum review/fix retry cycles (default 3)
+      --no-sandbox          Run agents on host instead of in Docker
+      --punchlist string    Write manual testing punchlist to this file
+      --repo string         GitHub repository (owner/repo)
 ```
 
 ### godark vet
@@ -331,11 +342,88 @@ Flags:
 ### godark status
 
 ```
-Parse the latest run log and display a summary of issues processed,
-PRs opened, and outcomes.
+Start a local web server that serves a dashboard UI.
+The homepage lists all runs from ~/.godark/runs/, most recent first.
+
+Press Ctrl-C to stop the server.
 
 Usage:
   godark status [flags]
+
+Flags:
+      --port int   port to listen on (default 8374)
+```
+
+### godark analyze
+
+```
+Read run data from ~/.godark/runs/, apply filters, and print an
+aggregate report including outcome distribution, flag frequencies,
+retry statistics, cost statistics, and detected prompt gaps.
+
+Usage:
+  godark analyze [flags]
+
+Flags:
+      --json               Output as JSON instead of human-readable table
+      --milestone string   Filter to runs for this milestone
+      --repo string        Filter to runs for this repository (owner/repo)
+      --since string       Only include runs started at or after this date (YYYY-MM-DD)
+      --until string       Only include runs started at or before this date (YYYY-MM-DD)
+```
+
+### godark doctor
+
+```
+Run pre-flight checks to confirm that all required tools and environment
+variables are in place. Prints a pass/fail checklist and exits non-zero
+if any check fails.
+
+Checks performed:
+  • Docker daemon running
+  • gh CLI installed and authenticated
+  • ANTHROPIC_API_KEY environment variable set
+  • Detected runtime toolchain available
+  • Python 3 available
+
+Usage:
+  godark doctor [flags]
+```
+
+### godark watch
+
+```
+Poll GitHub for pull requests labeled godark:awaiting-human-review and
+detect when a human submits a CHANGES_REQUESTED review. When detected,
+the implementer agent is invoked to address the feedback using session
+resumption. After the fix is pushed, the PR is re-labeled
+godark:awaiting-human-review.
+
+Runs as a long-lived foreground process. Press Ctrl+C to stop.
+
+Usage:
+  godark watch [flags]
+
+Flags:
+      --config string   Path to configuration file (default "godark.yaml")
+      --repo string     GitHub repository (owner/repo)
+```
+
+### godark unlock
+
+```
+Remove the godark-in-progress label from all open issues in the repo
+and delete the local .godark/lock.json file.
+
+Use this command when a previous godark run crashed mid-execution and
+left the lock label on issues, preventing new runs from starting.
+Alternatively, pass --force to godark run to clear the lock automatically.
+
+Usage:
+  godark unlock [flags]
+
+Flags:
+      --repo string   GitHub repository (owner/repo)
 ```
 
 ### godark version
@@ -360,14 +448,21 @@ repo: owner/repo
 max_retries: 3            # review/fix cycles before escalating (default 3)
 agent_timeout: "30m"      # max wall-clock time per agent run
 no_sandbox: false         # run agents on host instead of Docker
+auto_merge: "none"        # merge strategy: none, low_risk, all
 quality_strictness_decay: true  # use diminishing strictness on quality review retries
+auth_preference: ""       # force "oauth" or "api_key" (auto-detected if empty)
 
-# Build and test commands run inside the container (auto-detected if not set)
+# Build, test, lint, and codegen commands (auto-detected if not set)
 build_command: ""
 test_command: ""
+lint_command: ""
+generate_command: ""
 
 # Environment variables injected into the sandbox container
 sandbox_env: {}
+
+# Required environment variables — godark doctor checks these are set
+required_env: []
 
 # Project runtime — auto-detected from go.mod, pubspec.yaml, etc. if not set
 runtime:
@@ -376,11 +471,16 @@ runtime:
 
 # Paths (relative to repo root)
 protected_paths: []                    # files agents must never modify
+denied_commands: []                    # shell commands agents must not run
+generated_paths: []                    # paths containing generated code (not reviewed)
 roadmap_path: "docs/ROADMAP.md"
 planning_dir: "docs/planning/"
 scenario_dir: "tests/scenarios/"
 review_dir:   "tests/review/"
-log_dir:      "logs/"
+architecture_doc: "docs/architecture.md"
+architecture_json: "docs/architecture.json"
+conventions_doc: "docs/conventions.md"
+enforce_architecture: false            # inject architecture rules into agent prompts
 
 # Docker sandbox settings
 docker:
@@ -399,6 +499,48 @@ prompts:
   quality_reviewer: ""
   spec_generator: ""
   punchlist: ""
+  verify_fix: ""
+
+# Quality review thresholds
+quality:
+  min_review_cost_usd: 0       # flag reviews cheaper than this
+  min_review_duration_seconds: 0  # flag reviews shorter than this
+
+# Deterministic verify step (build/test/lint before review)
+verify:
+  max_fix_attempts: 3      # auto-fix attempts before failing
+  blocking: true           # fail the issue if verify doesn't pass
+
+# CI check requirements (wait for GitHub Actions / status checks)
+wait_for_checks:
+  timeout: "10m"           # max time to wait for checks to complete
+  required: []             # check names that must pass before merge
+
+# Risk thresholds for low_risk auto-merge
+risk_thresholds:
+  max_lines: 500           # PRs changing more lines are not low-risk
+  max_files: 10            # PRs changing more files are not low-risk
+
+# Multi-module support — per-module build/test overrides and dependency ordering
+modules: {}
+  # module_name:
+  #   build_command: ""
+  #   test_command: ""
+  #   lint_command: ""
+  #   generate_command: ""
+  #   depends_on: []
+
+# Watch mode — poll for human review feedback
+watch:
+  poll_interval: "5m"      # how often to check for new reviews
+
+# Notifications
+notify: []
+  # - provider: telegram
+  #   events: [run_complete, abort]
+  #   settings:
+  #     bot_token: "${TELEGRAM_BOT_TOKEN}"
+  #     chat_id: "${TELEGRAM_CHAT_ID}"
 ```
 
 ## Phase overviews
