@@ -643,55 +643,20 @@ notify:
 
 **Goal**: Independent issues within a run execute in parallel, bounded by a
 configurable worker pool. Dependent issues still respect topological ordering.
-Merge serialization ensures `main` stays linear. Designed for org-scale use
-where serial execution across dozens of issues per milestone is a throughput
-bottleneck.
+Merge serialization ensures `main` stays linear.
 
 **Milestone**: `Phase 14` | **Label**: `phase-14`
 
-### Concurrency model
-- Worker pool with configurable max concurrency (`concurrency:` in
-  `godark.yaml`, default 1 for backward compatibility)
-- Dependency-aware scheduling: issues with no unresolved blockers are
-  dispatched to the pool immediately; blocked issues wait until their
-  dependencies complete successfully
-- Each worker gets its own sandbox container (image built once, shared)
-- Workers operate on independent git worktrees or clones to avoid branch
-  conflicts
-
-### Merge serialization
-- A single merge goroutine consumes a channel of approved PRs
-- Merges happen one at a time: squash-merge, pull `--rebase`, then signal
-  the next merge
-- If a rebase conflict occurs post-merge, the affected PR is re-queued for
-  a fix cycle (implementer resumes session with conflict context)
-- Merge ordering follows completion order, not issue priority — first
-  approved, first merged
-
-### Run data and locking
-- `rundata.Writer` must be safe for concurrent use (mutex or per-issue
-  writers)
-- `lock.Locker` already labels issues — ensure label operations are
-  idempotent under concurrent waves
-- Per-issue log files (not interleaved) for debuggability
-
-### Dashboard updates
-- Issue rows show real-time status updates via htmx polling (already works)
-- Add "active workers" indicator to run detail view
-- Concurrent issues show simultaneous "in progress" badges
-
-### Rate limiting and backpressure
-- GitHub API rate limit awareness — back off when approaching limits
-- Configurable per-worker delay between API calls if needed
-- Anthropic API concurrency limits respected (workers block on token
-  availability rather than failing)
-
-### Config
-```yaml
-concurrency:
-  max_workers: 4        # parallel agent invocations
-  merge_strategy: fifo  # fifo (default) or priority
-```
+- Worker pool with configurable max concurrency (default 1)
+- Dependency-aware scheduling from existing topological sort
+- Per-worker sandbox containers and isolated git worktrees
+- Single-goroutine merge serializer (squash-merge, rebase, signal next)
+- Rebase conflict re-queue for fix cycle
+- Thread-safe run data writer (mutex or per-issue writers)
+- Per-issue log files for concurrent debuggability
+- Active workers indicator and concurrent status badges in dashboard
+- GitHub API rate limit backpressure
+- Anthropic API concurrency limit awareness
 
 **Issues**: TBD
 
