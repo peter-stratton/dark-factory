@@ -38,10 +38,17 @@ humans who understand it.
 
 ### Project type support
 
+**Supported** — tested in production runs:
+
 | Runtime  | Marker file       | Default build | Default test |
 |----------|-------------------|---------------|--------------|
 | Go       | `go.mod`          | `go build ./...` | `go test ./...` |
 | Flutter  | `pubspec.yaml`    | _(none)_      | `flutter test` |
+
+**Coming soon** — auto-detected but not yet production-tested:
+
+| Runtime  | Marker file       | Default build | Default test |
+|----------|-------------------|---------------|--------------|
 | Node.js  | `package.json`    | `npm run build` | `npm test` |
 | Rust     | `Cargo.toml`      | `cargo build` | `cargo test` |
 | Elixir   | `mix.exs`         | `mix compile` | `mix test` |
@@ -104,7 +111,20 @@ godark new <project-name> --repo owner/repo
 
 Creates the directory, writes CLAUDE.md template and `.gitignore`, runs
 `git init`, then scaffolds skills, `godark.yaml`, and empty harness doc
-templates. Follow the harness setup steps below to populate the docs.
+templates.
+
+Then open the project in Claude Code and run these skills in order:
+
+| Step | Skill | What it does |
+|------|-------|--------------|
+| 1 | `/godark-define-architecture` | Discuss your planned architecture and write `docs/architecture.md` + `docs/architecture.json` with layer definitions |
+| 2 | `/godark-define-conventions` | Discuss language idioms and patterns, write `docs/conventions.md` |
+| 3 | `/godark-harness-claude-md` | Compress CLAUDE.md into a minimal directory of pointers to the docs above |
+| 4 | `godark vet architecture` | Validate the layer definitions have no dependency cycles |
+
+Steps 1-3 are conversational — the skill asks questions about your project and
+writes the docs based on your answers. For a greenfield project there's no code
+to analyze, so the skills focus on what you're planning to build.
 
 ## Migrating an existing project
 
@@ -116,44 +136,54 @@ Installs skills, creates `godark.yaml` (if missing), and scaffolds empty harness
 doc templates without overwriting existing files. Safe to re-run — skills are
 always updated, everything else is skip-if-exists.
 
-Harness documentation is optional — `godark run` works without it. But agents
-produce better results when they have clear architecture definitions, coding
-conventions, and a concise CLAUDE.md to orient from.
+Then open the project in Claude Code and run these skills in order:
+
+| Step | Skill | What it does |
+|------|-------|--------------|
+| 1 | `/godark-configure-project` | Scan the codebase and populate `godark.yaml` with detected modules, codegen, CI checks, and environment config |
+| 2 | `/godark-define-architecture` | Analyze existing code and write `docs/architecture.md` + `docs/architecture.json` with layer definitions |
+| 3 | `/godark-define-conventions` | Analyze existing patterns and write `docs/conventions.md` |
+| 4 | `/godark-harness-claude-md` | Compress CLAUDE.md into a minimal directory of pointers to the docs above |
+| 5 | `godark vet architecture` | Validate the layer definitions have no dependency cycles |
+
+For existing projects, step 1 (`/godark-configure-project`) detects your build
+system, test runner, code generation, CI workflows, and environment variables
+automatically. Steps 2-3 analyze your actual code to extract architecture and
+conventions rather than starting from scratch.
 
 **Notes:**
 - Use `--reset-claude-md` to replace an existing CLAUDE.md with the harness template before running `/godark-harness-claude-md`.
-- If your project already has conventions in `CONTRIBUTING.md` or architecture in `docs/ADR/`, the harness skill will point to those instead of forcing a migration.
+- If your project already has conventions in `CONTRIBUTING.md` or architecture in `docs/ADR/`, the harness skills will reference those instead of forcing a migration.
+- Harness documentation is optional — `godark run` works without it. But agents produce better results when they have clear architecture definitions, coding conventions, and a concise CLAUDE.md to orient from.
 
-## Harness setup
-
-After `godark new` or `godark init`, run these skills inside Claude Code to
-populate the harness docs:
-
-| Step | Command / Skill | What it does |
-|------|-----------------|--------------|
-| 1 | `/godark-define-architecture` | Analyze the codebase (or discuss plans for new projects) and write `docs/architecture.md` + `docs/architecture.json` |
-| 2 | `/godark-define-conventions` | Analyze existing code patterns (or recommend idioms) and write `docs/conventions.md` |
-| 3 | `/godark-harness-claude-md` | Compress CLAUDE.md into a minimal directory of pointers to subordinate docs |
-| 4 | `godark vet architecture` | Validate the layer definitions have no cycles |
-
-## Planning a phase
+## Planning and running a phase
 
 Once harness docs are in place, use the planning skills to create a roadmap and
 prepare issues for agent execution:
 
-| Step | Command / Skill | What it does |
-|------|-----------------|--------------|
-| 1 | `/godark-create-roadmap <project-goal>` | Create a phased roadmap and GitHub milestones |
-| 2 | `/godark-create-planning-doc <phase-number>` | Write a detailed planning doc for a roadmap phase |
-| 3 | `/godark-create-issues <phase-number>` | Create GitHub issues from the planning doc |
-| 4 | `/godark-create-scenarios <phase-number>` | Generate scenario specs for a phase |
-| 5 | `godark vet issues --repo owner/repo --tag phase-N` | Validate issues are agent-ready |
-| 6 | `godark vet scenarios --repo owner/repo --tag phase-N` | Validate scenario specs |
+| Step | Skill | What it does |
+|------|-------|--------------|
+| 1 | `/godark-create-roadmap <goal>` | Discuss project goals, create a phased roadmap, and set up GitHub milestones |
+| 2 | `/godark-create-planning-doc <phase>` | Flesh out each issue in a phase with specs, constraints, acceptance criteria, and test cases |
+| 3 | `/godark-create-issues <phase>` | Create GitHub issues from the planning doc |
+| 4 | `/godark-create-scenarios <phase>` | Generate scenario spec files the functional reviewer uses to write integration tests |
+| 5 | `godark vet issues --tag phase-N` | Validate issues are agent-ready |
+| 6 | `godark vet scenarios --tag phase-N` | Validate scenario specs match their issues |
+
+Steps 1-2 are conversational — they ask clarifying questions and let you shape
+the specs before anything is created in GitHub.
 
 Once vetting passes, kick off the loop:
 
 ```
-godark run --milestone "Phase N" --repo owner/repo
+godark run --tag phase-N --repo owner/repo
+```
+
+After the phase completes, generate a practical overview documenting what was
+built:
+
+```
+/godark-create-phase-overview <phase-number>
 ```
 
 ## Supported runtimes
