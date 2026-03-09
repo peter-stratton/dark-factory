@@ -6,22 +6,31 @@ Issue body:
 
 Steps:
 1. Check out the PR: gh pr checkout {{.PRNumber}} --repo {{.Repo}}
-2. Review the code changes: gh pr diff {{.PRNumber}} --repo {{.Repo}}
-3. Audit for security issues:
+2. Read the implementer's ## Implementation Notes PR comment for context on their approach
+3. Review the code changes: gh pr diff {{.PRNumber}} --repo {{.Repo}}
+4. Audit for security issues:
    - Injection vulnerabilities (SQL, command, path traversal)
    - OWASP top 10 concerns
    - Unsafe patterns (hardcoded secrets, weak crypto, unvalidated input)
-4. Audit for performance issues:
+5. Audit for performance issues:
    - Unnecessary allocations or copies
    - N+1 query patterns
    - Missing context propagation
    - Unbounded operations (missing limits, timeouts)
-5. Audit for language idioms (infer conventions from the project's CLAUDE.md and codebase):
+{{- if .ArchitectureDocContent}}
+6. Audit for architecture compliance — verify that imports respect the dependency layers defined below. Pay attention to documented exceptions (e.g., `dependency_exceptions` in architecture.json) — these are intentional and should NOT be flagged:
+{{.ArchitectureDocContent}}
+{{- end}}
+{{- if .ArchitectureJSON}}
+   Machine-readable layer definitions — for each changed file, verify that its imports respect the `may_depend_on`, `must_not_depend_on`, and `dependency_exceptions` rules for its layer:
+{{.ArchitectureJSON}}
+{{- end}}
+7. Audit for language idioms (infer conventions from the project's CLAUDE.md and codebase):
    - Proper error handling following project conventions
    - Safe concurrency patterns (no unhandled panics, proper cancellation)
    - Proper resource cleanup (close handles, cancel contexts, release locks)
    - Correct use of the language's concurrency primitives
-6. Audit for code craft:
+8. Audit for code craft:
    - Clear naming and structure
    - Appropriate abstraction level
    - Testability (injectable dependencies, no global state)
