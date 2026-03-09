@@ -76,6 +76,7 @@ func TestNewCreatesAllFiles(t *testing.T) {
 		"testproject/prompts/implementer.txt",
 		"testproject/prompts/implementer_retry.txt",
 		"testproject/prompts/reviewer.txt",
+		"testproject/.claude/godark.md",
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("expected %s to exist: %v", path, err)

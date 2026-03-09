@@ -41,6 +41,9 @@ The config file is only created if it does not already exist.`,
 		if err := writeSkillFiles(cmd); err != nil {
 			return err
 		}
+		if err := writeGodarkDoc(cmd); err != nil {
+			return err
+		}
 		if err := writeDefaultConfig(cmd); err != nil {
 			return err
 		}
@@ -81,6 +84,29 @@ func writeSkillFiles(cmd *cobra.Command) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", dest)
 		return nil
 	})
+}
+
+// writeGodarkDoc writes .claude/godark.md from the embedded template. This file
+// is always overwritten (like skills) since it describes godark's pipeline and
+// config, and should stay current with the installed version of godark.
+func writeGodarkDoc(cmd *cobra.Command) error {
+	const dest = ".claude/godark.md"
+
+	data, err := templates.FS.ReadFile("godark.md")
+	if err != nil {
+		return fmt.Errorf("reading embedded godark.md: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("creating directory for %s: %w", dest, err)
+	}
+
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", dest, err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", dest)
+	return nil
 }
 
 func writeDefaultConfig(cmd *cobra.Command) error {

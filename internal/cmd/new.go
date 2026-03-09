@@ -97,6 +97,11 @@ func runNew(cmd *cobra.Command, projectName, repo string) error {
 		return err
 	}
 
+	// Write .claude/godark.md (reuses the shared helper from init.go).
+	if err := writeGodarkDoc(cmd); err != nil {
+		return err
+	}
+
 	// Write godark.yaml with optional repo pre-populated.
 	if err := writeNewProjectConfig(cmd, repo); err != nil {
 		return err

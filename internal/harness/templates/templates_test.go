@@ -85,6 +85,7 @@ func TestAllTemplatesAccessible(t *testing.T) {
 		"conventions.md",
 		"roadmap.md",
 		"claude.md",
+		"godark.md",
 		"gitignore",
 		"prompts/implementer.txt",
 		"prompts/implementer_retry.txt",

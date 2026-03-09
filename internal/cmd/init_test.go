@@ -138,6 +138,45 @@ func TestInitConfigureProjectSkillIdempotent(t *testing.T) {
 	}
 }
 
+func TestInitWritesGodarkDoc(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	docPath := filepath.Join(".claude", "godark.md")
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		t.Fatalf(".claude/godark.md not created: %v", err)
+	}
+
+	if !strings.Contains(string(data), "godark.yaml") {
+		t.Error("godark.md missing expected config reference content")
+	}
+}
+
+func TestInitGodarkDocAlwaysOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	// Write custom content to simulate a stale version.
+	docPath := filepath.Join(".claude", "godark.md")
+	os.WriteFile(docPath, []byte("stale"), 0o644)
+
+	runInit(t)
+
+	data, _ := os.ReadFile(docPath)
+	if string(data) == "stale" {
+		t.Error(".claude/godark.md should be overwritten on re-init")
+	}
+}
+
 func TestInitWritesHarnessDocs(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
