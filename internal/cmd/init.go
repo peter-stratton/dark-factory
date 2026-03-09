@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/harness/templates"
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
@@ -50,7 +51,7 @@ The config file is only created if it does not already exist.`,
 		if err := writeHarnessDocs(cmd); err != nil {
 			return err
 		}
-		return createLockLabel(cmd)
+		return ensureLabels(cmd)
 	},
 }
 
@@ -183,18 +184,31 @@ func writeHarnessDocs(cmd *cobra.Command) error {
 	return nil
 }
 
-// createLockLabel creates the godark-in-progress label in the repo if --repo
-// is provided. If no repo is available, this step is silently skipped.
-func createLockLabel(cmd *cobra.Command) error {
+// ensureLabels creates all godark labels in the repo if --repo is provided.
+// This includes the lock label (godark-in-progress) and PR lifecycle labels
+// (godark:awaiting-human-review, godark:fixing-review-feedback, godark:ready-to-merge).
+// If no repo is available, this step is silently skipped.
+func ensureLabels(cmd *cobra.Command) error {
 	repo, _ := cmd.Flags().GetString("repo")
 	if repo == "" {
 		return nil
 	}
+
+	// Lock label.
 	if err := lock.EnsureLabelExists(repo); err != nil {
-		// Warn but do not fail init — the label will be created lazily on first run.
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create lock label: %v\n", err)
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "ensured label %q in %s\n", label.InProgress, repo)
+
+	// PR lifecycle labels.
+	for _, spec := range label.Specs {
+		if err := github.EnsureLabel(repo, spec.Name, spec.Color, spec.Description); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create label %q: %v\n", spec.Name, err)
+			continue
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "ensured label %q in %s\n", spec.Name, repo)
+	}
+
 	return nil
 }
