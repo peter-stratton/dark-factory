@@ -1,11 +1,25 @@
 package logging
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"golang.org/x/term"
+)
+
+// ANSI escape codes for terminal colors.
+const (
+	ansiReset  = "\033[0m"
+	ansiGreen  = "\033[32m"
+	ansiYellow = "\033[33m"
+	ansiRed    = "\033[31m"
+	ansiBold   = "\033[1m"
 )
 
 // NewLogger creates a logger that writes structured JSON to debug.log in dir
@@ -23,9 +37,55 @@ func NewLogger(dir string) (*slog.Logger, error) {
 	}
 
 	jsonHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
-	textHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+
+	var stdout io.Writer = os.Stdout
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		stdout = &colorWriter{w: os.Stdout}
+	}
+	textHandler := slog.NewTextHandler(stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
 
 	return slog.New(&multiHandler{json: jsonHandler, text: textHandler}), nil
+}
+
+// colorWriter wraps a writer and applies ANSI color to log lines that contain
+// verdict information (APPROVED / CHANGES_REQUESTED) or key status messages.
+type colorWriter struct {
+	w io.Writer
+}
+
+func (c *colorWriter) Write(p []byte) (int, error) {
+	line := string(p)
+
+	if color := verdictColor(line); color != "" {
+		var buf bytes.Buffer
+		buf.WriteString(ansiBold)
+		buf.WriteString(color)
+		buf.Write(p)
+		buf.WriteString(ansiReset)
+		_, err := c.w.Write(buf.Bytes())
+		return len(p), err
+	}
+
+	return c.w.Write(p)
+}
+
+// verdictColor returns the ANSI color for a log line based on its content,
+// or empty string if no highlighting is needed.
+func verdictColor(line string) string {
+	upper := strings.ToUpper(line)
+	if strings.Contains(upper, "VERDICT=APPROVED") || strings.Contains(upper, `VERDICT="APPROVED"`) {
+		return ansiGreen
+	}
+	if strings.Contains(upper, "CHANGES_REQUESTED") {
+		return ansiYellow
+	}
+	if strings.Contains(upper, "VERIFY STEP PASSED") {
+		return ansiGreen
+	}
+	if strings.Contains(upper, "TIMED_OUT=TRUE") || strings.Contains(upper, `TIMED_OUT="TRUE"`) {
+		return ansiRed
+	}
+	return ""
 }
 
 // multiHandler fans out log records to multiple handlers.

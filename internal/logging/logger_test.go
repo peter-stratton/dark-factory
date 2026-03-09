@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -157,6 +158,63 @@ func TestLoggerWrites(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Errorf("expected %q in debug.log, got:\n%s", want, content)
 		}
+	}
+}
+
+func TestVerdictColor(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{`msg="reviewer finished" verdict=APPROVED`, ansiGreen},
+		{`msg="reviewer finished" verdict="APPROVED"`, ansiGreen},
+		{`msg="reviewer finished" verdict=CHANGES_REQUESTED`, ansiYellow},
+		{`msg="quality reviewer finished" verdict=CHANGES_REQUESTED`, ansiYellow},
+		{`msg="verify step passed"`, ansiGreen},
+		{`msg="container finished" timed_out=true`, ansiRed},
+		{`msg="container finished" timed_out="true"`, ansiRed},
+		{`msg="processing issue"`, ""},
+		{`msg="running container"`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			got := verdictColor(tt.line)
+			if got != tt.want {
+				t.Errorf("verdictColor(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestColorWriter(t *testing.T) {
+	var buf bytes.Buffer
+	cw := &colorWriter{w: &buf}
+
+	line := `time=2026-03-08T17:00:00 level=INFO msg="reviewer finished" verdict=APPROVED` + "\n"
+	n, err := cw.Write([]byte(line))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != len(line) {
+		t.Errorf("Write returned %d, want %d", n, len(line))
+	}
+	out := buf.String()
+	if !strings.HasPrefix(out, ansiBold+ansiGreen) {
+		t.Errorf("expected ANSI green prefix, got: %q", out[:20])
+	}
+	if !strings.HasSuffix(out, ansiReset) {
+		t.Errorf("expected ANSI reset suffix, got: %q", out[len(out)-10:])
+	}
+}
+
+func TestColorWriter_NoColor(t *testing.T) {
+	var buf bytes.Buffer
+	cw := &colorWriter{w: &buf}
+
+	line := `time=2026-03-08T17:00:00 level=INFO msg="processing issue"` + "\n"
+	cw.Write([]byte(line))
+	if strings.Contains(buf.String(), "\033[") {
+		t.Errorf("expected no ANSI codes for plain line, got: %q", buf.String())
 	}
 }
 
