@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Schema for godark.yaml — derived from internal/config/config.go Config struct",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string",
+      "description": "GitHub repository in owner/repo format"
+    },
+    "max_retries": {
+      "type": "integer",
+      "description": "Maximum review/fix retry cycles",
+      "default": 3
+    },
+    "agent_timeout": {
+      "type": "string",
+      "description": "Go duration format (e.g. '30m', '1h')"
+    },
+    "build_command": {
+      "type": "string",
+      "description": "Top-level build command (single-module mode)"
+    },
+    "test_command": {
+      "type": "string",
+      "description": "Top-level test command (single-module mode)"
+    },
+    "lint_command": {
+      "type": "string",
+      "description": "Top-level lint command (single-module mode)"
+    },
+    "generate_command": {
+      "type": "string",
+      "description": "Top-level code generation command (single string, use && to chain multiple commands)"
+    },
+    "generated_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Directories containing generated code (excluded from review diffs)"
+    },
+    "modules": {
+      "type": "object",
+      "description": "Map of module names to per-module config. Keys are directory paths relative to repo root (e.g. 'service', 'admin-cli'). Null/absent means single-module mode.",
+      "additionalProperties": {
+        "$ref": "#/$defs/Module"
+      }
+    },
+    "protected_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Paths agents must not modify",
+      "default": ["godark.yaml"]
+    },
+    "denied_commands": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Shell commands agents must not run"
+    },
+    "roadmap_path": {
+      "type": "string",
+      "default": "docs/ROADMAP.md"
+    },
+    "planning_dir": {
+      "type": "string",
+      "default": "docs/planning/"
+    },
+    "scenario_dir": {
+      "type": "string",
+      "default": "tests/scenarios/"
+    },
+    "review_dir": {
+      "type": "string",
+      "default": "tests/review/"
+    },
+    "architecture_doc": {
+      "type": "string",
+      "default": "docs/architecture.md"
+    },
+    "architecture_json": {
+      "type": "string",
+      "default": "docs/architecture.json"
+    },
+    "conventions_doc": {
+      "type": "string",
+      "default": "docs/conventions.md"
+    },
+    "no_sandbox": {
+      "type": "boolean",
+      "description": "Run agents on host instead of in Docker"
+    },
+    "auto_merge": {
+      "type": "string",
+      "enum": ["none", "low_risk", "all"],
+      "default": "none"
+    },
+    "quality_strictness_decay": {
+      "type": "boolean",
+      "default": true
+    },
+    "enforce_architecture": {
+      "type": "boolean"
+    },
+    "auth_preference": {
+      "type": "string",
+      "enum": ["oauth", "api_key"],
+      "default": "oauth"
+    },
+    "sandbox_env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Extra environment variables passed to the sandbox"
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "go, flutter, node, rust, python" },
+        "version": { "type": "string" }
+      }
+    },
+    "docker": {
+      "type": "object",
+      "properties": {
+        "image": { "type": "string" },
+        "dockerfile": { "type": "string" },
+        "mount": { "type": "string" },
+        "user": { "type": "string" },
+        "node_version": { "type": "string" },
+        "extra_packages": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "prompts": {
+      "type": "object",
+      "properties": {
+        "implementer": { "type": "string" },
+        "implementer_retry": { "type": "string" },
+        "reviewer": { "type": "string" },
+        "quality_reviewer": { "type": "string" },
+        "spec_generator": { "type": "string" },
+        "punchlist": { "type": "string" },
+        "verify_fix": { "type": "string" }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "properties": {
+        "min_review_cost_usd": { "type": "number" },
+        "min_review_duration_seconds": { "type": "integer" }
+      }
+    },
+    "verify": {
+      "type": "object",
+      "properties": {
+        "max_fix_attempts": { "type": "integer", "default": 2 },
+        "blocking": { "type": "boolean", "default": true }
+      }
+    },
+    "required_env": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Environment variable names that must be set before a run starts"
+    },
+    "wait_for_checks": {
+      "type": "object",
+      "properties": {
+        "timeout": { "type": "string", "description": "Go duration (e.g. '10m')" },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "CI check names to wait for"
+        }
+      },
+      "required": ["timeout", "required"]
+    },
+    "watch": {
+      "type": "object",
+      "properties": {
+        "poll_interval": { "type": "string", "description": "Go duration (e.g. '60s')" }
+      }
+    },
+    "risk_thresholds": {
+      "type": "object",
+      "properties": {
+        "max_lines": { "type": "integer" },
+        "max_files": { "type": "integer" }
+      }
+    },
+    "notify": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NotifyProviderConfig"
+      }
+    }
+  },
+  "required": ["repo"],
+  "$defs": {
+    "Module": {
+      "type": "object",
+      "description": "Per-module build/test/lint/generate commands. All fields are optional.",
+      "properties": {
+        "build_command": { "type": "string" },
+        "test_command": { "type": "string" },
+        "lint_command": { "type": "string" },
+        "generate_command": { "type": "string" },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Names of other modules this module depends on"
+        }
+      }
+    },
+    "NotifyProviderConfig": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string", "enum": ["telegram"] },
+        "events": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["run_complete", "implementation_complete", "abort"] }
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "required": ["provider", "events"]
+    }
+  }
+}
