@@ -29,6 +29,23 @@ Dark Factory has been built entirely by its own agent pipeline — every feature
 was implemented, reviewed, and merged by `godark run`. The humans write specs
 and design harnesses; the agents write code.
 
+## Install
+
+**Homebrew** (macOS):
+
+```bash
+brew install peter-stratton/dark-factory/godark
+```
+
+**Go install**:
+
+```bash
+go install github.com/peter-stratton/dark-factory/cmd/godark@latest
+```
+
+**Binary download**: grab a pre-built binary from
+[GitHub Releases](https://github.com/peter-stratton/dark-factory/releases).
+
 ### Platform support
 
 Dark Factory is built around pluggable integrations for version control and AI
@@ -621,3 +638,7 @@ go test ./...
 ## Status
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full development roadmap.
+
+## License
+
+Dark Factory is licensed under the [Elastic License 2.0](LICENSE).
