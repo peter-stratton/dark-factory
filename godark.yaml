@@ -2,6 +2,10 @@ repo: peter-stratton/dark-factory
 auto_merge: all
 protected_paths: ["CLAUDE.md", "tests/scenarios/"]
 
+wait_for_checks:
+  timeout: 10m
+  required: [test]
+
 runtime:
   name: go
   version: "1.26.0"
