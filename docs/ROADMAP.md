@@ -807,3 +807,4 @@ published.
 - Landing page and docs site
 - Demo / example repo that people can point godark at to try it out
 - Homebrew core inclusion (`brew install godark` without tap prefix)
+- README badges — license, latest release, CI build status, test coverage, Go Report Card
