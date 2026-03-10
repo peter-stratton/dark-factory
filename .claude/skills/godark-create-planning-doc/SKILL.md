@@ -104,6 +104,28 @@ description, constraints, acceptance criteria, and test cases.
 - If a planning doc already exists for this phase, ask the user whether to
   replace it or update specific issues.
 
+## Cross-layer moves
+
+When an issue moves, copies, or re-exports code from one architecture layer to
+another (e.g., `features → shared`, `app → shared`), the spec must trace the
+import chain and resolve every violation **before the issue is written**:
+
+1. **List every import** in the file(s) being moved. For each import, check
+   whether it is legal in the destination layer (per `docs/architecture.json`).
+2. **For each illegal import**, specify the exact resolution in the Key
+   constraints section:
+   - Extract the dependency to the destination layer (or a layer it can reach).
+   - Add a re-export in the original location so existing callers still compile.
+   - Or restructure the dependency in some other explicit way.
+3. **Verify constraints are consistent.** If the spec says "don't modify file X"
+   but an import resolution requires changing file X, that's a contradiction.
+   Resolve it (e.g., use re-exports so file X stays untouched) or split into
+   separate issues (one to extract, one to migrate callers).
+
+The goal is to prevent the implementer from having to improvise layer-violation
+fixes at implementation time, which causes review/retry fights when the fix
+conflicts with other constraints in the same issue.
+
 ## Task sizing
 
 Each issue must be small enough for an agent to implement in a single run

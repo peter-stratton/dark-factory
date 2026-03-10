@@ -1,0 +1,101 @@
+---
+name: godark-create-phase-overview
+description: Generate a practical overview with real-world examples for a completed roadmap phase
+argument-hint: "<phase-number>"
+disable-model-invocation: true
+---
+
+# Create Phase Overview
+
+Generate a practical overview document for a roadmap phase. The overview explains
+what was built and illustrates each feature with concrete, real-world examples
+grounded in the actual codebase -- not hypothetical descriptions of what the code
+might do, but examples drawn from what it actually does.
+
+These overviews are most valuable after a phase is implemented, when they can
+reference real code, real config fields, and real command output.
+
+## Steps
+
+1. **Read the roadmap** -- Read `docs/ROADMAP.md` and find the specified phase.
+   Extract the phase name, goal, milestone, and feature list. If the phase is
+   not marked with a checkmark, warn the user that the phase appears incomplete
+   and ask whether to proceed anyway.
+
+2. **Read the planning doc** -- Check `docs/planning/` for a planning doc
+   matching the phase (e.g., `phase-7-review-quality-and-dashboard.md`). If one
+   exists, read it for detailed specs, constraints, and acceptance criteria.
+
+3. **Explore the codebase** -- For each feature in the phase, find and read the
+   actual code that implements it. Follow imports, check config structs, read
+   prompt templates, look at command definitions. The goal is to understand what
+   was really built, not just what was planned. Key places to look:
+   - `internal/cmd/` for CLI commands
+   - `internal/config/` for config fields
+   - `internal/agent/` for agent execution
+   - `internal/sandbox/` for Docker/sandbox
+   - `internal/dashboard/` for dashboard features
+   - `internal/skills/` for skills
+   - `prompts/` for prompt templates
+   - `godark.yaml` for config structure
+
+4. **Read existing overviews** -- Check `docs/phase-overviews/` for existing
+   files to match the established tone, depth, and formatting conventions. If
+   overviews exist, follow their style closely.
+
+5. **Write the overview** -- Create `docs/phase-overviews/phase-NN-<slug>.md`
+   using the format below. Use zero-padded two-digit phase numbers (e.g.,
+   `phase-01`, `phase-12`). The slug should match the phase name from the
+   roadmap in kebab-case.
+
+6. **Update the README** -- Add a row to the "Phase overviews" table in
+   `README.md` for the new phase. Match the existing format: phase number,
+   linked title, and a short description. Insert the row in phase-number order.
+
+7. **Print summary** -- Show the file path and feature count.
+
+## Format
+
+```markdown
+# Phase N: <Phase Name>
+
+<One paragraph summary: what this phase does, why it matters, and how it fits
+into the larger project. Direct and engaging -- no filler.>
+
+---
+
+## <Feature Name>
+
+**What it does:** <1-2 sentences describing the feature.>
+
+**Example:** <A concrete, real-world scenario showing how a user experiences
+this feature. Include actual commands, config snippets, log output, data
+structures, or workflows as appropriate. Draw from real code -- show actual
+config field names, actual CLI flags, actual log messages.>
+
+---
+
+## <Feature Name>
+...
+```
+
+## Rules
+
+- Every feature section must have both "What it does" and "Example" subsections.
+- Examples must be grounded in the actual codebase. Use real config field names,
+  real CLI flags, real struct names, real file paths. Do not invent plausible-
+  sounding names -- read the code and use what is actually there.
+- Show realistic scenarios: a team adopting godark, a developer running a
+  command, an agent processing an issue. Give the example enough narrative
+  context that a reader understands the situation, not just the syntax.
+- Include code blocks for commands, config, output, and data structures.
+- Do not document features that were planned but not implemented. If the code
+  doesn't exist, the feature doesn't go in the overview.
+- Do not add features from other phases. Each overview covers exactly one phase.
+- Do not modify the roadmap or any other files besides the overview and README.
+- If an overview already exists for this phase, ask the user whether to replace
+  it or skip.
+- No emojis.
+- Keep the summary paragraph tight -- 3-5 sentences max.
+- Aim for 150-300 lines per overview. Long enough to be genuinely useful, short
+  enough to read in one sitting.
