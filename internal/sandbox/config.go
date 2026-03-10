@@ -9,13 +9,14 @@ import (
 
 // DockerConfig holds the resolved configuration for Dockerfile generation.
 type DockerConfig struct {
-	Image         string
-	Runtime       config.Runtime
-	NodeVersion   string
-	User          string
-	ExtraPackages []string
-	Mount         string
-	SandboxEnv    map[string]string
+	Image           string
+	Runtime         config.Runtime
+	NodeVersion     string
+	User            string
+	ExtraPackages   []string
+	InstallCommands []string
+	Mount           string
+	SandboxEnv      map[string]string
 }
 
 // DefaultDockerConfig returns a DockerConfig with sensible defaults.
@@ -46,6 +47,9 @@ func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandbo
 	}
 	if len(docker.ExtraPackages) > 0 {
 		dc.ExtraPackages = docker.ExtraPackages
+	}
+	if len(docker.InstallCommands) > 0 {
+		dc.InstallCommands = docker.InstallCommands
 	}
 	dc.SandboxEnv = sandboxEnv
 	return dc

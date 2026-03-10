@@ -178,12 +178,13 @@ type Config struct {
 
 // Docker holds Docker sandbox configuration.
 type Docker struct {
-	Image         string   `yaml:"image"`
-	Dockerfile    string   `yaml:"dockerfile"`
-	Mount         string   `yaml:"mount"`
-	User          string   `yaml:"user"`
-	NodeVersion   string   `yaml:"node_version"`
-	ExtraPackages []string `yaml:"extra_packages"`
+	Image           string   `yaml:"image"`
+	Dockerfile      string   `yaml:"dockerfile"`
+	Mount           string   `yaml:"mount"`
+	User            string   `yaml:"user"`
+	NodeVersion     string   `yaml:"node_version"`
+	ExtraPackages   []string `yaml:"extra_packages"`
+	InstallCommands []string `yaml:"install_commands"`
 }
 
 // Prompts holds paths to prompt template files.
