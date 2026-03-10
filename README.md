@@ -552,6 +552,7 @@ docker:
   user: ""                 # non-root user inside the container
   node_version: ""         # Node.js major version to install (default: 20)
   extra_packages: []       # additional apt packages to install
+  install_commands: []     # shell commands to run during image build (after runtime setup)
 
 # Prompt template overrides (paths to custom prompt files)
 prompts:
