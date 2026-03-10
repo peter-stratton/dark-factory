@@ -10,11 +10,6 @@
 A Go CLI that orchestrates autonomous AI agents to implement GitHub issues,
 review their own work, and merge — without human intervention.
 
-> **Built by its own agents.** Dark Factory has been built entirely by its own
-> agent pipeline — every feature was implemented, reviewed, and merged by
-> `godark run`. The humans write specs and design harnesses; the agents write
-> code.
-
 ### Philosophy
 
 The hard part of software engineering isn't typing code — it's deciding what to
@@ -29,6 +24,10 @@ separate reviewer agent checks whether the code respects the architecture a
 human defined, follows conventions a human wrote, and meets acceptance criteria
 a human specified. Every judgment call that shapes a codebase stays with the
 humans who understand it.
+
+Dark Factory has been built entirely by its own agent pipeline — every feature
+was implemented, reviewed, and merged by `godark run`. The humans write specs
+and design harnesses; the agents write code.
 
 ### Platform support
 
