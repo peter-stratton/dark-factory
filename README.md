@@ -88,7 +88,7 @@ an error.
 | Docker | Yes (unless `--no-sandbox`) | Daemon must be running; used to build and run agent containers |
 | `gh` | Yes | GitHub CLI — used for issue fetching, PR operations, and git auth |
 | `git` | Yes | Repository operations and post-merge pulls |
-| `python3` | Only in `--no-sandbox` mode | Runs the embedded `agent_runner.py` on the host; in sandbox mode, Python is pre-installed in the container |
+| `python3` + `anthropic[agent]` | Only in `--no-sandbox` mode | Runs the embedded `agent_runner.py` on the host using the Anthropic Agent SDK; in sandbox mode, both are pre-installed in the container |
 
 ### A note on `--no-sandbox`
 
