@@ -39,11 +39,18 @@ Based on your findings, always write your full analysis (security, correctness,
 performance, code craft) to your output — even if you also post a PR comment.
 This analysis is captured for operational review in the run dashboard.
 
-- If the code has NO significant quality issues:
-  Print QUALITY_RESULT=APPROVED
-- If the code has security, performance, or quality issues that should be fixed:
-  Post a PR comment with the following format so the implementer agent can find
-  your feedback, then print QUALITY_RESULT=CHANGES_REQUESTED
+ALWAYS post a PR comment with the following format, regardless of your verdict.
+This comment is required for the dialogue trail visible in the run dashboard.
+
+- If the code has NO significant quality issues, use this format:
+
+## Quality Review Notes
+
+### Approved
+Summarise what you audited and confirm that no significant issues were found.
+
+- If the code has security, performance, or quality issues that should be fixed,
+  use this format:
 
 ## Quality Review Notes
 
@@ -54,6 +61,8 @@ State that changes are requested, with a brief summary.
 List each specific issue that must be fixed. For each issue: describe what is
 wrong, what the correct behavior should be, and which quality criterion it
 violates (security, performance, idiom, or code craft).
+
+After posting the comment, print your verdict.
 
 CRITICAL: You MUST print exactly one of these lines:
   QUALITY_RESULT=APPROVED

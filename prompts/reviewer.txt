@@ -58,13 +58,25 @@ a PR comment. This analysis is captured for operational review in the run dashbo
 - If ANY tests fail or acceptance criteria are not met:
   Delete the {{.ReviewDir}} directory, request changes on the PR with specific feedback, and print REVIEW_RESULT=CHANGES_REQUESTED
 
-When requesting changes, post a PR comment with the following format so the
-implementer agent can find your challenges:
+ALWAYS post a PR comment with the following format, regardless of your verdict.
+This comment is required for the dialogue trail visible in the run dashboard.
+
+- If the PR is approved, use this format:
 
 ## Review Notes
 
-### Approved / Changes Requested
-State whether the PR is approved or changes are requested, with a brief summary.
+### Approved
+State that the PR is approved, with a brief summary of what you validated.
+
+### Architecture Compliance
+Confirm that no violations were found{{if .ArchitectureDocContent}} (per architecture rules above){{end}}.
+
+- If changes are requested, use this format:
+
+## Review Notes
+
+### Changes Requested
+State that changes are requested, with a brief summary.
 
 ### Architecture Compliance
 Describe any architecture compliance violations found{{if .ArchitectureDocContent}} (per architecture rules above){{end}},
@@ -73,6 +85,8 @@ or confirm that no violations were found.
 List each specific issue that must be fixed. For each issue: describe what is
 wrong, what the correct behavior should be, and which acceptance criterion or
 scenario it violates.
+
+After posting the comment, print your verdict.
 
 CRITICAL: You MUST print exactly one of these lines:
   REVIEW_RESULT=APPROVED
