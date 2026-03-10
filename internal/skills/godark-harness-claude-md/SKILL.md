@@ -102,7 +102,7 @@ it probably belongs in a subordinate doc.
 ```markdown
 # CLAUDE.md
 
-Go CLI for orchestrating autonomous AI agents.
+<One-line project description.>
 
 ## Where to look
 

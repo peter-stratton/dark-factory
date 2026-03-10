@@ -29,15 +29,12 @@ reference real code, real config fields, and real command output.
 3. **Explore the codebase** -- For each feature in the phase, find and read the
    actual code that implements it. Follow imports, check config structs, read
    prompt templates, look at command definitions. The goal is to understand what
-   was really built, not just what was planned. Key places to look:
-   - `internal/cmd/` for CLI commands
-   - `internal/config/` for config fields
-   - `internal/agent/` for agent execution
-   - `internal/sandbox/` for Docker/sandbox
-   - `internal/dashboard/` for dashboard features
-   - `internal/skills/` for skills
-   - `prompts/` for prompt templates
-   - `godark.yaml` for config structure
+   was really built, not just what was planned. To find the right places to look:
+   - Read `docs/architecture.json` (if it exists) for layer definitions and
+     their `paths` — these tell you where each layer's code lives.
+   - Read `godark.yaml` for config structure, build commands, and module layout.
+   - If neither file provides enough guidance, scan the project's top-level
+     directories and source tree to discover where code lives.
 
 4. **Read existing overviews** -- Check `docs/phase-overviews/` for existing
    files to match the established tone, depth, and formatting conventions. If
@@ -48,9 +45,10 @@ reference real code, real config fields, and real command output.
    `phase-01`, `phase-12`). The slug should match the phase name from the
    roadmap in kebab-case.
 
-6. **Update the README** -- Add a row to the "Phase overviews" table in
-   `README.md` for the new phase. Match the existing format: phase number,
-   linked title, and a short description. Insert the row in phase-number order.
+6. **Update the README** -- Check `README.md` for a "Phase overviews" table or
+   similar section that lists phase overview documents. If one exists, add a row
+   for the new phase matching the existing format. If no such section exists,
+   skip this step.
 
 7. **Print summary** -- Show the file path and feature count.
 

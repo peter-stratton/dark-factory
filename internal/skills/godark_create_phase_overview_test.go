@@ -72,8 +72,8 @@ func TestCreatePhaseOverviewSkillReadsPlanningDoc(t *testing.T) {
 
 func TestCreatePhaseOverviewSkillExploresCodebase(t *testing.T) {
 	content := readCreatePhaseOverviewSkill(t)
-	if !strings.Contains(content, "internal/cmd/") {
-		t.Error("skill does not instruct agent to explore internal/cmd/")
+	if !strings.Contains(content, "docs/architecture.json") {
+		t.Error("skill does not instruct agent to use docs/architecture.json for codebase exploration")
 	}
 }
 
