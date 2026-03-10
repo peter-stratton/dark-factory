@@ -26,6 +26,7 @@ logs/
 
 # Config with secrets
 *.local.yaml
+.env
 
 # Run lock
 .godark/lock.json
