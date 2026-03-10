@@ -23,7 +23,7 @@ func stubPollInterval(t *testing.T, d time.Duration) {
 func checksJSON(entries []checkEntry) []byte {
 	var parts []string
 	for _, e := range entries {
-		parts = append(parts, fmt.Sprintf(`{"name":%q,"state":%q,"conclusion":%q}`, e.Name, e.State, e.Conclusion))
+		parts = append(parts, fmt.Sprintf(`{"name":%q,"state":%q,"bucket":%q}`, e.Name, e.State, e.Bucket))
 	}
 	return []byte("[" + strings.Join(parts, ",") + "]")
 }
@@ -34,8 +34,8 @@ func TestWaitForChecks_AllPass(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "COMPLETED", Conclusion: "SUCCESS"},
-			{Name: "ci/test", State: "COMPLETED", Conclusion: "SUCCESS"},
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
+			{Name: "ci/test", State: "SUCCESS", Bucket: "pass"},
 		}), nil
 	})
 
@@ -55,7 +55,7 @@ func TestWaitForChecks_CheckFails(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "COMPLETED", Conclusion: "FAILURE"},
+			{Name: "ci/build", State: "FAILURE", Bucket: "fail"},
 		}), nil
 	})
 
@@ -81,7 +81,7 @@ func TestWaitForChecks_Timeout(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "queued", Conclusion: ""},
+			{Name: "ci/build", State: "PENDING", Bucket: "pending"},
 		}), nil
 	})
 
@@ -101,7 +101,7 @@ func TestWaitForChecks_ContextCancelled(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "queued", Conclusion: ""},
+			{Name: "ci/build", State: "PENDING", Bucket: "pending"},
 		}), nil
 	})
 
@@ -121,8 +121,8 @@ func TestWaitForChecks_UnrequiredCheckFails(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "COMPLETED", Conclusion: "SUCCESS"},
-			{Name: "ci/optional", State: "COMPLETED", Conclusion: "FAILURE"},
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
+			{Name: "ci/optional", State: "FAILURE", Bucket: "fail"},
 		}), nil
 	})
 
@@ -147,12 +147,12 @@ func TestWaitForChecks_PendingThenPass(t *testing.T) {
 		if callCount == 1 {
 			// First poll: check still pending.
 			return checksJSON([]checkEntry{
-				{Name: "ci/build", State: "in_progress", Conclusion: ""},
+				{Name: "ci/build", State: "PENDING", Bucket: "pending"},
 			}), nil
 		}
 		// Second poll: check passed.
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "COMPLETED", Conclusion: "SUCCESS"},
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
 		}), nil
 	})
 
@@ -183,7 +183,7 @@ func TestWaitForChecks_CheckNotPresentInitially(t *testing.T) {
 		}
 		// Second poll: check is now present and passed.
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "COMPLETED", Conclusion: "SUCCESS"},
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
 		}), nil
 	})
 
@@ -221,8 +221,8 @@ func TestWaitForChecks_FailFastOnFailure(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "COMPLETED", Conclusion: "FAILURE"},
-			{Name: "ci/test", State: "in_progress", Conclusion: ""},
+			{Name: "ci/build", State: "FAILURE", Bucket: "fail"},
+			{Name: "ci/test", State: "PENDING", Bucket: "pending"},
 		}), nil
 	})
 
@@ -246,7 +246,7 @@ func TestWaitForChecks_NilLogger(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return checksJSON([]checkEntry{
-			{Name: "ci/build", State: "COMPLETED", Conclusion: "SUCCESS"},
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
 		}), nil
 	})
 
@@ -340,7 +340,7 @@ func TestProcessIssue_WaitForChecks_AllPass(t *testing.T) {
 		}
 		if name == "gh" && strings.Contains(joined, "pr checks") {
 			return checksJSON([]checkEntry{
-				{Name: "ci/build", State: "COMPLETED", Conclusion: "SUCCESS"},
+				{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
 			}), nil
 		}
 		return []byte(""), nil
@@ -423,7 +423,7 @@ func TestProcessIssue_WaitForChecks_Timeout(t *testing.T) {
 		if name == "gh" && strings.Contains(joined, "pr checks") {
 			// Always return pending to trigger timeout.
 			return checksJSON([]checkEntry{
-				{Name: "ci/build", State: "queued", Conclusion: ""},
+				{Name: "ci/build", State: "PENDING", Bucket: "pending"},
 			}), nil
 		}
 		return []byte(""), nil
@@ -477,12 +477,12 @@ func TestProcessIssue_WaitForChecks_FixSucceeds(t *testing.T) {
 			if checksCallCount == 1 {
 				// First poll: check fails.
 				return checksJSON([]checkEntry{
-					{Name: "ci/build", State: "COMPLETED", Conclusion: "FAILURE"},
+					{Name: "ci/build", State: "FAILURE", Bucket: "fail"},
 				}), nil
 			}
 			// Second poll (after fix): check passes.
 			return checksJSON([]checkEntry{
-				{Name: "ci/build", State: "COMPLETED", Conclusion: "SUCCESS"},
+				{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
 			}), nil
 		}
 		return []byte(""), nil
@@ -536,7 +536,7 @@ func TestProcessIssue_WaitForChecks_FixExhausted(t *testing.T) {
 		if name == "gh" && strings.Contains(joined, "pr checks") {
 			// Always fail.
 			return checksJSON([]checkEntry{
-				{Name: "ci/build", State: "COMPLETED", Conclusion: "FAILURE"},
+				{Name: "ci/build", State: "FAILURE", Bucket: "fail"},
 			}), nil
 		}
 		return []byte(""), nil
@@ -587,7 +587,7 @@ func TestProcessIssue_WaitForChecks_NoVerifyFix(t *testing.T) {
 		}
 		if name == "gh" && strings.Contains(joined, "pr checks") {
 			return checksJSON([]checkEntry{
-				{Name: "ci/build", State: "COMPLETED", Conclusion: "FAILURE"},
+				{Name: "ci/build", State: "FAILURE", Bucket: "fail"},
 			}), nil
 		}
 		return []byte(""), nil
@@ -603,5 +603,26 @@ func TestProcessIssue_WaitForChecks_NoVerifyFix(t *testing.T) {
 	}
 	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "CI checks failed") {
 		t.Errorf("Err = %v, want it to contain 'CI checks failed'", outcome.Err)
+	}
+}
+
+// TestWaitForChecks_SkippingCheck verifies that a check with bucket "skipping"
+// is treated as passing (not a failure or pending).
+func TestWaitForChecks_SkippingCheck(t *testing.T) {
+	stubPollInterval(t, time.Millisecond)
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return checksJSON([]checkEntry{
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
+			{Name: "ci/optional", State: "SKIPPED", Bucket: "skipping"},
+		}), nil
+	})
+
+	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
+		[]string{"ci/build", "ci/optional"}, time.Minute, testLogger(t))
+	if err != nil {
+		t.Fatalf("WaitForChecks() error = %v", err)
+	}
+	if len(failures) != 0 {
+		t.Errorf("expected no failures for skipped check, got %v", failures)
 	}
 }
