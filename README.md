@@ -625,6 +625,7 @@ what was built and how users experience it. These live in
 | 10 | [Deterministic Verification Pipeline](docs/phase-overviews/phase-10-deterministic-verification-pipeline.md) — verify step, auto-fix, bash deny-list |
 | 11 | [Run Analysis & Prompt Feedback](docs/phase-overviews/phase-11-run-analysis-and-prompt-feedback.md) — `godark analyze`, trends, prompt gaps |
 | 12 | [Complex Project Support](docs/phase-overviews/phase-12-complex-project-support.md) — multi-module, codegen, secrets, CI checks |
+| 13 | [Human-in-the-Loop Review](docs/phase-overviews/phase-13-human-in-the-loop-review.md) — graduated auto-merge, watch command, risk classifier, notifications |
 
 To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
 
