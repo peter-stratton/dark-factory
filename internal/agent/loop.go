@@ -532,15 +532,17 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					logger.Warn("failed to write functional review result", "error", err)
 				}
 			}
-			if cfg.AutoMerge == "none" {
-				// Skip merge — human will review and merge manually.
-				logger.Info("PR approved, skipping merge (auto_merge=none)", "pr_number", prNum)
-				applyLifecycleLabel(label.AwaitingHumanReview)
-				outcome.Status = "ready-to-merge"
-				outcome.Retries = attempt
-				return outcome
-			}
-			if cfg.AutoMerge == "low_risk" {
+			// Merge decision: explicit opt-in only. Merge requires
+			// auto_merge="all" or "low_risk" (with passing risk check).
+			// Any other value — including "none" or unexpected — skips
+			// merge safely. This prevents accidental merges if the
+			// config value is empty or unrecognized.
+			shouldMerge := false
+			switch cfg.AutoMerge {
+			case "all":
+				logger.Info("PR approved, will merge (auto_merge=all)", "pr_number", prNum)
+				shouldMerge = true
+			case "low_risk":
 				additions, deletions, fileCount, statsErr := github.FetchPRStats(cfg.Repo, prNum)
 				if statsErr != nil {
 					logger.Warn("failed to fetch PR stats for risk classification, labeling for human review",
@@ -594,8 +596,25 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					outcome.Retries = attempt
 					return outcome
 				}
-				// PR is low-risk — fall through to merge.
+				shouldMerge = true
+			default:
+				// "none" or any unexpected value — skip merge safely.
+				logger.Info("PR approved, skipping merge", "pr_number", prNum, "auto_merge", cfg.AutoMerge)
+				applyLifecycleLabel(label.AwaitingHumanReview)
+				outcome.Status = "ready-to-merge"
+				outcome.Retries = attempt
+				return outcome
 			}
+
+			if !shouldMerge {
+				// Defensive: should not be reachable, but fail safe.
+				logger.Warn("merge decision fell through unexpectedly, skipping merge", "auto_merge", cfg.AutoMerge)
+				applyLifecycleLabel(label.AwaitingHumanReview)
+				outcome.Status = "ready-to-merge"
+				outcome.Retries = attempt
+				return outcome
+			}
+
 			// Step 5.5: Wait for CI checks if configured.
 			if cfg.WaitForChecks != nil {
 				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load

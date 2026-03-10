@@ -766,6 +766,47 @@ func TestProcessIssue_AutoMergeNone_OutcomeStatus(t *testing.T) {
 	}
 }
 
+func TestProcessIssue_AutoMergeEmpty_SkipsMerge(t *testing.T) {
+	// An empty AutoMerge value (e.g. from a YAML parsing edge case) must
+	// never attempt to merge. The switch/default path should treat it like "none".
+	var mergeCallCount int
+	cfg := loopConfig()
+	cfg.AutoMerge = ""
+
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			mergeCallCount++
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q when AutoMerge is empty", outcome.Status, "ready-to-merge")
+	}
+	if mergeCallCount > 0 {
+		t.Errorf("gh pr merge was called %d time(s), want 0 when AutoMerge is empty", mergeCallCount)
+	}
+}
+
 func TestProcessIssue_AutoMergeAll_Merges(t *testing.T) {
 	// With AutoMerge=all, approved PR should be merged.
 	var mergeCallCount int
