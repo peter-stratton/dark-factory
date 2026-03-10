@@ -25,6 +25,16 @@ human defined, follows conventions a human wrote, and meets acceptance criteria
 a human specified. Every judgment call that shapes a codebase stays with the
 humans who understand it.
 
+### Platform support
+
+Dark Factory is built around pluggable integrations for version control and AI
+providers. Current support:
+
+| Layer | Supported | Planned |
+|-------|-----------|---------|
+| Version control | GitHub | GitLab, Bitbucket |
+| AI provider | Anthropic Claude (via Claude Code) | OpenAI, local models |
+
 ### Features
 
 - **Three-agent pipeline** — implementer, quality reviewer, and functional reviewer are independent agents with isolated permissions; reviewers literally cannot edit files
@@ -34,6 +44,7 @@ humans who understand it.
 - **Full run observability** — local web dashboard with review chain timelines, quality flags, tool traces, and agent dialogue history for every issue
 - **Harness engineering lifecycle** — scaffold, validate, and enforce project constraints with `godark new`, `godark init`, `godark vet`, and six harness types
 - **Auto-detected multi-language support** — detects project type from marker files and configures the sandbox, build, and test commands automatically
+- **Fully sandboxed agent runs by default** — agents execute inside ephemeral Docker containers with no access to the host filesystem or network beyond what's explicitly configured
 - **Single binary, runs on a laptop** — no infrastructure fleet, no MCP server farm; one Go binary, Docker, and a GitHub token
 
 ### Project type support
