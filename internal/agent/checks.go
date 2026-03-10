@@ -60,10 +60,13 @@ func WaitForChecks(ctx context.Context, repo string, prNum int,
 }
 
 // checkEntry is used to parse gh pr checks JSON output.
+// gh pr checks --json exposes: name, state, bucket (not "conclusion").
+// state values: SUCCESS, FAILURE, PENDING, QUEUED, etc.
+// bucket values: pass, fail, pending, skipping.
 type checkEntry struct {
-	Name       string `json:"name"`
-	State      string `json:"state"`
-	Conclusion string `json:"conclusion"`
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Bucket string `json:"bucket"`
 }
 
 // pollChecks queries GitHub PR checks and returns any failed required checks,
@@ -74,7 +77,7 @@ type checkEntry struct {
 func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) ([]CheckFailure, bool, error) {
 	out, err := GuardRunner("gh", "pr", "checks", strconv.Itoa(prNum),
 		"--repo", repo,
-		"--json", "name,state,conclusion",
+		"--json", "name,state,bucket",
 	)
 	if err != nil {
 		return nil, false, fmt.Errorf("gh pr checks: %w", err)
@@ -103,22 +106,20 @@ func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) 
 			continue
 		}
 
-		state := strings.ToUpper(c.State)
-		conclusion := strings.ToUpper(c.Conclusion)
+		bucket := strings.ToLower(c.Bucket)
 
-		switch {
-		case state == "COMPLETED" && conclusion == "SUCCESS":
-			logger.Info("required check passed", "check", name)
-		case state == "COMPLETED":
-			// Any non-success conclusion is a failure.
-			logger.Warn("required check failed", "check", name, "conclusion", c.Conclusion)
+		switch bucket {
+		case "pass", "skipping":
+			logger.Info("required check passed", "check", name, "state", c.State)
+		case "fail":
+			logger.Warn("required check failed", "check", name, "state", c.State)
 			failures = append(failures, CheckFailure{
 				Name:   name,
-				Output: fmt.Sprintf("Check %q completed with conclusion %q", name, c.Conclusion),
+				Output: fmt.Sprintf("Check %q failed (state %q)", name, c.State),
 			})
 		default:
-			// pending, queued, in_progress, or unknown — keep waiting.
-			logger.Info("required check still running", "check", name, "state", c.State)
+			// pending or unknown — keep waiting.
+			logger.Info("required check still running", "check", name, "bucket", c.Bucket, "state", c.State)
 			pendingCount++
 		}
 	}
