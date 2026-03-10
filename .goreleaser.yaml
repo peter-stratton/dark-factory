@@ -20,7 +20,8 @@ builds:
         goarch: arm64
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
 
 changelog:
   filters:
@@ -28,8 +29,9 @@ changelog:
       - "^docs:"
       - "^test:"
 
-brews:
-  - repository:
+homebrew_casks:
+  - name: godark
+    repository:
       owner: peter-stratton
       name: homebrew-dark-factory
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
