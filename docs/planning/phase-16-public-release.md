@@ -253,11 +253,10 @@ section, before Features) with instructions for installing godark via Homebrew,
 
 ### Description
 
-Add a `CONTRIBUTING.md` file explaining that the project is built by its own
-automation pipeline. Issues are welcome from the community; pull requests are
-by invitation only (since the godark pipeline manages implementation). Explain
-how the pipeline works at a high level so contributors understand the project's
-unique development model.
+Add a `CONTRIBUTING.md` file explaining the project's development model and
+how to contribute. The project uses godark itself to implement most changes
+via autonomous agents, which is a unique model that contributors should
+understand.
 
 ### Key constraints
 
@@ -265,22 +264,23 @@ unique development model.
 - Sections:
   - **Opening issues** — bug reports and feature requests welcome; describe the
     problem or use case clearly; the team triages and schedules into milestones
-  - **Pull requests** — PRs are by invitation only; the project uses godark
-    itself to implement issues via autonomous agents; unsolicited PRs will be
-    closed with an explanation
+  - **Pull requests** — PRs are welcome for bug fixes and small improvements;
+    note that this project uses autonomous agents for most implementation work,
+    so large feature PRs may not align with the current roadmap; recommend
+    opening an issue first to discuss before investing time in a PR
   - **How development works** — brief description of the pipeline: human writes
     roadmap and specs → `godark run` implements, reviews, and merges → human
     spot-checks; link to `docs/ROADMAP.md` for the full roadmap
   - **Local development** — `go build ./cmd/godark`, `go test ./...`,
     prerequisites (Go, Docker, gh CLI)
-- Tone: welcoming but clear about the PR policy; the automation model is a
-  feature, not gatekeeping
+- Tone: welcoming and clear; the automation model is a feature, not gatekeeping
 
 ### Acceptance criteria
 
 - [ ] `CONTRIBUTING.md` exists at repo root
 - [ ] Explains that issues are welcome
-- [ ] Explains that PRs are by invitation only
+- [ ] Explains that PRs are welcome for bug fixes and small improvements
+- [ ] Recommends opening an issue before large PRs
 - [ ] Describes the godark pipeline at a high level
 - [ ] Includes local development instructions
 - [ ] Links to `docs/ROADMAP.md`
@@ -289,7 +289,9 @@ unique development model.
 
 - **File exists**: `CONTRIBUTING.md` is present at the repo root
 - **Issues welcome**: File contains language encouraging issue submissions
-- **PRs by invitation**: File contains language about PRs being by invitation
+- **PRs welcome with caveat**: File contains language welcoming PRs for bug
+  fixes while noting the agent-driven development model
+- **Issue first**: File recommends opening an issue before large PRs
 - **Pipeline description**: File mentions `godark run` or the three-agent loop
 - **Build instructions**: File contains `go build` and `go test` commands
 - **Roadmap link**: File contains a link to `docs/ROADMAP.md`

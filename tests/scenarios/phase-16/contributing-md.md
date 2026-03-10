@@ -15,9 +15,11 @@ Check that `CONTRIBUTING.md` is present at the repo root.
 Read `CONTRIBUTING.md`.
 - Contains language encouraging bug reports and feature requests
 
-### PRs by invitation
+### PRs welcome with caveat
 Read `CONTRIBUTING.md`.
-- Contains language stating pull requests are by invitation only
+- Contains language welcoming PRs for bug fixes and small improvements
+- Notes that the project uses autonomous agents for most implementation work
+- Recommends opening an issue first before large PRs
 
 ### Pipeline description
 Read `CONTRIBUTING.md`.
