@@ -32,5 +32,6 @@ brews:
   - repository:
       owner: peter-stratton
       name: homebrew-dark-factory
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/peter-stratton/dark-factory
     description: CLI that orchestrates autonomous AI agents to implement GitHub issues
