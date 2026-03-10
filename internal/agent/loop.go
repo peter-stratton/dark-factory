@@ -36,14 +36,27 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// Write outcome data on every return path.
 	defer func() {
 		if hook != nil {
-			if err := hook.WriteOutcome(rundata.Outcome{
+			o := rundata.Outcome{
 				IssueNumber: outcome.IssueNumber,
 				Title:       issue.Title,
 				Description: issue.Body,
 				Status:      outcome.Status,
 				PRNumber:    outcome.PRNumber,
-			}); err != nil {
+			}
+			if outcome.Err != nil {
+				o.Error = outcome.Err.Error()
+			}
+			if err := hook.WriteOutcome(o); err != nil {
 				logger.Warn("failed to write outcome", "error", err)
+			}
+			// Update status.json to reflect the final state so it doesn't
+			// stay stale at "implementing" or "in_review".
+			if outcome.Status != "" {
+				if err := hook.WriteIssueStatus(outcome.IssueNumber, rundata.IssueStatus{
+					Status: outcome.Status,
+				}); err != nil {
+					logger.Warn("failed to update final issue status", "error", err)
+				}
 			}
 		}
 	}()

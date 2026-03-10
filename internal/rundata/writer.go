@@ -66,6 +66,7 @@ type Outcome struct {
 	Description string `json:"description,omitempty"`
 	Status      string `json:"status"`
 	PRNumber    int    `json:"pr_number"`
+	Error       string `json:"error,omitempty"`
 }
 
 // Writer manages a per-run directory and writes JSON files for each agent loop step.

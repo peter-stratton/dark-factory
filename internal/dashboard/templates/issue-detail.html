@@ -163,6 +163,18 @@
         </div>
       </div>
 
+      {{if and (eq .Status "failed") .ErrorReason}}
+      <!-- Error Reason Banner -->
+      <div class="card animate-in animate-in-2" style="border-left: 3px solid var(--color-danger, #f87171); background: rgba(248,113,113,0.06);">
+        <div class="card__header">
+          <span class="card__title">Error</span>
+        </div>
+        <div class="card__body" style="padding: var(--space-4) var(--space-5);">
+          <code style="font-size: var(--text-sm); word-break: break-word;">{{.ErrorReason}}</code>
+        </div>
+      </div>
+      {{end}}
+
       {{if .FailureAnalysis}}
       <!-- Failure Analysis -->
       <div class="card animate-in animate-in-2">

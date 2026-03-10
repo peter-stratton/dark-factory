@@ -175,6 +175,9 @@
       <span class="badge__dot"></span>
       {{.Status}}
     </span>
+    {{if .ErrorReason}}
+    <div style="font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{.ErrorReason}}">{{.ErrorReason}}</div>
+    {{end}}
   </td>
   <td>
     {{if .PRNumber}}
