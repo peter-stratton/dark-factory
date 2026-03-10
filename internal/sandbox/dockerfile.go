@@ -106,6 +106,12 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		if runtimeVersion == "" {
 			return "", fmt.Errorf("Go runtime requires a version (Runtime.Version must be set)")
 		}
+		// Go download URLs require a full major.minor.patch version (e.g. "1.25.4").
+		// A version like "1.25" produces a 404 on go.dev/dl.
+		parts := strings.Split(runtimeVersion, ".")
+		if len(parts) < 3 {
+			return "", fmt.Errorf("Go runtime.version %q must include a patch component (e.g. %s.0)", runtimeVersion, runtimeVersion)
+		}
 	case "flutter":
 		// pubspec.yaml's environment.sdk is a Dart SDK constraint (e.g.
 		// ^3.11.0), not a Flutter version. Flutter tags don't correspond

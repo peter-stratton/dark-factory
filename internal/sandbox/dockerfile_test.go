@@ -126,15 +126,28 @@ func TestGenerateDockerfileCustomImage(t *testing.T) {
 func TestGenerateDockerfileGoRuntimeWithVersion(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime.Name = "go"
-	cfg.Runtime.Version = "1.22"
+	cfg.Runtime.Version = "1.22.4"
 
 	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(df, "go1.22.linux-amd64.tar.gz") {
+	if !strings.Contains(df, "go1.22.4.linux-amd64.tar.gz") {
 		t.Error("Dockerfile missing custom Go version URL")
+	}
+}
+
+func TestGenerateDockerfileGoVersionMissingPatch(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "go", Version: "1.25"}
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for Go version without patch component, got nil")
+	}
+	if !strings.Contains(err.Error(), "patch component") {
+		t.Errorf("error message should mention patch component, got: %v", err)
 	}
 }
 
