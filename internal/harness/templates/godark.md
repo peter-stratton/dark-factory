@@ -132,6 +132,7 @@ notify:
 | `docker.image` | Base image (default: `ubuntu:22.04`) |
 | `docker.dockerfile` | Custom Dockerfile path (overrides auto-generated one) |
 | `docker.extra_packages` | Additional apt packages to install |
+| `docker.install_commands` | Shell commands to run during image build (after runtime setup) |
 | `docker.node_version` | Node.js major version to install (default: `20`) |
 
 ## Common troubleshooting
