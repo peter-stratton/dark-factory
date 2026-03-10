@@ -1,0 +1,36 @@
+version: 2
+
+builds:
+  - main: ./cmd/godark
+    binary: godark
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X github.com/phs/dark-factory/internal/cmd.Version={{.Version}}
+      - -X github.com/phs/dark-factory/internal/cmd.BuildTime={{.Date}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - format: tar.gz
+
+changelog:
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+brews:
+  - repository:
+      owner: peter-stratton
+      name: homebrew-dark-factory
+    homepage: https://github.com/peter-stratton/dark-factory
+    description: CLI that orchestrates autonomous AI agents to implement GitHub issues
