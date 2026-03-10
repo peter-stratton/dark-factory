@@ -66,7 +66,7 @@ providers. Current support:
 - **Harness engineering lifecycle** — scaffold, validate, and enforce project constraints with `godark new`, `godark init`, `godark vet`, and six harness types
 - **Auto-detected multi-language support** — detects project type from marker files and configures the sandbox, build, and test commands automatically
 - **Fully sandboxed agent runs by default** — agents execute inside ephemeral Docker containers with no access to the host filesystem or network beyond what's explicitly configured
-- **Single binary, runs on a laptop** — no infrastructure fleet, no MCP server farm; one Go binary, Docker, and a GitHub token
+- **Single binary, runs on a laptop** — no infrastructure fleet, no MCP server farm; just a Go binary, and Docker 
 
 ### Project type support
 
