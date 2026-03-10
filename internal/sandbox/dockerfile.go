@@ -71,6 +71,9 @@ RUN npm install -g @anthropic-ai/claude-code
 {{range .SandboxEnv}}
 ENV {{.Key}}={{.Value}}
 {{- end}}
+{{- range .InstallCommands}}
+RUN {{.}}
+{{- end}}
 
 # Install Python agent runner dependencies
 RUN pip install 'claude-agent-sdk>=0.1.0,<0.2.0'
@@ -148,6 +151,11 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 			return "", fmt.Errorf("ExtraPackages entry must not contain newlines: %q", pkg)
 		}
 	}
+	for _, cmd := range cfg.InstallCommands {
+		if strings.ContainsAny(cmd, "\n\r") {
+			return "", fmt.Errorf("InstallCommands entry must not contain newlines: %q", cmd)
+		}
+	}
 
 	// Sort SandboxEnv keys for deterministic Dockerfile output.
 	sortedEnv := make([]envVar, 0, len(cfg.SandboxEnv))
@@ -168,21 +176,23 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 	})
 
 	data := struct {
-		Image          string
-		RuntimeName    string
-		RuntimeVersion string
-		NodeVersion    string
-		User           string
-		ExtraPackages  []string
-		SandboxEnv     []envVar
+		Image           string
+		RuntimeName     string
+		RuntimeVersion  string
+		NodeVersion     string
+		User            string
+		ExtraPackages   []string
+		InstallCommands []string
+		SandboxEnv      []envVar
 	}{
-		Image:          cfg.Image,
-		RuntimeName:    runtimeName,
-		RuntimeVersion: runtimeVersion,
-		NodeVersion:    cfg.NodeVersion,
-		User:           cfg.User,
-		ExtraPackages:  cfg.ExtraPackages,
-		SandboxEnv:     sortedEnv,
+		Image:           cfg.Image,
+		RuntimeName:     runtimeName,
+		RuntimeVersion:  runtimeVersion,
+		NodeVersion:     cfg.NodeVersion,
+		User:            cfg.User,
+		ExtraPackages:   cfg.ExtraPackages,
+		InstallCommands: cfg.InstallCommands,
+		SandboxEnv:      sortedEnv,
 	}
 
 	var buf bytes.Buffer

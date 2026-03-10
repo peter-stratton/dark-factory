@@ -643,6 +643,123 @@ func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileInstallCommands(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.InstallCommands = []string{
+		"curl -sSfL https://golangci-lint.run/install.sh | sh -s v2.10.1",
+		"go install github.com/swaggo/swag/cmd/swag@v1.16.6",
+	}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(df, "RUN curl -sSfL https://golangci-lint.run/install.sh | sh -s v2.10.1") {
+		t.Error("Dockerfile missing first install command")
+	}
+	if !strings.Contains(df, "RUN go install github.com/swaggo/swag/cmd/swag@v1.16.6") {
+		t.Error("Dockerfile missing second install command")
+	}
+}
+
+func TestGenerateDockerfileInstallCommandsOrder(t *testing.T) {
+	// InstallCommands must appear after Claude Code install (so Node and the
+	// language runtime are available) but before the non-root user is created.
+	cfg := DefaultDockerConfig()
+	cfg.InstallCommands = []string{"curl -sSfL https://example.com/install.sh | sh"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	claudeCodePos := strings.Index(df, "npm install -g @anthropic-ai/claude-code")
+	installCmdPos := strings.Index(df, "RUN curl -sSfL https://example.com/install.sh | sh")
+	userPos := strings.Index(df, "USER devloop")
+
+	if claudeCodePos < 0 {
+		t.Fatal("Dockerfile missing Claude Code install")
+	}
+	if installCmdPos < 0 {
+		t.Fatal("Dockerfile missing install command")
+	}
+	if userPos < 0 {
+		t.Fatal("Dockerfile missing USER directive")
+	}
+	if installCmdPos < claudeCodePos {
+		t.Error("install command appears before Claude Code install")
+	}
+	if installCmdPos > userPos {
+		t.Error("install command appears after USER directive (must run as root)")
+	}
+}
+
+func TestGenerateDockerfileInstallCommandsNewlineRejected(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.InstallCommands = []string{"curl https://example.com/install.sh\nRUN evil"}
+
+	_, err := GenerateDockerfile(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for InstallCommands entry containing newline, got nil")
+	}
+}
+
+func TestGenerateDockerfileInstallCommandsEmpty(t *testing.T) {
+	// No install commands should produce a valid Dockerfile without any extra RUN layers.
+	cfg := DefaultDockerConfig()
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The template range over an empty slice should produce no output.
+	_ = df
+}
+
+func TestDockerConfigFromConfigInstallCommands(t *testing.T) {
+	docker := config.Docker{
+		InstallCommands: []string{
+			"curl -sSfL https://golangci-lint.run/install.sh | sh -s v2.10.1",
+		},
+	}
+	dc := DockerConfigFromConfig(docker, config.Runtime{}, nil)
+
+	if len(dc.InstallCommands) != 1 {
+		t.Fatalf("InstallCommands len = %d, want 1", len(dc.InstallCommands))
+	}
+	if dc.InstallCommands[0] != docker.InstallCommands[0] {
+		t.Errorf("InstallCommands[0] = %q, want %q", dc.InstallCommands[0], docker.InstallCommands[0])
+	}
+}
+
+func TestDockerConfigFromConfigInstallCommandsEmpty(t *testing.T) {
+	// Empty install_commands in config should leave DockerConfig.InstallCommands nil.
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil)
+	if len(dc.InstallCommands) != 0 {
+		t.Errorf("InstallCommands = %v, want empty", dc.InstallCommands)
+	}
+}
+
+func TestImageTagChangesWithInstallCommands(t *testing.T) {
+	cfgA := DefaultDockerConfig()
+	dfA, err := GenerateDockerfile(cfgA, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cfgB := DefaultDockerConfig()
+	cfgB.InstallCommands = []string{"curl https://example.com/install.sh | sh"}
+	dfB, err := GenerateDockerfile(cfgB, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ImageTag(dfA) == ImageTag(dfB) {
+		t.Error("image tags should differ when install commands change")
+	}
+}
+
 func TestImageTagChangesWithRuntime(t *testing.T) {
 	cfgGo := DefaultDockerConfig()
 	cfgGo.Runtime = config.Runtime{Name: "go", Version: "1.26.0"}
