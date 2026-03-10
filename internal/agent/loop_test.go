@@ -1053,6 +1053,50 @@ func TestProcessIssue_HookCalledOnOutcome(t *testing.T) {
 	}
 }
 
+func TestProcessIssue_HookOutcomeIncludesError(t *testing.T) {
+	hook := &testRunDataHook{}
+	// Force a failure by making the implementer agent fail.
+	setupLoopTest(t, []string{}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		return []byte(""), nil
+	})
+
+	cfg := loopConfig()
+	// Use a prompt that will cause the agent to fail by timing out.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately to force failure
+
+	ProcessIssue(ctx, loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
+
+	if len(hook.outcomes) != 1 {
+		t.Fatalf("WriteOutcome called %d times, want 1", len(hook.outcomes))
+	}
+	if hook.outcomes[0].Status != "failed" {
+		t.Errorf("outcome status = %q, want %q", hook.outcomes[0].Status, "failed")
+	}
+	if hook.outcomes[0].Error == "" {
+		t.Error("outcome error is empty, want failure reason persisted")
+	}
+
+	// Verify status.json is updated to reflect the final state.
+	var foundFinalStatus bool
+	for _, s := range hook.issueStatuses {
+		if s.Status == "failed" {
+			foundFinalStatus = true
+			break
+		}
+	}
+	if !foundFinalStatus {
+		t.Error("status.json was not updated to 'failed'")
+	}
+}
+
 func TestProcessIssue_NilHookSafe(t *testing.T) {
 	setupLoopTest(t, []string{
 		"implementer output",
