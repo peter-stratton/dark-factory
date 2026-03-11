@@ -467,6 +467,7 @@ done:
 	// Create rollup PR if all preconditions are met.
 	if (cfg.AutoMerge.Rollup == "manual" || cfg.AutoMerge.Rollup == "auto") &&
 		cfg.BaseBranch != "" &&
+		cfg.BaseBranch != rollupDefaultBranch &&
 		stats.implemented > 0 {
 		rollupResult, rollupErr := createRollupPRFn(ctx, cfg, implementedIssues, logger)
 		if rollupErr != nil {

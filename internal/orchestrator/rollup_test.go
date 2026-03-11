@@ -234,6 +234,40 @@ func TestProcessIssues_RollupSkipNoBaseBranch(t *testing.T) {
 	}
 }
 
+// TestProcessIssues_RollupSkipBaseBranchEqualsDefault verifies that when
+// BaseBranch equals the default branch (main), no rollup PR is created even
+// if rollup=manual and issues were implemented.
+func TestProcessIssues_RollupSkipBaseBranchEqualsDefault(t *testing.T) {
+	var rollupCalled bool
+	stubRollupFn(t, func(_ context.Context, _ *config.Config, _ []implementedIssue, _ *slog.Logger) (RollupResult, error) {
+		rollupCalled = true
+		return RollupResult{}, nil
+	})
+
+	allIssues := []github.Issue{{Number: 1, Title: "feature"}}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			// PRNumber: 0 avoids triggering the punchlist goroutine.
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
+		},
+	)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.Rollup = "manual"
+	cfg.BaseBranch = "main" // equals rollupDefaultBranch — should skip
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "test", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if rollupCalled {
+		t.Error("createRollupPRFn called when BaseBranch equals default branch, expected skip")
+	}
+}
+
 // TestProcessIssues_RollupSkipNoImplemented verifies that when no issues were
 // implemented, no rollup PR is created.
 func TestProcessIssues_RollupSkipNoImplemented(t *testing.T) {
