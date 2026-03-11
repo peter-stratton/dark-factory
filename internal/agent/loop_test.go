@@ -108,7 +108,7 @@ func loopConfig() *config.Config {
 	return &config.Config{
 		Repo:           "owner/repo",
 		NoSandbox:      true,
-		AutoMerge:      "all",
+		AutoMerge:      config.AutoMerge{Feature: "all", Rollup: "none"},
 		MaxRetries:     2,
 		AgentTimeout:   "10m",
 		ProtectedPaths: []string{"CLAUDE.md"},
@@ -710,7 +710,7 @@ func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
 func TestProcessIssue_AutoMergeNone_SkipsMergeOnApproval(t *testing.T) {
 	var mergeCallCount int
 	cfg := loopConfig()
-	cfg.AutoMerge = "none"
+	cfg.AutoMerge.Feature = "none"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -751,7 +751,7 @@ func TestProcessIssue_AutoMergeNone_SkipsMergeOnApproval(t *testing.T) {
 
 func TestProcessIssue_AutoMergeNone_OutcomeStatus(t *testing.T) {
 	cfg := loopConfig()
-	cfg.AutoMerge = "none"
+	cfg.AutoMerge.Feature = "none"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -771,7 +771,7 @@ func TestProcessIssue_AutoMergeEmpty_SkipsMerge(t *testing.T) {
 	// never attempt to merge. The switch/default path should treat it like "none".
 	var mergeCallCount int
 	cfg := loopConfig()
-	cfg.AutoMerge = ""
+	cfg.AutoMerge.Feature = ""
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -849,7 +849,7 @@ func TestProcessIssue_AutoMergeAll_Merges(t *testing.T) {
 func TestProcessIssue_AutoMergeNone_QualityReviewStillRuns(t *testing.T) {
 	// With AutoMerge=none, quality review should still execute normally.
 	cfg := loopConfig()
-	cfg.AutoMerge = "none"
+	cfg.AutoMerge.Feature = "none"
 
 	agentCallCount := 0
 	origRunner := Runner
@@ -3172,7 +3172,7 @@ func TestProcessIssue_NoneModeLabelsAwaitingReview(t *testing.T) {
 	added, _ := setupGHLabelTracker(t)
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "none"
+	cfg.AutoMerge.Feature = "none"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -3222,7 +3222,7 @@ func TestProcessIssue_LowRiskMode_HighRiskLabelsAwaitingReview(t *testing.T) {
 	}
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "low_risk"
+	cfg.AutoMerge.Feature = "low_risk"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -3267,7 +3267,7 @@ func TestProcessIssue_LowRiskMode_LowRiskMerges(t *testing.T) {
 	}
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "low_risk"
+	cfg.AutoMerge.Feature = "low_risk"
 	cfg.ProtectedPaths = []string{"CLAUDE.md"}
 
 	// Stub Runner directly so we can include a tool trace with a "Read" entry
@@ -3345,7 +3345,7 @@ func TestProcessIssue_LowRiskMode_ProtectedPathLabels(t *testing.T) {
 	}
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "low_risk"
+	cfg.AutoMerge.Feature = "low_risk"
 	cfg.ProtectedPaths = []string{"CLAUDE.md"}
 
 	setupLoopTest(t, []string{
@@ -3391,7 +3391,7 @@ func TestProcessIssue_LowRiskMode_RiskAssessmentWritten(t *testing.T) {
 	}
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "low_risk"
+	cfg.AutoMerge.Feature = "low_risk"
 	cfg.ProtectedPaths = []string{"CLAUDE.md"}
 
 	// Stub Runner with a reviewer output that includes a "Read" trace entry.
@@ -3446,7 +3446,7 @@ func TestProcessIssue_AllMode_IgnoresRisk(t *testing.T) {
 	// auto_merge: all should merge regardless of PR size — risk classifier not called.
 	var mergeCallCount int
 	cfg := loopConfig()
-	cfg.AutoMerge = "all"
+	cfg.AutoMerge.Feature = "all"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -3486,7 +3486,7 @@ func TestProcessIssue_AllModeSkipsLifecycleLabel(t *testing.T) {
 	added, _ := setupGHLabelTracker(t)
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "all"
+	cfg.AutoMerge.Feature = "all"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -3511,7 +3511,7 @@ func TestProcessIssue_MergeRemovesLifecycleLabels(t *testing.T) {
 	added, removed := setupGHLabelTracker(t)
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "all"
+	cfg.AutoMerge.Feature = "all"
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -3553,7 +3553,7 @@ func TestProcessIssue_FunctionalEscalationLabelsAwaitingReview(t *testing.T) {
 	added, _ := setupGHLabelTracker(t)
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "all"
+	cfg.AutoMerge.Feature = "all"
 	cfg.MaxRetries = 0 // exhaust immediately
 
 	setupLoopTest(t, []string{
@@ -3584,7 +3584,7 @@ func TestProcessIssue_QualityEscalationLabelsAwaitingReview(t *testing.T) {
 	added, _ := setupGHLabelTracker(t)
 
 	cfg := loopConfig()
-	cfg.AutoMerge = "all"
+	cfg.AutoMerge.Feature = "all"
 	cfg.MaxRetries = 0 // exhaust quality retries immediately
 
 	setupLoopTest(t, []string{

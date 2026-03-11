@@ -39,9 +39,13 @@ each unblocked issue through the implement → review → merge loop.`,
 			v, _ := cmd.Flags().GetBool("no-sandbox")
 			flags.NoSandbox = &v
 		}
-		if cmd.Flags().Changed("auto-merge") {
-			v, _ := cmd.Flags().GetString("auto-merge")
-			flags.AutoMerge = &v
+		if cmd.Flags().Changed("auto-merge-feature") {
+			v, _ := cmd.Flags().GetString("auto-merge-feature")
+			flags.AutoMergeFeature = &v
+		}
+		if cmd.Flags().Changed("auto-merge-rollup") {
+			v, _ := cmd.Flags().GetString("auto-merge-rollup")
+			flags.AutoMergeRollup = &v
 		}
 		if cmd.Flags().Changed("base-branch") {
 			v, _ := cmd.Flags().GetString("base-branch")
@@ -141,7 +145,8 @@ func init() {
 	f.Bool("dry-run", false, "Print execution plan without taking action")
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
-	f.String("auto-merge", "none", "Merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
+	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
+	f.String("auto-merge-rollup", "none", "Rollup merge strategy after run: none (no rollup PR), manual (create PR but don't merge), auto (create and merge rollup PR)")
 	f.String("config", "godark.yaml", "Path to configuration file")
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")

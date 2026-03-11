@@ -103,6 +103,17 @@ type RiskThresholds struct {
 	MaxFiles int `yaml:"max_files"`
 }
 
+// AutoMerge holds independent merge-strategy controls for the two merge
+// points introduced by configurable base branches.
+type AutoMerge struct {
+	// Feature controls merging of the feature branch into the base branch.
+	// Valid values: "none", "low_risk", "all".
+	Feature string `yaml:"feature"`
+	// Rollup controls what happens to the base branch → default branch after
+	// a run completes. Valid values: "none", "manual", "auto".
+	Rollup string `yaml:"rollup"`
+}
+
 // Config holds all configuration for a godark run.
 type Config struct {
 	Repo       string `yaml:"repo"`
@@ -130,9 +141,9 @@ type Config struct {
 	ArchitectureJSON string `yaml:"architecture_json"`
 	ConventionsDoc   string `yaml:"conventions_doc"`
 
-	NoSandbox              bool   `yaml:"no_sandbox"`
-	AutoMerge              string `yaml:"auto_merge"`
-	BaseBranch             string `yaml:"base_branch"`
+	NoSandbox              bool      `yaml:"no_sandbox"`
+	AutoMerge              AutoMerge `yaml:"auto_merge"`
+	BaseBranch             string    `yaml:"base_branch"`
 	QualityStrictnessDecay bool   `yaml:"quality_strictness_decay"`
 	EnforceArchitecture    bool   `yaml:"enforce_architecture"`
 
@@ -197,12 +208,13 @@ type Prompts struct {
 // CLIFlags holds flag values passed on the command line.
 // Pointer fields distinguish "not set" (nil) from zero values.
 type CLIFlags struct {
-	Repo       *string
-	MaxRetries *int
-	NoSandbox  *bool
-	AutoMerge  *string
-	BaseBranch *string
-	Config     string
+	Repo              *string
+	MaxRetries        *int
+	NoSandbox         *bool
+	AutoMergeFeature  *string
+	AutoMergeRollup   *string
+	BaseBranch        *string
+	Config            string
 }
 
 // EffectiveBaseBranch returns BaseBranch, defaulting to "main" when empty.
@@ -243,7 +255,7 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 func defaults() *Config {
 	return &Config{
 		MaxRetries:     3,
-		AutoMerge:      "none",
+		AutoMerge:      AutoMerge{Feature: "none", Rollup: "none"},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},
 		DeniedCommands: []string{
@@ -278,8 +290,11 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	if flags.NoSandbox != nil {
 		cfg.NoSandbox = *flags.NoSandbox
 	}
-	if flags.AutoMerge != nil {
-		cfg.AutoMerge = *flags.AutoMerge
+	if flags.AutoMergeFeature != nil {
+		cfg.AutoMerge.Feature = *flags.AutoMergeFeature
+	}
+	if flags.AutoMergeRollup != nil {
+		cfg.AutoMerge.Rollup = *flags.AutoMergeRollup
 	}
 	if flags.BaseBranch != nil {
 		cfg.BaseBranch = *flags.BaseBranch
@@ -296,11 +311,17 @@ func validate(cfg *Config) error {
 	default:
 		return fmt.Errorf("auth_preference must be \"oauth\" or \"api_key\", got %q", cfg.AuthPreference)
 	}
-	switch cfg.AutoMerge {
+	switch cfg.AutoMerge.Feature {
 	case "none", "low_risk", "all":
 		// valid
 	default:
-		return fmt.Errorf("auto_merge must be \"none\", \"low_risk\", or \"all\", got %q", cfg.AutoMerge)
+		return fmt.Errorf("auto_merge.feature must be \"none\", \"low_risk\", or \"all\", got %q", cfg.AutoMerge.Feature)
+	}
+	switch cfg.AutoMerge.Rollup {
+	case "none", "manual", "auto":
+		// valid
+	default:
+		return fmt.Errorf("auto_merge.rollup must be \"none\", \"manual\", or \"auto\", got %q", cfg.AutoMerge.Rollup)
 	}
 	if err := validateModules(cfg.Modules); err != nil {
 		return err
