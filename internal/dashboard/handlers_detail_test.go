@@ -2,6 +2,7 @@ package dashboard_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1426,5 +1427,209 @@ func TestServer_RunDetail_BaseBranch_Hidden_When_Empty(t *testing.T) {
 	body := rr.Body.String()
 	if strings.Contains(body, "Base branch") {
 		t.Errorf("body should not contain 'Base branch' when BaseBranch is empty; got: %q", truncate(body, 500))
+	}
+}
+
+// --- Verify check summary tests ---
+
+func writeVerifyResult(t *testing.T, issueDir string, vr rundata.VerifyStepResult) {
+	t.Helper()
+	path := filepath.Join(issueDir, fmt.Sprintf("verify-%d.json", vr.Attempt))
+	writeJSON(t, path, vr)
+}
+
+func TestServer_IssueDetail_VerifyCheckSummaries_AllPassed(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{50},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 50)
+	writeVerifyResult(t, issueDir, rundata.VerifyStepResult{
+		Attempt:   0,
+		AllPassed: true,
+		Checks: []rundata.CheckResult{
+			{Name: "build", Passed: true, ExitCode: 0},
+			{Name: "lint", Passed: true, ExitCode: 0},
+			{Name: "test", Passed: true, ExitCode: 0},
+		},
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/50", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+
+	// Check names should appear in the summary.
+	for _, name := range []string{"build", "lint", "test"} {
+		if !strings.Contains(body, name) {
+			t.Errorf("body missing check name %q; got: %q", name, truncate(body, 500))
+		}
+	}
+
+	// All checks passed — verify-check--pass class should appear, not verify-check--fail.
+	if !strings.Contains(body, "verify-check--pass") {
+		t.Errorf("body missing verify-check--pass class for passed checks")
+	}
+	if strings.Contains(body, "verify-check--fail") {
+		t.Errorf("body should not contain verify-check--fail when all checks pass")
+	}
+}
+
+func TestServer_IssueDetail_VerifyCheckSummaries_SomeFailed(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{51},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 51)
+	writeVerifyResult(t, issueDir, rundata.VerifyStepResult{
+		Attempt:   0,
+		AllPassed: false,
+		Checks: []rundata.CheckResult{
+			{Name: "format", Passed: true, ExitCode: 0},
+			{Name: "build", Passed: true, ExitCode: 0},
+			{Name: "lint", Passed: false, ExitCode: 1, Output: "lint error output"},
+			{Name: "test", Passed: false, ExitCode: 2, Output: "test failure output"},
+		},
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/51", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+
+	// All check names should appear in the summary.
+	for _, name := range []string{"format", "build", "lint", "test"} {
+		if !strings.Contains(body, name) {
+			t.Errorf("body missing check name %q", name)
+		}
+	}
+
+	// Both pass and fail classes should appear.
+	if !strings.Contains(body, "verify-check--pass") {
+		t.Errorf("body missing verify-check--pass class for passed checks")
+	}
+	if !strings.Contains(body, "verify-check--fail") {
+		t.Errorf("body missing verify-check--fail class for failed checks")
+	}
+
+	// The overall verdict should be Failed.
+	if !strings.Contains(body, "Failed") {
+		t.Errorf("body missing 'Failed' verdict for verify step with failing checks")
+	}
+
+	// Expanded detail should include output for failed checks.
+	if !strings.Contains(body, "lint error output") {
+		t.Errorf("body missing lint error output in expanded detail")
+	}
+	if !strings.Contains(body, "test failure output") {
+		t.Errorf("body missing test failure output in expanded detail")
+	}
+}
+
+func TestServer_IssueDetail_VerifyCheckSummaries_FixAttempt(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{52},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 52)
+
+	// Initial verify: failed.
+	writeVerifyResult(t, issueDir, rundata.VerifyStepResult{
+		Attempt:   0,
+		AllPassed: false,
+		Checks: []rundata.CheckResult{
+			{Name: "build", Passed: false, ExitCode: 1, Output: "compile error"},
+		},
+	})
+	// Fix attempt: passed.
+	writeVerifyResult(t, issueDir, rundata.VerifyStepResult{
+		Attempt:      1,
+		AllPassed:    true,
+		FixAttempted: true,
+		Checks: []rundata.CheckResult{
+			{Name: "build", Passed: true, ExitCode: 0},
+		},
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/52", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+
+	// Both verify steps should be visible.
+	if !strings.Contains(body, "Verify (fix attempt 1)") {
+		t.Errorf("body missing fix-attempt label; got: %q", truncate(body, 500))
+	}
+
+	// The initial failed step should show the build check as failed.
+	if !strings.Contains(body, "verify-check--fail") {
+		t.Errorf("body missing verify-check--fail for initial failing verify step")
+	}
+}
+
+func TestServer_IssueDetail_VerifyCheckSummaries_NoChecks(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{53},
+		StartedAt:    now,
+	})
+	issueDir := buildIssueDir(t, runDir, 53)
+	writeVerifyResult(t, issueDir, rundata.VerifyStepResult{
+		Attempt:   0,
+		AllPassed: true,
+		Checks:    nil,
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/53", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+
+	// No check summary pills when no checks are recorded.
+	if strings.Contains(body, "verify-check") {
+		t.Errorf("body should not contain verify-check class when no checks are recorded")
+	}
+	// Verdict should still be Passed.
+	if !strings.Contains(body, "Passed") {
+		t.Errorf("body missing 'Passed' verdict")
 	}
 }

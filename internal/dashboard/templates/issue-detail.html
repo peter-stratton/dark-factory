@@ -236,6 +236,13 @@
       <div class="timeline__header">
         <span class="timeline__title">{{.Name}}</span>
         <div class="flex gap-2 items-center">
+          {{if .CheckSummaries}}
+          <span class="verify-checks">
+            {{range .CheckSummaries}}
+            <span class="verify-check {{if .Passed}}verify-check--pass{{else}}verify-check--fail{{end}}">{{.Name}}</span>
+            {{end}}
+          </span>
+          {{end}}
           {{if .Flags}}
           <div class="quality-flags">
             {{range .Flags}}
