@@ -1361,3 +1361,70 @@ func TestServer_IssueDetail_SpecGeneratorAbsentOmitted(t *testing.T) {
 		t.Error("body should not contain Spec Generator step when no spec-generator.json exists")
 	}
 }
+
+func TestServer_RunDetail_BaseBranch_Shown(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		BaseBranch:   "feature/foo",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 1,
+		rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+		rundata.StepResult{Output: "ok", DurationSeconds: 5},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "feature/foo") {
+		t.Errorf("body missing base branch; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_BaseBranch_Hidden_When_Empty(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 1,
+		rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+		rundata.StepResult{Output: "ok", DurationSeconds: 5},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "Base branch") {
+		t.Errorf("body should not contain 'Base branch' when BaseBranch is empty; got: %q", truncate(body, 500))
+	}
+}

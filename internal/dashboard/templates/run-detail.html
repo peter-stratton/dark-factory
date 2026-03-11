@@ -70,7 +70,7 @@
     <main class="main">
       <div class="page-header animate-in">
         <h1 class="page-header__title">{{.Meta.Repo}}</h1>
-        <p class="page-header__subtitle">{{.Meta.Milestone}} &middot; {{.Timestamp}}</p>
+        <p class="page-header__subtitle">{{.Meta.Milestone}} &middot; {{.Timestamp}}{{if .Meta.BaseBranch}} &middot; Base branch: {{.Meta.BaseBranch}}{{end}}</p>
       </div>
 
       {{if and .Meta.Summary .Meta.Summary.AbortReason}}
