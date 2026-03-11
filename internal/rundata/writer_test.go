@@ -14,7 +14,7 @@ import (
 func newWithBase(t *testing.T, base, repo, milestone string, issueNumbers []int) (*Writer, error) {
 	t.Helper()
 	t.Setenv("HOME", base)
-	return New(repo, milestone, issueNumbers, "")
+	return New(repo, milestone, issueNumbers, "", AutoMerge{})
 }
 
 func TestRunDirectoryCreated(t *testing.T) {
@@ -773,7 +773,7 @@ func TestPathTraversalRejected(t *testing.T) {
 	for _, repo := range cases {
 		base := t.TempDir()
 		t.Setenv("HOME", base)
-		_, err := New(repo, "Phase 7", []int{1}, "")
+		_, err := New(repo, "Phase 7", []int{1}, "", AutoMerge{})
 		if err == nil {
 			t.Errorf("New(%q) should return error for path traversal, got nil", repo)
 		}
@@ -819,7 +819,7 @@ func TestWriteRiskAssessmentCreatesFile(t *testing.T) {
 func TestBaseBranchWrittenToRunJSON(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", base)
-	w, err := New("owner/repo", "Phase 7", []int{1}, "feature/foo")
+	w, err := New("owner/repo", "Phase 7", []int{1}, "feature/foo", AutoMerge{})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -842,7 +842,7 @@ func TestBaseBranchWrittenToRunJSON(t *testing.T) {
 func TestBaseBranchOmittedWhenEmpty(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", base)
-	w, err := New("owner/repo", "Phase 7", []int{1}, "")
+	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -858,6 +858,71 @@ func TestBaseBranchOmittedWhenEmpty(t *testing.T) {
 	}
 	if _, ok := raw["base_branch"]; ok {
 		t.Error("base_branch key should be omitted from JSON when empty")
+	}
+}
+
+func TestAutoMergeWrittenToRunJSON(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("HOME", base)
+	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{Feature: "low_risk", Rollup: "auto"})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.AutoMerge == nil {
+		t.Fatal("AutoMerge should be set in run.json")
+	}
+	if meta.AutoMerge.Feature != "low_risk" {
+		t.Errorf("AutoMerge.Feature = %q, want %q", meta.AutoMerge.Feature, "low_risk")
+	}
+	if meta.AutoMerge.Rollup != "auto" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q", meta.AutoMerge.Rollup, "auto")
+	}
+}
+
+func TestAutoMergeOmittedWhenEmpty(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("HOME", base)
+	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if _, ok := raw["auto_merge"]; ok {
+		t.Error("auto_merge key should be omitted from JSON when AutoMerge is empty")
+	}
+}
+
+func TestAutoMergeMissingInOldDataDeserializesCleanly(t *testing.T) {
+	// Simulate old run.json without auto_merge field.
+	oldJSON := []byte(`{"repo":"owner/repo","milestone":"Phase 7","issue_numbers":[1],"started_at":"2024-01-01T00:00:00Z"}`)
+
+	var meta RunMeta
+	if err := json.Unmarshal(oldJSON, &meta); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+
+	if meta.AutoMerge != nil {
+		t.Errorf("AutoMerge = %+v, want nil for old data without auto_merge", meta.AutoMerge)
 	}
 }
 

@@ -90,7 +90,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 	if !dryRun {
 		issueNums := issueNumbers(issues)
 		var writerErr error
-		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch)
+		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: cfg.AutoMerge.Feature, Rollup: cfg.AutoMerge.Rollup})
 		if writerErr != nil {
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
 		} else if runLogger, logErr := logging.NewLogger(writer.Dir()); logErr == nil {
@@ -586,8 +586,8 @@ func dialogueOutcome(e dialogue.Entry) string {
 }
 
 // newRunDataWriterFn creates a new RunDataWriter. Replaceable for testing.
-var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string) (*rundata.Writer, error) {
-	return rundata.New(repo, milestone, issueNumbers, baseBranch)
+var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string, autoMerge rundata.AutoMerge) (*rundata.Writer, error) {
+	return rundata.New(repo, milestone, issueNumbers, baseBranch, autoMerge)
 }
 
 // createRollupPRFn creates a rollup PR and returns its number and URL.

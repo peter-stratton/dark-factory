@@ -1430,6 +1430,78 @@ func TestServer_RunDetail_BaseBranch_Hidden_When_Empty(t *testing.T) {
 	}
 }
 
+func TestServer_RunDetail_AutoMerge_Shown(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	am := &rundata.AutoMerge{Feature: "low_risk", Rollup: "auto"}
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+		AutoMerge:    am,
+	})
+
+	writeIssueFiles(t, runDir, 1,
+		rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+		rundata.StepResult{Output: "ok", DurationSeconds: 5},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "low_risk") {
+		t.Errorf("body missing auto_merge.feature value; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "rollup=auto") {
+		t.Errorf("body missing auto_merge.rollup value; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_RunDetail_AutoMerge_Hidden_When_Absent(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+		// AutoMerge intentionally absent — simulates older run data.
+	})
+
+	writeIssueFiles(t, runDir, 1,
+		rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+		rundata.StepResult{Output: "ok", DurationSeconds: 5},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "Auto-merge") {
+		t.Errorf("body should not contain 'Auto-merge' when AutoMerge is absent; got: %q", truncate(body, 500))
+	}
+}
+
 // --- Verify check summary tests ---
 
 func writeVerifyResult(t *testing.T, issueDir string, vr rundata.VerifyStepResult) {
