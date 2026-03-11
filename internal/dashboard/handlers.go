@@ -72,6 +72,7 @@ type IssueDetailData struct {
 	PRLink          string
 	IssueLink       string
 	RunURL          string // link back to run detail page
+	ReviewChainURL  string // URL for the review chain polling partial
 	ErrorReason     string // failure reason from outcome, shown prominently for failed issues
 	Timeline        []TimelineStepView
 	Punchlist       *rundata.PunchlistData
@@ -418,6 +419,7 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	issueLink := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, issueNum)
 
+	reviewChainURL := fmt.Sprintf("/runs/%s/%s/%s/issues/%d/review-chain", owner, repo, timestamp, issueNum)
 	data := IssueDetailData{
 		Owner:           owner,
 		Repo:            repo,
@@ -430,6 +432,7 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		PRLink:          prLink,
 		IssueLink:       issueLink,
 		RunURL:          runURL,
+		ReviewChainURL:  reviewChainURL,
 		ErrorReason:     found.Outcome.Error,
 		Timeline:        buildTimeline(*found),
 		Punchlist:       found.Punchlist,
@@ -440,6 +443,52 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	if err := s.tmpl.ExecuteTemplate(&buf, "issue-detail.html", data); err != nil {
 		s.cfg.Logger.Error("rendering issue-detail template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+func (s *Server) handleReviewChain(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	repo := r.PathValue("repo")
+	timestamp := r.PathValue("timestamp")
+	numberStr := r.PathValue("number")
+
+	issueNum, err := strconv.Atoi(numberStr)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	detail, err := s.reader.LoadRun(owner, repo, timestamp)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		s.cfg.Logger.Error("loading run for review chain", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	var found *rundata.IssueDetail
+	for i := range detail.Issues {
+		if detail.Issues[i].IssueNumber == issueNum {
+			found = &detail.Issues[i]
+			break
+		}
+	}
+	if found == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	timeline := buildTimeline(*found)
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "review-chain-steps", timeline); err != nil {
+		s.cfg.Logger.Error("rendering review-chain-steps template", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

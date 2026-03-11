@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>godark — Issue #{{.IssueNumber}}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
   <script src="/static/alpine.min.js" defer></script>
 </head>
 <body>
@@ -97,69 +98,12 @@
         <div class="card__header">
           <span class="card__title">Review Chain</span>
         </div>
-        <div class="card__body">
-          {{if .Timeline}}
-          <div class="timeline">
-            {{range .Timeline}}
-            <div class="timeline__item">
-              <div class="timeline__marker timeline__marker--{{.MarkerClass}}"></div>
-              <div class="timeline__content" x-data="{ open: false }">
-                <div class="timeline__header">
-                  <span class="timeline__title">{{.Name}}</span>
-                  <div class="flex gap-2 items-center">
-                    {{if .Flags}}
-                    <div class="quality-flags">
-                      {{range .Flags}}
-                      <span class="quality-flag quality-flag--fail" data-tooltip="{{.Code}}: {{.Message}}">F</span>
-                      {{end}}
-                    </div>
-                    {{end}}
-                    <span class="badge badge--{{.VerdictClass}}">
-                      <span class="badge__dot"></span>
-                      {{.Verdict}}
-                    </span>
-                  </div>
-                </div>
-                <div class="timeline__meta">
-                  <span>{{.Duration}}</span>
-                  <span class="text-muted">&middot;</span>
-                  <span>{{.Cost}}</span>
-                </div>
-                {{if .HasOutput}}
-                <div class="expandable mt-2" x-data="{ outputOpen: false }">
-                  <button class="expandable__trigger" @click="outputOpen = !outputOpen">
-                    <span class="expandable__arrow" :style="outputOpen ? 'transform: rotate(90deg)' : ''">&#9658;</span>
-                    Agent Output
-                  </button>
-                  <div x-show="outputOpen" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
-                    <div class="markdown-body">{{renderMarkdown .Output}}</div>
-                  </div>
-                </div>
-                {{end}}
-                {{if .ToolTrace}}
-                <div class="expandable mt-2" x-data="{ traceOpen: false }">
-                  <button class="expandable__trigger" @click="traceOpen = !traceOpen">
-                    <span class="expandable__arrow" :style="traceOpen ? 'transform: rotate(90deg)' : ''">&#9658;</span>
-                    Tool Trace ({{len .ToolTrace}} calls)
-                  </button>
-                  <div x-show="traceOpen" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
-                    <ol style="margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); font-family: monospace;">
-                      {{range .ToolTrace}}
-                      <li style="margin-bottom: var(--space-1);">{{.}}</li>
-                      {{end}}
-                    </ol>
-                  </div>
-                </div>
-                {{end}}
-              </div>
-            </div>
-            {{end}}
-          </div>
-          {{else}}
-          <div class="empty-state" style="padding: var(--space-10) var(--space-8);">
-            <p class="empty-state__description">No review chain data recorded for this issue.</p>
-          </div>
-          {{end}}
+        <div class="card__body"
+             id="review-chain-body"
+             hx-get="{{.ReviewChainURL}}"
+             hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
+             hx-swap="innerHTML">
+          {{template "review-chain-steps" .Timeline}}
         </div>
       </div>
 
@@ -281,3 +225,68 @@
   </div>
 </body>
 </html>
+
+{{define "review-chain-steps"}}
+{{if .}}
+<div class="timeline">
+  {{range .}}
+  <div class="timeline__item">
+    <div class="timeline__marker timeline__marker--{{.MarkerClass}}"></div>
+    <div class="timeline__content" x-data="{ open: false }">
+      <div class="timeline__header">
+        <span class="timeline__title">{{.Name}}</span>
+        <div class="flex gap-2 items-center">
+          {{if .Flags}}
+          <div class="quality-flags">
+            {{range .Flags}}
+            <span class="quality-flag quality-flag--fail" data-tooltip="{{.Code}}: {{.Message}}">F</span>
+            {{end}}
+          </div>
+          {{end}}
+          <span class="badge badge--{{.VerdictClass}}">
+            <span class="badge__dot"></span>
+            {{.Verdict}}
+          </span>
+        </div>
+      </div>
+      <div class="timeline__meta">
+        <span>{{.Duration}}</span>
+        <span class="text-muted">&middot;</span>
+        <span>{{.Cost}}</span>
+      </div>
+      {{if .HasOutput}}
+      <div class="expandable mt-2" x-data="{ outputOpen: false }">
+        <button class="expandable__trigger" @click="outputOpen = !outputOpen">
+          <span class="expandable__arrow" :style="outputOpen ? 'transform: rotate(90deg)' : ''">&#9658;</span>
+          Agent Output
+        </button>
+        <div x-show="outputOpen" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
+          <div class="markdown-body">{{renderMarkdown .Output}}</div>
+        </div>
+      </div>
+      {{end}}
+      {{if .ToolTrace}}
+      <div class="expandable mt-2" x-data="{ traceOpen: false }">
+        <button class="expandable__trigger" @click="traceOpen = !traceOpen">
+          <span class="expandable__arrow" :style="traceOpen ? 'transform: rotate(90deg)' : ''">&#9658;</span>
+          Tool Trace ({{len .ToolTrace}} calls)
+        </button>
+        <div x-show="traceOpen" style="display:none; padding: var(--space-3); background: var(--bg-surface-1); border-top: 1px solid var(--border-muted); overflow-y: auto; max-height: 300px;">
+          <ol style="margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); font-family: monospace;">
+            {{range .ToolTrace}}
+            <li style="margin-bottom: var(--space-1);">{{.}}</li>
+            {{end}}
+          </ol>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="empty-state" style="padding: var(--space-10) var(--space-8);">
+  <p class="empty-state__description">No review chain data recorded for this issue.</p>
+</div>
+{{end}}
+{{end}}
