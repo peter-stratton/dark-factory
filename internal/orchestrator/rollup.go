@@ -123,10 +123,10 @@ func createRollupPR(ctx context.Context, cfg *config.Config, issues []implemente
 // buildRollupBody builds the PR description for a rollup PR.
 func buildRollupBody(baseBranch, defaultBranch string, issues []implementedIssue) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Merges `%s` → `%s` after automated implementation run.\n\n", baseBranch, defaultBranch))
+	fmt.Fprintf(&sb, "Merges `%s` → `%s` after automated implementation run.\n\n", baseBranch, defaultBranch)
 	sb.WriteString("## Implemented Issues\n\n")
 	for _, iss := range issues {
-		sb.WriteString(fmt.Sprintf("- #%d %s\n", iss.Number, iss.Title))
+		fmt.Fprintf(&sb, "- #%d %s\n", iss.Number, iss.Title)
 	}
 	return sb.String()
 }
