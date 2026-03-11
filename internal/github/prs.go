@@ -3,6 +3,7 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // FetchPRCommentBodies returns the PR body followed by the body text of all
@@ -29,9 +30,20 @@ func FetchPRCommentBodies(repo string, prNum int) ([]string, error) {
 		return nil, fmt.Errorf("parsing gh output: %w", err)
 	}
 
-	// PR body first (may contain Implementation Notes), then comments in order.
+	// Include the PR body only as a fallback — if any comment already
+	// contains "## Implementation Notes", the PR body is redundant and
+	// including it would cause the dialogue parser to double-count the
+	// implementer's contribution.
+	commentHasImplNotes := false
+	for _, c := range pr.Comments {
+		if strings.Contains(c.Body, "## Implementation Notes") {
+			commentHasImplNotes = true
+			break
+		}
+	}
+
 	bodies := make([]string, 0, 1+len(pr.Comments))
-	if pr.Body != "" {
+	if pr.Body != "" && !commentHasImplNotes {
 		bodies = append(bodies, pr.Body)
 	}
 	for _, c := range pr.Comments {

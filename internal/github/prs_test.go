@@ -65,6 +65,46 @@ func TestFetchPRCommentBodies_CLIError(t *testing.T) {
 	}
 }
 
+func TestFetchPRCommentBodies_PRBodySkippedWhenCommentHasImplNotes(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`{"body":"## Summary\n\n## Implementation Notes\n\nDuplicate in PR body","comments":[{"body":"## Implementation Notes\n\nActual comment"},{"body":"## Quality Review Notes\n\nLGTM"}]}`), nil
+	}
+
+	bodies, err := FetchPRCommentBodies("owner/repo", 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 bodies (PR body excluded), got %d", len(bodies))
+	}
+	if bodies[0] != "## Implementation Notes\n\nActual comment" {
+		t.Errorf("bodies[0]: got %q, want Implementation Notes comment", bodies[0])
+	}
+}
+
+func TestFetchPRCommentBodies_PRBodyIncludedWhenNoCommentHasImplNotes(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`{"body":"## Implementation Notes\n\nOnly in PR body","comments":[{"body":"## Quality Review Notes\n\nLGTM"}]}`), nil
+	}
+
+	bodies, err := FetchPRCommentBodies("owner/repo", 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 bodies (PR body included as fallback), got %d", len(bodies))
+	}
+	if bodies[0] != "## Implementation Notes\n\nOnly in PR body" {
+		t.Errorf("bodies[0]: got %q, want PR body with Implementation Notes", bodies[0])
+	}
+}
+
 func TestFetchPRCommentBodies_MalformedJSON(t *testing.T) {
 	orig := CommandRunner
 	defer func() { CommandRunner = orig }()
