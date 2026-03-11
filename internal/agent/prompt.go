@@ -51,6 +51,10 @@ type PromptData struct {
 	// ReviewFeedback holds human reviewer comments injected directly into the
 	// retry prompt. Non-empty only for watch-initiated fix cycles.
 	ReviewFeedback string
+	// BaseBranch, when non-empty, is the target branch for PRs. Prompts use
+	// this to branch off origin/<BaseBranch> and pass --base <BaseBranch> to
+	// gh pr create.
+	BaseBranch string
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from
