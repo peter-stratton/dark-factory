@@ -816,3 +816,101 @@ func TestSpecGeneratorPrompt_BaseBranchEmpty_CheckoutWithoutOrigin(t *testing.T)
 		t.Error("spec_generator prompt should not reference 'origin/' when BaseBranch is empty")
 	}
 }
+
+func TestImplementerPrompt_BaseBranchSet_NeverCommitToBaseBranch(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		Slug:           "test-issue",
+		BaseBranch:     "feature/foo",
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "Never commit directly to feature/foo") {
+		t.Error("implementer prompt should contain 'Never commit directly to feature/foo' when BaseBranch is set")
+	}
+}
+
+func TestImplementerPrompt_BaseBranchEmpty_NeverCommitToMain(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		Slug:           "test-issue",
+		BaseBranch:     "",
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "Never commit directly to main") {
+		t.Error("implementer prompt should contain 'Never commit directly to main' when BaseBranch is empty")
+	}
+}
+
+func TestSpecGeneratorPrompt_BaseBranchSet_NeverCommitToBaseBranch(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		Slug:           "test-issue",
+		BaseBranch:     "feature/foo",
+	}
+	rendered, err := RenderPrompt(p.SpecGenerator, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "Never commit directly to feature/foo") {
+		t.Error("spec_generator prompt should contain 'Never commit directly to feature/foo' when BaseBranch is set")
+	}
+}
+
+func TestSpecGeneratorPrompt_BaseBranchEmpty_NeverCommitToMain(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		Slug:           "test-issue",
+		BaseBranch:     "",
+	}
+	rendered, err := RenderPrompt(p.SpecGenerator, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "Never commit directly to main") {
+		t.Error("spec_generator prompt should contain 'Never commit directly to main' when BaseBranch is empty")
+	}
+}

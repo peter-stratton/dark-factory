@@ -16,7 +16,7 @@ CRITICAL RULES:
 {{- else}}
 - Create a feature branch: git checkout -b {{.IssueNumber}}-{{.Slug}}
 {{- end}}
-- Never commit directly to main
+- Never commit directly to {{if .BaseBranch}}{{.BaseBranch}}{{else}}main{{end}}
 - Do NOT modify any protected paths: {{.ProtectedPaths}}
 - Do NOT modify existing files in {{.ScenarioDir}}
 
