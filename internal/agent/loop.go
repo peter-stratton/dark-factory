@@ -460,7 +460,16 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 						for _, f := range ciFailures {
 							names = append(names, f.Name)
 						}
-						outcome.Status = "failed"
+						if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+							logger.Warn("failed to label PR", "error", err)
+						}
+						applyLifecycleLabel(label.AwaitingHumanReview)
+						comment := fmt.Sprintf("CI checks failed after %d fix attempt(s): %s. Labeling for human review.",
+							ciAttempt, strings.Join(names, ", "))
+						if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+							logger.Warn("failed to comment on PR", "error", err)
+						}
+						outcome.Status = "needs-human-review"
 						outcome.Err = fmt.Errorf("CI checks failed: %s", strings.Join(names, ", "))
 						return outcome
 					}

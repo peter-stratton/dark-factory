@@ -549,8 +549,8 @@ func TestProcessIssue_WaitForChecks_FixExhausted(t *testing.T) {
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
 
-	if outcome.Status != "failed" {
-		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "failed", outcome.Err)
+	if outcome.Status != "needs-human-review" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
 	}
 	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "CI checks failed") {
 		t.Errorf("Err = %v, want it to contain 'CI checks failed'", outcome.Err)
@@ -600,8 +600,8 @@ func TestProcessIssue_WaitForChecks_NoVerifyFix(t *testing.T) {
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
 
-	if outcome.Status != "failed" {
-		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "failed", outcome.Err)
+	if outcome.Status != "needs-human-review" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
 	}
 	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "CI checks failed") {
 		t.Errorf("Err = %v, want it to contain 'CI checks failed'", outcome.Err)
