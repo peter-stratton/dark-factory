@@ -46,7 +46,8 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 |-------|---------|---------|
 | `max_retries` | Review/fix cycles before escalating to human | `3` |
 | `agent_timeout` | Max wall-clock time per agent run | `30m` |
-| `auto_merge` | Merge strategy after approval: `none`, `low_risk`, `all` | `none` |
+| `auto_merge.feature` | Merge strategy for feature PRs after approval: `none`, `low_risk`, `all` | `none` |
+| `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `none` |
 | `no_sandbox` | Run agents on host instead of Docker | `false` |
 
 ### Paths and constraints
@@ -90,7 +91,19 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | `wait_for_checks.timeout` | Max time to wait for CI checks to complete |
 | `wait_for_checks.required` | List of CI check names that must pass before merge |
 
-### Risk thresholds (for `auto_merge: low_risk`)
+### Rollup modes (`auto_merge.rollup`)
+
+When godark runs against a non-default base branch, a rollup PR merges the base
+branch into main after all feature PRs are done. The `rollup` field controls
+what godark does with that rollup PR:
+
+| Mode | Feature PRs → base branch | Base branch → main |
+|---|---|---|
+| `none` | godark merges | human does everything (inspects branch, opens PR manually) |
+| `manual` | godark merges | godark opens PR, human reviews and merges |
+| `auto` | godark merges | godark opens PR and merges |
+
+### Risk thresholds (for `auto_merge.feature: low_risk`)
 
 | Field | Purpose | Default |
 |-------|---------|---------|

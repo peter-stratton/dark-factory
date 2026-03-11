@@ -17,11 +17,18 @@ import (
 const defaultConfig = `# godark.yaml — Configuration for godark
 repo: ""              # GitHub repository (owner/repo)
 
-# Merge strategy after both reviewers approve:
-#   none     — label PR awaiting-human-review (default, safest)
-#   low_risk — auto-merge small/safe PRs, label others for human review
-#   all      — auto-merge everything
-auto_merge: none
+# Merge behavior — two-tier config:
+#   feature: controls how feature PRs are merged after both reviewers approve
+#     none     — label PR awaiting-human-review (default, safest)
+#     low_risk — auto-merge small/safe PRs, label others for human review
+#     all      — auto-merge everything
+#   rollup: controls rollup PR behavior (only relevant when base_branch ≠ main)
+#     none   — godark stops after feature PRs; human opens and merges rollup PR
+#     manual — godark opens rollup PR; human reviews and merges
+#     auto   — godark opens and merges rollup PR
+auto_merge:
+  feature: none
+  rollup: none
 
 # Paths (defaults shown — override to customize)
 # roadmap_path: docs/ROADMAP.md

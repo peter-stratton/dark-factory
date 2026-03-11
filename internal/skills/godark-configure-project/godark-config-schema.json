@@ -92,9 +92,22 @@
       "description": "Run agents on host instead of in Docker"
     },
     "auto_merge": {
-      "type": "string",
-      "enum": ["none", "low_risk", "all"],
-      "default": "none"
+      "type": "object",
+      "description": "Merge behavior for feature PRs and rollup PRs",
+      "properties": {
+        "feature": {
+          "type": "string",
+          "enum": ["none", "low_risk", "all"],
+          "description": "Merge strategy for feature PRs after approval",
+          "default": "none"
+        },
+        "rollup": {
+          "type": "string",
+          "enum": ["none", "manual", "auto"],
+          "description": "Rollup PR handling after a run completes: none (human does everything), manual (godark opens PR, human merges), auto (godark opens and merges)",
+          "default": "none"
+        }
+      }
     },
     "quality_strictness_decay": {
       "type": "boolean",
