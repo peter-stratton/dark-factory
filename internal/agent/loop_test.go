@@ -3609,3 +3609,184 @@ func TestProcessIssue_QualityEscalationLabelsAwaitingReview(t *testing.T) {
 		t.Errorf("expected %q label to be added on quality escalation, got: %v", label.AwaitingHumanReview, *added)
 	}
 }
+
+// TestProcessIssue_VerifyRerunsAfterQualityGateRetry verifies that when the
+// quality reviewer requests changes and the retry agent runs, verify is
+// re-executed before the next quality review cycle.
+func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	shCallCount := 0
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			shCallCount++
+			return []byte(""), nil // all verify runs pass
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 3: // retry agent
+			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+		case 4: // quality reviewer — approves after retry+verify
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := verifyLoopConfig(true)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
+	}
+	// Expect 2 verify runs: one initial (before quality review) and one after
+	// the quality-gate retry.
+	if shCallCount != 2 {
+		t.Errorf("shCallCount = %d, want 2 (initial verify + verify after quality-gate retry)", shCallCount)
+	}
+}
+
+// TestProcessIssue_VerifyBlockingFailsAfterQualityGateRetry verifies that when
+// verify fails (blocking) after a quality-gate retry, the run is marked failed.
+func TestProcessIssue_VerifyBlockingFailsAfterQualityGateRetry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	shCallCount := 0
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			shCallCount++
+			if shCallCount == 1 {
+				// Initial verify passes.
+				return []byte(""), nil
+			}
+			// Verify after quality-gate retry fails.
+			return []byte("build error"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		default: // retry agent
+			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := verifyLoopConfig(true) // Blocking = true
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "failed" {
+		t.Errorf("Status = %q, want failed when verify blocks after quality-gate retry (err: %v)", outcome.Status, outcome.Err)
+	}
+	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "verify") {
+		t.Errorf("Err = %v, want error containing 'verify'", outcome.Err)
+	}
+}
+
+// TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry verifies
+// that when verify fails (non-blocking) after a quality-gate retry, the
+// quality review cycle continues rather than aborting.
+func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		if name == "sh" && len(args) > 0 && args[0] == "-c" {
+			// All verify runs fail (non-blocking — proceeds to review).
+			return []byte("build error"), fmt.Errorf("exit status 1")
+		}
+		return []byte(""), nil
+	}
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 3: // retry agent
+			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+		case 4: // quality reviewer — approves (verify non-blocking, so we get here)
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := verifyLoopConfig(false) // Blocking = false → proceeds despite verify failure
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want implemented when verify is non-blocking after quality-gate retry (err: %v)", outcome.Status, outcome.Err)
+	}
+}
