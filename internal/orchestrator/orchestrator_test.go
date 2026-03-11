@@ -912,6 +912,132 @@ func TestRun_DryRunSkipsDirtyCheck(t *testing.T) {
 	})
 }
 
+func TestPullAfterMerge_CustomBranch(t *testing.T) {
+	var capturedArgs []string
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		capturedArgs = args
+		return []byte(""), nil
+	}
+
+	if err := PullAfterMerge("feature/foo", testLogger(t)); err != nil {
+		t.Fatalf("PullAfterMerge() unexpected error: %v", err)
+	}
+
+	if len(capturedArgs) < 4 || capturedArgs[3] != "feature/foo" {
+		t.Errorf("expected branch 'feature/foo' in git args, got %v", capturedArgs)
+	}
+}
+
+func TestPullAfterMerge_MainBranch(t *testing.T) {
+	var capturedArgs []string
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		capturedArgs = args
+		return []byte(""), nil
+	}
+
+	if err := PullAfterMerge("main", testLogger(t)); err != nil {
+		t.Fatalf("PullAfterMerge() unexpected error: %v", err)
+	}
+
+	if len(capturedArgs) < 4 || capturedArgs[3] != "main" {
+		t.Errorf("expected branch 'main' in git args, got %v", capturedArgs)
+	}
+}
+
+func TestPullAfterMerge_DirtyRepoWarning(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pull" && args[1] == "--rebase" {
+			return nil, fmt.Errorf("pull failed")
+		}
+		// git status --porcelain: dirty tree
+		return []byte(" M some-file.go\n"), nil
+	}
+
+	err := PullAfterMerge("feature/xyz", testLogger(t))
+	if err == nil {
+		t.Fatal("expected error for dirty repo")
+	}
+	if !strings.Contains(err.Error(), "dirty") {
+		t.Errorf("expected 'dirty' in error, got: %v", err)
+	}
+}
+
+func TestEnsureBaseBranch_SkipsEmptyBranch(t *testing.T) {
+	// CommandRunner must not be called when branch is empty.
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	called := false
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		called = true
+		return []byte(""), nil
+	}
+
+	if err := EnsureBaseBranch("", testLogger(t)); err != nil {
+		t.Fatalf("EnsureBaseBranch() unexpected error: %v", err)
+	}
+	if called {
+		t.Error("expected CommandRunner not to be called for empty branch")
+	}
+}
+
+func TestEnsureBaseBranch_SkipsExistingBranch(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	var pushedArgs []string
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 1 && args[0] == "ls-remote" {
+			// Branch exists on remote.
+			return []byte("abc123\trefs/heads/feature/existing\n"), nil
+		}
+		if len(args) >= 1 && args[0] == "push" {
+			pushedArgs = args
+		}
+		return []byte(""), nil
+	}
+
+	if err := EnsureBaseBranch("feature/existing", testLogger(t)); err != nil {
+		t.Fatalf("EnsureBaseBranch() unexpected error: %v", err)
+	}
+	if pushedArgs != nil {
+		t.Errorf("expected no git push when branch exists, got push with args %v", pushedArgs)
+	}
+}
+
+func TestEnsureBaseBranch_CreatesMissingBranch(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	var pushedRef string
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 1 && args[0] == "ls-remote" {
+			// Branch does not exist.
+			return []byte(""), nil
+		}
+		if len(args) >= 1 && args[0] == "push" {
+			// Capture the refspec argument.
+			for _, a := range args {
+				if strings.HasPrefix(a, "HEAD:") {
+					pushedRef = a
+				}
+			}
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	}
+
+	if err := EnsureBaseBranch("feature/new", testLogger(t)); err != nil {
+		t.Fatalf("EnsureBaseBranch() unexpected error: %v", err)
+	}
+	if pushedRef != "HEAD:refs/heads/feature/new" {
+		t.Errorf("expected push refspec 'HEAD:refs/heads/feature/new', got %q", pushedRef)
+	}
+}
+
 // Suppress unused import warnings.
 var _ = fmt.Sprintf
 

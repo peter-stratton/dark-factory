@@ -257,6 +257,12 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		hook = writer
 	}
 
+	// Compute effective base branch, defaulting to "main" when empty.
+	baseBranch := cfg.BaseBranch
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+
 	// Track stats across all waves.
 	var stats struct {
 		implemented      int
@@ -363,7 +369,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			case "implemented":
 				stats.implemented++
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-				if err := PullAfterMerge(logger); err != nil {
+				if err := PullAfterMerge(baseBranch, logger); err != nil {
 					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
 					stats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
 					goto done
@@ -562,8 +568,8 @@ func CheckWorkingTree() error {
 // PullAfterMerge syncs the local repo with the remote after a successful merge.
 // If the working tree is dirty, it logs an actionable message and returns an
 // error so the orchestration loop can stop gracefully.
-func PullAfterMerge(logger *slog.Logger) error {
-	_, err := CommandRunner("git", "pull", "--rebase", "origin", "main")
+func PullAfterMerge(branch string, logger *slog.Logger) error {
+	_, err := CommandRunner("git", "pull", "--rebase", "origin", branch)
 	if err == nil {
 		logger.Info("pulled latest changes after merge")
 		return nil
@@ -580,7 +586,7 @@ func PullAfterMerge(logger *slog.Logger) error {
 	}
 
 	if dirty := strings.TrimSpace(string(out)); dirty != "" {
-		logger.Warn("local repo has uncommitted changes — commit your changes then run: git pull --rebase origin main",
+		logger.Warn(fmt.Sprintf("local repo has uncommitted changes — commit your changes then run: git pull --rebase origin %s", branch),
 			"dirty_files", dirty,
 		)
 		return fmt.Errorf("local repo is dirty, cannot pull after merge")
@@ -588,6 +594,34 @@ func PullAfterMerge(logger *slog.Logger) error {
 
 	logger.Warn("failed to pull after merge", "error", err)
 	return fmt.Errorf("pull after merge failed: %w", err)
+}
+
+// EnsureBaseBranch checks whether the configured base branch exists on the
+// remote. If it does not exist, it creates it from HEAD. This is a no-op when
+// branch is empty (the repo default branch is used by the agent) or when the
+// branch already exists.
+func EnsureBaseBranch(branch string, logger *slog.Logger) error {
+	if branch == "" {
+		return nil
+	}
+
+	out, err := CommandRunner("git", "ls-remote", "--heads", "origin", branch)
+	if err != nil {
+		return fmt.Errorf("checking remote branch %q: %w", branch, err)
+	}
+
+	if strings.TrimSpace(string(out)) != "" {
+		logger.Info("base branch already exists on remote", "branch", branch)
+		return nil
+	}
+
+	logger.Info("base branch does not exist on remote, creating from HEAD", "branch", branch)
+	_, err = CommandRunner("git", "push", "origin", fmt.Sprintf("HEAD:refs/heads/%s", branch))
+	if err != nil {
+		return fmt.Errorf("creating remote branch %q: %w", branch, err)
+	}
+	logger.Info("created base branch on remote", "branch", branch)
+	return nil
 }
 
 // buildPunchlistEntry creates and enriches a single punchlist entry for an issue.

@@ -119,6 +119,13 @@ each unblocked issue through the implement → review → merge loop.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
+		// Ensure base branch exists on the remote before starting the run (no-op if empty or dry-run).
+		if !dryRun {
+			if err := orchestrator.EnsureBaseBranch(cfg.BaseBranch, logger); err != nil {
+				return fmt.Errorf("ensuring base branch: %w", err)
+			}
+		}
+
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
 		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun, force, punchlistPath)
 	},
