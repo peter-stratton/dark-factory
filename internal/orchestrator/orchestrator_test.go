@@ -1503,6 +1503,49 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 	}
 }
 
+func TestRollup_SkipWhenAborted(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "will merge then abort"},
+	}
+
+	// Process the issue as implemented, but then fail the PullAfterMerge so
+	// the run aborts with stats.implemented == 1.
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	// Override CommandRunner so PullAfterMerge fails, triggering an abort.
+	origCmdRunner := CommandRunner
+	t.Cleanup(func() { CommandRunner = origCmdRunner })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pull" && args[1] == "--rebase" {
+			return nil, fmt.Errorf("pull failed: remote unreachable")
+		}
+		if len(args) >= 1 && args[0] == "status" {
+			return []byte(""), nil
+		}
+		return []byte("ok"), nil
+	}
+
+	created, _ := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "feature-branch"
+	cfg.AutoMerge.Rollup = "auto"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 0 {
+		t.Errorf("rollup should be skipped when the run aborted, got creates: %v", *created)
+	}
+}
+
 func TestBuildRollupBody_ListsIssues(t *testing.T) {
 	issues := []github.Issue{
 		{Number: 1, Title: "Add feature A"},

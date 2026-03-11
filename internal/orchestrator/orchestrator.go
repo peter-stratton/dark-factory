@@ -467,15 +467,22 @@ done:
 		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
 
 	// Rollup PR: create (and optionally merge) a PR from the base branch back
-	// to the default branch when the run used a non-default base branch and at
-	// least one feature PR was merged.
+	// to the default branch when the run completed cleanly, used a non-default
+	// base branch, and at least one feature PR was merged.
 	defaultBranch := "main"
-	if cfg.AutoMerge.Rollup != "none" &&
+	var rollupPRNumber int
+	var rollupPRURL string
+	if stats.abortReason == "" &&
+		cfg.AutoMerge.Rollup != "none" &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
 		stats.implemented > 0 {
-		if err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger); err != nil {
+		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger)
+		if err != nil {
 			logger.Warn("rollup PR handling failed", "error", err)
 			fmt.Printf("Rollup PR warning: %v\n", err)
+		} else {
+			rollupPRNumber = prNum
+			rollupPRURL = prURL
 		}
 	}
 
@@ -491,10 +498,12 @@ done:
 	// Finalize run data.
 	if writer != nil {
 		summary := rundata.RunSummary{
-			Total:       stats.implemented + stats.readyToMerge + stats.needsHumanReview + stats.failed,
-			Implemented: stats.implemented,
-			Failed:      stats.failed,
-			AbortReason: stats.abortReason,
+			Total:         stats.implemented + stats.readyToMerge + stats.needsHumanReview + stats.failed,
+			Implemented:   stats.implemented,
+			Failed:        stats.failed,
+			AbortReason:   stats.abortReason,
+			RollupPRNumber: rollupPRNumber,
+			RollupPRURL:   rollupPRURL,
 		}
 		if err := writer.FinalizeRun(summary); err != nil {
 			logger.Warn("failed to finalize run data", "error", err)
@@ -592,7 +601,8 @@ var mergeRollupPRFn = github.MergeRollupPR
 // handleRollupPR creates (and optionally merges) a PR from cfg.BaseBranch
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
 // least one issue was implemented into the base branch during the run.
-func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger) error {
+// Returns the PR number, URL, and any error.
+func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger) (int, string, error) {
 	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
@@ -604,7 +614,7 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 
 	prNum, prURL, err := createRollupPRFn(cfg.Repo, cfg.BaseBranch, defaultBranch, title, body)
 	if err != nil {
-		return fmt.Errorf("creating rollup PR: %w", err)
+		return 0, "", fmt.Errorf("creating rollup PR: %w", err)
 	}
 
 	logger.Info("rollup PR created", "pr_number", prNum, "pr_url", prURL)
@@ -613,25 +623,25 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 	if cfg.AutoMerge.Rollup == "auto" {
 		// Wait for CI checks before merging if configured.
 		if cfg.WaitForChecks != nil {
-			timeout, err := parseDuration(cfg.WaitForChecks.Timeout)
+			timeout, err := time.ParseDuration(cfg.WaitForChecks.Timeout)
 			if err != nil {
-				return fmt.Errorf("parsing wait_for_checks timeout: %w", err)
+				return 0, "", fmt.Errorf("parsing wait_for_checks timeout: %w", err)
 			}
 			failures, err := agent.WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, timeout, logger)
 			if err != nil {
-				return fmt.Errorf("waiting for rollup PR checks: %w", err)
+				return 0, "", fmt.Errorf("waiting for rollup PR checks: %w", err)
 			}
 			if len(failures) > 0 {
 				names := make([]string, len(failures))
 				for i, f := range failures {
 					names[i] = f.Name
 				}
-				return fmt.Errorf("rollup PR checks failed: %s", strings.Join(names, ", "))
+				return 0, "", fmt.Errorf("rollup PR checks failed: %s", strings.Join(names, ", "))
 			}
 		}
 
 		if err := mergeRollupPRFn(cfg.Repo, prNum); err != nil {
-			return fmt.Errorf("merging rollup PR: %w", err)
+			return 0, "", fmt.Errorf("merging rollup PR: %w", err)
 		}
 		logger.Info("rollup PR merged", "pr_number", prNum)
 		fmt.Printf("Rollup PR #%d merged.\n", prNum)
@@ -640,7 +650,7 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 		fmt.Printf("Rollup PR #%d is open for review: %s\n", prNum, prURL)
 	}
 
-	return nil
+	return prNum, prURL, nil
 }
 
 // buildRollupBody composes the markdown body for the rollup PR from the list
@@ -652,12 +662,6 @@ func buildRollupBody(issues []github.Issue) string {
 		fmt.Fprintf(&sb, "- #%d %s\n", iss.Number, iss.Title)
 	}
 	return sb.String()
-}
-
-// parseDuration wraps time.ParseDuration so the orchestrator doesn't need to
-// import "time" solely for this helper.
-func parseDuration(s string) (time.Duration, error) {
-	return time.ParseDuration(s)
 }
 
 // CommandRunner executes a command and returns its combined output.
