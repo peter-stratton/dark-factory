@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
@@ -269,6 +270,10 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		abortReason      string
 	}
 
+	// implementedIssues collects issues successfully merged into the base
+	// branch, used to build the rollup PR body.
+	var implementedIssues []github.Issue
+
 	// Punchlist entries are enriched in the background as each issue completes.
 	var plMu sync.Mutex
 	var plEntries []punchlist.Entry
@@ -364,6 +369,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			switch outcome.Status {
 			case "implemented":
 				stats.implemented++
+				implementedIssues = append(implementedIssues, issue)
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
 				if err := PullAfterMerge(baseBranch, logger); err != nil {
 					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
@@ -460,6 +466,26 @@ done:
 	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
 		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
 
+	// Rollup PR: create (and optionally merge) a PR from the base branch back
+	// to the default branch when the run completed cleanly, used a non-default
+	// base branch, and at least one feature PR was merged.
+	defaultBranch := "main"
+	var rollupPRNumber int
+	var rollupPRURL string
+	if stats.abortReason == "" &&
+		cfg.AutoMerge.Rollup != "none" &&
+		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
+		stats.implemented > 0 {
+		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger)
+		if err != nil {
+			logger.Warn("rollup PR handling failed", "error", err)
+			fmt.Printf("Rollup PR warning: %v\n", err)
+		} else {
+			rollupPRNumber = prNum
+			rollupPRURL = prURL
+		}
+	}
+
 	// Fire abort notification if the run stopped early.
 	if stats.abortReason != "" {
 		notify.Fire(ctx, notifiers, notify.Event{
@@ -472,10 +498,12 @@ done:
 	// Finalize run data.
 	if writer != nil {
 		summary := rundata.RunSummary{
-			Total:       stats.implemented + stats.readyToMerge + stats.needsHumanReview + stats.failed,
-			Implemented: stats.implemented,
-			Failed:      stats.failed,
-			AbortReason: stats.abortReason,
+			Total:         stats.implemented + stats.readyToMerge + stats.needsHumanReview + stats.failed,
+			Implemented:   stats.implemented,
+			Failed:        stats.failed,
+			AbortReason:   stats.abortReason,
+			RollupPRNumber: rollupPRNumber,
+			RollupPRURL:   rollupPRURL,
 		}
 		if err := writer.FinalizeRun(summary); err != nil {
 			logger.Warn("failed to finalize run data", "error", err)
@@ -560,6 +588,80 @@ func dialogueOutcome(e dialogue.Entry) string {
 // newRunDataWriterFn creates a new RunDataWriter. Replaceable for testing.
 var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string) (*rundata.Writer, error) {
 	return rundata.New(repo, milestone, issueNumbers, baseBranch)
+}
+
+// createRollupPRFn creates a rollup PR and returns its number and URL.
+// Replaceable for testing.
+var createRollupPRFn = github.CreateRollupPR
+
+// mergeRollupPRFn merges the rollup PR by number.
+// Replaceable for testing.
+var mergeRollupPRFn = github.MergeRollupPR
+
+// handleRollupPR creates (and optionally merges) a PR from cfg.BaseBranch
+// into defaultBranch. It is called when rollup is "manual" or "auto" and at
+// least one issue was implemented into the base branch during the run.
+// Returns the PR number, URL, and any error.
+func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger) (int, string, error) {
+	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
+	body := buildRollupBody(issues)
+
+	logger.Info("creating rollup PR",
+		"base_branch", cfg.BaseBranch,
+		"default_branch", defaultBranch,
+		"rollup_mode", cfg.AutoMerge.Rollup,
+	)
+
+	prNum, prURL, err := createRollupPRFn(cfg.Repo, cfg.BaseBranch, defaultBranch, title, body)
+	if err != nil {
+		return 0, "", fmt.Errorf("creating rollup PR: %w", err)
+	}
+
+	logger.Info("rollup PR created", "pr_number", prNum, "pr_url", prURL)
+	fmt.Printf("Rollup PR #%d created: %s\n", prNum, prURL)
+
+	if cfg.AutoMerge.Rollup == "auto" {
+		// Wait for CI checks before merging if configured.
+		if cfg.WaitForChecks != nil {
+			timeout, err := time.ParseDuration(cfg.WaitForChecks.Timeout)
+			if err != nil {
+				return 0, "", fmt.Errorf("parsing wait_for_checks timeout: %w", err)
+			}
+			failures, err := agent.WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, timeout, logger)
+			if err != nil {
+				return 0, "", fmt.Errorf("waiting for rollup PR checks: %w", err)
+			}
+			if len(failures) > 0 {
+				names := make([]string, len(failures))
+				for i, f := range failures {
+					names[i] = f.Name
+				}
+				return 0, "", fmt.Errorf("rollup PR checks failed: %s", strings.Join(names, ", "))
+			}
+		}
+
+		if err := mergeRollupPRFn(cfg.Repo, prNum); err != nil {
+			return 0, "", fmt.Errorf("merging rollup PR: %w", err)
+		}
+		logger.Info("rollup PR merged", "pr_number", prNum)
+		fmt.Printf("Rollup PR #%d merged.\n", prNum)
+	} else {
+		logger.Info("rollup PR left open for human review", "pr_number", prNum, "pr_url", prURL)
+		fmt.Printf("Rollup PR #%d is open for review: %s\n", prNum, prURL)
+	}
+
+	return prNum, prURL, nil
+}
+
+// buildRollupBody composes the markdown body for the rollup PR from the list
+// of issues that were implemented during the run.
+func buildRollupBody(issues []github.Issue) string {
+	var sb strings.Builder
+	sb.WriteString("## Implemented issues\n\n")
+	for _, iss := range issues {
+		fmt.Fprintf(&sb, "- #%d %s\n", iss.Number, iss.Title)
+	}
+	return sb.String()
 }
 
 // CommandRunner executes a command and returns its combined output.

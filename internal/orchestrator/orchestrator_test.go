@@ -1295,3 +1295,267 @@ func TestFireNotifications_EventFiltering(t *testing.T) {
 		t.Errorf("abort-only notifier received %d events for abort, want 1", len(inner.received))
 	}
 }
+
+// --- Rollup PR tests ---
+
+// setupRollupMocks adds stubs for createRollupPRFn and mergeRollupPRFn and
+// returns pointers to slices that record each call for inspection.
+func setupRollupMocks(t *testing.T) (created *[]string, merged *[]int) {
+	t.Helper()
+
+	var createdCalls []string
+	var mergedCalls []int
+
+	origCreate := createRollupPRFn
+	t.Cleanup(func() { createRollupPRFn = origCreate })
+	createRollupPRFn = func(repo, baseBranch, defaultBranch, title, body string) (int, string, error) {
+		createdCalls = append(createdCalls, fmt.Sprintf("%s->%s", baseBranch, defaultBranch))
+		return 999, "https://github.com/owner/repo/pull/999", nil
+	}
+
+	origMerge := mergeRollupPRFn
+	t.Cleanup(func() { mergeRollupPRFn = origMerge })
+	mergeRollupPRFn = func(repo string, prNum int) error {
+		mergedCalls = append(mergedCalls, prNum)
+		return nil
+	}
+
+	return &createdCalls, &mergedCalls
+}
+
+func TestRollup_NoneDoesNothing(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	created, merged := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "feature-branch"
+	cfg.AutoMerge.Rollup = "none"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 0 {
+		t.Errorf("rollup: none should not create a PR, got %v", *created)
+	}
+	if len(*merged) != 0 {
+		t.Errorf("rollup: none should not merge a PR, got %v", *merged)
+	}
+}
+
+func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	created, merged := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "feature-branch"
+	cfg.AutoMerge.Rollup = "manual"
+
+	output := captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 1 {
+		t.Fatalf("rollup: manual should create exactly 1 PR, got %d", len(*created))
+	}
+	if (*created)[0] != "feature-branch->main" {
+		t.Errorf("expected rollup PR from feature-branch->main, got %q", (*created)[0])
+	}
+	if len(*merged) != 0 {
+		t.Errorf("rollup: manual should NOT merge the PR, got %v", *merged)
+	}
+	if !strings.Contains(output, "Rollup PR #999") {
+		t.Errorf("expected rollup PR mention in output, got:\n%s", output)
+	}
+}
+
+func TestRollup_AutoCreateAndMerges(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	created, merged := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "feature-branch"
+	cfg.AutoMerge.Rollup = "auto"
+
+	output := captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 1 {
+		t.Fatalf("rollup: auto should create exactly 1 PR, got %d", len(*created))
+	}
+	if len(*merged) != 1 || (*merged)[0] != 999 {
+		t.Errorf("rollup: auto should merge PR #999, got %v", *merged)
+	}
+	if !strings.Contains(output, "Rollup PR #999 merged") {
+		t.Errorf("expected 'Rollup PR #999 merged' in output, got:\n%s", output)
+	}
+}
+
+func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	created, _ := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "" // empty — use default branch
+	cfg.AutoMerge.Rollup = "auto"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 0 {
+		t.Errorf("rollup should be skipped when BaseBranch is empty, got creates: %v", *created)
+	}
+}
+
+func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	created, _ := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "main" // same as default branch
+	cfg.AutoMerge.Rollup = "auto"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 0 {
+		t.Errorf("rollup should be skipped when BaseBranch equals default branch, got creates: %v", *created)
+	}
+}
+
+func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test failure")}
+		})
+
+	created, _ := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "feature-branch"
+	cfg.AutoMerge.Rollup = "auto"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 0 {
+		t.Errorf("rollup should be skipped when no issues implemented, got creates: %v", *created)
+	}
+}
+
+func TestRollup_SkipWhenAborted(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "will merge then abort"},
+	}
+
+	// Process the issue as implemented, but then fail the PullAfterMerge so
+	// the run aborts with stats.implemented == 1.
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	// Override CommandRunner so PullAfterMerge fails, triggering an abort.
+	origCmdRunner := CommandRunner
+	t.Cleanup(func() { CommandRunner = origCmdRunner })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pull" && args[1] == "--rebase" {
+			return nil, fmt.Errorf("pull failed: remote unreachable")
+		}
+		if len(args) >= 1 && args[0] == "status" {
+			return []byte(""), nil
+		}
+		return []byte("ok"), nil
+	}
+
+	created, _ := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.BaseBranch = "feature-branch"
+	cfg.AutoMerge.Rollup = "auto"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 0 {
+		t.Errorf("rollup should be skipped when the run aborted, got creates: %v", *created)
+	}
+}
+
+func TestBuildRollupBody_ListsIssues(t *testing.T) {
+	issues := []github.Issue{
+		{Number: 1, Title: "Add feature A"},
+		{Number: 2, Title: "Fix bug B"},
+	}
+	body := buildRollupBody(issues)
+	if !strings.Contains(body, "#1 Add feature A") {
+		t.Errorf("expected '#1 Add feature A' in body, got:\n%s", body)
+	}
+	if !strings.Contains(body, "#2 Fix bug B") {
+		t.Errorf("expected '#2 Fix bug B' in body, got:\n%s", body)
+	}
+}
