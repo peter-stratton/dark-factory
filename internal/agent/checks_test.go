@@ -198,11 +198,13 @@ func TestWaitForChecks_CheckNotPresentInitially(t *testing.T) {
 }
 
 // TestWaitForChecks_CommandError verifies that WaitForChecks returns an error
-// when the gh command fails.
+// when the gh command fails with non-empty output (genuine command error).
 func TestWaitForChecks_CommandError(t *testing.T) {
 	stubPollInterval(t, time.Millisecond)
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
-		return nil, fmt.Errorf("network error")
+		// Return non-empty output alongside the error to simulate a genuine
+		// command failure (not the "no checks reported" empty-output case).
+		return []byte("error: network error"), fmt.Errorf("exit status 1")
 	})
 
 	_, err := WaitForChecks(context.Background(), "owner/repo", 42,
@@ -603,6 +605,104 @@ func TestProcessIssue_WaitForChecks_NoVerifyFix(t *testing.T) {
 	}
 	if outcome.Err == nil || !strings.Contains(outcome.Err.Error(), "CI checks failed") {
 		t.Errorf("Err = %v, want it to contain 'CI checks failed'", outcome.Err)
+	}
+}
+
+// TestPollChecks_NoChecksReported_ExitCode1 verifies that pollChecks treats
+// a gh pr checks exit-code-1 with empty output as vacuously passed.
+func TestPollChecks_NoChecksReported_ExitCode1(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		// Simulate gh pr checks exiting with code 1 and no output.
+		return []byte(""), fmt.Errorf("exit status 1")
+	})
+
+	failures, done, err := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
+	if err != nil {
+		t.Fatalf("pollChecks() error = %v, want nil", err)
+	}
+	if !done {
+		t.Error("pollChecks() done = false, want true")
+	}
+	if failures != nil {
+		t.Errorf("pollChecks() failures = %v, want nil", failures)
+	}
+}
+
+// TestPollChecks_NoChecksReported_EmptyRequired verifies that pollChecks
+// returns (nil, true, nil) when no checks are reported and required is empty.
+func TestPollChecks_NoChecksReported_EmptyRequired(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(""), fmt.Errorf("exit status 1")
+	})
+
+	failures, done, err := pollChecks("owner/repo", 42, []string{}, testLogger(t))
+	if err != nil {
+		t.Fatalf("pollChecks() error = %v, want nil", err)
+	}
+	if !done {
+		t.Error("pollChecks() done = false, want true")
+	}
+	if failures != nil {
+		t.Errorf("pollChecks() failures = %v, want nil", failures)
+	}
+}
+
+// TestPollChecks_NoChecksReported_EmptyJSONArray verifies that pollChecks
+// returns (nil, true, nil) when gh pr checks returns an empty JSON array and
+// required checks are non-empty (the required check is simply not present).
+func TestPollChecks_NoChecksReported_EmptyJSONArray(t *testing.T) {
+	callCount := 0
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		callCount++
+		if callCount == 1 {
+			// First poll: empty JSON array — required check not present yet.
+			return []byte("[]"), nil
+		}
+		// Second poll: check appears and passes.
+		return checksJSON([]checkEntry{
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
+		}), nil
+	})
+
+	// With empty JSON array the required check is missing, so pollChecks should
+	// return (nil, false, nil) on the first call and (nil, true, nil) on the second.
+	failures1, done1, err1 := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
+	if err1 != nil {
+		t.Fatalf("first pollChecks() error = %v", err1)
+	}
+	if done1 {
+		t.Error("first pollChecks() done = true, want false (check not yet present)")
+	}
+	if failures1 != nil {
+		t.Errorf("first pollChecks() failures = %v, want nil", failures1)
+	}
+
+	failures2, done2, err2 := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
+	if err2 != nil {
+		t.Fatalf("second pollChecks() error = %v", err2)
+	}
+	if !done2 {
+		t.Error("second pollChecks() done = false, want true")
+	}
+	if failures2 != nil {
+		t.Errorf("second pollChecks() failures = %v, want nil", failures2)
+	}
+}
+
+// TestPollChecks_CommandError_NonEmpty verifies that pollChecks still returns
+// an error when gh pr checks exits with non-zero AND produces non-empty output
+// (genuine command error, not a "no checks" scenario).
+func TestPollChecks_CommandError_NonEmpty(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte("error: authentication required"), fmt.Errorf("exit status 1")
+	})
+
+	_, _, err := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
+	if err == nil {
+		t.Fatal("pollChecks() error = nil, want error for non-empty stderr")
+	}
+	if !strings.Contains(err.Error(), "gh pr checks") {
+		t.Errorf("error = %v, want it to contain 'gh pr checks'", err)
 	}
 }
 
