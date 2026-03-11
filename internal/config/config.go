@@ -323,7 +323,7 @@ func validate(cfg *Config) error {
 	default:
 		return fmt.Errorf("auto_merge.rollup must be \"none\", \"manual\", or \"auto\", got %q", cfg.AutoMerge.Rollup)
 	}
-	if err := validateModules(cfg.Modules); err != nil {
+if err := validateModules(cfg.Modules); err != nil {
 		return err
 	}
 	if err := validateWaitForChecks(cfg.WaitForChecks); err != nil {
