@@ -106,7 +106,6 @@ func createRollupPR(ctx context.Context, cfg *config.Config, issues []implemente
 		fmt.Sprintf("%d", result.PRNumber),
 		"--repo", cfg.Repo,
 		"--squash",
-		"--delete-branch",
 	); err != nil {
 		return result, fmt.Errorf("merging rollup PR #%d: %w", result.PRNumber, err)
 	}
