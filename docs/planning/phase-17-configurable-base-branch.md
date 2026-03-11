@@ -156,8 +156,9 @@ through, falling back to `"main"` when empty.
 Additionally, add an `EnsureBaseBranch` function that checks whether the
 configured base branch exists on the remote before the run begins. If it does
 not exist, create it from the repo's default branch. This lets users kick off
-a `godark run --base-branch feature/phase-17` without manually creating the
-branch first.
+a `godark run --base-branch feature/phase-17` or
+`godark implement --base-branch feature/phase-17 --issue 42` without manually
+creating the branch first.
 
 ### Key constraints
 
@@ -173,6 +174,7 @@ branch first.
       `git push origin HEAD:refs/heads/<branch>`
     - Log what it does (created vs. already exists)
 - Modify `internal/cmd/implement.go`:
+  - Call `EnsureBaseBranch` before processing issues
   - Pass `cfg.BaseBranch` (or `"main"` if empty) to `PullAfterMerge`
 - Modify `internal/cmd/run.go`:
   - Call `EnsureBaseBranch` before processing issues
