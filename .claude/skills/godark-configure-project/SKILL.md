@@ -26,15 +26,16 @@ findings for user confirmation before writing.
      `node_modules/` directories)
 
    For each module found, note its directory path relative to the project
-   root. If more than one module is found, prepare a `modules:` list with
-   per-module entries. For each module, propose:
-   - `path:` — the directory containing the module definition file
+   root. If more than one module is found, prepare a `modules:` map keyed
+   by module name (typically the directory path). For each module, propose:
    - `build_command:` — language-appropriate default (e.g. `go build ./...`,
      `flutter build`, `npm run build`)
    - `test_command:` — language-appropriate default (e.g. `go test ./...`,
      `flutter test`, `npm test`)
-   - `depends_on:` — list of other module paths this module imports; leave
-     empty if unknown
+   - `lint_command:` — language-appropriate linter (optional, omit if unknown)
+   - `generate_command:` — per-module codegen command (optional, omit if none)
+   - `depends_on:` — list of other module names this module imports; omit
+     if none
 
 3. **Detect code generation configuration** — Search for codegen config files
    and patterns that indicate generated code:
@@ -103,23 +104,40 @@ findings for user confirmation before writing.
    - Preserve existing comments and formatting.
    - If the user skipped a section, do not write those fields.
 
+## Schema
+
+The full JSON Schema for `godark.yaml` is in
+`godark-config-schema.json` (sibling of this file). **Always consult the
+schema before generating YAML** to verify field names, types, and nesting.
+
+Key points the schema enforces:
+- `modules` is a **map** (object), NOT a list. Keys are module names
+  (typically directory paths); values are Module objects.
+- `generate_command` is a **single string**, not a structured object.
+  Chain multiple commands with `&&`.
+- `Module` fields: `build_command`, `test_command`, `lint_command`,
+  `generate_command` (all strings), `depends_on` (array of strings).
+  All optional.
+
 ## Format
 
-The `godark.yaml` fields this skill populates follow this structure:
+Example of correct `godark.yaml` output for the fields this skill populates:
 
 ```yaml
+# Multi-module: keys are directory paths, values are Module objects
 modules:
-  - path: services/api
+  services/api:
     build_command: go build ./...
     test_command: go test ./...
-    depends_on: []
-  - path: services/worker
+  services/worker:
     build_command: go build ./...
     test_command: go test ./...
+    generate_command: "sqlc generate"
     depends_on:
       - services/api
 
-generate_command: go generate ./...
+# Top-level codegen (alternative to per-module generate_command)
+generate_command: "cd services/api && go generate ./... && cd ../worker && sqlc generate"
 generated_paths:
   - internal/db/generated/
   - internal/mocks/
