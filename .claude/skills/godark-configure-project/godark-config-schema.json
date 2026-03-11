@@ -16,6 +16,10 @@
       "type": "string",
       "description": "Go duration format (e.g. '30m', '1h')"
     },
+    "format_command": {
+      "type": "string",
+      "description": "Top-level format command (e.g. 'gofmt -l -w .', 'prettier --write .')"
+    },
     "build_command": {
       "type": "string",
       "description": "Top-level build command (single-module mode)"
@@ -199,6 +203,7 @@
       "type": "object",
       "description": "Per-module build/test/lint/generate commands. All fields are optional.",
       "properties": {
+        "format_command": { "type": "string" },
         "build_command": { "type": "string" },
         "test_command": { "type": "string" },
         "lint_command": { "type": "string" },

@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
 )
+
+// safeElixirVersion matches version strings containing only alphanumerics and
+// version-constraint characters (e.g. "~>1.14.3", "1.14.3-rc.1+build").
+var safeElixirVersion = regexp.MustCompile(`^[a-zA-Z0-9.~+\-><=]*$`)
 
 var dockerfileTmpl = template.Must(template.New("Dockerfile").Parse(`FROM {{.Image}}
 
@@ -104,13 +109,13 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 	switch runtimeName {
 	case "go":
 		if runtimeVersion == "" {
-			return "", fmt.Errorf("Go runtime requires a version (Runtime.Version must be set)")
+			return "", fmt.Errorf("go runtime requires a version (Runtime.Version must be set)")
 		}
 		// Go download URLs require a full major.minor.patch version (e.g. "1.25.4").
 		// A version like "1.25" produces a 404 on go.dev/dl.
 		parts := strings.Split(runtimeVersion, ".")
 		if len(parts) < 3 {
-			return "", fmt.Errorf("Go runtime.version %q must include a patch component (e.g. %s.0)", runtimeVersion, runtimeVersion)
+			return "", fmt.Errorf("go runtime.version %q must include a patch component (e.g. %s.0)", runtimeVersion, runtimeVersion)
 		}
 	case "flutter":
 		// pubspec.yaml's environment.sdk is a Dart SDK constraint (e.g.
@@ -128,11 +133,8 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		// Enforce an allowlist for the version to prevent apt package injection.
 		// The version is embedded in a quoted apt package spec (e.g. "elixir=1.14.3*"),
 		// so characters like `"`, `$`, and backtick could break out of the argument.
-		if strings.IndexFunc(runtimeVersion, func(c rune) bool {
-			return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-				c == '.' || c == '~' || c == '+' || c == '-' || c == '>' || c == '<' || c == '=')
-		}) >= 0 {
-			return "", fmt.Errorf("Runtime.Version contains invalid character for Elixir: %q", runtimeVersion)
+		if !safeElixirVersion.MatchString(runtimeVersion) {
+			return "", fmt.Errorf("runtime.version contains invalid character for Elixir: %q", runtimeVersion)
 		}
 	case "node", "rust", "python", "":
 		// no validation needed

@@ -785,8 +785,8 @@ func TestServer_IssueDetail_ToolTraceSection(t *testing.T) {
 		rundata.Outcome{IssueNumber: 6, Status: "implemented"})
 	writeJSON(t, filepath.Join(issueDir, "functional-review.json"),
 		rundata.StepResult{
-			Output:    "REVIEW_RESULT=APPROVED",
-			ToolTrace: []string{"Read src/main.go", "Write tests/review/test_main.go", "go test ./..."},
+			Output:          "REVIEW_RESULT=APPROVED",
+			ToolTrace:       []string{"Read src/main.go", "Write tests/review/test_main.go", "go test ./..."},
 			DurationSeconds: 15,
 		})
 

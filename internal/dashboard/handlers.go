@@ -672,7 +672,7 @@ func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
 		if !c.Passed {
 			status = "FAIL"
 		}
-		sb.WriteString(fmt.Sprintf("**%s**: %s (exit code %d)\n", c.Name, status, c.ExitCode))
+		fmt.Fprintf(&sb, "**%s**: %s (exit code %d)\n", c.Name, status, c.ExitCode)
 		if c.Output != "" && !c.Passed {
 			sb.WriteString("```\n")
 			sb.WriteString(c.Output)

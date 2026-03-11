@@ -56,9 +56,9 @@ func TestTopologicalSortModules_DependencyOrder(t *testing.T) {
 func TestTopologicalSortModules_NoDependenciesAlphaOrder(t *testing.T) {
 	// Modules without dependencies should be sorted alphabetically.
 	modules := map[string]config.Module{
-		"zebra":   {},
-		"alpha":   {},
-		"middle":  {},
+		"zebra":  {},
+		"alpha":  {},
+		"middle": {},
 	}
 	result, err := topologicalSortModules(modules)
 	if err != nil {

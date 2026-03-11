@@ -24,8 +24,8 @@ type RetryDetail struct {
 type IssueDetail struct {
 	IssueNumber      int
 	Outcome          Outcome
-	LiveStatus       IssueStatus  // from status.json; empty Status if not present
-	BlockedBy        []int        // open (not-yet-completed) dependencies; derived by LoadRun
+	LiveStatus       IssueStatus // from status.json; empty Status if not present
+	BlockedBy        []int       // open (not-yet-completed) dependencies; derived by LoadRun
 	SpecGenerator    StepResult
 	Implement        StepResult
 	QualityReview    StepResult

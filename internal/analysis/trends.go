@@ -10,11 +10,11 @@ import (
 // TrendPoint represents one data point in a time series, corresponding
 // to a single run.
 type TrendPoint struct {
-	Timestamp    time.Time `json:"timestamp"`
-	Repo         string    `json:"repo"`
-	Milestone    string    `json:"milestone"`
-	IssueCount   int       `json:"issue_count"`
-	SuccessRate        float64   `json:"success_rate"`  // 0.0–1.0
+	Timestamp          time.Time `json:"timestamp"`
+	Repo               string    `json:"repo"`
+	Milestone          string    `json:"milestone"`
+	IssueCount         int       `json:"issue_count"`
+	SuccessRate        float64   `json:"success_rate"` // 0.0–1.0
 	AvgRetries         float64   `json:"avg_retries"`
 	TotalCostUSD       float64   `json:"total_cost_usd"`
 	AvgCostPerIssueUSD float64   `json:"avg_cost_per_issue_usd"`

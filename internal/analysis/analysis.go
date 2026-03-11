@@ -8,13 +8,13 @@ import (
 
 // Report holds aggregate statistics computed across multiple runs.
 type Report struct {
-	RunCount        int              `json:"run_count"`
-	IssueCount      int              `json:"issue_count"`
-	Outcomes        map[string]int   `json:"outcomes"`
-	FlagFrequencies []FlagFrequency  `json:"flag_frequencies"`
-	RetryStats      RetryStats       `json:"retry_stats"`
-	VerifyStats     map[string]int   `json:"verify_stats"`
-	CostStats       CostStats        `json:"cost_stats"`
+	RunCount        int             `json:"run_count"`
+	IssueCount      int             `json:"issue_count"`
+	Outcomes        map[string]int  `json:"outcomes"`
+	FlagFrequencies []FlagFrequency `json:"flag_frequencies"`
+	RetryStats      RetryStats      `json:"retry_stats"`
+	VerifyStats     map[string]int  `json:"verify_stats"`
+	CostStats       CostStats       `json:"cost_stats"`
 }
 
 // FlagFrequency records how often a quality flag code appears across all issues.

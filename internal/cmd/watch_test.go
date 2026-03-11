@@ -43,7 +43,9 @@ func stubWatchSeams(t *testing.T) {
 		return &agent.Result{SessionID: "sess-stub"}, nil
 	}
 	watchFindSessionIDFn = func(_ string, _ int) (string, error) { return "", nil }
-	watchNewWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string) (*rundata.Writer, error) { return nil, nil }
+	watchNewWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string) (*rundata.Writer, error) {
+		return nil, nil
+	}
 	watchFetchReviewCommentsFn = func(_ string, _ int, _ int) ([]string, error) { return nil, nil }
 	watchFetchIssueFn = func(_ string, _ int) (github.Issue, error) {
 		return github.Issue{Number: 42, Title: "test issue"}, nil
@@ -631,7 +633,7 @@ func TestIssueNumberFromBranch(t *testing.T) {
 		{"249-human-feedback-agent-resumption", 249},
 		{"42-fix-bug", 42},
 		{"1-init", 1},
-		{"no-dash", 0},  // leading segment is not a number
+		{"no-dash", 0}, // leading segment is not a number
 		{"", 0},
 		{"abc-def", 0},
 	}

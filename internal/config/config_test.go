@@ -277,7 +277,6 @@ func TestInvalidYAML(t *testing.T) {
 	}
 }
 
-
 func TestNoSandboxDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `

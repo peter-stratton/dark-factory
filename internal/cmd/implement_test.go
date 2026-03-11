@@ -198,14 +198,14 @@ func TestCollectIssueNumbers(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name:    "single positional arg",
-			args:    []string{"160"},
-			want:    []int{160},
+			name: "single positional arg",
+			args: []string{"160"},
+			want: []int{160},
 		},
 		{
-			name:    "multiple positional args",
-			args:    []string{"160", "161", "162"},
-			want:    []int{160, 161, 162},
+			name: "multiple positional args",
+			args: []string{"160", "161", "162"},
+			want: []int{160, 161, 162},
 		},
 		{
 			name:       "issues flag only",

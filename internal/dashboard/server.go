@@ -91,7 +91,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	s.cfg.Logger.Info("dashboard server started", "url", url)
 	go BrowserOpener(url)
 
-	srv := &http.Server{Handler: s.mux}
+	srv := &http.Server{Handler: s.mux, ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan error, 1)
 	go func() {
 		done <- srv.Serve(ln)
