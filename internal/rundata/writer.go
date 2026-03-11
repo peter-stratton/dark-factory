@@ -9,11 +9,22 @@ import (
 	"time"
 )
 
+// AutoMerge holds the auto-merge strategy settings recorded at run start.
+type AutoMerge struct {
+	// Feature controls merging of the feature branch into the base branch.
+	// Valid values: "none", "low_risk", "all".
+	Feature string `json:"feature"`
+	// Rollup controls what happens to the base branch → default branch after
+	// a run completes. Valid values: "none", "manual", "auto".
+	Rollup string `json:"rollup"`
+}
+
 // RunMeta is the structure persisted to run.json.
 type RunMeta struct {
 	Repo         string      `json:"repo"`
 	Milestone    string      `json:"milestone"`
 	BaseBranch   string      `json:"base_branch,omitempty"`
+	AutoMerge    *AutoMerge  `json:"auto_merge,omitempty"`
 	IssueNumbers []int       `json:"issue_numbers"`
 	IssueDeps    []IssueDep  `json:"issue_deps,omitempty"`
 	StartedAt    time.Time   `json:"started_at"`
@@ -84,17 +95,17 @@ type Writer struct {
 // directory under ~/.godark/runs/<owner>/<repo>/<YYYYMMDD-HHMMSS>/ and writes
 // an initial run.json. Repo must be in "owner/name" format; components
 // containing ".." or path separators are rejected.
-func New(repo, milestone string, issueNumbers []int, baseBranch string) (*Writer, error) {
+func New(repo, milestone string, issueNumbers []int, baseBranch string, autoMerge AutoMerge) (*Writer, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting home dir: %w", err)
 	}
-	return NewWithBase(filepath.Join(home, ".godark", "runs"), repo, milestone, issueNumbers, baseBranch)
+	return NewWithBase(filepath.Join(home, ".godark", "runs"), repo, milestone, issueNumbers, baseBranch, autoMerge)
 }
 
 // NewWithBase creates a new Writer using a custom base directory instead of
 // the default ~/.godark/runs/. Intended for testing.
-func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch string) (*Writer, error) {
+func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch string, autoMerge AutoMerge) (*Writer, error) {
 	owner, repoName, err := validateRepo(repo)
 	if err != nil {
 		return nil, err
@@ -115,10 +126,16 @@ func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch
 		startedAt: now,
 	}
 
+	var autoMergePtr *AutoMerge
+	if autoMerge.Feature != "" || autoMerge.Rollup != "" {
+		cp := autoMerge
+		autoMergePtr = &cp
+	}
 	meta := RunMeta{
 		Repo:         repo,
 		Milestone:    milestone,
 		BaseBranch:   baseBranch,
+		AutoMerge:    autoMergePtr,
 		IssueNumbers: issueNumbers,
 		StartedAt:    now,
 	}
