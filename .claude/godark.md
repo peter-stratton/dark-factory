@@ -46,7 +46,8 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 |-------|---------|---------|
 | `max_retries` | Review/fix cycles before escalating to human | `3` |
 | `agent_timeout` | Max wall-clock time per agent run | `30m` |
-| `auto_merge` | Merge strategy after approval: `none`, `low_risk`, `all` | `none` |
+| `auto_merge.feature` | Merge strategy for feature PRs into base branch: `none`, `low_risk`, `all` | `none` |
+| `auto_merge.rollup` | Merge strategy for base branch into main: `none`, `manual`, `auto` | `none` |
 | `no_sandbox` | Run agents on host instead of Docker | `false` |
 
 ### Paths and constraints

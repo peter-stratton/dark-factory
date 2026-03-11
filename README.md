@@ -510,7 +510,9 @@ repo: owner/repo
 max_retries: 3            # review/fix cycles before escalating (default 3)
 agent_timeout: "30m"      # max wall-clock time per agent run
 no_sandbox: false         # run agents on host instead of Docker
-auto_merge: "none"        # merge strategy: none, low_risk, all
+auto_merge:               # two-tier merge config
+  feature: "none"         #   feature PRs → base branch: none, low_risk, all
+  rollup: "none"          #   base branch → main: none, manual, auto
 quality_strictness_decay: true  # use diminishing strictness on quality review retries
 auth_preference: ""       # force "oauth" or "api_key" (auto-detected if empty)
 
@@ -605,6 +607,22 @@ notify: []
   #     bot_token: "${TELEGRAM_BOT_TOKEN}"
   #     chat_id: "${TELEGRAM_CHAT_ID}"
 ```
+
+### `auto_merge` rollup modes
+
+The `rollup` field controls what godark does with the base branch after all
+feature PRs in a run are merged into it. This is the second tier of the
+two-tier merge model:
+
+| Mode | Feature PRs → base branch | Base branch → main |
+|------|---------------------------|-------------------|
+| `none` | godark merges | human does everything (inspects branch, opens PR manually) |
+| `manual` | godark merges | godark opens PR, human reviews and merges |
+| `auto` | godark merges | godark opens PR and merges |
+
+The `feature` field controls how individual feature PRs are merged into the
+base branch. It accepts the same values as the old flat `auto_merge` string:
+`none`, `low_risk`, or `all`.
 
 ## Phase overviews
 

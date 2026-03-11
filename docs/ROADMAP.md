@@ -810,6 +810,11 @@ a parent feature branch, then submit the parent for human review.
   of hardcoded `origin main`
 - Track base branch in run data for audit trail
 - Surface base branch name in the status dashboard on run detail pages
+- Structured `auto_merge` config with two-tier model: `feature` (controls how
+  feature PRs merge into the base branch: `none`, `low_risk`, `all`) and
+  `rollup` (controls how the base branch merges into main: `none` — human does
+  everything, `manual` — godark opens PR, human merges, `auto` — godark opens
+  PR and merges)
 
 **Issues**: #311-#316
 
