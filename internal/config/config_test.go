@@ -1670,3 +1670,4 @@ claude_flags: ["-v"]
 		t.Errorf("unexpected error loading config with legacy claude_flags: %v", err)
 	}
 }
+
