@@ -257,11 +257,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		hook = writer
 	}
 
-	// Compute effective base branch, defaulting to "main" when empty.
-	baseBranch := cfg.BaseBranch
-	if baseBranch == "" {
-		baseBranch = "main"
-	}
+	baseBranch := cfg.EffectiveBaseBranch()
 
 	// Track stats across all waves.
 	var stats struct {
@@ -586,7 +582,8 @@ func PullAfterMerge(branch string, logger *slog.Logger) error {
 	}
 
 	if dirty := strings.TrimSpace(string(out)); dirty != "" {
-		logger.Warn(fmt.Sprintf("local repo has uncommitted changes — commit your changes then run: git pull --rebase origin %s", branch),
+		logger.Warn("local repo has uncommitted changes — commit your changes then pull",
+			"branch", branch,
 			"dirty_files", dirty,
 		)
 		return fmt.Errorf("local repo is dirty, cannot pull after merge")

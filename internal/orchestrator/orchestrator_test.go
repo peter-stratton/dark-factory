@@ -79,6 +79,19 @@ func testConfig() *config.Config {
 	}
 }
 
+// recordingHandler is a slog.Handler that captures all log records in memory.
+type recordingHandler struct {
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	return nil
+}
+func (h *recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(_ string) slog.Handler      { return h }
+
 func testLogger(t *testing.T) *slog.Logger {
 	t.Helper()
 	dir := t.TempDir()
@@ -959,12 +972,31 @@ func TestPullAfterMerge_DirtyRepoWarning(t *testing.T) {
 		return []byte(" M some-file.go\n"), nil
 	}
 
-	err := PullAfterMerge("feature/xyz", testLogger(t))
+	h := &recordingHandler{}
+	err := PullAfterMerge("feature/xyz", slog.New(h))
 	if err == nil {
 		t.Fatal("expected error for dirty repo")
 	}
 	if !strings.Contains(err.Error(), "dirty") {
 		t.Errorf("expected 'dirty' in error, got: %v", err)
+	}
+
+	// Verify the warning carries "branch" as a structured attribute.
+	var foundBranch bool
+	for _, rec := range h.records {
+		if rec.Level != slog.LevelWarn {
+			continue
+		}
+		rec.Attrs(func(a slog.Attr) bool {
+			if a.Key == "branch" && a.Value.String() == "feature/xyz" {
+				foundBranch = true
+				return false
+			}
+			return true
+		})
+	}
+	if !foundBranch {
+		t.Error("expected warning to include branch=feature/xyz structured attribute")
 	}
 }
 

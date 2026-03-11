@@ -210,6 +210,14 @@ type CLIFlags struct {
 	Config     string
 }
 
+// EffectiveBaseBranch returns BaseBranch, defaulting to "main" when empty.
+func (c *Config) EffectiveBaseBranch() string {
+	if c.BaseBranch == "" {
+		return "main"
+	}
+	return c.BaseBranch
+}
+
 // Load reads a YAML config file at path and merges CLI flag overrides.
 // A missing config file is not an error if all required values come from flags.
 func Load(path string, flags CLIFlags) (*Config, error) {

@@ -219,11 +219,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			case "implemented":
 				implemented++
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-				branch := cfg.BaseBranch
-				if branch == "" {
-					branch = "main"
-				}
-				if err := orchestrator.PullAfterMerge(branch, logger); err != nil {
+				if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
 					logger.Warn("could not sync local repo after merge", "error", err)
 				}
 			case "ready-to-merge":
