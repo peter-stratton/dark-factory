@@ -75,7 +75,7 @@ func TestNoSandboxFlagOverridesConfig(t *testing.T) {
 }
 
 func TestAutoMergeFlagParsing(t *testing.T) {
-	// The --auto-merge flag should be registered on both run and implement commands,
+	// The --auto-merge-feature flag should be registered on both run and implement commands,
 	// and default to "none".
 	for _, tc := range []struct {
 		name string
@@ -85,12 +85,34 @@ func TestAutoMergeFlagParsing(t *testing.T) {
 		{"implement", implementCmd},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := tc.cmd.Flags().Lookup("auto-merge")
+			f := tc.cmd.Flags().Lookup("auto-merge-feature")
 			if f == nil {
-				t.Fatalf("%s command missing --auto-merge flag", tc.name)
+				t.Fatalf("%s command missing --auto-merge-feature flag", tc.name)
 			}
 			if f.DefValue != "none" {
-				t.Errorf("auto-merge default = %q, want %q", f.DefValue, "none")
+				t.Errorf("auto-merge-feature default = %q, want %q", f.DefValue, "none")
+			}
+		})
+	}
+}
+
+func TestAutoMergeRollupFlagParsing(t *testing.T) {
+	// The --auto-merge-rollup flag should be registered on both run and implement commands,
+	// and default to "none".
+	for _, tc := range []struct {
+		name string
+		cmd  *cobra.Command
+	}{
+		{"run", runCmd},
+		{"implement", implementCmd},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := tc.cmd.Flags().Lookup("auto-merge-rollup")
+			if f == nil {
+				t.Fatalf("%s command missing --auto-merge-rollup flag", tc.name)
+			}
+			if f.DefValue != "none" {
+				t.Errorf("auto-merge-rollup default = %q, want %q", f.DefValue, "none")
 			}
 		})
 	}
@@ -99,7 +121,7 @@ func TestAutoMergeFlagParsing(t *testing.T) {
 func TestAutoMergeConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
-	err := os.WriteFile(p, []byte("repo: owner/repo\nauto_merge: all\n"), 0o644)
+	err := os.WriteFile(p, []byte("repo: owner/repo\nauto_merge:\n  feature: all\n  rollup: manual\n"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,8 +130,11 @@ func TestAutoMergeConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.AutoMerge != "all" {
-		t.Errorf("AutoMerge = %q, want %q from config file", cfg.AutoMerge, "all")
+	if cfg.AutoMerge.Feature != "all" {
+		t.Errorf("AutoMerge.Feature = %q, want %q from config file", cfg.AutoMerge.Feature, "all")
+	}
+	if cfg.AutoMerge.Rollup != "manual" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q from config file", cfg.AutoMerge.Rollup, "manual")
 	}
 }
 
@@ -125,26 +150,33 @@ func TestAutoMergeDefaultNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.AutoMerge != "none" {
-		t.Errorf("AutoMerge = %q, want %q by default", cfg.AutoMerge, "none")
+	if cfg.AutoMerge.Feature != "none" {
+		t.Errorf("AutoMerge.Feature = %q, want %q by default", cfg.AutoMerge.Feature, "none")
+	}
+	if cfg.AutoMerge.Rollup != "none" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q by default", cfg.AutoMerge.Rollup, "none")
 	}
 }
 
 func TestAutoMergeFlagOverridesConfig(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
-	err := os.WriteFile(p, []byte("repo: owner/repo\nauto_merge: none\n"), 0o644)
+	err := os.WriteFile(p, []byte("repo: owner/repo\nauto_merge:\n  feature: none\n  rollup: none\n"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	v := "all"
-	cfg, err := config.Load(p, config.CLIFlags{AutoMerge: &v})
+	feat := "all"
+	rollup := "auto"
+	cfg, err := config.Load(p, config.CLIFlags{AutoMergeFeature: &feat, AutoMergeRollup: &rollup})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.AutoMerge != "all" {
-		t.Errorf("AutoMerge = %q, want %q (flag should override config)", cfg.AutoMerge, "all")
+	if cfg.AutoMerge.Feature != "all" {
+		t.Errorf("AutoMerge.Feature = %q, want %q (flag should override config)", cfg.AutoMerge.Feature, "all")
+	}
+	if cfg.AutoMerge.Rollup != "auto" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q (flag should override config)", cfg.AutoMerge.Rollup, "auto")
 	}
 }
 
