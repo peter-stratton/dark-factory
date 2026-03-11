@@ -1546,6 +1546,72 @@ func TestNotifyMissingEnvVarResolvesToEmpty(t *testing.T) {
 	}
 }
 
+// --- BaseBranch tests ---
+
+func TestBaseBranchDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BaseBranch != "" {
+		t.Errorf("BaseBranch = %q, want empty string", cfg.BaseBranch)
+	}
+}
+
+func TestBaseBranchFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+base_branch: my-feature
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BaseBranch != "my-feature" {
+		t.Errorf("BaseBranch = %q, want %q", cfg.BaseBranch, "my-feature")
+	}
+}
+
+func TestBaseBranchFlagOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+base_branch: yaml-branch
+`)
+
+	v := "flag-branch"
+	cfg, err := Load(path, CLIFlags{BaseBranch: &v})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BaseBranch != "flag-branch" {
+		t.Errorf("BaseBranch = %q, want %q (flag should override)", cfg.BaseBranch, "flag-branch")
+	}
+}
+
+func TestBaseBranchFlagNotSetPreservesYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+base_branch: yaml-branch
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BaseBranch != "yaml-branch" {
+		t.Errorf("BaseBranch = %q, want %q (YAML value should be preserved)", cfg.BaseBranch, "yaml-branch")
+	}
+}
+
 // TestClaudeFlagsIgnored verifies that a YAML file containing the legacy
 // claude_flags field loads without error. The field is silently ignored for
 // backward compatibility.
