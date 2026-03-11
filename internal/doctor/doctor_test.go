@@ -50,7 +50,7 @@ func TestRun_AllPass(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	checks := Checks("go")
+	checks := Checks("go", "")
 	passed := Run(&buf, checks)
 
 	if !passed {
@@ -83,7 +83,7 @@ func TestRun_SomeFail(t *testing.T) {
 	EnvLookup = func(key string) string { return "" } // API key missing
 
 	var buf bytes.Buffer
-	checks := Checks("") // no runtime check
+	checks := Checks("", "") // no runtime check, no lint command
 	passed := Run(&buf, checks)
 
 	if passed {
@@ -117,7 +117,7 @@ func TestRun_NoShortCircuit(t *testing.T) {
 	EnvLookup = func(key string) string { return "" }
 
 	var buf bytes.Buffer
-	checks := Checks("go")
+	checks := Checks("go", "")
 	passed := Run(&buf, checks)
 
 	if passed {
@@ -133,7 +133,7 @@ func TestRun_NoShortCircuit(t *testing.T) {
 func TestChecks_WithRuntime(t *testing.T) {
 	runtimes := []string{"go", "flutter", "node", "rust", "elixir", "python"}
 	for _, rt := range runtimes {
-		checks := Checks(rt)
+		checks := Checks(rt, "")
 		// With a runtime we expect 6 checks (4 base + runtime toolchain + python3).
 		if len(checks) != 6 {
 			t.Errorf("runtime=%s: expected 6 checks, got %d", rt, len(checks))
@@ -152,7 +152,7 @@ func TestChecks_WithRuntime(t *testing.T) {
 }
 
 func TestChecks_NoRuntime(t *testing.T) {
-	checks := Checks("")
+	checks := Checks("", "")
 	// Without a runtime: 5 checks (4 base + python3).
 	if len(checks) != 5 {
 		t.Errorf("expected 5 checks without runtime, got %d", len(checks))
@@ -160,10 +160,108 @@ func TestChecks_NoRuntime(t *testing.T) {
 }
 
 func TestChecks_UnknownRuntime(t *testing.T) {
-	checks := Checks("cobol")
+	checks := Checks("cobol", "")
 	// Unknown runtime falls back to 5 checks (no toolchain check added).
 	if len(checks) != 5 {
 		t.Errorf("expected 5 checks for unknown runtime, got %d", len(checks))
+	}
+}
+
+func TestChecks_GolangciLint_Included(t *testing.T) {
+	checks := Checks("", "golangci-lint run ./...")
+	// With golangci-lint in lint_command: 6 checks (5 base + golangci-lint).
+	if len(checks) != 6 {
+		t.Errorf("expected 6 checks with golangci-lint lint_command, got %d", len(checks))
+	}
+	found := false
+	for _, c := range checks {
+		if c.Name == "golangci-lint installed" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected golangci-lint check to be included")
+	}
+}
+
+func TestChecks_GolangciLint_NotIncluded(t *testing.T) {
+	checks := Checks("", "staticcheck ./...")
+	// Without golangci-lint in lint_command: 5 checks (no golangci-lint check).
+	if len(checks) != 5 {
+		t.Errorf("expected 5 checks without golangci-lint lint_command, got %d", len(checks))
+	}
+}
+
+func TestRun_GolangciLint_Pass(t *testing.T) {
+	orig := CommandRunner
+	origEnv := EnvLookup
+	defer func() {
+		CommandRunner = orig
+		EnvLookup = origEnv
+	}()
+
+	CommandRunner = stubRunner(
+		"docker info",
+		"gh --version",
+		"gh auth",
+		"python3 --version",
+		"golangci-lint --version",
+	)
+	EnvLookup = func(key string) string {
+		if key == "ANTHROPIC_API_KEY" {
+			return "sk-test"
+		}
+		return ""
+	}
+
+	var buf bytes.Buffer
+	checks := Checks("", "golangci-lint run ./...")
+	passed := Run(&buf, checks)
+
+	if !passed {
+		t.Errorf("expected all checks to pass, output:\n%s", buf.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[PASS] golangci-lint installed") {
+		t.Errorf("expected golangci-lint PASS in output:\n%s", out)
+	}
+}
+
+func TestRun_GolangciLint_Fail(t *testing.T) {
+	orig := CommandRunner
+	origEnv := EnvLookup
+	defer func() {
+		CommandRunner = orig
+		EnvLookup = origEnv
+	}()
+
+	// golangci-lint is not in the pass set — it will fail.
+	CommandRunner = stubRunner(
+		"docker info",
+		"gh --version",
+		"gh auth",
+		"python3 --version",
+	)
+	EnvLookup = func(key string) string {
+		if key == "ANTHROPIC_API_KEY" {
+			return "sk-test"
+		}
+		return ""
+	}
+
+	var buf bytes.Buffer
+	checks := Checks("", "golangci-lint run ./...")
+	passed := Run(&buf, checks)
+
+	if passed {
+		t.Error("expected Run to return false when golangci-lint is missing")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[FAIL] golangci-lint installed") {
+		t.Errorf("expected golangci-lint FAIL in output:\n%s", out)
+	}
+	if !strings.Contains(out, "brew install golangci-lint") {
+		t.Errorf("expected brew install hint in fix message:\n%s", out)
 	}
 }
 
