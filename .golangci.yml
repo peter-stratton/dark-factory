@@ -5,6 +5,7 @@ linters:
     - gosec
     - cyclop
     - funlen
+    - misspell
   settings:
     cyclop:
       max-complexity: 18
