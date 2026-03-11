@@ -43,6 +43,10 @@ each unblocked issue through the implement → review → merge loop.`,
 			v, _ := cmd.Flags().GetString("auto-merge")
 			flags.AutoMerge = &v
 		}
+		if cmd.Flags().Changed("base-branch") {
+			v, _ := cmd.Flags().GetString("base-branch")
+			flags.BaseBranch = &v
+		}
 
 		// Parse milestone/issue locally — these are per-run params, not config.
 		var milestone string
@@ -133,6 +137,7 @@ func init() {
 	f.String("auto-merge", "none", "Merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
 	f.String("config", "godark.yaml", "Path to configuration file")
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
+	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
 
 	rootCmd.AddCommand(runCmd)
 }

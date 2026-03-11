@@ -61,6 +61,10 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			v, _ := cmd.Flags().GetString("auto-merge")
 			flags.AutoMerge = &v
 		}
+		if cmd.Flags().Changed("base-branch") {
+			v, _ := cmd.Flags().GetString("base-branch")
+			flags.BaseBranch = &v
+		}
 
 		cfg, err := config.Load(configPath, flags)
 		if err != nil {
@@ -390,6 +394,7 @@ func init() {
 	f.String("config", "godark.yaml", "Path to configuration file")
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 	f.String("issues", "", "Comma-separated list of issue numbers (e.g. 160,161,162)")
+	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
 
 	rootCmd.AddCommand(implementCmd)
 }

@@ -137,8 +137,9 @@ type Config struct {
 
 	NoSandbox              bool   `yaml:"no_sandbox"`
 	AutoMerge              string `yaml:"auto_merge"`
+	BaseBranch             string `yaml:"base_branch"`
 	QualityStrictnessDecay bool   `yaml:"quality_strictness_decay"`
-	EnforceArchitecture    bool `yaml:"enforce_architecture"`
+	EnforceArchitecture    bool   `yaml:"enforce_architecture"`
 
 	// AuthPreference controls which Anthropic auth token is preferred when both
 	// ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set.
@@ -205,6 +206,7 @@ type CLIFlags struct {
 	MaxRetries *int
 	NoSandbox  *bool
 	AutoMerge  *string
+	BaseBranch *string
 	Config     string
 }
 
@@ -275,6 +277,9 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.AutoMerge != nil {
 		cfg.AutoMerge = *flags.AutoMerge
+	}
+	if flags.BaseBranch != nil {
+		cfg.BaseBranch = *flags.BaseBranch
 	}
 }
 
