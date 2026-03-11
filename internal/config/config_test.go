@@ -338,40 +338,77 @@ repo: owner/repo
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.AutoMerge != "none" {
-		t.Errorf("AutoMerge = %q, want %q", cfg.AutoMerge, "none")
+	if cfg.AutoMerge.Feature != "none" {
+		t.Errorf("AutoMerge.Feature = %q, want %q", cfg.AutoMerge.Feature, "none")
+	}
+	if cfg.AutoMerge.Rollup != "none" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, "none")
 	}
 }
 
-func TestAutoMergeValidValues(t *testing.T) {
+func TestAutoMergeFeatureValidValues(t *testing.T) {
 	for _, value := range []string{"none", "low_risk", "all"} {
 		t.Run(value, func(t *testing.T) {
 			dir := t.TempDir()
-			path := writeYAML(t, dir, "repo: owner/repo\nauto_merge: "+value+"\n")
+			path := writeYAML(t, dir, "repo: owner/repo\nauto_merge:\n  feature: "+value+"\n")
 			cfg, err := Load(path, CLIFlags{})
 			if err != nil {
-				t.Fatalf("unexpected error for auto_merge=%q: %v", value, err)
+				t.Fatalf("unexpected error for auto_merge.feature=%q: %v", value, err)
 			}
-			if cfg.AutoMerge != value {
-				t.Errorf("AutoMerge = %q, want %q", cfg.AutoMerge, value)
+			if cfg.AutoMerge.Feature != value {
+				t.Errorf("AutoMerge.Feature = %q, want %q", cfg.AutoMerge.Feature, value)
 			}
 		})
 	}
 }
 
-func TestAutoMergeInvalidValue(t *testing.T) {
+func TestAutoMergeRollupValidValues(t *testing.T) {
+	for _, value := range []string{"none", "manual", "auto"} {
+		t.Run(value, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeYAML(t, dir, "repo: owner/repo\nauto_merge:\n  rollup: "+value+"\n")
+			cfg, err := Load(path, CLIFlags{})
+			if err != nil {
+				t.Fatalf("unexpected error for auto_merge.rollup=%q: %v", value, err)
+			}
+			if cfg.AutoMerge.Rollup != value {
+				t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, value)
+			}
+		})
+	}
+}
+
+func TestAutoMergeFeatureInvalidValue(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
-auto_merge: always
+auto_merge:
+  feature: always
 `)
 
 	_, err := Load(path, CLIFlags{})
 	if err == nil {
-		t.Fatal("expected error for invalid auto_merge, got nil")
+		t.Fatal("expected error for invalid auto_merge.feature, got nil")
 	}
-	if !strings.Contains(err.Error(), "auto_merge") {
-		t.Errorf("error = %q, want mention of 'auto_merge'", err.Error())
+	if !strings.Contains(err.Error(), "auto_merge.feature") {
+		t.Errorf("error = %q, want mention of 'auto_merge.feature'", err.Error())
+	}
+}
+
+func TestAutoMergeRollupInvalidValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+auto_merge:
+  rollup: merge
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid auto_merge.rollup, got nil")
+	}
+	if !strings.Contains(err.Error(), "auto_merge.rollup") {
+		t.Errorf("error = %q, want mention of 'auto_merge.rollup'", err.Error())
 	}
 }
 
@@ -380,16 +417,22 @@ func TestAutoMergeFlagOverride(t *testing.T) {
 	path := writeYAML(t, dir, `
 repo: owner/repo
 
-auto_merge: none
+auto_merge:
+  feature: none
+  rollup: none
 `)
 
-	v := "all"
-	cfg, err := Load(path, CLIFlags{AutoMerge: &v})
+	feat := "all"
+	rollup := "auto"
+	cfg, err := Load(path, CLIFlags{AutoMergeFeature: &feat, AutoMergeRollup: &rollup})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.AutoMerge != "all" {
-		t.Errorf("AutoMerge = %q, want %q (flag should override)", cfg.AutoMerge, "all")
+	if cfg.AutoMerge.Feature != "all" {
+		t.Errorf("AutoMerge.Feature = %q, want %q (flag should override)", cfg.AutoMerge.Feature, "all")
+	}
+	if cfg.AutoMerge.Rollup != "auto" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q (flag should override)", cfg.AutoMerge.Rollup, "auto")
 	}
 }
 
