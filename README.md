@@ -510,7 +510,9 @@ repo: owner/repo
 max_retries: 3            # review/fix cycles before escalating (default 3)
 agent_timeout: "30m"      # max wall-clock time per agent run
 no_sandbox: false         # run agents on host instead of Docker
-auto_merge: "none"        # merge strategy: none, low_risk, all
+auto_merge:
+  feature: "none"         # feature PR merge strategy: none, low_risk, all
+  rollup: "none"          # rollup PR handling: none, manual, auto
 quality_strictness_decay: true  # use diminishing strictness on quality review retries
 auth_preference: ""       # force "oauth" or "api_key" (auto-detected if empty)
 
@@ -578,6 +580,17 @@ verify:
 wait_for_checks:
   timeout: "10m"           # max time to wait for checks to complete
   required: []             # check names that must pass before merge
+
+# Rollup PR behavior (when base_branch differs from main)
+# none   — godark merges feature PRs; human opens and merges the rollup PR
+# manual — godark merges feature PRs and opens the rollup PR; human merges it
+# auto   — godark merges feature PRs, opens the rollup PR, and merges it
+
+# | Mode   | Feature PRs → base branch | Base branch → main                    |
+# |--------|---------------------------|---------------------------------------|
+# | none   | godark merges             | human inspects branch, opens PR, merges|
+# | manual | godark merges             | godark opens PR, human reviews/merges |
+# | auto   | godark merges             | godark opens PR and merges             |
 
 # Risk thresholds for low_risk auto-merge
 risk_thresholds:
