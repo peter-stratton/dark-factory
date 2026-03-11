@@ -592,9 +592,9 @@ critical path for org adoption — most teams will not start with auto-merge.
 ### Graduated autonomy
 - `auto_merge` config in `godark.yaml` controls merge behavior per-repo:
   ```yaml
-  auto_merge: none       # default — stop at PR, human merges
-  auto_merge: low_risk   # auto-merge small/safe PRs, stop for rest
-  auto_merge: all        # human spot-checks only
+  auto_merge:
+    feature: none      # none | low_risk | all — controls feature PR merging
+    rollup: none       # none | manual | auto — controls base-branch rollup
   ```
 - Risk classification for `low_risk` mode:
   - Lines changed threshold (configurable, e.g. < 200 lines)
@@ -619,7 +619,9 @@ critical path for org adoption — most teams will not start with auto-merge.
 
 ### Config
 ```yaml
-auto_merge: none  # none | low_risk | all
+auto_merge:
+  feature: none  # none | low_risk | all
+  rollup: none   # none | manual | auto
 watch:
   poll_interval: 60s
 risk_thresholds:
@@ -721,7 +723,7 @@ service-account auth.
     - org/service-a    # uses repo's own godark.yaml
     - org/service-b
     - org/service-c:
-        auto_merge: none           # server-level override
+        auto_merge: {feature: none, rollup: none}  # server-level override
         concurrency.max_workers: 2
   ```
 - Per-repo `godark.yaml` is authoritative for project-specific config

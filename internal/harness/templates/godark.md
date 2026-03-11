@@ -91,7 +91,7 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | `wait_for_checks.timeout` | Max time to wait for CI checks to complete |
 | `wait_for_checks.required` | List of CI check names that must pass before merge |
 
-### Risk thresholds (for `auto_merge: low_risk`)
+### Risk thresholds (for `auto_merge.feature: low_risk`)
 
 | Field | Purpose | Default |
 |-------|---------|---------|
