@@ -650,11 +650,11 @@ func TestBuildDialogueEntries_SingleRound(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
-	if entries[0].Role != "implementer" || entries[0].Round != 1 || entries[0].Body != testImplBody1 {
-		t.Errorf("entries[0]: got {%s, %d, %q}", entries[0].Role, entries[0].Round, entries[0].Body)
+	if entries[0].Role != "implementer" || entries[0].Round != 1 || entries[0].Body != testImplBody1 || entries[0].Outcome != "" {
+		t.Errorf("entries[0]: got {%s, %d, %q, %q}", entries[0].Role, entries[0].Round, entries[0].Body, entries[0].Outcome)
 	}
-	if entries[1].Role != "reviewer" || entries[1].Round != 1 || entries[1].Body != testReviewBody {
-		t.Errorf("entries[1]: got {%s, %d, %q}", entries[1].Role, entries[1].Round, entries[1].Body)
+	if entries[1].Role != "reviewer" || entries[1].Round != 1 || entries[1].Body != testReviewBody || entries[1].Outcome != "accepted" {
+		t.Errorf("entries[1]: got {%s, %d, %q, %q}", entries[1].Role, entries[1].Round, entries[1].Body, entries[1].Outcome)
 	}
 }
 
@@ -666,20 +666,21 @@ func TestBuildDialogueEntries_MultipleRounds(t *testing.T) {
 		t.Fatalf("expected 4 entries, got %d", len(entries))
 	}
 	want := []struct {
-		role  string
-		round int
-		body  string
+		role    string
+		round   int
+		body    string
+		outcome string
 	}{
-		{"implementer", 1, testImplBody1},
-		{"quality_reviewer", 1, testQualityBody},
-		{"implementer", 2, testImplBody2},
-		{"reviewer", 1, testReviewBody},
+		{"implementer", 1, testImplBody1, ""},
+		{"quality_reviewer", 1, testQualityBody, "changes_requested"},
+		{"implementer", 2, testImplBody2, ""},
+		{"reviewer", 1, testReviewBody, "accepted"},
 	}
 	for i, w := range want {
-		if entries[i].Role != w.role || entries[i].Round != w.round || entries[i].Body != w.body {
-			t.Errorf("entries[%d]: got {%s, %d, %q}, want {%s, %d, %q}",
-				i, entries[i].Role, entries[i].Round, entries[i].Body,
-				w.role, w.round, w.body)
+		if entries[i].Role != w.role || entries[i].Round != w.round || entries[i].Body != w.body || entries[i].Outcome != w.outcome {
+			t.Errorf("entries[%d]: got {%s, %d, %q, %q}, want {%s, %d, %q, %q}",
+				i, entries[i].Role, entries[i].Round, entries[i].Body, entries[i].Outcome,
+				w.role, w.round, w.body, w.outcome)
 		}
 	}
 }

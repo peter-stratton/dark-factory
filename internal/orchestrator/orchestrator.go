@@ -528,12 +528,33 @@ func BuildDialogueEntries(bodies []string) []rundata.DialogueEntry {
 	entries := make([]rundata.DialogueEntry, len(parsed))
 	for i, e := range parsed {
 		entries[i] = rundata.DialogueEntry{
-			Role:  e.Role,
-			Round: e.Round,
-			Body:  e.Body,
+			Role:    e.Role,
+			Round:   e.Round,
+			Body:    e.Body,
+			Outcome: dialogueOutcome(e),
 		}
 	}
 	return entries
+}
+
+// dialogueOutcome returns "accepted" or "changes_requested" for reviewer
+// entries based on whether the structured comment contains requested changes.
+// Returns "" for non-reviewer roles.
+func dialogueOutcome(e dialogue.Entry) string {
+	switch e.Role {
+	case "quality_reviewer":
+		if n := dialogue.ParseQualityReviewNotes(e.Body); n != nil && n.ChangesRequested != "" {
+			return "changes_requested"
+		}
+		return "accepted"
+	case "reviewer":
+		if n := dialogue.ParseReviewNotes(e.Body); n != nil && n.ChangesRequested != "" {
+			return "changes_requested"
+		}
+		return "accepted"
+	default:
+		return ""
+	}
 }
 
 // newRunDataWriterFn creates a new RunDataWriter. Replaceable for testing.

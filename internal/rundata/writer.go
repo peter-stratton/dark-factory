@@ -219,9 +219,10 @@ func (w *Writer) WriteIssueDeps(deps []IssueDep) error {
 
 // DialogueEntry records one turn in the agent dialogue for an issue.
 type DialogueEntry struct {
-	Role  string `json:"role"`  // "implementer", "quality_reviewer", or "reviewer"
-	Round int    `json:"round"` // 1-indexed retry round
-	Body  string `json:"body"`  // raw comment text
+	Role    string `json:"role"`              // "implementer", "quality_reviewer", or "reviewer"
+	Round   int    `json:"round"`             // 1-indexed retry round
+	Body    string `json:"body"`              // raw comment text
+	Outcome string `json:"outcome,omitempty"` // "accepted" or "changes_requested" (reviewers only)
 }
 
 // WriteDialogue writes the dialogue entries for the given issue.

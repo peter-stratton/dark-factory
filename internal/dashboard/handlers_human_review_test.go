@@ -194,13 +194,13 @@ func TestServer_IssueDetail_HumanDialogueDistinctStyle(t *testing.T) {
 	if !strings.Contains(body, "&#128100;") {
 		t.Errorf("body missing person icon for human dialogue entry")
 	}
-	// "human reviewer" label should appear.
-	if !strings.Contains(body, "human reviewer") {
-		t.Errorf("body missing 'human reviewer' label")
+	// "Human Reviewer" label should appear.
+	if !strings.Contains(body, "Human Reviewer") {
+		t.Errorf("body missing 'Human Reviewer' label")
 	}
 	// Implementer entry should still render with different (non-human) styling.
-	if !strings.Contains(body, "implementer") {
-		t.Errorf("body missing implementer dialogue entry")
+	if !strings.Contains(body, "Implementer") {
+		t.Errorf("body missing Implementer dialogue entry")
 	}
 }
 

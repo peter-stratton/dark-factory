@@ -629,19 +629,19 @@ func TestServer_IssueDetail_RolesStyled(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
 	body := rr.Body.String()
-	// Each role appears as text in the summary.
-	if !strings.Contains(body, "implementer") {
-		t.Errorf("body missing role label 'implementer'")
+	// Each role appears as a capitalized label in the summary.
+	if !strings.Contains(body, "Implementer") {
+		t.Errorf("body missing role label 'Implementer'")
 	}
-	if !strings.Contains(body, "reviewer") {
-		t.Errorf("body missing role label 'reviewer'")
+	if !strings.Contains(body, "Functional Reviewer") {
+		t.Errorf("body missing role label 'Functional Reviewer'")
 	}
 	// Distinct visual styling: implementer uses color-accent, reviewer uses color-warning.
-	if !strings.Contains(body, "color-accent") {
-		t.Errorf("body missing implementer border style (color-accent)")
+	if !strings.Contains(body, "color-border") {
+		t.Errorf("body missing implementer border style (color-border)")
 	}
-	if !strings.Contains(body, "color-warning") {
-		t.Errorf("body missing reviewer border style (color-warning)")
+	if !strings.Contains(body, "color-success") {
+		t.Errorf("body missing reviewer border style (color-success)")
 	}
 }
 
