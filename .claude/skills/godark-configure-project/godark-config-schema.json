@@ -92,9 +92,22 @@
       "description": "Run agents on host instead of in Docker"
     },
     "auto_merge": {
-      "type": "string",
-      "enum": ["none", "low_risk", "all"],
-      "default": "none"
+      "type": "object",
+      "description": "Two-tier merge configuration",
+      "properties": {
+        "feature": {
+          "type": "string",
+          "enum": ["none", "low_risk", "all"],
+          "description": "Merge strategy for feature PRs into the base branch",
+          "default": "none"
+        },
+        "rollup": {
+          "type": "string",
+          "enum": ["none", "manual", "auto"],
+          "description": "Merge strategy for base branch into main: none (human does everything), manual (godark opens PR, human merges), auto (godark opens PR and merges)",
+          "default": "none"
+        }
+      }
     },
     "quality_strictness_decay": {
       "type": "boolean",
