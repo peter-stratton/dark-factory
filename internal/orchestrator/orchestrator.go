@@ -267,6 +267,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		failed           int
 		blocked          int
 		abortReason      string
+		implementedIssues []github.Issue
 	}
 
 	// Punchlist entries are enriched in the background as each issue completes.
@@ -364,6 +365,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			switch outcome.Status {
 			case "implemented":
 				stats.implemented++
+				stats.implementedIssues = append(stats.implementedIssues, issue)
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
 				if err := PullAfterMerge(baseBranch, logger); err != nil {
 					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
@@ -456,6 +458,18 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 done:
 	stats.blocked = len(blocked)
+
+	// Create a rollup PR when the configured base branch differs from main and
+	// at least one feature PR was merged into it during this run.
+	if (cfg.AutoMerge.Rollup == "manual" || cfg.AutoMerge.Rollup == "auto") &&
+		cfg.BaseBranch != "" &&
+		stats.implemented > 0 {
+		if _, err := createRollupPRFn(ctx, cfg, stats.implementedIssues, logger); err != nil {
+			logger.Warn("failed to create rollup PR", "error", err)
+			fmt.Printf("Warning: rollup PR creation failed: %v\n", err)
+		}
+	}
+
 	fmt.Println()
 	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
 		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
