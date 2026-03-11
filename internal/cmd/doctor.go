@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/doctor"
 	"github.com/spf13/cobra"
@@ -30,7 +31,13 @@ Checks performed:
 			runtime = dp.Runtime.Name
 		}
 
-		checks := doctor.Checks(runtime)
+		// Best-effort config load to obtain lint_command.
+		lintCommand := ""
+		if cfg, err := config.Load("godark.yaml", config.CLIFlags{}); err == nil {
+			lintCommand = cfg.LintCommand
+		}
+
+		checks := doctor.Checks(runtime, lintCommand)
 		passed := doctor.Run(os.Stdout, checks)
 		if !passed {
 			return fmt.Errorf("pre-flight checks failed")

@@ -50,7 +50,8 @@ func runtimeVersionCmd(runtime string) (string, []string) {
 
 // Checks returns the full ordered list of pre-flight checks. If runtime is
 // non-empty, a toolchain availability check for that runtime is included.
-func Checks(runtime string) []*Check {
+// If lintCommand contains "golangci-lint", a check for that tool is appended.
+func Checks(runtime, lintCommand string) []*Check {
 	checks := []*Check{
 		{
 			Name: "Docker daemon running",
@@ -110,6 +111,17 @@ func Checks(runtime string) []*Check {
 			return err == nil
 		},
 	})
+
+	if strings.Contains(lintCommand, "golangci-lint") {
+		checks = append(checks, &Check{
+			Name: "golangci-lint installed",
+			Fix:  "Install golangci-lint: `brew install golangci-lint` or see https://golangci-lint.run/usage/install/",
+			run: func(ctx context.Context) bool {
+				_, err := CommandRunner(ctx, "golangci-lint", "--version")
+				return err == nil
+			},
+		})
+	}
 
 	return checks
 }
