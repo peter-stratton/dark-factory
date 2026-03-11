@@ -13,6 +13,7 @@ import (
 type RunMeta struct {
 	Repo         string      `json:"repo"`
 	Milestone    string      `json:"milestone"`
+	BaseBranch   string      `json:"base_branch,omitempty"`
 	IssueNumbers []int       `json:"issue_numbers"`
 	IssueDeps    []IssueDep  `json:"issue_deps,omitempty"`
 	StartedAt    time.Time   `json:"started_at"`
@@ -81,17 +82,17 @@ type Writer struct {
 // directory under ~/.godark/runs/<owner>/<repo>/<YYYYMMDD-HHMMSS>/ and writes
 // an initial run.json. Repo must be in "owner/name" format; components
 // containing ".." or path separators are rejected.
-func New(repo, milestone string, issueNumbers []int) (*Writer, error) {
+func New(repo, milestone string, issueNumbers []int, baseBranch string) (*Writer, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting home dir: %w", err)
 	}
-	return NewWithBase(filepath.Join(home, ".godark", "runs"), repo, milestone, issueNumbers)
+	return NewWithBase(filepath.Join(home, ".godark", "runs"), repo, milestone, issueNumbers, baseBranch)
 }
 
 // NewWithBase creates a new Writer using a custom base directory instead of
 // the default ~/.godark/runs/. Intended for testing.
-func NewWithBase(baseDir, repo, milestone string, issueNumbers []int) (*Writer, error) {
+func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch string) (*Writer, error) {
 	owner, repoName, err := validateRepo(repo)
 	if err != nil {
 		return nil, err
@@ -115,6 +116,7 @@ func NewWithBase(baseDir, repo, milestone string, issueNumbers []int) (*Writer, 
 	meta := RunMeta{
 		Repo:         repo,
 		Milestone:    milestone,
+		BaseBranch:   baseBranch,
 		IssueNumbers: issueNumbers,
 		StartedAt:    now,
 	}

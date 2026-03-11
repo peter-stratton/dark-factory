@@ -14,7 +14,7 @@ import (
 func newWithBase(t *testing.T, base, repo, milestone string, issueNumbers []int) (*Writer, error) {
 	t.Helper()
 	t.Setenv("HOME", base)
-	return New(repo, milestone, issueNumbers)
+	return New(repo, milestone, issueNumbers, "")
 }
 
 func TestRunDirectoryCreated(t *testing.T) {
@@ -773,7 +773,7 @@ func TestPathTraversalRejected(t *testing.T) {
 	for _, repo := range cases {
 		base := t.TempDir()
 		t.Setenv("HOME", base)
-		_, err := New(repo, "Phase 7", []int{1})
+		_, err := New(repo, "Phase 7", []int{1}, "")
 		if err == nil {
 			t.Errorf("New(%q) should return error for path traversal, got nil", repo)
 		}
@@ -813,5 +813,67 @@ func TestWriteRiskAssessmentCreatesFile(t *testing.T) {
 	}
 	if len(written.Gates) != 2 {
 		t.Errorf("Gates length = %d, want 2", len(written.Gates))
+	}
+}
+
+func TestBaseBranchWrittenToRunJSON(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("HOME", base)
+	w, err := New("owner/repo", "Phase 7", []int{1}, "feature/foo")
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.BaseBranch != "feature/foo" {
+		t.Errorf("BaseBranch = %q, want %q", meta.BaseBranch, "feature/foo")
+	}
+}
+
+func TestBaseBranchOmittedWhenEmpty(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("HOME", base)
+	w, err := New("owner/repo", "Phase 7", []int{1}, "")
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if _, ok := raw["base_branch"]; ok {
+		t.Error("base_branch key should be omitted from JSON when empty")
+	}
+}
+
+func TestBaseBranchMissingInOldDataDeserializesCleanly(t *testing.T) {
+	// Simulate old run.json without base_branch field.
+	oldJSON := []byte(`{"repo":"owner/repo","milestone":"Phase 7","issue_numbers":[1],"started_at":"2024-01-01T00:00:00Z"}`)
+
+	var meta RunMeta
+	if err := json.Unmarshal(oldJSON, &meta); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+
+	if meta.BaseBranch != "" {
+		t.Errorf("BaseBranch = %q, want empty string for old data", meta.BaseBranch)
+	}
+	if meta.Repo != "owner/repo" {
+		t.Errorf("Repo = %q, want %q", meta.Repo, "owner/repo")
 	}
 }
