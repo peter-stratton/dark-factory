@@ -335,3 +335,88 @@ func TestInitGuidanceWithoutResetFlag(t *testing.T) {
 		t.Error("expected CLAUDE.md guidance hint in output when --reset-claude-md not used")
 	}
 }
+
+func TestInitConfigIncludesFormatCommand(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	if !strings.Contains(string(data), "format_command") {
+		t.Error("godark.yaml missing format_command field")
+	}
+}
+
+func TestInitConfigIncludesLintCommand(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	if !strings.Contains(string(data), "lint_command") {
+		t.Error("godark.yaml missing lint_command field")
+	}
+}
+
+func TestInitGoProjectSuggestsGolangciLint(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	// Simulate a Go project by writing a minimal go.mod.
+	if err := os.WriteFile("go.mod", []byte("module example.com/test\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	if !strings.Contains(string(data), "golangci-lint run ./...") {
+		t.Error("godark.yaml should suggest golangci-lint for Go projects")
+	}
+	if !strings.Contains(string(data), "gofmt -l -d .") {
+		t.Error("godark.yaml should suggest gofmt for Go projects")
+	}
+}
+
+func TestInitNonGoProjectUsesGenericExamples(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	// No go.mod — non-Go project uses generic (empty-string) examples.
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	content := string(data)
+	if strings.Contains(content, "golangci-lint") {
+		t.Error("non-Go project should not suggest golangci-lint")
+	}
+	if strings.Contains(content, "gofmt") {
+		t.Error("non-Go project should not suggest gofmt")
+	}
+}
