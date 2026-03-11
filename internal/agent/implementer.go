@@ -138,6 +138,7 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ArchitectureJSON:       readFileOrEmpty(cfg.ArchitectureJSON),
 		ConventionsDocContent:  readFileOrEmpty(cfg.ConventionsDoc),
 		ModuleContext:          buildModuleContext(cfg.Modules),
+		BaseBranch:             cfg.BaseBranch,
 	}
 }
 

@@ -11,7 +11,11 @@ Before writing the spec:
 3. Read existing scenario specs in {{.ScenarioDir}} to understand the expected format
 
 CRITICAL RULES:
+{{- if .BaseBranch}}
+- Create a feature branch: git fetch origin && git checkout -b {{.IssueNumber}}-{{.Slug}} origin/{{.BaseBranch}}
+{{- else}}
 - Create a feature branch: git checkout -b {{.IssueNumber}}-{{.Slug}}
+{{- end}}
 - Never commit directly to main
 - Do NOT modify any protected paths: {{.ProtectedPaths}}
 - Do NOT modify existing files in {{.ScenarioDir}}

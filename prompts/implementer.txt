@@ -21,6 +21,8 @@ Before writing any code:
 CRITICAL RULES:
 {{- if .BranchExists}}
 - Check out the existing feature branch: git fetch origin && git checkout {{.IssueNumber}}-{{.Slug}}
+{{- else if .BaseBranch}}
+- Create a feature branch: git fetch origin && git checkout -b {{.IssueNumber}}-{{.Slug}} origin/{{.BaseBranch}}
 {{- else}}
 - Create a feature branch: git checkout -b {{.IssueNumber}}-{{.Slug}}
 {{- end}}
@@ -41,7 +43,11 @@ Implementation steps:
 4. Run tests: {{.TestCommand}}
 {{- end}}
 5. Commit with message including "Closes #{{.IssueNumber}}"
+{{- if .BaseBranch}}
+6. Push the branch and open a pull request targeting {{.BaseBranch}}: gh pr create --base {{.BaseBranch}} ...
+{{- else}}
 6. Push the branch and open a pull request
+{{- end}}
 
 When opening the pull request, post a PR comment with the following format so
 the reviewer agent can find your notes:
