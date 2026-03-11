@@ -153,6 +153,12 @@ main`. Update it to accept the base branch as a parameter and use that instead.
 Update all call sites (`implement.go`, `run.go`) to pass `cfg.BaseBranch`
 through, falling back to `"main"` when empty.
 
+Additionally, add an `EnsureBaseBranch` function that checks whether the
+configured base branch exists on the remote before the run begins. If it does
+not exist, create it from the repo's default branch. This lets users kick off
+a `godark run --base-branch feature/phase-17` without manually creating the
+branch first.
+
 ### Key constraints
 
 - Modify `internal/orchestrator/orchestrator.go`:
@@ -160,10 +166,17 @@ through, falling back to `"main"` when empty.
     `PullAfterMerge(branch string, logger *slog.Logger)`
   - Replace hardcoded `"main"` with the `branch` parameter
   - Update the warning message to reference the actual branch name
+  - Add `EnsureBaseBranch(branch string, logger *slog.Logger) error`:
+    - Skip if `branch` is empty (default branch behavior)
+    - Run `git ls-remote --heads origin <branch>` to check existence
+    - If the branch does not exist, create it with
+      `git push origin HEAD:refs/heads/<branch>`
+    - Log what it does (created vs. already exists)
 - Modify `internal/cmd/implement.go`:
   - Pass `cfg.BaseBranch` (or `"main"` if empty) to `PullAfterMerge`
-- Modify `internal/cmd/run.go` (if it calls `PullAfterMerge`):
-  - Same change
+- Modify `internal/cmd/run.go`:
+  - Call `EnsureBaseBranch` before processing issues
+  - Pass `cfg.BaseBranch` (or `"main"` if empty) to `PullAfterMerge`
 - Update any existing tests for `PullAfterMerge`
 
 ### Acceptance criteria
@@ -173,6 +186,9 @@ through, falling back to `"main"` when empty.
   behavior)
 - [ ] Warning message references the actual branch name
 - [ ] Existing `PullAfterMerge` tests updated and passing
+- [ ] `EnsureBaseBranch` creates the remote branch when it does not exist
+- [ ] `EnsureBaseBranch` is a no-op when the branch already exists
+- [ ] `EnsureBaseBranch` is a no-op when `branch` is empty
 
 ### Test cases
 
@@ -182,6 +198,11 @@ through, falling back to `"main"` when empty.
   `git pull --rebase origin main`
 - **Dirty repo warning**: Warning message references the configured branch name,
   not hardcoded "main"
+- **Ensure creates missing branch**: `EnsureBaseBranch("feature/new", logger)`
+  creates the branch on the remote when `git ls-remote` returns no match
+- **Ensure skips existing branch**: `EnsureBaseBranch("feature/existing", logger)`
+  does nothing when the branch already exists
+- **Ensure skips empty branch**: `EnsureBaseBranch("", logger)` is a no-op
 
 ---
 
