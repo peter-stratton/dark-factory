@@ -158,6 +158,11 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
+		// Ensure base branch exists on the remote (no-op if empty or already exists).
+		if err := orchestrator.EnsureBaseBranch(cfg.BaseBranch, logger); err != nil {
+			return fmt.Errorf("ensuring base branch: %w", err)
+		}
+
 		// Acquire run lock to prevent concurrent godark executions.
 		locker := lock.New(cfg.Repo, logger)
 		if err := locker.Acquire(issueNums, force); err != nil {
@@ -214,7 +219,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			case "implemented":
 				implemented++
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-				if err := orchestrator.PullAfterMerge(logger); err != nil {
+				if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
 					logger.Warn("could not sync local repo after merge", "error", err)
 				}
 			case "ready-to-merge":
