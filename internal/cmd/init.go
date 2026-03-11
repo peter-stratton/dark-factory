@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/harness/templates"
 	"github.com/phs/dark-factory/internal/label"
@@ -14,7 +15,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultConfig = `# godark.yaml — Configuration for godark
+// buildDefaultConfig constructs the default godark.yaml config string.
+// formatExample and lintExample are the example values shown in the commented-out
+// format_command and lint_command fields. Pass empty strings for generic examples.
+func buildDefaultConfig(formatExample, lintExample string) string {
+	if formatExample == "" {
+		formatExample = `""`
+	}
+	if lintExample == "" {
+		lintExample = `""`
+	}
+	return `# godark.yaml — Configuration for godark
 repo: ""              # GitHub repository (owner/repo)
 
 # Merge behavior — two-tier config:
@@ -30,6 +41,12 @@ auto_merge:
   feature: none
   rollup: none
 
+# Build, test, format, and lint commands (all optional)
+# build_command: "go build ./..."  # run before the verify step
+# test_command: "go test ./..."    # run by the verify step
+# format_command: ` + formatExample + `  # run during verify step
+# lint_command: ` + lintExample + `  # run during verify step
+
 # Paths (defaults shown — override to customize)
 # roadmap_path: docs/ROADMAP.md
 # planning_dir: docs/planning/
@@ -44,6 +61,7 @@ prompts:
 # Agent timeout (Go duration format: "30m", "1h", etc.)
 # agent_timeout: "30m"
 `
+}
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -131,12 +149,25 @@ func writeDefaultConfig(cmd *cobra.Command) error {
 		return nil
 	}
 
-	if err := os.WriteFile(configPath, []byte(defaultConfig), 0o644); err != nil {
+	formatEx, lintEx := commandExamplesForDir(".")
+	content := buildDefaultConfig(formatEx, lintEx)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", configPath, err)
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", configPath)
 	return nil
+}
+
+// commandExamplesForDir returns format_command and lint_command example strings
+// for the config template. When a Go project is detected in dir, Go-specific
+// tool suggestions are returned; otherwise empty strings produce generic placeholders.
+func commandExamplesForDir(dir string) (formatExample, lintExample string) {
+	dp, err := detect.DetectRuntime(dir)
+	if err != nil || dp.Runtime.Name != "go" {
+		return "", ""
+	}
+	return `"gofmt -l -d ."`, `"golangci-lint run ./..."`
 }
 
 // writeHarnessDocs scaffolds harness documentation files into the current
