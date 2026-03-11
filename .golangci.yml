@@ -1,0 +1,53 @@
+version: "2"
+
+linters:
+  enable:
+    - gosec
+    - cyclop
+    - funlen
+  settings:
+    cyclop:
+      max-complexity: 18
+    funlen:
+      lines: 100
+      statements: 60
+    gosec:
+      excludes:
+        - G115 # uintptr→int conversion for term.IsTerminal; standard Go pattern
+        - G122 # symlink TOCTOU in filepath.Walk; low risk for local run data
+        - G306 # WriteFile 0644; intentional for non-secret config/template files
+        - G404 # math/rand for container name suffixes; not security-sensitive
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - legacy
+    rules:
+      # Ignore unchecked close/remove in defers.
+      - linters: [errcheck]
+        source: "^\\s*defer\\s"
+      # Relax errcheck in tests.
+      - linters: [errcheck]
+        path: "_test\\.go$"
+      # Test functions are naturally complex with setup/assertions.
+      - linters: [cyclop, funlen]
+        path: "_test\\.go$"
+      # Core orchestration functions are inherently complex; suppress known cases.
+      - linters: [cyclop, funlen]
+        path: "internal/agent/loop\\.go$"
+      - linters: [cyclop, funlen]
+        path: "internal/orchestrator/orchestrator\\.go$"
+        text: "processIssues"
+      # Long switch over runtime types; complexity is inherent.
+      - linters: [cyclop, funlen]
+        path: "internal/sandbox/dockerfile\\.go$"
+        text: "GenerateDockerfile"
+      # Linear chain of condition checks; long but not complex.
+      - linters: [funlen]
+        path: "internal/agent/postmortem\\.go$"
+        text: "AnalyzeFailure"

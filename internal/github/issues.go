@@ -20,10 +20,10 @@ type Issue struct {
 
 // ghIssue maps the JSON fields returned by gh issue list.
 type ghIssue struct {
-	Number int      `json:"number"`
-	Title  string   `json:"title"`
-	Body   string   `json:"body"`
-	Labels []label  `json:"labels"`
+	Number int     `json:"number"`
+	Title  string  `json:"title"`
+	Body   string  `json:"body"`
+	Labels []label `json:"labels"`
 }
 
 type label struct {

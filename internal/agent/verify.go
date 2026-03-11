@@ -24,7 +24,7 @@ type Check struct {
 type CheckResult struct {
 	Name     string `json:"name"`
 	Passed   bool   `json:"passed"`
-	Output   string `json:"output"`   // combined stdout+stderr, truncated
+	Output   string `json:"output"` // combined stdout+stderr, truncated
 	ExitCode int    `json:"exit_code"`
 }
 
@@ -121,7 +121,7 @@ func formatVerifyErrors(result VerifyResult) string {
 		if cr.Passed {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("=== %s (exit code %d) ===\n", cr.Name, cr.ExitCode))
+		fmt.Fprintf(&sb, "=== %s (exit code %d) ===\n", cr.Name, cr.ExitCode)
 		sb.WriteString(cr.Output)
 		sb.WriteString("\n")
 	}

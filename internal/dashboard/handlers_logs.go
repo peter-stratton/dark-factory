@@ -35,9 +35,9 @@ type LogViewerData struct {
 	RunURL    string // link back to run detail page
 	LogsURL   string // canonical URL for this logs page (used to build HTMX URLs)
 	Entries   []LogEntry
-	Page      int  // current page (1-indexed)
-	NextPage  int  // Page + 1
-	HasMore   bool // whether there are more entries beyond this page
+	Page      int    // current page (1-indexed)
+	NextPage  int    // Page + 1
+	HasMore   bool   // whether there are more entries beyond this page
 	Level     string // current level filter (empty = all)
 	Search    string // current search query (empty = all)
 }
@@ -126,7 +126,7 @@ func (s *Server) buildLogViewerData(owner, repo, timestamp, level, search string
 	runDir := s.reader.RunDir(owner, repo, timestamp)
 
 	// Verify the run exists by checking for run.json.
-	if _, err := os.Stat(filepath.Join(runDir, "run.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(runDir, "run.json")); err != nil { //nolint:gosec // path components validated above
 		return nil, err
 	}
 
@@ -176,7 +176,7 @@ func (s *Server) buildLogViewerData(owner, repo, timestamp, level, search string
 // parseLogFile reads a JSON-lines log file and returns all parseable entries.
 // Returns nil entries (no error) if the file does not exist.
 func parseLogFile(path string) ([]LogEntry, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // callers validate path components
 	if err != nil {
 		return nil, err
 	}

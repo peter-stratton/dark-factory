@@ -25,18 +25,18 @@ type Prompts struct {
 
 // PromptData contains the values substituted into prompt templates.
 type PromptData struct {
-	IssueNumber    int
-	IssueTitle     string
-	IssueBody      string
-	Slug           string
-	Repo           string
-	PRNumber       int
-	BuildCommand   string
-	TestCommand    string
-	ProtectedPaths string
-	GeneratedPaths string
-	ScenarioDir    string
-	ReviewDir      string
+	IssueNumber            int
+	IssueTitle             string
+	IssueBody              string
+	Slug                   string
+	Repo                   string
+	PRNumber               int
+	BuildCommand           string
+	TestCommand            string
+	ProtectedPaths         string
+	GeneratedPaths         string
+	ScenarioDir            string
+	ReviewDir              string
 	VerifyErrors           string
 	BranchExists           bool
 	StrictnessDirective    string

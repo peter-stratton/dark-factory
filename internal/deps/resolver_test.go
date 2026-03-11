@@ -120,8 +120,8 @@ func TestFilterUnblocked_NoDeps(t *testing.T) {
 func TestFilterUnblocked_PreservesOrder(t *testing.T) {
 	issues := []github.Issue{
 		{Number: 1, Body: "No deps"},
-		{Number: 2, Body: "**Blocked by**: #10"},  // #10 open → excluded
-		{Number: 3, Body: "Depends on: #1"},        // #1 closed → included
+		{Number: 2, Body: "**Blocked by**: #10"}, // #10 open → excluded
+		{Number: 3, Body: "Depends on: #1"},      // #1 closed → included
 		{Number: 4, Body: "No deps either"},
 	}
 	closed := ClosedSet([]int{1})

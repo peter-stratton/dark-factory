@@ -106,7 +106,7 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 	defer os.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.Write(pyContent); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return nil, fmt.Errorf("writing agent_runner.py to temp file: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {

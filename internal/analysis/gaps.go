@@ -70,11 +70,11 @@ func DetectGaps(runs []rundata.RunDetail) []PromptGap {
 			parts = append(parts, fmt.Sprintf("#%d %q", issue.IssueNumber, issue.Outcome.Title))
 		}
 		gaps = append(gaps, PromptGap{
-			Finding:        "exhausted retries: " + strings.Join(parts, ", "),
-			FailRateWith:   issueFailureRate(exhausted),
+			Finding:         "exhausted retries: " + strings.Join(parts, ", "),
+			FailRateWith:    issueFailureRate(exhausted),
 			FailRateWithout: issueFailureRate(notExhausted),
-			SamplesWith:    len(exhausted),
-			SamplesWithout: len(notExhausted),
+			SamplesWith:     len(exhausted),
+			SamplesWithout:  len(notExhausted),
 		})
 	}
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -25,20 +26,14 @@ var validNotifyEvents = map[string]bool{
 
 // NotifyProviderConfig holds configuration for a single notification provider.
 type NotifyProviderConfig struct {
-	Provider string            `yaml:"provider"`            // "telegram", future: "slack", etc.
-	Events   []string          `yaml:"events"`              // "run_complete", "implementation_complete", "abort"
-	Settings map[string]string `yaml:"settings,omitempty"`  // provider-specific key-value pairs
+	Provider string            `yaml:"provider"`           // "telegram", future: "slack", etc.
+	Events   []string          `yaml:"events"`             // "run_complete", "implementation_complete", "abort"
+	Settings map[string]string `yaml:"settings,omitempty"` // provider-specific key-value pairs
 }
 
-// safeModuleNameChar reports whether ch is a permitted character in a module
-// name. Only alphanumerics, hyphens, underscores, and dots are allowed so that
-// module names are safe to embed in shell commands via "cd <name> && …".
-func safeModuleNameChar(ch rune) bool {
-	return (ch >= 'a' && ch <= 'z') ||
-		(ch >= 'A' && ch <= 'Z') ||
-		(ch >= '0' && ch <= '9') ||
-		ch == '-' || ch == '_' || ch == '.'
-}
+// safeModuleName matches module names containing only alphanumerics, hyphens,
+// underscores, and dots — safe to embed in shell commands via "cd <name> && …".
+var safeModuleName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 // validateModuleName returns an error if name is not a safe, unambiguous
 // filesystem path component. Rejected: empty, the special directory "..", and
@@ -50,10 +45,8 @@ func validateModuleName(name string) error {
 	if name == ".." {
 		return fmt.Errorf("module name %q is not a safe path component", name)
 	}
-	for _, ch := range name {
-		if !safeModuleNameChar(ch) {
-			return fmt.Errorf("module name %q contains unsafe character %q", name, string(ch))
-		}
+	if !safeModuleName.MatchString(name) {
+		return fmt.Errorf("module name %q contains unsafe characters", name)
 	}
 	return nil
 }
@@ -88,6 +81,7 @@ type WaitForChecks struct {
 // Module holds per-module build/test/lint/generate commands and dependency
 // relationships. All fields are optional.
 type Module struct {
+	FormatCommand   string   `yaml:"format_command"`
 	BuildCommand    string   `yaml:"build_command"`
 	TestCommand     string   `yaml:"test_command"`
 	LintCommand     string   `yaml:"lint_command"`
@@ -114,22 +108,23 @@ type Config struct {
 	Repo       string `yaml:"repo"`
 	MaxRetries int    `yaml:"max_retries"`
 
-	AgentTimeout string            `yaml:"agent_timeout"`
-	BuildCommand string            `yaml:"build_command"`
-	TestCommand  string            `yaml:"test_command"`
-	LintCommand  string            `yaml:"lint_command"`
-	SandboxEnv   map[string]string `yaml:"sandbox_env"`
-	Runtime      Runtime           `yaml:"runtime"`
+	AgentTimeout  string            `yaml:"agent_timeout"`
+	FormatCommand string            `yaml:"format_command"`
+	BuildCommand  string            `yaml:"build_command"`
+	TestCommand   string            `yaml:"test_command"`
+	LintCommand   string            `yaml:"lint_command"`
+	SandboxEnv    map[string]string `yaml:"sandbox_env"`
+	Runtime       Runtime           `yaml:"runtime"`
 
-	ProtectedPaths  []string `yaml:"protected_paths"`
-	DeniedCommands  []string `yaml:"denied_commands"`
+	ProtectedPaths []string `yaml:"protected_paths"`
+	DeniedCommands []string `yaml:"denied_commands"`
 	RoadmapPath    string   `yaml:"roadmap_path"`
 
 	GenerateCommand string   `yaml:"generate_command"`
 	GeneratedPaths  []string `yaml:"generated_paths"`
-	PlanningDir    string   `yaml:"planning_dir"`
-	ScenarioDir    string   `yaml:"scenario_dir"`
-	ReviewDir      string   `yaml:"review_dir"`
+	PlanningDir     string   `yaml:"planning_dir"`
+	ScenarioDir     string   `yaml:"scenario_dir"`
+	ReviewDir       string   `yaml:"review_dir"`
 
 	ArchitectureDoc  string `yaml:"architecture_doc"`
 	ArchitectureJSON string `yaml:"architecture_json"`
@@ -247,11 +242,11 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 
 func defaults() *Config {
 	return &Config{
-		MaxRetries:             3,
-		AutoMerge:              "none",
-		RoadmapPath:            "docs/ROADMAP.md",
-		ProtectedPaths:         []string{"godark.yaml"},
-		DeniedCommands:         []string{
+		MaxRetries:     3,
+		AutoMerge:      "none",
+		RoadmapPath:    "docs/ROADMAP.md",
+		ProtectedPaths: []string{"godark.yaml"},
+		DeniedCommands: []string{
 			"rm -rf",
 			"git push --force",
 			"git push -f",

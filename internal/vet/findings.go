@@ -80,7 +80,7 @@ func (r *Report) Print(w io.Writer) {
 	for _, f := range r.findings {
 		fmt.Fprintf(tw, "%s\t%s\t%s\n", f.Severity, f.Location, f.Message)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	errors, warnings, infos := r.countBySeverity()
 	fmt.Fprintf(w, "\n%d error(s), %d warning(s), %d info(s)\n", errors, warnings, infos)

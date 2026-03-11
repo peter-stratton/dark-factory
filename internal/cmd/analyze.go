@@ -208,7 +208,7 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 		}
 		fmt.Fprintf(tw, "  %s\t%d\t%.1f%%\n", status, count, pct)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	// Flag frequency table.
 	fmt.Fprintf(w, "\nFlag Frequencies\n")
@@ -220,7 +220,7 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 		for _, ff := range report.FlagFrequencies {
 			fmt.Fprintf(tw, "  %s\t%d\t%.1f%%\n", ff.Code, ff.Count, ff.Percent)
 		}
-		tw.Flush()
+		_ = tw.Flush()
 	}
 
 	// Retry stats.

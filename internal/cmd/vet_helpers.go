@@ -17,7 +17,7 @@ import (
 // if any errors were found.
 func printReport(cmd *cobra.Command, report *vet.Report, asJSON bool) {
 	if asJSON {
-		report.PrintJSON(cmd.OutOrStdout())
+		_ = report.PrintJSON(cmd.OutOrStdout())
 	} else {
 		report.Print(cmd.OutOrStdout())
 	}

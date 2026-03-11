@@ -188,7 +188,7 @@ func TestAggregateCostStats(t *testing.T) {
 		{
 			Issues: []rundata.IssueDetail{
 				{
-					Implement:    rundata.StepResult{CostUSD: 1.0},
+					Implement:     rundata.StepResult{CostUSD: 1.0},
 					QualityReview: rundata.StepResult{CostUSD: 0.5},
 				},
 				{

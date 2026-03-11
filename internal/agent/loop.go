@@ -866,8 +866,12 @@ func topologicalSortModules(modules map[string]config.Module) ([]string, error) 
 // single module. Module-level commands take precedence; empty fields fall back
 // to the root-level config commands. Each command is prefixed with
 // "cd <modName> && " so it runs in the module's subdirectory.
-// Order: generate → build → lint → test.
+// Order: format → generate → build → lint → test.
 func buildModuleVerifyChecks(modName string, mod config.Module, cfg *config.Config) []Check {
+	format := mod.FormatCommand
+	if format == "" {
+		format = cfg.FormatCommand
+	}
 	generate := mod.GenerateCommand
 	if generate == "" {
 		generate = cfg.GenerateCommand
@@ -888,6 +892,9 @@ func buildModuleVerifyChecks(modName string, mod config.Module, cfg *config.Conf
 	prefix := "cd " + modName + " && "
 
 	var checks []Check
+	if format != "" {
+		checks = append(checks, Check{Name: "format", Command: prefix + format})
+	}
 	if generate != "" {
 		checks = append(checks, Check{Name: "generate", Command: prefix + generate})
 	}
@@ -905,9 +912,12 @@ func buildModuleVerifyChecks(modName string, mod config.Module, cfg *config.Conf
 
 // buildVerifyChecks constructs the ordered list of verify checks from non-empty
 // config commands. Empty commands are omitted.
-// Order: generate → build → lint → test.
+// Order: format → generate → build → lint → test.
 func buildVerifyChecks(cfg *config.Config) []Check {
 	var checks []Check
+	if cfg.FormatCommand != "" {
+		checks = append(checks, Check{Name: "format", Command: cfg.FormatCommand})
+	}
 	if cfg.GenerateCommand != "" {
 		checks = append(checks, Check{Name: "generate", Command: cfg.GenerateCommand})
 	}

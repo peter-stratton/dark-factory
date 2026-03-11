@@ -69,7 +69,7 @@ func (t *TelegramNotifier) Send(ctx context.Context, event Event) error {
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain to allow TCP connection reuse
-		resp.Body.Close()                      //nolint:errcheck // best-effort close; ignore error
+		resp.Body.Close()                     //nolint:errcheck // best-effort close; ignore error
 	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

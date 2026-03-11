@@ -11,10 +11,10 @@ import (
 
 // Layer represents a single architectural layer with its paths and dependencies.
 type Layer struct {
-	Name           string   `json:"name"`
-	Description    string   `json:"description,omitempty"`
-	Paths          []string `json:"paths"`
-	MayDependOn    []string `json:"may_depend_on"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description,omitempty"`
+	Paths           []string `json:"paths"`
+	MayDependOn     []string `json:"may_depend_on"`
 	MustNotDependOn []string `json:"must_not_depend_on,omitempty"`
 }
 
