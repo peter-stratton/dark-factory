@@ -363,9 +363,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			// merge safely. This prevents accidental merges if the
 			// config value is empty or unrecognized.
 			shouldMerge := false
-			switch cfg.AutoMerge {
+			switch cfg.AutoMerge.Feature {
 			case "all":
-				logger.Info("PR approved, will merge (auto_merge=all)", "pr_number", prNum)
+				logger.Info("PR approved, will merge (auto_merge.feature=all)", "pr_number", prNum)
 				shouldMerge = true
 			case "low_risk":
 				additions, deletions, fileCount, statsErr := github.FetchPRStats(cfg.Repo, prNum)
@@ -424,7 +424,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				shouldMerge = true
 			default:
 				// "none" or any unexpected value — skip merge safely.
-				logger.Info("PR approved, skipping merge", "pr_number", prNum, "auto_merge", cfg.AutoMerge)
+				logger.Info("PR approved, skipping merge", "pr_number", prNum, "auto_merge_feature", cfg.AutoMerge.Feature)
 				applyLifecycleLabel(label.AwaitingHumanReview)
 				outcome.Status = "ready-to-merge"
 				outcome.Retries = attempt
@@ -433,7 +433,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 			if !shouldMerge {
 				// Defensive: should not be reachable, but fail safe.
-				logger.Warn("merge decision fell through unexpectedly, skipping merge", "auto_merge", cfg.AutoMerge)
+				logger.Warn("merge decision fell through unexpectedly, skipping merge", "auto_merge_feature", cfg.AutoMerge.Feature)
 				applyLifecycleLabel(label.AwaitingHumanReview)
 				outcome.Status = "ready-to-merge"
 				outcome.Retries = attempt
