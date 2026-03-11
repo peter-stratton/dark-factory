@@ -43,7 +43,7 @@ func stubWatchSeams(t *testing.T) {
 		return &agent.Result{SessionID: "sess-stub"}, nil
 	}
 	watchFindSessionIDFn = func(_ string, _ int) (string, error) { return "", nil }
-	watchNewWriterFn = func(repo, milestone string, issueNumbers []int) (*rundata.Writer, error) { return nil, nil }
+	watchNewWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string) (*rundata.Writer, error) { return nil, nil }
 	watchFetchReviewCommentsFn = func(_ string, _ int, _ int) ([]string, error) { return nil, nil }
 	watchFetchIssueFn = func(_ string, _ int) (github.Issue, error) {
 		return github.Issue{Number: 42, Title: "test issue"}, nil
@@ -317,7 +317,7 @@ func TestHandleChangesRequested_FeedbackFed(t *testing.T) {
 	defer func() { watchFindSessionIDFn = origFindSession }()
 
 	origNewWriter := watchNewWriterFn
-	watchNewWriterFn = func(_, _ string, _ []int) (*rundata.Writer, error) { return nil, nil }
+	watchNewWriterFn = func(_, _ string, _ []int, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { watchNewWriterFn = origNewWriter }()
 
 	origFetchComments := watchFetchReviewCommentsFn
@@ -363,7 +363,7 @@ func TestHandleChangesRequested_SessionResumed(t *testing.T) {
 	defer func() { watchFindSessionIDFn = origFindSession }()
 
 	origNewWriter := watchNewWriterFn
-	watchNewWriterFn = func(_, _ string, _ []int) (*rundata.Writer, error) { return nil, nil }
+	watchNewWriterFn = func(_, _ string, _ []int, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { watchNewWriterFn = origNewWriter }()
 
 	origFetchComments := watchFetchReviewCommentsFn
@@ -408,7 +408,7 @@ func TestHandleChangesRequested_LabelsSwapped(t *testing.T) {
 	defer func() { watchFindSessionIDFn = origFindSession }()
 
 	origNewWriter := watchNewWriterFn
-	watchNewWriterFn = func(_, _ string, _ []int) (*rundata.Writer, error) { return nil, nil }
+	watchNewWriterFn = func(_, _ string, _ []int, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { watchNewWriterFn = origNewWriter }()
 
 	origFetchComments := watchFetchReviewCommentsFn
@@ -483,7 +483,7 @@ func TestHandleChangesRequested_NoSessionID(t *testing.T) {
 	defer func() { watchFindSessionIDFn = origFindSession }()
 
 	origNewWriter := watchNewWriterFn
-	watchNewWriterFn = func(_, _ string, _ []int) (*rundata.Writer, error) { return nil, nil }
+	watchNewWriterFn = func(_, _ string, _ []int, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { watchNewWriterFn = origNewWriter }()
 
 	origFetchComments := watchFetchReviewCommentsFn
@@ -529,10 +529,10 @@ func TestHandleChangesRequested_RunDataWritten(t *testing.T) {
 	defer func() { watchFindSessionIDFn = origFindSession }()
 
 	origNewWriter := watchNewWriterFn
-	watchNewWriterFn = func(repo, milestone string, issueNumbers []int) (*rundata.Writer, error) {
+	watchNewWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string) (*rundata.Writer, error) {
 		writerCreated = true
 		// Use a custom base dir to verify the call actually happened.
-		w, err := rundata.NewWithBase(base, repo, milestone, issueNumbers)
+		w, err := rundata.NewWithBase(base, repo, milestone, issueNumbers, baseBranch)
 		return w, err
 	}
 	defer func() { watchNewWriterFn = origNewWriter }()
@@ -589,7 +589,7 @@ func TestHandleChangesRequested_MultipleCommentsConcatenated(t *testing.T) {
 	defer func() { watchFindSessionIDFn = origFindSession }()
 
 	origNewWriter := watchNewWriterFn
-	watchNewWriterFn = func(_, _ string, _ []int) (*rundata.Writer, error) { return nil, nil }
+	watchNewWriterFn = func(_, _ string, _ []int, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { watchNewWriterFn = origNewWriter }()
 
 	origFetchComments := watchFetchReviewCommentsFn

@@ -201,7 +201,7 @@ func handleChangesRequested(ctx context.Context, cfg *config.Config, prompts *ag
 	feedback := buildFeedback(review.Body, watchFetchReviewCommentsFn, cfg.Repo, pr.Number, review.ID, logger)
 
 	// Create a run data writer for this watch-initiated fix cycle.
-	writer, writerErr := watchNewWriterFn(cfg.Repo, "", []int{issueNum})
+	writer, writerErr := watchNewWriterFn(cfg.Repo, "", []int{issueNum}, cfg.BaseBranch)
 	if writerErr != nil {
 		logger.Warn("failed to create run data writer", "err", writerErr)
 	}

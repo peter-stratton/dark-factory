@@ -89,7 +89,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 	if !dryRun {
 		issueNums := issueNumbers(issues)
 		var writerErr error
-		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums)
+		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch)
 		if writerErr != nil {
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
 		} else if runLogger, logErr := logging.NewLogger(writer.Dir()); logErr == nil {
@@ -537,8 +537,8 @@ func BuildDialogueEntries(bodies []string) []rundata.DialogueEntry {
 }
 
 // newRunDataWriterFn creates a new RunDataWriter. Replaceable for testing.
-var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int) (*rundata.Writer, error) {
-	return rundata.New(repo, milestone, issueNumbers)
+var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string) (*rundata.Writer, error) {
+	return rundata.New(repo, milestone, issueNumbers, baseBranch)
 }
 
 // CommandRunner executes a command and returns its combined output.

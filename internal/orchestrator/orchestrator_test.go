@@ -246,7 +246,7 @@ func TestAllBlocked(t *testing.T) {
 	// Run creates a RunDataWriter when dryRun=false; disable it for this test.
 	origWriter := newRunDataWriterFn
 	t.Cleanup(func() { newRunDataWriterFn = origWriter })
-	newRunDataWriterFn = func(repo, milestone string, issueNums []int) (*rundata.Writer, error) {
+	newRunDataWriterFn = func(repo, milestone string, issueNums []int, baseBranch string) (*rundata.Writer, error) {
 		return nil, fmt.Errorf("disabled in test")
 	}
 
@@ -589,7 +589,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 
-	writer, err := rundata.New("owner/repo", "test-milestone", []int{10, 11})
+	writer, err := rundata.New("owner/repo", "test-milestone", []int{10, 11}, "")
 	if err != nil {
 		t.Fatalf("rundata.New: %v", err)
 	}
@@ -713,7 +713,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
-	writer, err := rundata.New("owner/repo", "test-milestone", []int{5})
+	writer, err := rundata.New("owner/repo", "test-milestone", []int{5}, "")
 	if err != nil {
 		t.Fatalf("rundata.New: %v", err)
 	}
