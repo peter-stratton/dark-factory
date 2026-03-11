@@ -197,206 +197,10 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	fixCycles := 0
 
 	// Step 3.5: Verify. Runs between guard rails and quality review.
-	if cfg.Modules != nil {
-		// Per-module verification in dependency order.
-		sortedMods, err := topologicalSortModules(cfg.Modules)
-		if err != nil {
-			outcome.Status = "failed"
-			outcome.Err = fmt.Errorf("sorting modules for verify: %w", err)
-			return outcome
-		}
-
-		var verifyRunner CommandRunner
-		if cfg.NoSandbox {
-			verifyRunner = newHostRunner()
-		} else {
-			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
-		}
-
-		moduleFailed := false
-		var failedModName string
-
-		for _, modName := range sortedMods {
-			mod := cfg.Modules[modName]
-			moduleChecks := buildModuleVerifyChecks(modName, mod, cfg)
-			if len(moduleChecks) == 0 {
-				continue
-			}
-
-			logger.Info("running verify step for module",
-				"issue_number", issue.Number,
-				"module", modName,
-				"check_count", len(moduleChecks),
-			)
-			verifyResult := RunVerify(ctx, moduleChecks, verifyRunner)
-			if hook != nil {
-				if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
-					logger.Warn("failed to write verify result", "error", err)
-				}
-			}
-
-			if !verifyResult.AllPassed && prompts.VerifyFix != "" && cfg.Verify.MaxFixAttempts > 0 {
-				for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
-					if ctx.Err() != nil {
-						outcome.Status = "failed"
-						outcome.Err = ctx.Err()
-						return outcome
-					}
-					fixCycles++
-
-					verifyErrors := fmt.Sprintf("Module: %s\n\n%s", modName, formatVerifyErrors(verifyResult))
-					logger.Info("running verify-fix attempt",
-						"issue_number", issue.Number,
-						"module", modName,
-						"attempt", fixAttempt+1,
-						"max_attempts", cfg.Verify.MaxFixAttempts,
-					)
-
-					fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
-					if err != nil {
-						outcome.Status = "failed"
-						outcome.Err = fmt.Errorf("verify-fix agent: %w", err)
-						return outcome
-					}
-					if fixResult.TimedOut {
-						outcome.Status = "failed"
-						outcome.Err = fmt.Errorf("verify-fix agent timed out")
-						return outcome
-					}
-					sessionID = fixResult.SessionID
-
-					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-						outcome.Status = "failed"
-						outcome.Err = driftErr
-						return outcome
-					}
-
-					verifyResult = RunVerify(ctx, moduleChecks, verifyRunner)
-					if hook != nil {
-						if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
-							logger.Warn("failed to write verify result", "error", err)
-						}
-					}
-					if verifyResult.AllPassed {
-						break
-					}
-				}
-			}
-
-			if verifyResult.AllPassed {
-				logger.Info("verify step passed for module", "issue_number", issue.Number, "module", modName)
-			} else {
-				var failedNames []string
-				for _, cr := range verifyResult.Checks {
-					if !cr.Passed {
-						failedNames = append(failedNames, cr.Name)
-					}
-				}
-				logger.Warn("verify step failed for module",
-					"issue_number", issue.Number,
-					"module", modName,
-					"failed_checks", failedNames,
-				)
-				moduleFailed = true
-				failedModName = modName
-				break // Stop processing dependent modules.
-			}
-		}
-
-		if moduleFailed {
-			if cfg.Verify.Blocking {
-				outcome.Status = "failed"
-				outcome.Err = fmt.Errorf("verify failed for module %s", failedModName)
-				return outcome
-			}
-			logger.Warn("module verify failed (non-blocking), proceeding to review",
-				"issue_number", issue.Number,
-				"module", failedModName,
-			)
-		}
-	} else if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
-		var verifyRunner CommandRunner
-		if cfg.NoSandbox {
-			verifyRunner = newHostRunner()
-		} else {
-			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
-		}
-		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
-		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner)
-		if hook != nil {
-			if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
-				logger.Warn("failed to write verify result", "error", err)
-			}
-		}
-
-		if !verifyResult.AllPassed && prompts.VerifyFix != "" && cfg.Verify.MaxFixAttempts > 0 {
-			for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
-				if ctx.Err() != nil {
-					outcome.Status = "failed"
-					outcome.Err = ctx.Err()
-					return outcome
-				}
-				fixCycles++
-
-				verifyErrors := formatVerifyErrors(verifyResult)
-				logger.Info("running verify-fix attempt",
-					"issue_number", issue.Number,
-					"attempt", fixAttempt+1,
-					"max_attempts", cfg.Verify.MaxFixAttempts,
-				)
-
-				fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
-				if err != nil {
-					outcome.Status = "failed"
-					outcome.Err = fmt.Errorf("verify-fix agent: %w", err)
-					return outcome
-				}
-				if fixResult.TimedOut {
-					outcome.Status = "failed"
-					outcome.Err = fmt.Errorf("verify-fix agent timed out")
-					return outcome
-				}
-				sessionID = fixResult.SessionID
-
-				// Re-check drift after each fix attempt.
-				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-					outcome.Status = "failed"
-					outcome.Err = driftErr
-					return outcome
-				}
-
-				// Re-run verify.
-				verifyResult = RunVerify(ctx, verifyChecks, verifyRunner)
-				if hook != nil {
-					if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
-						logger.Warn("failed to write verify result", "error", err)
-					}
-				}
-				if verifyResult.AllPassed {
-					break
-				}
-			}
-		}
-
-		if verifyResult.AllPassed {
-			logger.Info("verify step passed", "issue_number", issue.Number)
-		} else {
-			var failedNames []string
-			for _, cr := range verifyResult.Checks {
-				if !cr.Passed {
-					failedNames = append(failedNames, cr.Name)
-				}
-			}
-			if cfg.Verify.Blocking {
-				outcome.Status = "failed"
-				outcome.Err = fmt.Errorf("verify failed: %s", strings.Join(failedNames, ", "))
-				return outcome
-			}
-			logger.Warn("verify step failed (non-blocking), proceeding to review",
-				"issue_number", issue.Number,
-				"failed_checks", failedNames,
-			)
-		}
+	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
+		outcome.Status = "failed"
+		outcome.Err = verifyErr
+		return outcome
 	}
 
 	// Step 4: Quality review gate (if prompt is configured).
@@ -470,6 +274,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
 					outcome.Status = "failed"
 					outcome.Err = driftErr
+					return outcome
+				}
+
+				// Re-run verify after quality-gate retry so that changes introduced
+				// by the retry agent are caught before the next quality review cycle.
+				if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
+					outcome.Status = "failed"
+					outcome.Err = fmt.Errorf("verify after quality-gate retry: %w", verifyErr)
 					return outcome
 				}
 
@@ -780,6 +592,207 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	outcome.Status = "needs-human-review"
 	outcome.Retries = maxAttempts - 1
 	return outcome
+}
+
+// runVerifyPhase executes the verify step and optional verify-fix cycles.
+// It handles both module-based (cfg.Modules != nil) and single-module verify paths.
+// Returns nil on pass or non-blocking failure (logs a warning in that case).
+// Returns a non-nil error on blocking failure, context cancellation, or agent error.
+// sessionID and fixCycles are updated in-place when verify-fix agents run.
+func runVerifyPhase(
+	ctx context.Context,
+	issue github.Issue,
+	prNum int,
+	branch string,
+	baseSHA string,
+	cfg *config.Config,
+	prompts *Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	hook RunDataHook,
+	sessionID *string,
+	fixCycles *int,
+) error {
+	if cfg.Modules != nil {
+		// Per-module verification in dependency order.
+		sortedMods, err := topologicalSortModules(cfg.Modules)
+		if err != nil {
+			return fmt.Errorf("sorting modules for verify: %w", err)
+		}
+
+		var verifyRunner CommandRunner
+		if cfg.NoSandbox {
+			verifyRunner = newHostRunner()
+		} else {
+			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
+		}
+
+		moduleFailed := false
+		var failedModName string
+
+		for _, modName := range sortedMods {
+			mod := cfg.Modules[modName]
+			moduleChecks := buildModuleVerifyChecks(modName, mod, cfg)
+			if len(moduleChecks) == 0 {
+				continue
+			}
+
+			logger.Info("running verify step for module",
+				"issue_number", issue.Number,
+				"module", modName,
+				"check_count", len(moduleChecks),
+			)
+			verifyResult := RunVerify(ctx, moduleChecks, verifyRunner)
+			if hook != nil {
+				if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
+					logger.Warn("failed to write verify result", "error", err)
+				}
+			}
+
+			if !verifyResult.AllPassed && prompts.VerifyFix != "" && cfg.Verify.MaxFixAttempts > 0 {
+				for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					*fixCycles++
+
+					verifyErrors := fmt.Sprintf("Module: %s\n\n%s", modName, formatVerifyErrors(verifyResult))
+					logger.Info("running verify-fix attempt",
+						"issue_number", issue.Number,
+						"module", modName,
+						"attempt", fixAttempt+1,
+						"max_attempts", cfg.Verify.MaxFixAttempts,
+					)
+
+					fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, cfg, prompts, authEnv, logger)
+					if err != nil {
+						return fmt.Errorf("verify-fix agent: %w", err)
+					}
+					if fixResult.TimedOut {
+						return fmt.Errorf("verify-fix agent timed out")
+					}
+					*sessionID = fixResult.SessionID
+
+					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+						return driftErr
+					}
+
+					verifyResult = RunVerify(ctx, moduleChecks, verifyRunner)
+					if hook != nil {
+						if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
+							logger.Warn("failed to write verify result", "error", err)
+						}
+					}
+					if verifyResult.AllPassed {
+						break
+					}
+				}
+			}
+
+			if verifyResult.AllPassed {
+				logger.Info("verify step passed for module", "issue_number", issue.Number, "module", modName)
+			} else {
+				var failedNames []string
+				for _, cr := range verifyResult.Checks {
+					if !cr.Passed {
+						failedNames = append(failedNames, cr.Name)
+					}
+				}
+				logger.Warn("verify step failed for module",
+					"issue_number", issue.Number,
+					"module", modName,
+					"failed_checks", failedNames,
+				)
+				moduleFailed = true
+				failedModName = modName
+				break // Stop processing dependent modules.
+			}
+		}
+
+		if moduleFailed {
+			if cfg.Verify.Blocking {
+				return fmt.Errorf("verify failed for module %s", failedModName)
+			}
+			logger.Warn("module verify failed (non-blocking), proceeding to review",
+				"issue_number", issue.Number,
+				"module", failedModName,
+			)
+		}
+	} else if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
+		var verifyRunner CommandRunner
+		if cfg.NoSandbox {
+			verifyRunner = newHostRunner()
+		} else {
+			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
+		}
+		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
+		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner)
+		if hook != nil {
+			if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
+				logger.Warn("failed to write verify result", "error", err)
+			}
+		}
+
+		if !verifyResult.AllPassed && prompts.VerifyFix != "" && cfg.Verify.MaxFixAttempts > 0 {
+			for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				*fixCycles++
+
+				verifyErrors := formatVerifyErrors(verifyResult)
+				logger.Info("running verify-fix attempt",
+					"issue_number", issue.Number,
+					"attempt", fixAttempt+1,
+					"max_attempts", cfg.Verify.MaxFixAttempts,
+				)
+
+				fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, cfg, prompts, authEnv, logger)
+				if err != nil {
+					return fmt.Errorf("verify-fix agent: %w", err)
+				}
+				if fixResult.TimedOut {
+					return fmt.Errorf("verify-fix agent timed out")
+				}
+				*sessionID = fixResult.SessionID
+
+				// Re-check drift after each fix attempt.
+				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+					return driftErr
+				}
+
+				// Re-run verify.
+				verifyResult = RunVerify(ctx, verifyChecks, verifyRunner)
+				if hook != nil {
+					if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
+						logger.Warn("failed to write verify result", "error", err)
+					}
+				}
+				if verifyResult.AllPassed {
+					break
+				}
+			}
+		}
+
+		if verifyResult.AllPassed {
+			logger.Info("verify step passed", "issue_number", issue.Number)
+		} else {
+			var failedNames []string
+			for _, cr := range verifyResult.Checks {
+				if !cr.Passed {
+					failedNames = append(failedNames, cr.Name)
+				}
+			}
+			if cfg.Verify.Blocking {
+				return fmt.Errorf("verify failed: %s", strings.Join(failedNames, ", "))
+			}
+			logger.Warn("verify step failed (non-blocking), proceeding to review",
+				"issue_number", issue.Number,
+				"failed_checks", failedNames,
+			)
+		}
+	}
+	return nil
 }
 
 // checkDriftAndClose checks for protected path modifications and closes the
