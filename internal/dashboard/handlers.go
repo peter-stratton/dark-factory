@@ -80,18 +80,25 @@ type IssueDetailData struct {
 	FailureAnalysis *rundata.FailureAnalysis
 }
 
+// CheckSummaryView is the view model for one check within a verify step summary.
+type CheckSummaryView struct {
+	Name   string
+	Passed bool
+}
+
 // TimelineStepView is the view model for one step in the issue timeline.
 type TimelineStepView struct {
-	Name         string
-	MarkerClass  string // "success", "danger", "warning", "info", "neutral"
-	Duration     string // formatted duration, e.g. "42s" or "—"
-	Cost         string // formatted cost, e.g. "$0.0042" or "—"
-	Verdict      string // "Passed", "Failed", "Flagged", "Error", "—"
-	VerdictClass string // badge class suffix
-	Flags        []rundata.Flag
-	HasOutput    bool
-	Output       string
-	ToolTrace    []string // tool calls recorded during this step
+	Name           string
+	MarkerClass    string // "success", "danger", "warning", "info", "neutral"
+	Duration       string // formatted duration, e.g. "42s" or "—"
+	Cost           string // formatted cost, e.g. "$0.0042" or "—"
+	Verdict        string // "Passed", "Failed", "Flagged", "Error", "—"
+	VerdictClass   string // badge class suffix
+	Flags          []rundata.Flag
+	HasOutput      bool
+	Output         string
+	ToolTrace      []string           // tool calls recorded during this step
+	CheckSummaries []CheckSummaryView // per-check results for verify steps; nil for other steps
 }
 
 // IndexData is the data passed to the index template.
@@ -665,7 +672,16 @@ func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
 		verdict = "Failed"
 	}
 
-	// Build output from check results.
+	// Build per-check summaries for the timeline header.
+	var checkSummaries []CheckSummaryView
+	for _, c := range vr.Checks {
+		checkSummaries = append(checkSummaries, CheckSummaryView{
+			Name:   c.Name,
+			Passed: c.Passed,
+		})
+	}
+
+	// Build output from check results for the expandable detail.
 	var sb strings.Builder
 	for _, c := range vr.Checks {
 		status := "PASS"
@@ -685,14 +701,15 @@ func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
 	output := sb.String()
 
 	return TimelineStepView{
-		Name:         name,
-		MarkerClass:  markerClass,
-		Duration:     "—",
-		Cost:         "—",
-		Verdict:      verdict,
-		VerdictClass: verdictClass,
-		HasOutput:    output != "",
-		Output:       output,
+		Name:           name,
+		MarkerClass:    markerClass,
+		Duration:       "—",
+		Cost:           "—",
+		Verdict:        verdict,
+		VerdictClass:   verdictClass,
+		HasOutput:      output != "",
+		Output:         output,
+		CheckSummaries: checkSummaries,
 	}
 }
 

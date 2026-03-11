@@ -604,6 +604,35 @@ a:hover {
   pointer-events: none;
 }
 
+/* --- Verify Check Summaries --- */
+.verify-checks {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.verify-check {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-family: monospace;
+  font-weight: 500;
+}
+
+.verify-check--pass {
+  background: var(--status-success-muted);
+  color: var(--status-success);
+}
+
+.verify-check--fail {
+  background: var(--status-danger-muted);
+  color: var(--status-danger);
+  font-weight: 700;
+}
+
 /* --- Cards --- */
 .card {
   background: var(--bg-surface-1);
