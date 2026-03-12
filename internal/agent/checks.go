@@ -111,6 +111,19 @@ func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) 
 	for _, name := range required {
 		c, ok := byName[name]
 		if !ok {
+			// Exact match failed — try prefix match to handle GitHub Actions'
+			// "workflow / job" naming (e.g. "Code coverage (service)" matches
+			// "Code coverage (service) / build (push)").
+			for _, candidate := range checks {
+				if strings.HasPrefix(candidate.Name, name) {
+					c = candidate
+					ok = true
+					logger.Info("required check matched by prefix", "check", name, "actual", candidate.Name)
+					break
+				}
+			}
+		}
+		if !ok {
 			// Required check not yet present — treat as still pending.
 			logger.Info("required check not yet present, waiting", "check", name)
 			pendingCount++

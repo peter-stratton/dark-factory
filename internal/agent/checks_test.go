@@ -262,6 +262,55 @@ func TestWaitForChecks_NilLogger(t *testing.T) {
 	}
 }
 
+// TestPollChecks_PrefixMatch verifies that pollChecks matches a required check
+// name by prefix when the exact name is not found (e.g. GitHub Actions'
+// "workflow / job" naming convention).
+func TestPollChecks_PrefixMatch(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return checksJSON([]checkEntry{
+			{Name: "Code coverage (service) / build (push)", State: "SUCCESS", Bucket: "pass"},
+			{Name: "golangci-lint / lint (push)", State: "SUCCESS", Bucket: "pass"},
+		}), nil
+	})
+
+	failures, done, err := pollChecks("owner/repo", 42,
+		[]string{"Code coverage (service)", "golangci-lint / lint (push)"}, testLogger(t))
+	if err != nil {
+		t.Fatalf("pollChecks() error = %v", err)
+	}
+	if !done {
+		t.Error("pollChecks() done = false, want true")
+	}
+	if len(failures) != 0 {
+		t.Errorf("expected no failures, got %v", failures)
+	}
+}
+
+// TestPollChecks_PrefixMatchFail verifies that a prefix-matched check that
+// fails is correctly reported as a failure.
+func TestPollChecks_PrefixMatchFail(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return checksJSON([]checkEntry{
+			{Name: "Code coverage (service) / build (push)", State: "FAILURE", Bucket: "fail"},
+		}), nil
+	})
+
+	failures, done, err := pollChecks("owner/repo", 42,
+		[]string{"Code coverage (service)"}, testLogger(t))
+	if err != nil {
+		t.Fatalf("pollChecks() error = %v", err)
+	}
+	if !done {
+		t.Error("pollChecks() done = false, want true")
+	}
+	if len(failures) != 1 {
+		t.Fatalf("expected 1 failure, got %d", len(failures))
+	}
+	if failures[0].Name != "Code coverage (service)" {
+		t.Errorf("failure.Name = %q, want %q", failures[0].Name, "Code coverage (service)")
+	}
+}
+
 // TestPollChecks_MalformedJSON verifies that pollChecks returns an error for
 // non-JSON response from gh pr checks.
 func TestPollChecks_MalformedJSON(t *testing.T) {
