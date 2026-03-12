@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/phs/dark-factory/internal/harness/templates"
+	"github.com/phs/dark-factory/prompts"
 )
 
 func TestWriteIfNotExists_FileWritten(t *testing.T) {
@@ -87,9 +88,6 @@ func TestAllTemplatesAccessible(t *testing.T) {
 		"claude.md",
 		"godark.md",
 		"gitignore",
-		"prompts/implementer.txt",
-		"prompts/implementer_retry.txt",
-		"prompts/reviewer.txt",
 	}
 
 	for _, f := range files {
@@ -106,7 +104,7 @@ func TestAllTemplatesAccessible(t *testing.T) {
 }
 
 func TestImplementerPromptHasImplementationNotes(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/implementer.txt")
+	data, err := prompts.FS.ReadFile("implementer.txt")
 	if err != nil {
 		t.Fatalf("reading implementer prompt: %v", err)
 	}
@@ -117,7 +115,7 @@ func TestImplementerPromptHasImplementationNotes(t *testing.T) {
 }
 
 func TestImplementerPromptHasArchitectureReference(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/implementer.txt")
+	data, err := prompts.FS.ReadFile("implementer.txt")
 	if err != nil {
 		t.Fatalf("reading implementer prompt: %v", err)
 	}
@@ -128,7 +126,7 @@ func TestImplementerPromptHasArchitectureReference(t *testing.T) {
 }
 
 func TestImplementerPromptHasConventionsReference(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/implementer.txt")
+	data, err := prompts.FS.ReadFile("implementer.txt")
 	if err != nil {
 		t.Fatalf("reading implementer prompt: %v", err)
 	}
@@ -139,7 +137,7 @@ func TestImplementerPromptHasConventionsReference(t *testing.T) {
 }
 
 func TestImplementerPromptHasArchitectureConditional(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/implementer.txt")
+	data, err := prompts.FS.ReadFile("implementer.txt")
 	if err != nil {
 		t.Fatalf("reading implementer prompt: %v", err)
 	}
@@ -150,7 +148,7 @@ func TestImplementerPromptHasArchitectureConditional(t *testing.T) {
 }
 
 func TestRetryPromptReferencesImplementationNotes(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/implementer_retry.txt")
+	data, err := prompts.FS.ReadFile("implementer_retry.txt")
 	if err != nil {
 		t.Fatalf("reading retry prompt: %v", err)
 	}
@@ -161,7 +159,7 @@ func TestRetryPromptReferencesImplementationNotes(t *testing.T) {
 }
 
 func TestRetryPromptReferencesReviewerChallenges(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/implementer_retry.txt")
+	data, err := prompts.FS.ReadFile("implementer_retry.txt")
 	if err != nil {
 		t.Fatalf("reading retry prompt: %v", err)
 	}
@@ -172,7 +170,7 @@ func TestRetryPromptReferencesReviewerChallenges(t *testing.T) {
 }
 
 func TestReviewerPromptHasReviewNotes(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/reviewer.txt")
+	data, err := prompts.FS.ReadFile("reviewer.txt")
 	if err != nil {
 		t.Fatalf("reading reviewer prompt: %v", err)
 	}
@@ -183,7 +181,7 @@ func TestReviewerPromptHasReviewNotes(t *testing.T) {
 }
 
 func TestReviewerPromptHasArchitectureComplianceCheck(t *testing.T) {
-	data, err := templates.FS.ReadFile("prompts/reviewer.txt")
+	data, err := prompts.FS.ReadFile("reviewer.txt")
 	if err != nil {
 		t.Fatalf("reading reviewer prompt: %v", err)
 	}
