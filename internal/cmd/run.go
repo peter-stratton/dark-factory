@@ -51,6 +51,10 @@ each unblocked issue through the implement → review → merge loop.`,
 			v, _ := cmd.Flags().GetString("base-branch")
 			flags.BaseBranch = &v
 		}
+		if cmd.Flags().Changed("default-branch") {
+			v, _ := cmd.Flags().GetString("default-branch")
+			flags.DefaultBranch = &v
+		}
 
 		// Parse milestone/issue locally — these are per-run params, not config.
 		var milestone string
@@ -150,6 +154,7 @@ func init() {
 	f.String("config", "godark.yaml", "Path to configuration file")
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
+	f.String("default-branch", "", "Default branch of the repository (auto-detected if omitted)")
 
 	rootCmd.AddCommand(runCmd)
 }

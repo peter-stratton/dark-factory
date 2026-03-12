@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1651,6 +1652,74 @@ base_branch: yaml-branch
 	}
 	if cfg.BaseBranch != "yaml-branch" {
 		t.Errorf("BaseBranch = %q, want %q (YAML value should be preserved)", cfg.BaseBranch, "yaml-branch")
+	}
+}
+
+// --- DefaultBranch tests ---
+
+func TestEffectiveDefaultBranch_ExplicitValue(t *testing.T) {
+	cfg := &Config{DefaultBranch: "develop"}
+	if got := cfg.EffectiveDefaultBranch("owner/repo"); got != "develop" {
+		t.Errorf("EffectiveDefaultBranch() = %q, want %q", got, "develop")
+	}
+}
+
+func TestEffectiveDefaultBranch_APILookup(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("master\n"), nil
+	}
+
+	cfg := &Config{}
+	if got := cfg.EffectiveDefaultBranch("owner/repo"); got != "master" {
+		t.Errorf("EffectiveDefaultBranch() = %q, want %q", got, "master")
+	}
+}
+
+func TestEffectiveDefaultBranch_FallbackOnAPIError(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh not found")
+	}
+
+	cfg := &Config{}
+	if got := cfg.EffectiveDefaultBranch("owner/repo"); got != "main" {
+		t.Errorf("EffectiveDefaultBranch() = %q, want %q", got, "main")
+	}
+}
+
+func TestDefaultBranchFlagOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+default_branch: yaml-default
+`)
+
+	v := "flag-default"
+	cfg, err := Load(path, CLIFlags{DefaultBranch: &v})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DefaultBranch != "flag-default" {
+		t.Errorf("DefaultBranch = %q, want %q (flag should override)", cfg.DefaultBranch, "flag-default")
+	}
+}
+
+func TestDefaultBranchFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+default_branch: master
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DefaultBranch != "master" {
+		t.Errorf("DefaultBranch = %q, want %q", cfg.DefaultBranch, "master")
 	}
 }
 

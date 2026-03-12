@@ -4,11 +4,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// CommandRunner executes a command and returns its combined output.
+// Replaceable for testing.
+var CommandRunner = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
 
 // validNotifyProviders lists the recognized notify provider names.
 // A provider name and its constructor in the notify package are added
@@ -144,6 +152,7 @@ type Config struct {
 	NoSandbox              bool      `yaml:"no_sandbox"`
 	AutoMerge              AutoMerge `yaml:"auto_merge"`
 	BaseBranch             string    `yaml:"base_branch"`
+	DefaultBranch          string    `yaml:"default_branch"`
 	QualityStrictnessDecay bool   `yaml:"quality_strictness_decay"`
 	EnforceArchitecture    bool   `yaml:"enforce_architecture"`
 
@@ -214,6 +223,7 @@ type CLIFlags struct {
 	AutoMergeFeature  *string
 	AutoMergeRollup   *string
 	BaseBranch        *string
+	DefaultBranch     *string
 	Config            string
 }
 
@@ -223,6 +233,21 @@ func (c *Config) EffectiveBaseBranch() string {
 		return "main"
 	}
 	return c.BaseBranch
+}
+
+// EffectiveDefaultBranch returns the default branch for the repository.
+// Resolution order: explicit config/CLI value, GitHub API lookup, fallback "main".
+func (c *Config) EffectiveDefaultBranch(repo string) string {
+	if c.DefaultBranch != "" {
+		return c.DefaultBranch
+	}
+	out, err := CommandRunner("gh", "repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name")
+	if err == nil {
+		if name := strings.TrimSpace(string(out)); name != "" {
+			return name
+		}
+	}
+	return "main"
 }
 
 // Load reads a YAML config file at path and merges CLI flag overrides.
@@ -298,6 +323,9 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.BaseBranch != nil {
 		cfg.BaseBranch = *flags.BaseBranch
+	}
+	if flags.DefaultBranch != nil {
+		cfg.DefaultBranch = *flags.DefaultBranch
 	}
 }
 

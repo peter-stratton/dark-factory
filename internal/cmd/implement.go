@@ -69,6 +69,10 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			v, _ := cmd.Flags().GetString("base-branch")
 			flags.BaseBranch = &v
 		}
+		if cmd.Flags().Changed("default-branch") {
+			v, _ := cmd.Flags().GetString("default-branch")
+			flags.DefaultBranch = &v
+		}
 
 		cfg, err := config.Load(configPath, flags)
 		if err != nil {
@@ -405,6 +409,7 @@ func init() {
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 	f.String("issues", "", "Comma-separated list of issue numbers (e.g. 160,161,162)")
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
+	f.String("default-branch", "", "Default branch of the repository (auto-detected if omitted)")
 
 	rootCmd.AddCommand(implementCmd)
 }
