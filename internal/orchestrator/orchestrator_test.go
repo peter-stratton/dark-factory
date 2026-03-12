@@ -1298,6 +1298,17 @@ func TestFireNotifications_EventFiltering(t *testing.T) {
 
 // --- Rollup PR tests ---
 
+// mockConfigDefaultBranch stubs config.CommandRunner so that
+// EffectiveDefaultBranch returns the given branch name without calling gh.
+func mockConfigDefaultBranch(t *testing.T, branch string) {
+	t.Helper()
+	orig := config.CommandRunner
+	t.Cleanup(func() { config.CommandRunner = orig })
+	config.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(branch + "\n"), nil
+	}
+}
+
 // setupRollupMocks adds stubs for createRollupPRFn and mergeRollupPRFn and
 // returns pointers to slices that record each call for inspection.
 func setupRollupMocks(t *testing.T) (created *[]string, merged *[]int) {
@@ -1332,6 +1343,7 @@ func TestRollup_NoneDoesNothing(t *testing.T) {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
+	mockConfigDefaultBranch(t, "main")
 	created, merged := setupRollupMocks(t)
 
 	cfg := testConfig()
@@ -1362,6 +1374,7 @@ func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
+	mockConfigDefaultBranch(t, "main")
 	created, merged := setupRollupMocks(t)
 
 	cfg := testConfig()
@@ -1398,6 +1411,7 @@ func TestRollup_AutoCreateAndMerges(t *testing.T) {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
+	mockConfigDefaultBranch(t, "main")
 	created, merged := setupRollupMocks(t)
 
 	cfg := testConfig()
@@ -1431,6 +1445,7 @@ func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
+	mockConfigDefaultBranch(t, "main")
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
@@ -1458,6 +1473,7 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
+	mockConfigDefaultBranch(t, "main")
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
@@ -1476,6 +1492,67 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 	}
 }
 
+func TestRollup_SkipWhenBaseBranchEqualsCustomDefault(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	mockConfigDefaultBranch(t, "master")
+	created, _ := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.DefaultBranch = "master"
+	cfg.BaseBranch = "master" // same as custom default branch
+	cfg.AutoMerge.Rollup = "auto"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 0 {
+		t.Errorf("rollup should be skipped when BaseBranch equals custom default branch, got creates: %v", *created)
+	}
+}
+
+func TestRollup_UsesCustomDefaultBranch(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "feature"},
+	}
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
+		})
+
+	mockConfigDefaultBranch(t, "master")
+	created, _ := setupRollupMocks(t)
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.DefaultBranch = "master"
+	cfg.BaseBranch = "feature-branch"
+	cfg.AutoMerge.Rollup = "manual"
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(*created) != 1 {
+		t.Fatalf("rollup should create 1 PR, got %d", len(*created))
+	}
+	if (*created)[0] != "feature-branch->master" {
+		t.Errorf("expected rollup PR from feature-branch->master, got %q", (*created)[0])
+	}
+}
+
 func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 	allIssues := []github.Issue{
 		{Number: 1, Title: "feature"},
@@ -1485,6 +1562,7 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test failure")}
 		})
 
+	mockConfigDefaultBranch(t, "main")
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
@@ -1528,6 +1606,7 @@ func TestRollup_SkipWhenAborted(t *testing.T) {
 		return []byte("ok"), nil
 	}
 
+	mockConfigDefaultBranch(t, "main")
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()

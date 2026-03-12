@@ -34,7 +34,7 @@ repo: ""              # GitHub repository (owner/repo)
 #     none     — label PR awaiting-human-review (default, safest)
 #     low_risk — auto-merge small/safe PRs, label others for human review
 #     all      — auto-merge everything
-#   rollup: controls rollup PR behavior (only relevant when base_branch ≠ main)
+#   rollup: controls rollup PR behavior (only relevant when base_branch ≠ default_branch)
 #     none   — godark stops after feature PRs; human opens and merges rollup PR
 #     manual — godark opens rollup PR; human reviews and merges
 #     auto   — godark opens and merges rollup PR
@@ -65,6 +65,9 @@ prompts:
   implementer: prompts/implementer.txt
   implementer_retry: prompts/implementer_retry.txt
   reviewer: prompts/reviewer.txt
+
+# Default branch of the repository (auto-detected from GitHub if omitted)
+# default_branch: main
 
 # Agent timeout (Go duration format: "30m", "1h", etc.)
 # agent_timeout: "30m"

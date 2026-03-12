@@ -48,6 +48,7 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | `agent_timeout` | Max wall-clock time per agent run | `30m` |
 | `auto_merge.feature` | Merge strategy for feature PRs after approval: `none`, `low_risk`, `all` | `none` |
 | `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `none` |
+| `default_branch` | Default branch of the repo (auto-detected from GitHub if omitted) | auto-detect / `main` |
 | `no_sandbox` | Run agents on host instead of Docker | `false` |
 
 ### Paths and constraints
@@ -94,7 +95,7 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 ### Rollup modes (`auto_merge.rollup`)
 
 When godark runs against a non-default base branch, a rollup PR merges the base
-branch into main after all feature PRs are done. The `rollup` field controls
+branch into the default branch after all feature PRs are done. The `rollup` field controls
 what godark does with that rollup PR:
 
 | Mode | Feature PRs → base branch | Base branch → main |

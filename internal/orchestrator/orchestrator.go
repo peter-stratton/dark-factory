@@ -469,7 +469,7 @@ done:
 	// Rollup PR: create (and optionally merge) a PR from the base branch back
 	// to the default branch when the run completed cleanly, used a non-default
 	// base branch, and at least one feature PR was merged.
-	defaultBranch := "main"
+	defaultBranch := cfg.EffectiveDefaultBranch(cfg.Repo)
 	var rollupPRNumber int
 	var rollupPRURL string
 	if stats.abortReason == "" &&

@@ -581,15 +581,18 @@ wait_for_checks:
   timeout: "10m"           # max time to wait for checks to complete
   required: []             # check names that must pass before merge
 
-# Rollup PR behavior (when base_branch differs from main)
+# Default branch of the repository (auto-detected from GitHub if omitted)
+# default_branch: main
+
+# Rollup PR behavior (when base_branch differs from default_branch)
 # none   — godark merges feature PRs; human opens and merges the rollup PR
 # manual — godark merges feature PRs and opens the rollup PR; human merges it
 # auto   — godark merges feature PRs, opens the rollup PR, and merges it
 
-# | Mode   | Feature PRs → base branch | Base branch → main                    |
-# |--------|---------------------------|---------------------------------------|
+# | Mode   | Feature PRs → base branch | Base branch → default branch           |
+# |--------|---------------------------|----------------------------------------|
 # | none   | godark merges             | human inspects branch, opens PR, merges|
-# | manual | godark merges             | godark opens PR, human reviews/merges |
+# | manual | godark merges             | godark opens PR, human reviews/merges  |
 # | auto   | godark merges             | godark opens PR and merges             |
 
 # Risk thresholds for low_risk auto-merge
