@@ -271,6 +271,30 @@ func TestInitPartialState(t *testing.T) {
 	}
 }
 
+func TestInitPromptsAlwaysOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	runInit(t)
+
+	// Write stale content to simulate an older scaffolded version.
+	stale := "stale prompt content"
+	os.WriteFile("prompts/implementer.txt", []byte(stale), 0o644)
+
+	buf := runInit(t)
+
+	data, _ := os.ReadFile("prompts/implementer.txt")
+	if string(data) == stale {
+		t.Error("prompts/implementer.txt should be overwritten on re-init")
+	}
+
+	if !strings.Contains(buf.String(), "wrote prompts/implementer.txt") {
+		t.Error("expected write message for prompts/implementer.txt on re-init")
+	}
+}
+
 func TestInitResetClaudeMD(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()

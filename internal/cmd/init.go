@@ -12,6 +12,7 @@ import (
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/skills"
+	"github.com/phs/dark-factory/prompts"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +52,13 @@ auto_merge:
 # roadmap_path: docs/ROADMAP.md
 # planning_dir: docs/planning/
 # scenario_dir: tests/scenarios/
+
+# Patch coverage enforcement (optional)
+# When set, the verify step computes patch coverage after tests pass and fails
+# if the percentage of covered changed lines is below patch_target.
+# coverage:
+#   patch_target: 80          # 1-100, percentage of changed lines that must be covered
+#   test_command: ""           # optional override (must write -coverprofile=/tmp/cov.out)
 
 # Prompt templates
 prompts:
@@ -188,9 +196,6 @@ func writeHarnessDocs(cmd *cobra.Command) error {
 		{"architecture.json", "docs/architecture.json"},
 		{"conventions.md", "docs/conventions.md"},
 		{"roadmap.md", "docs/ROADMAP.md"},
-		{"prompts/implementer.txt", "prompts/implementer.txt"},
-		{"prompts/implementer_retry.txt", "prompts/implementer_retry.txt"},
-		{"prompts/reviewer.txt", "prompts/reviewer.txt"},
 	}
 
 	for _, f := range docFiles {
@@ -203,6 +208,29 @@ func writeHarnessDocs(cmd *cobra.Command) error {
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "skipped %s (already exists)\n", f.dest)
 		}
+	}
+
+	// Prompt templates are always overwritten (managed by godark, like skills).
+	// Read from prompts.FS (single source of truth) rather than maintaining a
+	// separate copy in the harness templates.
+	promptFiles := []struct{ name, dest string }{
+		{"implementer.txt", "prompts/implementer.txt"},
+		{"implementer_retry.txt", "prompts/implementer_retry.txt"},
+		{"reviewer.txt", "prompts/reviewer.txt"},
+	}
+
+	for _, f := range promptFiles {
+		data, err := prompts.FS.ReadFile(f.name)
+		if err != nil {
+			return fmt.Errorf("reading embedded prompt %s: %w", f.name, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(f.dest), 0o755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", f.dest, err)
+		}
+		if err := os.WriteFile(f.dest, data, 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", f.dest, err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", f.dest)
 	}
 
 	claudeMDWritten := false
