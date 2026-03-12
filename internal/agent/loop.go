@@ -514,6 +514,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				outcome.Err = fmt.Errorf("merging PR: %w", err)
 				return outcome
 			}
+			// Explicitly close the issue after merge. GitHub's "Closes #N"
+			// keyword only auto-closes on merge to the default branch, so
+			// when the base branch differs we must close it ourselves.
+			if err := github.CloseIssue(cfg.Repo, issue.Number); err != nil {
+				logger.Warn("failed to close issue after merge", "issue", issue.Number, "error", err)
+			}
 			// Remove all lifecycle labels after merge (best-effort). This cleans up
 			// labels applied in a previous run or manually, not just the current run.
 			for _, lbl := range label.All() {

@@ -134,6 +134,20 @@ func extractPriority(labels []string) string {
 	return ""
 }
 
+// CloseIssue closes a GitHub issue by number. This is needed when PRs merge
+// into a non-default branch, since GitHub's "Closes #N" keyword only
+// auto-closes issues on merge to the default branch.
+func CloseIssue(repo string, number int) error {
+	_, err := CommandRunner("gh", "issue", "close",
+		fmt.Sprintf("%d", number),
+		"--repo", repo,
+	)
+	if err != nil {
+		return fmt.Errorf("gh issue close #%d: %w", number, err)
+	}
+	return nil
+}
+
 // FetchClosedIssueNumbers returns the issue numbers of all closed issues in
 // the given repo. This is used to build the closed-set for dependency resolution.
 func FetchClosedIssueNumbers(repo string) ([]int, error) {
