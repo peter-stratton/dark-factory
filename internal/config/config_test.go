@@ -1771,3 +1771,32 @@ claude_flags: ["-v"]
 		t.Errorf("unexpected error loading config with legacy claude_flags: %v", err)
 	}
 }
+
+func TestMaxResumeRetriesDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `repo: owner/repo`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxResumeRetries != 2 {
+		t.Errorf("MaxResumeRetries = %d, want 2", cfg.MaxResumeRetries)
+	}
+}
+
+func TestMaxResumeRetriesOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+max_resume_retries: 0
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxResumeRetries != 0 {
+		t.Errorf("MaxResumeRetries = %d, want 0", cfg.MaxResumeRetries)
+	}
+}

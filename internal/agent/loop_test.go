@@ -4146,3 +4146,190 @@ func TestExtractSection_ReturnsEmptyWhenHeadingAbsent(t *testing.T) {
 		t.Errorf("expected empty string when heading absent, got: %s", result)
 	}
 }
+
+// handoffTrackingGuard returns a GuardRunner stub that handles the common calls
+// needed by ProcessIssue tests and tracks calls to assembleHandoffContext.
+// handoffCallCount, if non-nil, is incremented whenever the
+// "gh pr view --json body,comments" call (from assembleHandoffContext) is made.
+func handoffTrackingGuard(handoffCallCount *int) func(string, ...string) ([]byte, error) {
+	return func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "body,comments") {
+			if handoffCallCount != nil {
+				*handoffCallCount++
+			}
+			return []byte(`{"body": "", "comments": []}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+}
+
+func TestProcessIssue_ResumeOnAttempt0WithMaxResumeRetries2(t *testing.T) {
+	// With MaxResumeRetries: 2, attempt 0 (first retry) uses session resumption.
+	// assembleHandoffContext should NOT be called.
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+	cfg.MaxResumeRetries = 2
+
+	var handoffCallCount int
+	// Agent outputs: implementer, quality(APPROVED), reviewer(CHANGES), retry, reviewer(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output",
+		"REVIEW_RESULT=APPROVED",
+	}, handoffTrackingGuard(&handoffCallCount))
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if handoffCallCount != 0 {
+		t.Errorf("assembleHandoffContext called %d time(s) on attempt 0 with MaxResumeRetries=2, expected resume mode (0 calls)", handoffCallCount)
+	}
+}
+
+func TestProcessIssue_FreshOnAttempt2WithMaxResumeRetries2(t *testing.T) {
+	// With MaxResumeRetries: 2, attempt 2 (third retry) uses fresh agent with handoff.
+	// assembleHandoffContext SHOULD be called on the third retry (attempt index 2).
+	cfg := loopConfig()
+	cfg.MaxRetries = 3
+	cfg.MaxResumeRetries = 2
+
+	var handoffCallCount int
+	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×3, retry×3, review(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 1",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 2",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 3",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "body,comments") {
+			handoffCallCount++
+			return []byte(`{"body": "", "comments": []}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// Attempt 0 and 1 resume (< 2), attempt 2 is fresh (>= 2). So handoff called once.
+	if handoffCallCount != 1 {
+		t.Errorf("handoff assembled %d time(s), want 1 (only on attempt 2)", handoffCallCount)
+	}
+}
+
+func TestProcessIssue_AllFreshWithMaxResumeRetries0(t *testing.T) {
+	// With MaxResumeRetries: 0, every retry uses fresh mode.
+	// assembleHandoffContext should be called on each retry attempt.
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+	cfg.MaxResumeRetries = 0
+
+	var handoffCallCount int
+	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×2, retry×2, review(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 1",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 2",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "body,comments") {
+			handoffCallCount++
+			return []byte(`{"body": "", "comments": []}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// Both retries (attempt 0 and 1) should use fresh mode with MaxResumeRetries=0.
+	if handoffCallCount != 2 {
+		t.Errorf("handoff assembled %d time(s), want 2 (all retries fresh)", handoffCallCount)
+	}
+}
+
+func TestProcessIssue_AllResumeWithMaxResumeRetriesHigherThanMaxRetries(t *testing.T) {
+	// With MaxResumeRetries: 10 and MaxRetries: 3, all retry attempts use session resumption.
+	// assembleHandoffContext should never be called.
+	cfg := loopConfig()
+	cfg.MaxRetries = 3
+	cfg.MaxResumeRetries = 10
+
+	var handoffCalled int
+	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×3, retry×3, review(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 1",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 2",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 3",
+		"REVIEW_RESULT=APPROVED",
+	}, handoffTrackingGuard(&handoffCalled))
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if handoffCalled != 0 {
+		t.Errorf("assembleHandoffContext called %d time(s) with MaxResumeRetries=10, expected all-resume mode (0 calls)", handoffCalled)
+	}
+}
