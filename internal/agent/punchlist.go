@@ -24,9 +24,6 @@ type PunchlistPromptData struct {
 	ScenarioSpec string
 }
 
-// maxPRDiffLen is the maximum number of bytes to include from a PR diff.
-const maxPRDiffLen = 30_000
-
 // GenerateAcceptanceTests calls the LLM to produce acceptance test suggestions
 // for a single punchlist entry. Returns nil on any failure (graceful degradation).
 func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts *Prompts, cfg *config.Config, authEnv map[string]string, logger *slog.Logger) []string {
@@ -37,7 +34,7 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 	}
 
 	// Fetch PR diff.
-	diff, err := punchlist.FetchPRDiff(cfg.Repo, entry.PRNumber, maxPRDiffLen)
+	diff, err := punchlist.FetchPRDiff(cfg.Repo, entry.PRNumber, cfg.Truncation.PRDiff)
 	if err != nil {
 		logger.Warn("failed to fetch PR diff for acceptance tests",
 			"pr_number", entry.PRNumber, "error", err)

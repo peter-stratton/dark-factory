@@ -737,7 +737,7 @@ func runVerifyPhase(
 				"module", modName,
 				"check_count", len(moduleChecks),
 			)
-			verifyResult := RunVerify(ctx, moduleChecks, verifyRunner)
+			verifyResult := RunVerify(ctx, moduleChecks, verifyRunner, cfg.Truncation)
 			if hook != nil {
 				if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
 					logger.Warn("failed to write verify result", "error", err)
@@ -772,7 +772,7 @@ func runVerifyPhase(
 						return driftErr
 					}
 
-					verifyResult = RunVerify(ctx, moduleChecks, verifyRunner)
+					verifyResult = RunVerify(ctx, moduleChecks, verifyRunner, cfg.Truncation)
 					if hook != nil {
 						if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
 							logger.Warn("failed to write verify result", "error", err)
@@ -821,7 +821,7 @@ func runVerifyPhase(
 			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
 		}
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
-		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner)
+		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
 		if hook != nil {
 			if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
 				logger.Warn("failed to write verify result", "error", err)
@@ -857,7 +857,7 @@ func runVerifyPhase(
 				}
 
 				// Re-run verify.
-				verifyResult = RunVerify(ctx, verifyChecks, verifyRunner)
+				verifyResult = RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
 				if hook != nil {
 					if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
 						logger.Warn("failed to write verify result", "error", err)
