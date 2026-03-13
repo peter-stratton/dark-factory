@@ -6,9 +6,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/phs/dark-factory/internal/mdutil"
 )
 
 // GuardRunner executes a command and returns its combined output.
@@ -123,11 +124,8 @@ func HasScenarioSpec(scenarioDir string, issueNum int) bool {
 	ref := fmt.Sprintf("#%d", issueNum)
 
 	found := false
-	_ = filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || found {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+	_ = mdutil.WalkMarkdownFiles(scenarioDir, func(path string) error {
+		if found {
 			return nil
 		}
 		data, err := os.ReadFile(path)
