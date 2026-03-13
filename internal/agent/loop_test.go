@@ -4333,3 +4333,108 @@ func TestProcessIssue_AllResumeWithMaxResumeRetriesHigherThanMaxRetries(t *testi
 		t.Errorf("assembleHandoffContext called %d time(s) with MaxResumeRetries=10, expected all-resume mode (0 calls)", handoffCalled)
 	}
 }
+
+func TestHandleNonBlockingResult_Error(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := bufferLogger(&logBuf)
+
+	var hookStep rundata.StepResult
+	hookCalled := false
+	writeHook := func(step rundata.StepResult) error {
+		hookStep = step
+		hookCalled = true
+		return nil
+	}
+
+	result := handleNonBlockingResult(nil, fmt.Errorf("something went wrong"), "test-agent", logger, writeHook)
+
+	if result != "" {
+		t.Errorf("expected empty string on error, got %q", result)
+	}
+	if !hookCalled {
+		t.Error("expected writeHook to be called on error")
+	}
+	if hookStep.Error != "something went wrong" {
+		t.Errorf("hookStep.Error = %q, want %q", hookStep.Error, "something went wrong")
+	}
+	if !strings.Contains(logBuf.String(), "test-agent failed, continuing") {
+		t.Errorf("expected warning log for failure, got: %s", logBuf.String())
+	}
+}
+
+func TestHandleNonBlockingResult_Timeout(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := bufferLogger(&logBuf)
+
+	var hookStep rundata.StepResult
+	hookCalled := false
+	writeHook := func(step rundata.StepResult) error {
+		hookStep = step
+		hookCalled = true
+		return nil
+	}
+
+	r := &Result{TimedOut: true, ResultText: "ignored"}
+	result := handleNonBlockingResult(r, nil, "test-agent", logger, writeHook)
+
+	if result != "" {
+		t.Errorf("expected empty string on timeout, got %q", result)
+	}
+	if !hookCalled {
+		t.Error("expected writeHook to be called on timeout")
+	}
+	if hookStep.Error != "timed out" {
+		t.Errorf("hookStep.Error = %q, want %q", hookStep.Error, "timed out")
+	}
+	if !strings.Contains(logBuf.String(), "test-agent timed out, continuing") {
+		t.Errorf("expected timeout warning log, got: %s", logBuf.String())
+	}
+}
+
+func TestHandleNonBlockingResult_Success(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := bufferLogger(&logBuf)
+
+	var hookStep rundata.StepResult
+	hookCalled := false
+	writeHook := func(step rundata.StepResult) error {
+		hookStep = step
+		hookCalled = true
+		return nil
+	}
+
+	r := &Result{ResultText: "the brief", TimedOut: false}
+	result := handleNonBlockingResult(r, nil, "test-agent", logger, writeHook)
+
+	if result != "the brief" {
+		t.Errorf("expected result text %q, got %q", "the brief", result)
+	}
+	if !hookCalled {
+		t.Error("expected writeHook to be called on success")
+	}
+	if hookStep.Error != "" {
+		t.Errorf("hookStep.Error should be empty on success, got %q", hookStep.Error)
+	}
+}
+
+func TestHandleNonBlockingResult_NilHook(t *testing.T) {
+	logger := slog.Default()
+
+	// Should not panic with nil writeHook in any case.
+	result := handleNonBlockingResult(nil, fmt.Errorf("oops"), "test-agent", logger, nil)
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
+	}
+
+	r := &Result{TimedOut: true}
+	result = handleNonBlockingResult(r, nil, "test-agent", logger, nil)
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
+	}
+
+	r2 := &Result{ResultText: "ok"}
+	result = handleNonBlockingResult(r2, nil, "test-agent", logger, nil)
+	if result != "ok" {
+		t.Errorf("expected %q, got %q", "ok", result)
+	}
+}
