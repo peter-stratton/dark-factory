@@ -758,7 +758,7 @@ service-account auth.
 
 ---
 
-## Phase 16: Public Release
+## Phase 16: Public Release ✅
 
 **Goal**: The repo is public and source-available under ELv2, installable via
 `brew` or `go install`, with automated releases on tag push. v0.1.0 is
