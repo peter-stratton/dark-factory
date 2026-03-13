@@ -56,6 +56,11 @@ type PromptData struct {
 	// this to branch off origin/<BaseBranch> and pass --base <BaseBranch> to
 	// gh pr create.
 	BaseBranch string
+	// ReconBrief holds the output from the recon agent. When non-empty it is
+	// injected into the implementer prompt as pre-implementation context.
+	// Not set by newPromptData() — set by the caller after running the recon
+	// agent.
+	ReconBrief string
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from

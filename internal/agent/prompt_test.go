@@ -948,3 +948,59 @@ func TestSpecGeneratorPrompt_BaseBranchEmpty_NeverCommitToMain(t *testing.T) {
 		t.Error("spec_generator prompt should contain 'Never commit directly to main' when BaseBranch is empty")
 	}
 }
+
+func TestImplementerPrompt_WithReconBrief_IncludesBrief(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	brief := "## Relevant files\n- internal/config/config.go: Prompts struct at line 206"
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		Slug:           "test-issue",
+		ReconBrief:     brief,
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, brief) {
+		t.Error("implementer prompt should contain the recon brief when ReconBrief is set")
+	}
+	if !strings.Contains(rendered, "recon brief") {
+		t.Error("implementer prompt should contain 'recon brief' heading when ReconBrief is set")
+	}
+}
+
+func TestImplementerPrompt_WithoutReconBrief_OmitsReconSection(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		Slug:           "test-issue",
+		ReconBrief:     "",
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "recon brief") {
+		t.Error("implementer prompt should not contain 'recon brief' when ReconBrief is empty")
+	}
+}

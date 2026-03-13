@@ -743,6 +743,38 @@ prompts:
 	}
 }
 
+func TestReconPromptPathFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+prompts:
+  recon: "custom/recon.txt"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Prompts.Recon != "custom/recon.txt" {
+		t.Errorf("Prompts.Recon = %q, want %q", cfg.Prompts.Recon, "custom/recon.txt")
+	}
+}
+
+func TestReconPromptPathDefaultEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Prompts.Recon != "" {
+		t.Errorf("Prompts.Recon = %q, want empty string", cfg.Prompts.Recon)
+	}
+}
+
 func TestDeniedCommandsDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
