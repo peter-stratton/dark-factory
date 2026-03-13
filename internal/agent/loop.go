@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -118,7 +119,39 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			logger.Warn("failed to write issue status", "error", err)
 		}
 	}
-	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger)
+
+	// Optional recon step: gather context before implementation.
+	reconBrief := ""
+	if prompts.Recon != "" {
+		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
+		if reconErr != nil {
+			logger.Warn("recon agent failed, continuing without brief", "error", reconErr)
+			if hook != nil {
+				step := rundata.StepResult{Error: reconErr.Error()}
+				if writeErr := hook.WriteReconResult(issue.Number, step); writeErr != nil {
+					logger.Warn("failed to write recon result", "error", writeErr)
+				}
+			}
+		} else if reconResult.TimedOut {
+			logger.Warn("recon agent timed out, continuing without brief")
+			if hook != nil {
+				step := ResultToStep(reconResult)
+				step.Error = "timed out"
+				if writeErr := hook.WriteReconResult(issue.Number, step); writeErr != nil {
+					logger.Warn("failed to write recon result", "error", writeErr)
+				}
+			}
+		} else {
+			reconBrief = reconResult.ResultText
+			if hook != nil {
+				if writeErr := hook.WriteReconResult(issue.Number, ResultToStep(reconResult)); writeErr != nil {
+					logger.Warn("failed to write recon result", "error", writeErr)
+				}
+			}
+		}
+	}
+
+	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger, reconBrief)
 	if err != nil {
 		outcome.Status = "failed"
 		outcome.Err = fmt.Errorf("implementer agent: %w", err)
@@ -252,7 +285,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					"retries_left", retriesLeft,
 				)
 
-				retryResult, err := Retry(ctx, issue, prNum, "", "", cfg, prompts, authEnv, logger)
+				var qualityHandoff string
+				if qAttempt >= cfg.MaxResumeRetries {
+					qualityHandoff = assembleHandoffContext(cfg.Repo, prNum, logger)
+				}
+
+				retryResult, err := Retry(ctx, issue, prNum, "", "", qualityHandoff, cfg, prompts, authEnv, logger)
 				if err != nil {
 					outcome.Status = "failed"
 					outcome.Err = fmt.Errorf("retry agent (quality): %w", err)
@@ -554,7 +592,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				"retries_left", retriesLeft,
 			)
 
-			retryResult, err := Retry(ctx, issue, prNum, sessionID, "", cfg, prompts, authEnv, logger)
+			var handoff string
+			if attempt >= cfg.MaxResumeRetries {
+				handoff = assembleHandoffContext(cfg.Repo, prNum, logger)
+			}
+
+			retryResult, err := Retry(ctx, issue, prNum, sessionID, "", handoff, cfg, prompts, authEnv, logger)
 			if err != nil {
 				outcome.Status = "failed"
 				outcome.Err = fmt.Errorf("retry agent: %w", err)
@@ -1025,6 +1068,98 @@ func runPostMortem(issueNum int, result *Result, hook RunDataHook, logger *slog.
 	if err := hook.WriteFailureAnalysis(issueNum, analysis); err != nil {
 		logger.Warn("failed to write failure analysis", "issue_number", issueNum, "error", err)
 	}
+}
+
+// assembleHandoffContext fetches PR comment bodies and extracts
+// ## Implementation Notes, ## Review Notes, and ## Quality Review Notes
+// sections in chronological order. The result is a multi-section string
+// suitable for injection into the implementer_retry prompt as HandoffContext.
+// Returns an empty string on any error (best-effort) so that the caller can
+// always proceed — worst case the retry runs without structured handoff.
+func assembleHandoffContext(repo string, prNum int, logger *slog.Logger) string {
+	out, err := GuardRunner("gh", "pr", "view",
+		fmt.Sprintf("%d", prNum),
+		"--repo", repo,
+		"--json", "body,comments",
+	)
+	if err != nil {
+		logger.Warn("assembleHandoffContext: gh pr view failed", "pr_number", prNum, "error", err)
+		return ""
+	}
+
+	var pr struct {
+		Body     string `json:"body"`
+		Comments []struct {
+			Body string `json:"body"`
+		} `json:"comments"`
+	}
+	if err := json.Unmarshal(out, &pr); err != nil {
+		logger.Warn("assembleHandoffContext: failed to parse pr view output", "pr_number", prNum, "error", err)
+		return ""
+	}
+
+	// The headings we look for in comment bodies.
+	headings := []string{
+		"## Implementation Notes",
+		"## Review Notes",
+		"## Quality Review Notes",
+	}
+
+	// Collect all bodies in order: PR body first, then comments.
+	allBodies := make([]string, 0, 1+len(pr.Comments))
+	if pr.Body != "" {
+		allBodies = append(allBodies, pr.Body)
+	}
+	for _, c := range pr.Comments {
+		if c.Body != "" {
+			allBodies = append(allBodies, c.Body)
+		}
+	}
+
+	var sections []string
+	for _, body := range allBodies {
+		for _, heading := range headings {
+			if strings.Contains(body, heading) {
+				extracted := extractSection(body, heading)
+				if extracted != "" {
+					sections = append(sections, extracted)
+				}
+				break // only extract one heading per comment body
+			}
+		}
+	}
+
+	if len(sections) == 0 {
+		return ""
+	}
+	return strings.Join(sections, "\n\n---\n\n")
+}
+
+// extractSection finds the named markdown section in body and returns
+// its content (from the heading line through to the next same-level heading
+// or the end of the body). Returns empty string when the heading is absent.
+func extractSection(body, heading string) string {
+	idx := strings.Index(body, heading)
+	if idx < 0 {
+		return ""
+	}
+	// Find the start of the next top-level or same-level heading (## or higher)
+	// that appears after the current heading.
+	rest := body[idx:]
+	// Find next "## " occurrence after the first line.
+	firstNL := strings.Index(rest, "\n")
+	if firstNL < 0 {
+		// Only one line — return the whole heading.
+		return strings.TrimSpace(rest)
+	}
+	nextHeading := strings.Index(rest[firstNL:], "\n## ")
+	var section string
+	if nextHeading < 0 {
+		section = rest
+	} else {
+		section = rest[:firstNL+nextHeading]
+	}
+	return strings.TrimSpace(section)
 }
 
 // logAndRecordFlags logs each flag as a warning and returns a []rundata.Flag for storage.

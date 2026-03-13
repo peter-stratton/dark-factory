@@ -126,6 +126,12 @@ type AutoMerge struct {
 type Config struct {
 	Repo       string `yaml:"repo"`
 	MaxRetries int    `yaml:"max_retries"`
+	// MaxResumeRetries controls when retry agents switch from resuming their
+	// prior session to starting a fresh session with structured handoff context.
+	// On attempt N where N >= MaxResumeRetries, a fresh session is started.
+	// A value of 0 means all retries use fresh mode. A value >= MaxRetries
+	// means all retries use session resumption. Default: 2.
+	MaxResumeRetries int `yaml:"max_resume_retries"`
 
 	AgentTimeout  string            `yaml:"agent_timeout"`
 	FormatCommand string            `yaml:"format_command"`
@@ -212,6 +218,7 @@ type Prompts struct {
 	SpecGenerator    string `yaml:"spec_generator"`
 	Punchlist        string `yaml:"punchlist"`
 	VerifyFix        string `yaml:"verify_fix"`
+	Recon            string `yaml:"recon"`
 }
 
 // CLIFlags holds flag values passed on the command line.
@@ -279,7 +286,8 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 
 func defaults() *Config {
 	return &Config{
-		MaxRetries:     3,
+		MaxRetries:       3,
+		MaxResumeRetries: 2,
 		AutoMerge:      AutoMerge{Feature: "none", Rollup: "none"},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},

@@ -21,6 +21,7 @@ type Prompts struct {
 	SpecGenerator    string
 	Punchlist        string
 	VerifyFix        string
+	Recon            string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -55,6 +56,16 @@ type PromptData struct {
 	// this to branch off origin/<BaseBranch> and pass --base <BaseBranch> to
 	// gh pr create.
 	BaseBranch string
+	// ReconBrief holds the output from the recon agent. When non-empty it is
+	// injected into the implementer prompt as pre-implementation context.
+	// Not set by newPromptData() — set by the caller after running the recon
+	// agent.
+	ReconBrief string
+	// HandoffContext, when non-empty, signals a fresh-session retry. It
+	// contains a chronological summary of prior implementation and review
+	// notes extracted from PR comments so the new agent understands what was
+	// tried and what failed without inheriting a degraded context window.
+	HandoffContext string
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from
@@ -129,6 +140,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		p.VerifyFix = ""
 	} else {
 		p.VerifyFix = vf
+	}
+
+	// Recon is optional — load from config or embedded default.
+	recon, err := loadPromptFile(cfg.Prompts.Recon, "recon.txt")
+	if err != nil {
+		p.Recon = ""
+	} else {
+		p.Recon = recon
 	}
 
 	return p, nil

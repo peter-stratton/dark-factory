@@ -383,6 +383,40 @@ func TestPromptTemplateVarsPreserved(t *testing.T) {
 	}
 }
 
+func TestLoadPrompts_ReconLoadedFromEmbedded(t *testing.T) {
+	cfg := &config.Config{}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.Recon == "" {
+		t.Error("Recon should be loaded from embedded default")
+	}
+}
+
+func TestReconPrompt_RendersWithIssueTitleAndBody(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber: 42,
+		IssueTitle:  "Add recon agent",
+		IssueBody:   "The recon agent explores the codebase before implementation.",
+	}
+	rendered, err := RenderPrompt(p.Recon, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "Add recon agent") {
+		t.Error("recon prompt should contain the issue title")
+	}
+	if !strings.Contains(rendered, "The recon agent explores the codebase before implementation.") {
+		t.Error("recon prompt should contain the issue body")
+	}
+}
+
 func TestSlugify(t *testing.T) {
 	tests := []struct {
 		input string
@@ -912,5 +946,117 @@ func TestSpecGeneratorPrompt_BaseBranchEmpty_NeverCommitToMain(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "Never commit directly to main") {
 		t.Error("spec_generator prompt should contain 'Never commit directly to main' when BaseBranch is empty")
+	}
+}
+
+func TestImplementerPrompt_WithReconBrief_IncludesBrief(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	brief := "## Relevant files\n- internal/config/config.go: Prompts struct at line 206"
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		Slug:           "test-issue",
+		ReconBrief:     brief,
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, brief) {
+		t.Error("implementer prompt should contain the recon brief when ReconBrief is set")
+	}
+	if !strings.Contains(rendered, "recon brief") {
+		t.Error("implementer prompt should contain 'recon brief' heading when ReconBrief is set")
+	}
+}
+
+func TestImplementerPrompt_WithoutReconBrief_OmitsReconSection(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		Slug:           "test-issue",
+		ReconBrief:     "",
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "recon brief") {
+		t.Error("implementer prompt should not contain 'recon brief' when ReconBrief is empty")
+	}
+}
+
+func TestRenderPrompt_HandoffContextRendered(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	handoff := "## Implementation Notes\nPrevious attempt failed due to X."
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		PRNumber:       10,
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		HandoffContext: handoff,
+	}
+	rendered, err := RenderPrompt(p.ImplementerRetry, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "fresh session") {
+		t.Error("implementer_retry prompt should include fresh session preamble when HandoffContext is set")
+	}
+	if !strings.Contains(rendered, handoff) {
+		t.Errorf("implementer_retry prompt should include handoff content, got: %s", rendered)
+	}
+}
+
+func TestRenderPrompt_HandoffContextNotRenderedWhenEmpty(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		PRNumber:       10,
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		HandoffContext: "",
+	}
+	rendered, err := RenderPrompt(p.ImplementerRetry, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "fresh session") {
+		t.Error("implementer_retry prompt should not include fresh session preamble when HandoffContext is empty")
 	}
 }

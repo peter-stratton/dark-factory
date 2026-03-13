@@ -930,6 +930,7 @@ func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 
 // testRunDataHook is a simple RunDataHook implementation for unit tests.
 type testRunDataHook struct {
+	reconCalls                 int
 	specGeneratorCalls         int
 	implementCalls             int
 	reviewKinds                []string
@@ -942,6 +943,10 @@ type testRunDataHook struct {
 	riskAssessments            []rundata.RiskAssessment
 }
 
+func (h *testRunDataHook) WriteReconResult(_ int, _ rundata.StepResult) error {
+	h.reconCalls++
+	return nil
+}
 func (h *testRunDataHook) WriteSpecGeneratorResult(_ int, _ rundata.StepResult) error {
 	h.specGeneratorCalls++
 	return nil
@@ -3788,5 +3793,543 @@ func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want implemented when verify is non-blocking after quality-gate retry (err: %v)", outcome.Status, outcome.Err)
+	}
+}
+
+// TestProcessIssue_ReconRunsBeforeImplement verifies that when prompts.Recon is
+// configured, the recon agent is called before the implementer.
+func TestProcessIssue_ReconRunsBeforeImplement(t *testing.T) {
+	callOrder := []string{}
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		role := env["GODARK_ROLE"]
+		callOrder = append(callOrder, role)
+		callIdx++
+		switch callIdx {
+		case 1: // recon
+			return []byte(wrapRunnerJSON("recon brief text")), []byte(""), 0, nil
+		case 2: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:           "Recon issue #{{.IssueNumber}}",
+		Implementer:     "Implement #{{.IssueNumber}} {{.IssueTitle}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:        "Review PR #{{.PRNumber}}",
+		QualityReviewer: "Quality review PR #{{.PRNumber}}",
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	if len(callOrder) < 2 {
+		t.Fatalf("expected at least 2 agent calls, got %d", len(callOrder))
+	}
+	if callOrder[0] != "recon" {
+		t.Errorf("first agent call role = %q, want %q", callOrder[0], "recon")
+	}
+	if callOrder[1] != "implementer" {
+		t.Errorf("second agent call role = %q, want %q", callOrder[1], "implementer")
+	}
+}
+
+// TestProcessIssue_ReconOutputPassedToImplementer verifies that the recon
+// agent's ResultText is passed as reconBrief to the implementer prompt.
+func TestProcessIssue_ReconOutputPassedToImplementer(t *testing.T) {
+	var implementerPrompt string
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // recon
+			return []byte(wrapRunnerJSON("key finding: use approach X")), []byte(""), 0, nil
+		case 2: // implementer
+			implementerPrompt = env["GODARK_PROMPT"]
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:            "Recon issue #{{.IssueNumber}}",
+		Implementer:      "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:         "Review PR #{{.PRNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}}",
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	if !strings.Contains(implementerPrompt, "key finding: use approach X") {
+		t.Errorf("implementer prompt should contain recon output, got: %s", implementerPrompt)
+	}
+}
+
+// TestProcessIssue_ReconFailureNonBlocking verifies that when recon fails,
+// Implement is still called with an empty reconBrief.
+func TestProcessIssue_ReconFailureNonBlocking(t *testing.T) {
+	var implementerPrompt string
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // recon — simulate failure via non-zero exit
+			return []byte(""), []byte("error output"), 1, nil
+		case 2: // implementer
+			implementerPrompt = env["GODARK_PROMPT"]
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:            "Recon issue #{{.IssueNumber}}",
+		Implementer:      "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:         "Review PR #{{.PRNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}}",
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	// Implementation should still proceed even if recon failed.
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if strings.Contains(implementerPrompt, "brief=") {
+		t.Errorf("implementer prompt should not contain brief when recon failed, got: %s", implementerPrompt)
+	}
+}
+
+// TestProcessIssue_ReconTimeoutNonBlocking verifies that when the recon agent
+// times out, a warning is logged and Implement() is still called with empty reconBrief.
+func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
+	var implementerPrompt string
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	callIdx := 0
+	Runner = func(innerCtx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // recon — cancel context to trigger TimedOut path
+			cancel()
+			return []byte(""), []byte(""), 0, nil
+		case 2: // implementer — capture prompt; context is cancelled so Run returns TimedOut
+			implementerPrompt = env["GODARK_PROMPT"]
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		default:
+			return []byte(wrapRunnerJSON("")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:            "Recon issue #{{.IssueNumber}}",
+		Implementer:      "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:         "Review PR #{{.PRNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}}",
+	}
+
+	ProcessIssue(ctx, loopIssue(), loopConfig(), prompts, nil, logger, nil)
+
+	// A warning must be logged when recon times out.
+	if !strings.Contains(logBuf.String(), "recon agent timed out") {
+		t.Errorf("expected warning about recon timeout in log, got: %s", logBuf.String())
+	}
+
+	// Implement() must still be called (Runner called at least twice).
+	if callIdx < 2 {
+		t.Errorf("Implement() was not called after recon timeout (Runner calls = %d)", callIdx)
+	}
+
+	// Implement() must receive an empty reconBrief (no "brief=" in its prompt).
+	if strings.Contains(implementerPrompt, "brief=") {
+		t.Errorf("implementer prompt should not contain brief when recon timed out, got: %s", implementerPrompt)
+	}
+}
+
+// TestProcessIssue_ReconSkippedWhenUnconfigured verifies that when prompts.Recon
+// is empty, the recon agent is not called and the implementer runs first.
+func TestProcessIssue_ReconSkippedWhenUnconfigured(t *testing.T) {
+	callOrder := []string{}
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		role := env["GODARK_ROLE"]
+		callOrder = append(callOrder, role)
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	// No Recon prompt configured.
+	prompts := testPrompts(t)
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	if len(callOrder) == 0 {
+		t.Fatal("expected at least one agent call")
+	}
+	if callOrder[0] == "recon" {
+		t.Errorf("recon should not run when prompts.Recon is empty; call order: %v", callOrder)
+	}
+	if callOrder[0] != "implementer" {
+		t.Errorf("first agent call role = %q, want %q; call order: %v", callOrder[0], "implementer", callOrder)
+	}
+}
+
+// --- assembleHandoffContext tests ---
+
+func TestAssembleHandoffContext_ExtractsImplAndReviewNotes(t *testing.T) {
+	prComments := `{"body":"## Implementation Notes\nI tried approach A.","comments":[{"body":"## Review Notes\nApproach A has issues."},{"body":"Some unrelated comment."}]}`
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(prComments), nil
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if !strings.Contains(result, "## Implementation Notes") {
+		t.Errorf("expected ## Implementation Notes in result, got: %s", result)
+	}
+	if !strings.Contains(result, "## Review Notes") {
+		t.Errorf("expected ## Review Notes in result, got: %s", result)
+	}
+	if strings.Contains(result, "unrelated comment") {
+		t.Errorf("unrelated comment should not appear in handoff, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_ExtractsQualityReviewNotes(t *testing.T) {
+	prComments := `{"body":"","comments":[{"body":"## Quality Review Notes\nFailed quality check."}]}`
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(prComments), nil
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if !strings.Contains(result, "## Quality Review Notes") {
+		t.Errorf("expected ## Quality Review Notes in result, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_EmptyWhenNoStructuredComments(t *testing.T) {
+	prComments := `{"body":"Just a PR description.","comments":[{"body":"LGTM"},{"body":"👍"}]}`
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(prComments), nil
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if result != "" {
+		t.Errorf("expected empty result when no structured comments, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_EmptyOnGhError(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh: not found")
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if result != "" {
+		t.Errorf("expected empty result on gh error, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_UsesCorrectGhArgs(t *testing.T) {
+	var capturedArgs []string
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		capturedArgs = append([]string{name}, args...)
+		return []byte(`{"body":"","comments":[]}`), nil
+	})
+
+	assembleHandoffContext("owner/repo", 42, testLogger(t))
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "42") {
+		t.Errorf("expected PR number 42 in gh args, got: %v", capturedArgs)
+	}
+	if !strings.Contains(joined, "--repo") || !strings.Contains(joined, "owner/repo") {
+		t.Errorf("expected --repo owner/repo in gh args, got: %v", capturedArgs)
+	}
+	if !strings.Contains(joined, "body,comments") {
+		t.Errorf("expected --json body,comments in gh args, got: %v", capturedArgs)
+	}
+}
+
+// --- extractSection tests ---
+
+func TestExtractSection_ExtractsContentToNextHeading(t *testing.T) {
+	body := "## Implementation Notes\nI tried X.\nIt failed.\n\n## Review Notes\nPlease fix Y."
+	result := extractSection(body, "## Implementation Notes")
+	if !strings.Contains(result, "I tried X.") {
+		t.Errorf("expected implementation content, got: %s", result)
+	}
+	if strings.Contains(result, "Review Notes") {
+		t.Errorf("should not include next section, got: %s", result)
+	}
+}
+
+func TestExtractSection_ExtractsToEndWhenNoNextHeading(t *testing.T) {
+	body := "Some prefix.\n## Review Notes\nThis is the review feedback."
+	result := extractSection(body, "## Review Notes")
+	if !strings.Contains(result, "This is the review feedback.") {
+		t.Errorf("expected review content, got: %s", result)
+	}
+}
+
+func TestExtractSection_ReturnsEmptyWhenHeadingAbsent(t *testing.T) {
+	body := "Some content without any headings."
+	result := extractSection(body, "## Implementation Notes")
+	if result != "" {
+		t.Errorf("expected empty string when heading absent, got: %s", result)
+	}
+}
+
+// handoffTrackingGuard returns a GuardRunner stub that handles the common calls
+// needed by ProcessIssue tests and tracks calls to assembleHandoffContext.
+// handoffCallCount, if non-nil, is incremented whenever the
+// "gh pr view --json body,comments" call (from assembleHandoffContext) is made.
+func handoffTrackingGuard(handoffCallCount *int) func(string, ...string) ([]byte, error) {
+	return func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "body,comments") {
+			if handoffCallCount != nil {
+				*handoffCallCount++
+			}
+			return []byte(`{"body": "", "comments": []}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	}
+}
+
+func TestProcessIssue_ResumeOnAttempt0WithMaxResumeRetries2(t *testing.T) {
+	// With MaxResumeRetries: 2, attempt 0 (first retry) uses session resumption.
+	// assembleHandoffContext should NOT be called.
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+	cfg.MaxResumeRetries = 2
+
+	var handoffCallCount int
+	// Agent outputs: implementer, quality(APPROVED), reviewer(CHANGES), retry, reviewer(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output",
+		"REVIEW_RESULT=APPROVED",
+	}, handoffTrackingGuard(&handoffCallCount))
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if handoffCallCount != 0 {
+		t.Errorf("assembleHandoffContext called %d time(s) on attempt 0 with MaxResumeRetries=2, expected resume mode (0 calls)", handoffCallCount)
+	}
+}
+
+func TestProcessIssue_FreshOnAttempt2WithMaxResumeRetries2(t *testing.T) {
+	// With MaxResumeRetries: 2, attempt 2 (third retry) uses fresh agent with handoff.
+	// assembleHandoffContext SHOULD be called on the third retry (attempt index 2).
+	cfg := loopConfig()
+	cfg.MaxRetries = 3
+	cfg.MaxResumeRetries = 2
+
+	var handoffCallCount int
+	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×3, retry×3, review(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 1",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 2",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 3",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "body,comments") {
+			handoffCallCount++
+			return []byte(`{"body": "", "comments": []}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// Attempt 0 and 1 resume (< 2), attempt 2 is fresh (>= 2). So handoff called once.
+	if handoffCallCount != 1 {
+		t.Errorf("handoff assembled %d time(s), want 1 (only on attempt 2)", handoffCallCount)
+	}
+}
+
+func TestProcessIssue_AllFreshWithMaxResumeRetries0(t *testing.T) {
+	// With MaxResumeRetries: 0, every retry uses fresh mode.
+	// assembleHandoffContext should be called on each retry attempt.
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+	cfg.MaxResumeRetries = 0
+
+	var handoffCallCount int
+	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×2, retry×2, review(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 1",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 2",
+		"REVIEW_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "body,comments") {
+			handoffCallCount++
+			return []byte(`{"body": "", "comments": []}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json number") {
+			return []byte(`{"number": 10}`), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") && strings.Contains(joined, "--json body") {
+			return []byte(`{"body": "Closes #5"}`), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			return []byte("src/main.go\n"), nil
+		}
+		return []byte(""), nil
+	})
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// Both retries (attempt 0 and 1) should use fresh mode with MaxResumeRetries=0.
+	if handoffCallCount != 2 {
+		t.Errorf("handoff assembled %d time(s), want 2 (all retries fresh)", handoffCallCount)
+	}
+}
+
+func TestProcessIssue_AllResumeWithMaxResumeRetriesHigherThanMaxRetries(t *testing.T) {
+	// With MaxResumeRetries: 10 and MaxRetries: 3, all retry attempts use session resumption.
+	// assembleHandoffContext should never be called.
+	cfg := loopConfig()
+	cfg.MaxRetries = 3
+	cfg.MaxResumeRetries = 10
+
+	var handoffCalled int
+	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×3, retry×3, review(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"QUALITY_RESULT=APPROVED",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 1",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 2",
+		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"retry output 3",
+		"REVIEW_RESULT=APPROVED",
+	}, handoffTrackingGuard(&handoffCalled))
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if handoffCalled != 0 {
+		t.Errorf("assembleHandoffContext called %d time(s) with MaxResumeRetries=10, expected all-resume mode (0 calls)", handoffCalled)
 	}
 }

@@ -3,12 +3,104 @@ package dashboard_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/phs/dark-factory/internal/rundata"
 )
+
+// writeReconFile creates a recon.json under the issue directory.
+func writeReconFile(t *testing.T, issueDir string, step rundata.StepResult) {
+	t.Helper()
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "recon.json"), step)
+}
+
+func TestServer_ReviewChain_WithReconStep(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{8},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 8,
+		rundata.Outcome{IssueNumber: 8, Status: "implemented", PRNumber: 42},
+		rundata.StepResult{Output: "impl done", DurationSeconds: 60},
+		rundata.StepResult{},
+		rundata.StepResult{Output: "review done REVIEW_RESULT=APPROVED", DurationSeconds: 15},
+	)
+	issueDir := filepath.Join(runDir, "issues", "8")
+	writeReconFile(t, issueDir, rundata.StepResult{
+		Output:          "Recon brief: the codebase uses X pattern",
+		CostUSD:         0.0025,
+		DurationSeconds: 18.5,
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/8/review-chain", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	if !strings.Contains(body, "Recon") {
+		t.Error("body missing Recon step")
+	}
+	if !strings.Contains(body, "Implement") {
+		t.Error("body missing Implement step")
+	}
+}
+
+func TestServer_ReviewChain_WithoutReconStep(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{9},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 9,
+		rundata.Outcome{IssueNumber: 9, Status: "implemented"},
+		rundata.StepResult{Output: "impl done REVIEW_RESULT=APPROVED", DurationSeconds: 30},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+	// No recon.json written — simulates a pre-Phase-18 run.
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/9/review-chain", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	if strings.Contains(body, ">Recon<") {
+		t.Error("body should not contain Recon step when no recon data exists")
+	}
+	if !strings.Contains(body, "Implement") {
+		t.Error("body missing Implement step")
+	}
+}
 
 func TestServer_ReviewChain_WithSteps(t *testing.T) {
 	tmpDir := t.TempDir()

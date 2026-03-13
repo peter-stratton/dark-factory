@@ -1,0 +1,35 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/github"
+)
+
+// Recon runs the recon agent to gather context for an issue before implementation.
+// It follows the same pattern as GenerateSpec. Recon is non-blocking — callers
+// should treat errors as warnings and proceed with an empty brief.
+func Recon(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+	slug := Slugify(issue.Title)
+	data := newPromptData(issue, cfg, slug)
+
+	rendered, err := RenderPrompt(prompts.Recon, data)
+	if err != nil {
+		return nil, fmt.Errorf("rendering recon prompt: %w", err)
+	}
+
+	opts, err := newRunOpts(rendered, cfg, authEnv, "recon")
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("starting recon agent",
+		"issue_number", issue.Number,
+		"issue_title", issue.Title,
+	)
+
+	return Run(ctx, opts, cfg.NoSandbox, logger)
+}

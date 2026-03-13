@@ -26,6 +26,7 @@ type IssueDetail struct {
 	Outcome          Outcome
 	LiveStatus       IssueStatus // from status.json; empty Status if not present
 	BlockedBy        []int       // open (not-yet-completed) dependencies; derived by LoadRun
+	Recon            StepResult
 	SpecGenerator    StepResult
 	Implement        StepResult
 	QualityReview    StepResult
@@ -270,6 +271,7 @@ func (r *Reader) readRunMeta(runDir string) (RunMeta, bool) {
 func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 	return IssueDetail{
 		IssueNumber:      issueNum,
+		Recon:            r.readStep(filepath.Join(issueDir, "recon.json")),
 		SpecGenerator:    r.readStep(filepath.Join(issueDir, "spec-generator.json")),
 		Implement:        r.readStep(filepath.Join(issueDir, "implement.json")),
 		QualityReview:    r.readStep(filepath.Join(issueDir, "quality-review.json")),

@@ -506,7 +506,7 @@ func (s *Server) handleReviewChain(w http.ResponseWriter, r *http.Request) {
 // issueToRowView converts an IssueDetail to the view model for the run detail table.
 func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) IssueRowView {
 	flagCount := len(issue.Implement.Flags) + len(issue.QualityReview.Flags) + len(issue.FunctionalReview.Flags)
-	totalCost := issue.Implement.CostUSD + issue.QualityReview.CostUSD + issue.FunctionalReview.CostUSD
+	totalCost := issue.Recon.CostUSD + issue.Implement.CostUSD + issue.QualityReview.CostUSD + issue.FunctionalReview.CostUSD
 	for _, retry := range issue.Retries {
 		flagCount += len(retry.Retry.Flags) + len(retry.QualityReview.Flags) + len(retry.FunctionalReview.Flags)
 		totalCost += retry.Retry.CostUSD + retry.QualityReview.CostUSD + retry.FunctionalReview.CostUSD
@@ -575,6 +575,9 @@ func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
 
 	if hasStepData(issue.SpecGenerator) {
 		steps = append(steps, stepToView("Spec Generator", issue.SpecGenerator))
+	}
+	if hasStepData(issue.Recon) {
+		steps = append(steps, stepToView("Recon", issue.Recon))
 	}
 	if hasStepData(issue.Implement) {
 		steps = append(steps, stepToView("Implement", issue.Implement))

@@ -11,7 +11,7 @@ import (
 func TestImplement_RendersPromptAndCallsRun(t *testing.T) {
 	captured := stubRunner(t)
 
-	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -32,7 +32,7 @@ func TestImplement_PromptContainsIssueDetails(t *testing.T) {
 		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -53,7 +53,7 @@ func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	result, err := Retry(context.Background(), testIssue(), 7, "", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRetry_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
 		return []byte(`{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -94,13 +94,79 @@ func TestRetry_WithoutSessionID_NoSessionEnv(t *testing.T) {
 		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	_, err := Retry(context.Background(), testIssue(), 7, "", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
 
 	if _, ok := capturedEnv["GODARK_SESSION_ID"]; ok {
 		t.Errorf("GODARK_SESSION_ID should not be set when prevSessionID is empty, got %q", capturedEnv["GODARK_SESSION_ID"])
+	}
+}
+
+func TestRetry_WithHandoffContext_SkipsSessionID(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	// Even with a prevSessionID, handoffContext non-empty means fresh session.
+	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", "Prior attempt context.", testConfig(), testPrompts(t), nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Retry() error = %v", err)
+	}
+
+	if _, ok := capturedEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID must not be set when handoffContext is non-empty, got %q", capturedEnv["GODARK_SESSION_ID"])
+	}
+}
+
+func TestRetry_WithHandoffContext_RendersHandoffInPrompt(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	handoff := "## Implementation Notes\nTried X but it failed."
+	prompts := &Prompts{
+		ImplementerRetry: `PR #{{.PRNumber}}{{if .HandoffContext}} FRESH: {{.HandoffContext}}{{end}}`,
+	}
+
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", handoff, testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Retry() error = %v", err)
+	}
+
+	prompt := capturedEnv["GODARK_PROMPT"]
+	if !strings.Contains(prompt, "FRESH:") {
+		t.Errorf("expected FRESH: in rendered prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, handoff) {
+		t.Errorf("expected handoff text in rendered prompt, got: %s", prompt)
+	}
+}
+
+func TestRetry_WithEmptyHandoffContext_NoFreshBlock(t *testing.T) {
+	var capturedEnv map[string]string
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedEnv = env
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+
+	prompts := &Prompts{
+		ImplementerRetry: `PR #{{.PRNumber}}{{if .HandoffContext}} FRESH: {{.HandoffContext}}{{end}}`,
+	}
+
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), prompts, nil, testLogger(t))
+	if err != nil {
+		t.Fatalf("Retry() error = %v", err)
+	}
+
+	prompt := capturedEnv["GODARK_PROMPT"]
+	if strings.Contains(prompt, "FRESH:") {
+		t.Errorf("expected no FRESH: block when HandoffContext is empty, got: %s", prompt)
 	}
 }
 
@@ -111,7 +177,7 @@ func TestImplement_DoesNotSetSessionIDEnv(t *testing.T) {
 		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -127,7 +193,7 @@ func TestImplement_AgentTimeoutParsed(t *testing.T) {
 	cfg := testConfig()
 	cfg.AgentTimeout = "5m"
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -139,7 +205,7 @@ func TestImplement_InvalidTimeout(t *testing.T) {
 	cfg := testConfig()
 	cfg.AgentTimeout = "invalid"
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "")
 	if err == nil {
 		t.Fatal("expected error for invalid timeout")
 	}
@@ -220,7 +286,7 @@ func TestImplement_ProtectedPathsInEnv(t *testing.T) {
 		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -267,7 +333,7 @@ func TestImplement_DeniedCommandsInEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.DeniedCommands = []string{"rm -rf", "git reset --hard"}
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -312,7 +378,7 @@ func TestImplement_BranchExistsDetection(t *testing.T) {
 		Implementer: "{{if .BranchExists}}EXISTING{{else}}NEW{{end}}",
 	}
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -330,7 +396,7 @@ func TestImplement_SetsImplementerRole(t *testing.T) {
 		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -347,7 +413,7 @@ func TestRetry_SetsImplementerRetryRole(t *testing.T) {
 		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
 	})
 
-	_, err := Retry(context.Background(), testIssue(), 7, "", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -362,7 +428,7 @@ func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
 		return []byte("fail output"), []byte(""), 1, nil
 	})
 
-	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() should not return error for non-zero exit, got: %v", err)
 	}
@@ -610,7 +676,7 @@ func TestImplement_GeneratedPathsInEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.GeneratedPaths = []string{"gen/", "**/*.pb.go"}
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t))
+	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}

@@ -135,6 +135,48 @@ func TestRunJSONFinalized(t *testing.T) {
 	}
 }
 
+func TestReconResultWritten(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{
+		Output:          "recon brief text",
+		SessionID:       "sess-abc",
+		CostUSD:         0.0012,
+		DurationSeconds: 15.0,
+	}
+	if err := w.WriteReconResult(42, step); err != nil {
+		t.Fatalf("WriteReconResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "recon.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file at %s, got: %v", path, err)
+	}
+
+	var written StepResult
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing recon.json: %v", err)
+	}
+
+	if written.Output != "recon brief text" {
+		t.Errorf("Output = %q, want %q", written.Output, "recon brief text")
+	}
+	if written.SessionID != "sess-abc" {
+		t.Errorf("SessionID = %q, want %q", written.SessionID, "sess-abc")
+	}
+	if written.CostUSD != 0.0012 {
+		t.Errorf("CostUSD = %v, want 0.0012", written.CostUSD)
+	}
+	if written.DurationSeconds != 15.0 {
+		t.Errorf("DurationSeconds = %v, want 15.0", written.DurationSeconds)
+	}
+}
+
 func TestSpecGeneratorWritten(t *testing.T) {
 	base := t.TempDir()
 	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
