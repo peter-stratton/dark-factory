@@ -9,12 +9,13 @@ import (
 	"strconv"
 	"strings"
 
+	gexec "github.com/phs/dark-factory/internal/exec"
 	"github.com/phs/dark-factory/internal/mdutil"
 )
 
 // GuardRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var GuardRunner = func(name string, args ...string) ([]byte, error) {
+var GuardRunner gexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
