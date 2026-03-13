@@ -126,6 +126,12 @@ type AutoMerge struct {
 type Config struct {
 	Repo       string `yaml:"repo"`
 	MaxRetries int    `yaml:"max_retries"`
+	// MaxResumeRetries controls when retry agents switch from resuming their
+	// prior session to starting a fresh session with structured handoff context.
+	// On attempt N where N >= MaxResumeRetries, a fresh session is started.
+	// Must be strictly less than MaxRetries for the feature to activate under
+	// default configuration. Default: 1.
+	MaxResumeRetries int `yaml:"max_resume_retries"`
 
 	AgentTimeout  string            `yaml:"agent_timeout"`
 	FormatCommand string            `yaml:"format_command"`
@@ -280,7 +286,8 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 
 func defaults() *Config {
 	return &Config{
-		MaxRetries:     3,
+		MaxRetries:       3,
+		MaxResumeRetries: 1,
 		AutoMerge:      AutoMerge{Feature: "none", Rollup: "none"},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},

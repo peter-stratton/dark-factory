@@ -61,6 +61,11 @@ type PromptData struct {
 	// Not set by newPromptData() — set by the caller after running the recon
 	// agent.
 	ReconBrief string
+	// HandoffContext, when non-empty, signals a fresh-session retry. It
+	// contains a chronological summary of prior implementation and review
+	// notes extracted from PR comments so the new agent understands what was
+	// tried and what failed without inheriting a degraded context window.
+	HandoffContext string
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from
