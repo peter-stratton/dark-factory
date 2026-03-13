@@ -74,6 +74,16 @@ type StepResult struct {
 	SessionID       string     `json:"session_id,omitempty"`
 }
 
+// OutcomeStatus constants mirror the agent.OutcomeStatus values for use in
+// packages that cannot import the orchestration layer (e.g. presentation).
+// These must stay in sync with the constants defined in internal/agent/loop.go.
+const (
+	OutcomeStatusImplemented      = "implemented"
+	OutcomeStatusReadyToMerge     = "ready-to-merge"
+	OutcomeStatusNeedsHumanReview = "needs-human-review"
+	OutcomeStatusFailed           = "failed"
+)
+
 // Outcome records the final result for a single issue.
 type Outcome struct {
 	IssueNumber int    `json:"issue_number"`

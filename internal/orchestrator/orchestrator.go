@@ -368,7 +368,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 
 			switch outcome.Status {
-			case "implemented":
+			case agent.StatusImplemented:
 				stats.implemented++
 				implementedIssues = append(implementedIssues, issue)
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
@@ -378,10 +378,10 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 					goto done
 				}
 				merged = true
-			case "ready-to-merge":
+			case agent.StatusReadyToMerge:
 				stats.readyToMerge++
 				fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-			case "needs-human-review":
+			case agent.StatusNeedsHumanReview:
 				stats.needsHumanReview++
 				fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
 			default:

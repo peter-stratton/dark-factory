@@ -196,16 +196,16 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			}
 
 			switch outcome.Status {
-			case "implemented":
+			case agent.StatusImplemented:
 				implemented++
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
 				if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
 					logger.Warn("could not sync local repo after merge", "error", err)
 				}
-			case "ready-to-merge":
+			case agent.StatusReadyToMerge:
 				readyToMerge++
 				fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-			case "needs-human-review":
+			case agent.StatusNeedsHumanReview:
 				needsHumanReview++
 				fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
 			default:

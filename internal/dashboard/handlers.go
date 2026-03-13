@@ -557,13 +557,13 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 func issueStatusLabelAndClass(issue rundata.IssueDetail) (label, class string) {
 	// Final outcomes take precedence over live status.
 	switch issue.Outcome.Status {
-	case "implemented":
+	case rundata.OutcomeStatusImplemented:
 		return "Implemented", "success"
-	case "ready-to-merge":
+	case rundata.OutcomeStatusReadyToMerge:
 		return "Ready to Merge", "success"
-	case "needs-human-review":
+	case rundata.OutcomeStatusNeedsHumanReview:
 		return "Needs Human Review", "warning"
-	case "failed":
+	case rundata.OutcomeStatusFailed:
 		return "Failed", "danger"
 	}
 
