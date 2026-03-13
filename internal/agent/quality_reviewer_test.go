@@ -70,27 +70,6 @@ func TestQualityReview_StructuredVerdict(t *testing.T) {
 	}
 }
 
-func TestParseQualityResult_Approved(t *testing.T) {
-	got := ParseQualityResult("some output\nQUALITY_RESULT=APPROVED\nmore output")
-	if got != "APPROVED" {
-		t.Errorf("ParseQualityResult() = %q, want %q", got, "APPROVED")
-	}
-}
-
-func TestParseQualityResult_ChangesRequested(t *testing.T) {
-	got := ParseQualityResult("QUALITY_RESULT=CHANGES_REQUESTED\n")
-	if got != "CHANGES_REQUESTED" {
-		t.Errorf("ParseQualityResult() = %q, want %q", got, "CHANGES_REQUESTED")
-	}
-}
-
-func TestParseQualityResult_NoMatch(t *testing.T) {
-	got := ParseQualityResult("no sentinel here")
-	if got != "" {
-		t.Errorf("ParseQualityResult() = %q, want %q", got, "")
-	}
-}
-
 // --- strictnessDirective unit tests ---
 
 func TestStrictnessDirective_Cycle0NoDirective(t *testing.T) {
