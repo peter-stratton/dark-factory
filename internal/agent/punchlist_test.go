@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"testing"
@@ -9,6 +10,83 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/punchlist"
 )
+
+func TestExtractJSONArray_PlainJSON(t *testing.T) {
+	s, ok := extractJSONArray(`["a","b"]`)
+	if !ok {
+		t.Fatal("expected ok=true for plain JSON array")
+	}
+	var got []string
+	if err := json.Unmarshal([]byte(s), &got); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("got %v, want [a b]", got)
+	}
+}
+
+func TestExtractJSONArray_CodeFence(t *testing.T) {
+	input := "```json\n[\"a\"]\n```"
+	s, ok := extractJSONArray(input)
+	if !ok {
+		t.Fatal("expected ok=true for fenced JSON array")
+	}
+	var got []string
+	if err := json.Unmarshal([]byte(s), &got); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(got) != 1 || got[0] != "a" {
+		t.Errorf("got %v, want [a]", got)
+	}
+}
+
+func TestExtractJSONArray_SurroundingText(t *testing.T) {
+	input := `Here are tests: ["a"] done`
+	s, ok := extractJSONArray(input)
+	if !ok {
+		t.Fatal("expected ok=true for JSON embedded in text")
+	}
+	var got []string
+	if err := json.Unmarshal([]byte(s), &got); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(got) != 1 || got[0] != "a" {
+		t.Errorf("got %v, want [a]", got)
+	}
+}
+
+func TestExtractJSONArray_NestedBrackets(t *testing.T) {
+	// The text contains nested brackets; depth tracking must find outermost.
+	input := `text [with [nested] brackets] more`
+	// This is not valid JSON so should return false (no valid JSON array found).
+	_, ok := extractJSONArray(input)
+	if ok {
+		t.Error("expected ok=false for text with only non-JSON nested brackets")
+	}
+}
+
+func TestExtractJSONArray_ValidNestedJSON(t *testing.T) {
+	// Valid JSON array with nested structure.
+	input := `prefix ["a","b"] suffix`
+	s, ok := extractJSONArray(input)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	var got []string
+	if err := json.Unmarshal([]byte(s), &got); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %v, want [a b]", got)
+	}
+}
+
+func TestExtractJSONArray_NoBrackets(t *testing.T) {
+	_, ok := extractJSONArray("no brackets here")
+	if ok {
+		t.Error("expected ok=false for text without brackets")
+	}
+}
 
 func TestParseAcceptanceTests_ValidJSON(t *testing.T) {
 	input := `["Test one", "Test two", "Test three"]`
