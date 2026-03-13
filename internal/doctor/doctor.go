@@ -1,30 +1,32 @@
 package doctor
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
+
+	goexec "github.com/phs/dark-factory/internal/exec"
 )
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
-}
+var CommandRunner goexec.CommandRunnerFunc = goexec.Default
 
 // EnvLookup looks up an environment variable.
 // Replaceable for testing.
 var EnvLookup = os.Getenv
 
+// CheckTimeout is the per-check deadline enforced by Run.
+// Overridable in tests.
+var CheckTimeout = 15 * time.Second
+
 // Check represents a single pre-flight check.
 type Check struct {
 	Name string
 	Fix  string
-	run  func(ctx context.Context) bool
+	run  func() bool
 }
 
 // runtimeVersionCmd returns the command and args to verify a named runtime is
@@ -56,31 +58,31 @@ func Checks(runtime, lintCommand string) []*Check {
 		{
 			Name: "Docker daemon running",
 			Fix:  "Start Docker Desktop or the Docker daemon (e.g. `sudo systemctl start docker`).",
-			run: func(ctx context.Context) bool {
-				_, err := CommandRunner(ctx, "docker", "info")
+			run: func() bool {
+				_, err := CommandRunner("docker", "info")
 				return err == nil
 			},
 		},
 		{
 			Name: "gh CLI installed",
 			Fix:  "Install the GitHub CLI: https://cli.github.com",
-			run: func(ctx context.Context) bool {
-				_, err := CommandRunner(ctx, "gh", "--version")
+			run: func() bool {
+				_, err := CommandRunner("gh", "--version")
 				return err == nil
 			},
 		},
 		{
 			Name: "gh CLI authenticated",
 			Fix:  "Run `gh auth login` to authenticate.",
-			run: func(ctx context.Context) bool {
-				_, err := CommandRunner(ctx, "gh", "auth", "status")
+			run: func() bool {
+				_, err := CommandRunner("gh", "auth", "status")
 				return err == nil
 			},
 		},
 		{
 			Name: "ANTHROPIC_API_KEY set",
 			Fix:  "Export ANTHROPIC_API_KEY in your shell profile or pass it in the environment.",
-			run: func(ctx context.Context) bool {
+			run: func() bool {
 				return EnvLookup("ANTHROPIC_API_KEY") != ""
 			},
 		},
@@ -95,8 +97,8 @@ func Checks(runtime, lintCommand string) []*Check {
 			checks = append(checks, &Check{
 				Name: fmt.Sprintf("%s toolchain available", rt),
 				Fix:  fmt.Sprintf("Install the %s toolchain and ensure it is on your PATH.", rt),
-				run: func(ctx context.Context) bool {
-					_, err := CommandRunner(ctx, b, a...)
+				run: func() bool {
+					_, err := CommandRunner(b, a...)
 					return err == nil
 				},
 			})
@@ -106,8 +108,8 @@ func Checks(runtime, lintCommand string) []*Check {
 	checks = append(checks, &Check{
 		Name: "Python 3 available",
 		Fix:  "Install Python 3: https://www.python.org/downloads/",
-		run: func(ctx context.Context) bool {
-			_, err := CommandRunner(ctx, "python3", "--version")
+		run: func() bool {
+			_, err := CommandRunner("python3", "--version")
 			return err == nil
 		},
 	})
@@ -116,8 +118,8 @@ func Checks(runtime, lintCommand string) []*Check {
 		checks = append(checks, &Check{
 			Name: "golangci-lint installed",
 			Fix:  "Install golangci-lint: `brew install golangci-lint` or see https://golangci-lint.run/usage/install/",
-			run: func(ctx context.Context) bool {
-				_, err := CommandRunner(ctx, "golangci-lint", "--version")
+			run: func() bool {
+				_, err := CommandRunner("golangci-lint", "--version")
 				return err == nil
 			},
 		})
@@ -127,13 +129,12 @@ func Checks(runtime, lintCommand string) []*Check {
 }
 
 // Run executes all checks, writes a pass/fail report to w, and returns true
-// if every check passed.
+// if every check passed. Each check is run in a goroutine; if it does not
+// complete within CheckTimeout it is reported as a failure.
 func Run(w io.Writer, checks []*Check) bool {
 	allPassed := true
 	for _, c := range checks {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		passed := c.run(ctx)
-		cancel()
+		passed := runWithTimeout(c)
 		if passed {
 			fmt.Fprintf(w, "[PASS] %s\n", c.Name)
 		} else {
@@ -144,4 +145,21 @@ func Run(w io.Writer, checks []*Check) bool {
 		}
 	}
 	return allPassed
+}
+
+// runWithTimeout runs a single check in a goroutine and returns its result,
+// or false if it exceeds CheckTimeout.
+func runWithTimeout(c *Check) bool {
+	result := make(chan bool, 1)
+	go func() {
+		result <- c.run()
+	}()
+	timer := time.NewTimer(CheckTimeout)
+	defer timer.Stop()
+	select {
+	case passed := <-result:
+		return passed
+	case <-timer.C:
+		return false
+	}
 }
