@@ -3934,6 +3934,65 @@ func TestProcessIssue_ReconFailureNonBlocking(t *testing.T) {
 	}
 }
 
+// TestProcessIssue_ReconTimeoutNonBlocking verifies that when the recon agent
+// times out, a warning is logged and Implement() is still called with empty reconBrief.
+func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
+	var implementerPrompt string
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	callIdx := 0
+	Runner = func(innerCtx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // recon — cancel context to trigger TimedOut path
+			cancel()
+			return []byte(""), []byte(""), 0, nil
+		case 2: // implementer — capture prompt; context is cancelled so Run returns TimedOut
+			implementerPrompt = env["GODARK_PROMPT"]
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		default:
+			return []byte(wrapRunnerJSON("")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:            "Recon issue #{{.IssueNumber}}",
+		Implementer:      "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:         "Review PR #{{.PRNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}}",
+	}
+
+	ProcessIssue(ctx, loopIssue(), loopConfig(), prompts, nil, logger, nil)
+
+	// A warning must be logged when recon times out.
+	if !strings.Contains(logBuf.String(), "recon agent timed out") {
+		t.Errorf("expected warning about recon timeout in log, got: %s", logBuf.String())
+	}
+
+	// Implement() must still be called (Runner called at least twice).
+	if callIdx < 2 {
+		t.Errorf("Implement() was not called after recon timeout (Runner calls = %d)", callIdx)
+	}
+
+	// Implement() must receive an empty reconBrief (no "brief=" in its prompt).
+	if strings.Contains(implementerPrompt, "brief=") {
+		t.Errorf("implementer prompt should not contain brief when recon timed out, got: %s", implementerPrompt)
+	}
+}
+
 // TestProcessIssue_ReconSkippedWhenUnconfigured verifies that when prompts.Recon
 // is empty, the recon agent is not called and the implementer runs first.
 func TestProcessIssue_ReconSkippedWhenUnconfigured(t *testing.T) {

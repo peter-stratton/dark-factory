@@ -125,6 +125,8 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
 		if reconErr != nil {
 			logger.Warn("recon agent failed, continuing without brief", "error", reconErr)
+		} else if reconResult.TimedOut {
+			logger.Warn("recon agent timed out, continuing without brief")
 		} else {
 			reconBrief = reconResult.ResultText
 		}
