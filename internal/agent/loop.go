@@ -384,6 +384,10 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				"issue_number", issue.Number,
 				"attempt", attempt+1,
 			)
+			// Delete the stale review comment so the dialogue doesn't show a phantom round.
+			if err := github.DeleteLastPRCommentWithHeader(cfg.Repo, prNum, "## Review Notes"); err != nil {
+				logger.Warn("failed to delete stale review comment", "error", err)
+			}
 			continue
 		}
 

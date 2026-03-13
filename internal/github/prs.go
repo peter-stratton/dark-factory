@@ -51,3 +51,40 @@ func FetchPRCommentBodies(repo string, prNum int) ([]string, error) {
 	}
 	return bodies, nil
 }
+
+// DeleteLastPRCommentWithHeader finds the most recent comment on the given PR
+// whose body contains the specified header string and deletes it. Returns nil
+// if no matching comment is found (best-effort).
+func DeleteLastPRCommentWithHeader(repo string, prNum int, header string) error {
+	out, err := CommandRunner("gh", "api",
+		fmt.Sprintf("repos/%s/issues/%d/comments", repo, prNum),
+		"--jq", ".",
+	)
+	if err != nil {
+		return fmt.Errorf("listing PR comments: %w", err)
+	}
+
+	var comments []struct {
+		ID   int    `json:"id"`
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal(out, &comments); err != nil {
+		return fmt.Errorf("parsing PR comments: %w", err)
+	}
+
+	// Walk backwards to find the most recent matching comment.
+	for i := len(comments) - 1; i >= 0; i-- {
+		if strings.Contains(comments[i].Body, header) {
+			_, err := CommandRunner("gh", "api",
+				"--method", "DELETE",
+				fmt.Sprintf("repos/%s/issues/comments/%d", repo, comments[i].ID),
+			)
+			if err != nil {
+				return fmt.Errorf("deleting comment %d: %w", comments[i].ID, err)
+			}
+			return nil
+		}
+	}
+
+	return nil // no matching comment found — nothing to delete
+}
