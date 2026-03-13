@@ -308,7 +308,8 @@ func watchPollInterval(cfg *config.Config) (time.Duration, error) {
 // Testability seams — replaced in unit tests to avoid real GitHub and agent calls.
 
 var watchRetryFn = func(ctx context.Context, issue github.Issue, prNum int, sessionID string, feedback string, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) (*agent.Result, error) {
-	return agent.Retry(ctx, issue, prNum, sessionID, feedback, cfg, prompts, authEnv, logger)
+	// watch-initiated retries always resume the prior session (no handoff context).
+	return agent.Retry(ctx, issue, prNum, sessionID, feedback, "", cfg, prompts, authEnv, logger)
 }
 
 var watchFindSessionIDFn = func(repo string, prNum int) (string, error) {

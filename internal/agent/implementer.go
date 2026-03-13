@@ -52,11 +52,16 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 // reviewFeedback, if non-empty, is injected into the retry prompt so the
 // agent sees reviewer comments without needing to fetch them from GitHub
 // (used for human review cycles initiated by the watch command).
-func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID string, reviewFeedback string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+// handoffContext, if non-empty, signals a fresh-session retry: GODARK_SESSION_ID
+// is NOT set even when prevSessionID is provided, so the agent starts fresh.
+// The handoff context is rendered into the prompt so the new agent understands
+// what was tried and what failed without inheriting a degraded context window.
+func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID string, reviewFeedback string, handoffContext string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
 	data := newPromptData(issue, cfg, slug)
 	data.PRNumber = prNumber
 	data.ReviewFeedback = reviewFeedback
+	data.HandoffContext = handoffContext
 
 	rendered, err := RenderPrompt(prompts.ImplementerRetry, data)
 	if err != nil {
@@ -68,14 +73,18 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID 
 		return nil, err
 	}
 
-	if prevSessionID != "" {
+	// Only resume the prior session when no handoff context is provided.
+	// A non-empty handoffContext means we want a fresh session — the agent
+	// will get the prior context via the structured handoff in the prompt.
+	if prevSessionID != "" && handoffContext == "" {
 		opts.Env["GODARK_SESSION_ID"] = prevSessionID
 	}
 
 	logger.Info("starting implementer retry agent",
 		"issue_number", issue.Number,
 		"pr_number", prNumber,
-		"resume_session", prevSessionID != "",
+		"resume_session", prevSessionID != "" && handoffContext == "",
+		"fresh_session", handoffContext != "",
 	)
 
 	return Run(ctx, opts, cfg.NoSandbox, logger)

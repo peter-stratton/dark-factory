@@ -3790,3 +3790,108 @@ func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing
 		t.Errorf("Status = %q, want implemented when verify is non-blocking after quality-gate retry (err: %v)", outcome.Status, outcome.Err)
 	}
 }
+
+// --- assembleHandoffContext tests ---
+
+func TestAssembleHandoffContext_ExtractsImplAndReviewNotes(t *testing.T) {
+	prComments := `{"body":"## Implementation Notes\nI tried approach A.","comments":[{"body":"## Review Notes\nApproach A has issues."},{"body":"Some unrelated comment."}]}`
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(prComments), nil
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if !strings.Contains(result, "## Implementation Notes") {
+		t.Errorf("expected ## Implementation Notes in result, got: %s", result)
+	}
+	if !strings.Contains(result, "## Review Notes") {
+		t.Errorf("expected ## Review Notes in result, got: %s", result)
+	}
+	if strings.Contains(result, "unrelated comment") {
+		t.Errorf("unrelated comment should not appear in handoff, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_ExtractsQualityReviewNotes(t *testing.T) {
+	prComments := `{"body":"","comments":[{"body":"## Quality Review Notes\nFailed quality check."}]}`
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(prComments), nil
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if !strings.Contains(result, "## Quality Review Notes") {
+		t.Errorf("expected ## Quality Review Notes in result, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_EmptyWhenNoStructuredComments(t *testing.T) {
+	prComments := `{"body":"Just a PR description.","comments":[{"body":"LGTM"},{"body":"👍"}]}`
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(prComments), nil
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if result != "" {
+		t.Errorf("expected empty result when no structured comments, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_EmptyOnGhError(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh: not found")
+	})
+
+	result := assembleHandoffContext("owner/repo", 10, testLogger(t))
+	if result != "" {
+		t.Errorf("expected empty result on gh error, got: %s", result)
+	}
+}
+
+func TestAssembleHandoffContext_UsesCorrectGhArgs(t *testing.T) {
+	var capturedArgs []string
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		capturedArgs = append([]string{name}, args...)
+		return []byte(`{"body":"","comments":[]}`), nil
+	})
+
+	assembleHandoffContext("owner/repo", 42, testLogger(t))
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "42") {
+		t.Errorf("expected PR number 42 in gh args, got: %v", capturedArgs)
+	}
+	if !strings.Contains(joined, "--repo") || !strings.Contains(joined, "owner/repo") {
+		t.Errorf("expected --repo owner/repo in gh args, got: %v", capturedArgs)
+	}
+	if !strings.Contains(joined, "body,comments") {
+		t.Errorf("expected --json body,comments in gh args, got: %v", capturedArgs)
+	}
+}
+
+// --- extractSection tests ---
+
+func TestExtractSection_ExtractsContentToNextHeading(t *testing.T) {
+	body := "## Implementation Notes\nI tried X.\nIt failed.\n\n## Review Notes\nPlease fix Y."
+	result := extractSection(body, "## Implementation Notes")
+	if !strings.Contains(result, "I tried X.") {
+		t.Errorf("expected implementation content, got: %s", result)
+	}
+	if strings.Contains(result, "Review Notes") {
+		t.Errorf("should not include next section, got: %s", result)
+	}
+}
+
+func TestExtractSection_ExtractsToEndWhenNoNextHeading(t *testing.T) {
+	body := "Some prefix.\n## Review Notes\nThis is the review feedback."
+	result := extractSection(body, "## Review Notes")
+	if !strings.Contains(result, "This is the review feedback.") {
+		t.Errorf("expected review content, got: %s", result)
+	}
+}
+
+func TestExtractSection_ReturnsEmptyWhenHeadingAbsent(t *testing.T) {
+	body := "Some content without any headings."
+	result := extractSection(body, "## Implementation Notes")
+	if result != "" {
+		t.Errorf("expected empty string when heading absent, got: %s", result)
+	}
+}
