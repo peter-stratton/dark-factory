@@ -416,10 +416,10 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			// config value is empty or unrecognized.
 			shouldMerge := false
 			switch cfg.AutoMerge.Feature {
-			case "all":
+			case config.MergeAll:
 				logger.Info("PR approved, will merge (auto_merge.feature=all)", "pr_number", prNum)
 				shouldMerge = true
-			case "low_risk":
+			case config.MergeLowRisk:
 				additions, deletions, fileCount, statsErr := github.FetchPRStats(cfg.Repo, prNum)
 				if statsErr != nil {
 					logger.Warn("failed to fetch PR stats for risk classification, labeling for human review",

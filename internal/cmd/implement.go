@@ -108,7 +108,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 
 		// Create RunDataWriter first to get the run directory for the log file.
 		var hook agent.RunDataHook
-		writer, writerErr := rundata.New(cfg.Repo, "", issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: cfg.AutoMerge.Feature, Rollup: cfg.AutoMerge.Rollup})
+		writer, writerErr := rundata.New(cfg.Repo, "", issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
 		var logDir string
 		if writerErr != nil {
 			// Fall back to a private temp directory so each run is isolated.

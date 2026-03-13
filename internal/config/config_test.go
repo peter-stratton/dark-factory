@@ -356,7 +356,7 @@ func TestAutoMergeFeatureValidValues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for auto_merge.feature=%q: %v", value, err)
 			}
-			if cfg.AutoMerge.Feature != value {
+			if cfg.AutoMerge.Feature != FeatureMergeStrategy(value) {
 				t.Errorf("AutoMerge.Feature = %q, want %q", cfg.AutoMerge.Feature, value)
 			}
 		})
@@ -372,7 +372,7 @@ func TestAutoMergeRollupValidValues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for auto_merge.rollup=%q: %v", value, err)
 			}
-			if cfg.AutoMerge.Rollup != value {
+			if cfg.AutoMerge.Rollup != RollupMergeStrategy(value) {
 				t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, value)
 			}
 		})
@@ -434,6 +434,36 @@ auto_merge:
 	}
 	if cfg.AutoMerge.Rollup != "auto" {
 		t.Errorf("AutoMerge.Rollup = %q, want %q (flag should override)", cfg.AutoMerge.Rollup, "auto")
+	}
+}
+
+func TestFeatureMergeStrategyValid(t *testing.T) {
+	valid := []FeatureMergeStrategy{MergeNone, MergeLowRisk, MergeAll}
+	for _, s := range valid {
+		if !s.Valid() {
+			t.Errorf("FeatureMergeStrategy(%q).Valid() = false, want true", s)
+		}
+	}
+	if FeatureMergeStrategy("invalid").Valid() {
+		t.Errorf("FeatureMergeStrategy(\"invalid\").Valid() = true, want false")
+	}
+	if FeatureMergeStrategy("").Valid() {
+		t.Errorf("FeatureMergeStrategy(\"\").Valid() = true, want false")
+	}
+}
+
+func TestRollupMergeStrategyValid(t *testing.T) {
+	valid := []RollupMergeStrategy{RollupNone, RollupManual, RollupAuto}
+	for _, s := range valid {
+		if !s.Valid() {
+			t.Errorf("RollupMergeStrategy(%q).Valid() = false, want true", s)
+		}
+	}
+	if RollupMergeStrategy("invalid").Valid() {
+		t.Errorf("RollupMergeStrategy(\"invalid\").Valid() = true, want false")
+	}
+	if RollupMergeStrategy("").Valid() {
+		t.Errorf("RollupMergeStrategy(\"\").Valid() = true, want false")
 	}
 }
 
