@@ -21,6 +21,7 @@ type Prompts struct {
 	SpecGenerator    string
 	Punchlist        string
 	VerifyFix        string
+	Recon            string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -129,6 +130,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		p.VerifyFix = ""
 	} else {
 		p.VerifyFix = vf
+	}
+
+	// Recon is optional — load from config or embedded default.
+	recon, err := loadPromptFile(cfg.Prompts.Recon, "recon.txt")
+	if err != nil {
+		p.Recon = ""
+	} else {
+		p.Recon = recon
 	}
 
 	return p, nil
