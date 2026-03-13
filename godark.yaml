@@ -2,13 +2,14 @@ repo: peter-stratton/dark-factory
 
 auto_merge:
   feature: all
-  rollup: auto
+  rollup: manual
 
 protected_paths: ["CLAUDE.md", "tests/scenarios/"]
 
-wait_for_checks:
-  timeout: 10m
-  required: [test, lint]
+# Only wait on CI if rollup is auto
+#wait_for_checks:
+#  timeout: 10m
+#  required: [test, lint]
 
 lint_command: "golangci-lint run ./..."
 
