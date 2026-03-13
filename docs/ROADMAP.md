@@ -822,6 +822,41 @@ a parent feature branch, then submit the parent for human review.
 
 ---
 
+## Phase 18: Adaptive Agent Loop
+
+**Goal**: The agent loop adapts to codebase drift within a run, recovers
+intelligently from stuck retries, and produces better-informed implementations.
+Issues late in a milestone execute as reliably as early ones because the system
+accounts for changes made by prior issues.
+
+**Milestone**: `Phase 18` | **Label**: `phase-18`
+
+### Recon agent
+- Recon agent prompt template and role — `recon.txt` prompt template, `recon`
+  role with read-only permissions (`Read, Glob, Grep`), structured output
+  format for supplemental implementation brief
+- Recon config and prompt data wiring — `prompts.recon` config field,
+  `ReconBrief` template variable on `PromptData`, implementer prompt updated
+  to include the brief when present
+- Recon orchestrator integration — invoke recon agent before `Implement()` in
+  `ProcessIssue()`, pass output as implementer context, skip if not configured
+- Recon run data and dashboard — persist recon brief to
+  `~/.godark/runs/<run>/recon/` alongside other run data, write recon result
+  (duration, cost, session ID) to run data, surface brief in issue detail view
+
+### Hybrid retry strategy
+- Fresh agent with structured handoff — on retry 3+, start a fresh agent
+  session instead of resuming, pass PR comment dialogue (Implementation Notes
+  / Review Notes) as structured handoff context
+- Hybrid retry config — `max_resume_retries` config field (default 2), beyond
+  which retries use fresh sessions with handoff artifact
+
+**Issues**: TBD
+
+**Planning doc**: `docs/planning/phase-18-adaptive-agent-loop.md`
+
+---
+
 ### Future considerations (not yet scoped)
 - Linter config generation from `architecture.json` (per-language)
 - Multi-cluster deployment and geographic distribution
@@ -838,3 +873,11 @@ a parent feature branch, then submit the parent for human review.
 - Demo / example repo that people can point godark at to try it out
 - Homebrew core inclusion (`brew install godark` without tap prefix)
 - README badges — license, latest release, CI build status, test coverage, Go Report Card
+- Quality review ROI evaluation — instrument overlap between quality reviewer
+  and functional reviewer catches; consider merging into a single review pass
+  if overlap is high
+- Judge agent for stuck retry loops — read-only agent that evaluates whether
+  an implementation approach is working or going in circles; decides to retry
+  with a different strategy, restart fresh, or escalate; implement only if
+  retry data from recon agent runs shows a persistent pattern of stuck loops
+  that strictness decay doesn't resolve

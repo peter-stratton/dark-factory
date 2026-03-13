@@ -26,7 +26,24 @@ description, constraints, acceptance criteria, and test cases.
    `docs/architecture.json` and `docs/conventions.md` if they exist to
    understand the current architecture layers and agreed coding conventions.
 
-4. **Discuss each issue** — For each issue slug in the phase, work with the user
+4. **Explore the change surface** — For each issue slug, before discussing it
+   with the user, explore the codebase to understand what the issue would
+   actually touch:
+   - Search for types, functions, and packages the issue would likely affect
+     (grep for relevant symbols from the issue description and roadmap slug).
+   - Read the key files to understand their size, complexity, and coupling
+     (count lines, note function signatures, check imports and callers).
+   - Cross-reference touched files against `docs/architecture.json` to identify
+     which layers are involved and whether the change spans layer boundaries.
+   - Count: files that would change, approximate lines affected, number of
+     callers/importers of code being modified.
+   - Present a brief impact summary when discussing each issue with the user:
+     "This issue would touch N files across M layers: [list]. The main
+     complexity is [X]."
+   - Use these concrete numbers — not description-based guesses — to drive the
+     task sizing rules.
+
+5. **Discuss each issue** — For each issue slug in the phase, work with the user
    to flesh out:
    - What exactly should be built
    - Key constraints (package paths, function signatures, dependencies)
@@ -42,11 +59,11 @@ description, constraints, acceptance criteria, and test cases.
    before finalising the spec (or suggest running `/godark-define-architecture`
    to revise the layer definitions).
 
-5. **Write the planning doc** — Create the file in `docs/planning/` using the
+6. **Write the planning doc** — Create the file in `docs/planning/` using the
    format below. The filename should be `phase-N-<kebab-slug>.md` matching the
    phase name.
 
-6. **Print summary** — List the file path and issue count.
+7. **Print summary** — List the file path and issue count.
 
 ## Format
 
@@ -135,8 +152,11 @@ Each issue must be small enough for an agent to implement in a single run
 - **More than 7 test cases** — this usually means multiple concerns are bundled.
 - **Creates new code AND modifies existing code** — split "add new package" from
   "wire it into existing code" from "remove/migrate old code."
-- **Touches more than 3 existing files** — the agent loses context and makes
-  mistakes on cross-cutting changes.
+- **Touches more than 3 existing files** — use the file count from step 4, not
+  a guess from the description. The agent loses context on cross-cutting changes.
+- **High fan-out modification** — if a function or type being changed has more
+  than 5 callers (found via grep in step 4), split into "change the interface"
+  and "update callers" rather than doing both at once.
 - **Combines additive and destructive changes** — adding a new system and
   removing the old one should be separate issues so each is independently
   verifiable.
