@@ -121,14 +121,11 @@ func EnrichPunchlistEntries(ctx context.Context, entries []punchlist.Entry, prom
 	wg.Wait()
 }
 
-// parseAcceptanceTests extracts a JSON array of strings from LLM output.
-// Handles optional markdown code fences. Caps at 5 items.
-func parseAcceptanceTests(text string, issueNumber int, logger *slog.Logger) []string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return nil
-	}
-
+// extractJSONArray finds and returns a JSON array substring from text.
+// It strips markdown code fences first, then tries to unmarshal the full text.
+// On failure, it scans for the outermost [...] using bracket-depth tracking.
+// Returns (jsonSubstring, true) on success, ("", false) if no valid array found.
+func extractJSONArray(text string) (string, bool) {
 	// Strip markdown code fences if present.
 	if strings.HasPrefix(text, "```") {
 		lines := strings.Split(text, "\n")
@@ -147,20 +144,55 @@ func parseAcceptanceTests(text string, issueNumber int, logger *slog.Logger) []s
 		}
 	}
 
-	var tests []string
-	if err := json.Unmarshal([]byte(text), &tests); err != nil {
-		// Try to find a JSON array within the text.
-		start := strings.Index(text, "[")
-		end := strings.LastIndex(text, "]")
-		if start >= 0 && end > start {
-			if err2 := json.Unmarshal([]byte(text[start:end+1]), &tests); err2 != nil {
-				logger.Warn("failed to parse acceptance tests JSON", "issue_number", issueNumber, "error", err2, "raw_response", text)
-				return nil
+	// Try the full text first.
+	var probe []string
+	if json.Unmarshal([]byte(text), &probe) == nil {
+		return text, true
+	}
+
+	// Find outermost [...] using bracket-depth tracking.
+	start := -1
+	depth := 0
+	for i, ch := range text {
+		switch ch {
+		case '[':
+			if depth == 0 {
+				start = i
 			}
-		} else {
-			logger.Warn("failed to parse acceptance tests JSON", "issue_number", issueNumber, "error", err, "raw_response", text)
-			return nil
+			depth++
+		case ']':
+			depth--
+			if depth == 0 && start >= 0 {
+				candidate := text[start : i+1]
+				if json.Unmarshal([]byte(candidate), &probe) == nil {
+					return candidate, true
+				}
+				// Reset and keep scanning for another array.
+				start = -1
+			}
 		}
+	}
+	return "", false
+}
+
+// parseAcceptanceTests extracts a JSON array of strings from LLM output.
+// Handles optional markdown code fences. Caps at 5 items.
+func parseAcceptanceTests(text string, issueNumber int, logger *slog.Logger) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	jsonStr, ok := extractJSONArray(text)
+	if !ok {
+		logger.Warn("failed to parse acceptance tests JSON", "issue_number", issueNumber, "raw_response", text)
+		return nil
+	}
+
+	var tests []string
+	if err := json.Unmarshal([]byte(jsonStr), &tests); err != nil {
+		logger.Warn("failed to parse acceptance tests JSON", "issue_number", issueNumber, "error", err, "raw_response", text)
+		return nil
 	}
 
 	if len(tests) > 5 {

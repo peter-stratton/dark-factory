@@ -138,6 +138,54 @@ func TestGenerate_NoScenarioSection(t *testing.T) {
 	}
 }
 
+func TestExtractPrefixedItem_CheckboxDash(t *testing.T) {
+	item, ok := extractPrefixedItem("- [ ] foo", "- [ ] ", "* [ ] ")
+	if !ok {
+		t.Fatal("expected ok=true for dash checkbox prefix")
+	}
+	if item != "foo" {
+		t.Errorf("item = %q, want %q", item, "foo")
+	}
+}
+
+func TestExtractPrefixedItem_CheckboxStar(t *testing.T) {
+	item, ok := extractPrefixedItem("* [ ] foo", "- [ ] ", "* [ ] ")
+	if !ok {
+		t.Fatal("expected ok=true for star checkbox prefix")
+	}
+	if item != "foo" {
+		t.Errorf("item = %q, want %q", item, "foo")
+	}
+}
+
+func TestExtractPrefixedItem_NoMatch(t *testing.T) {
+	item, ok := extractPrefixedItem("plain text", "- ")
+	if ok {
+		t.Errorf("expected ok=false for non-matching line, got item=%q", item)
+	}
+	if item != "" {
+		t.Errorf("expected empty item on no match, got %q", item)
+	}
+}
+
+func TestExtractPrefixedItem_FirstPrefixWins(t *testing.T) {
+	// Line starts with "- ", not "* " — first prefix should win.
+	item, ok := extractPrefixedItem("- hello", "- ", "* ")
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if item != "hello" {
+		t.Errorf("item = %q, want %q", item, "hello")
+	}
+}
+
+func TestExtractPrefixedItem_NoPrefixes(t *testing.T) {
+	_, ok := extractPrefixedItem("- [ ] foo")
+	if ok {
+		t.Error("expected ok=false when no prefixes provided")
+	}
+}
+
 func TestExtractVerificationSteps_Checkboxes(t *testing.T) {
 	body := "Some intro.\n- [ ] Step one\n- [ ] Step two\n"
 	items := extractVerificationSteps(body)
