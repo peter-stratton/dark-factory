@@ -25,36 +25,8 @@ each unblocked issue through the implement → review → merge loop.`,
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		force, _ := cmd.Flags().GetBool("force")
 
-		flags := config.CLIFlags{Config: configPath}
-
-		if cmd.Flags().Changed("repo") {
-			v, _ := cmd.Flags().GetString("repo")
-			flags.Repo = &v
-		}
-		if cmd.Flags().Changed("max-retries") {
-			v, _ := cmd.Flags().GetInt("max-retries")
-			flags.MaxRetries = &v
-		}
-		if cmd.Flags().Changed("no-sandbox") {
-			v, _ := cmd.Flags().GetBool("no-sandbox")
-			flags.NoSandbox = &v
-		}
-		if cmd.Flags().Changed("auto-merge-feature") {
-			v, _ := cmd.Flags().GetString("auto-merge-feature")
-			flags.AutoMergeFeature = &v
-		}
-		if cmd.Flags().Changed("auto-merge-rollup") {
-			v, _ := cmd.Flags().GetString("auto-merge-rollup")
-			flags.AutoMergeRollup = &v
-		}
-		if cmd.Flags().Changed("base-branch") {
-			v, _ := cmd.Flags().GetString("base-branch")
-			flags.BaseBranch = &v
-		}
-		if cmd.Flags().Changed("default-branch") {
-			v, _ := cmd.Flags().GetString("default-branch")
-			flags.DefaultBranch = &v
-		}
+		flags := parseCLIFlags(cmd)
+		flags.Config = configPath
 
 		// Parse milestone/issue locally — these are per-run params, not config.
 		var milestone string
