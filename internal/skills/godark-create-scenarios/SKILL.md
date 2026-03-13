@@ -49,21 +49,12 @@ Generate scenario spec files for all issues in a phase, or for a single issue.
 
 ## Format
 
-```markdown
-# Scenario: <descriptive title>
+The canonical scenario spec format is defined in `prompts/spec_generator.txt`.
+Follow that file exactly when generating specs.
 
-Relates to: Issue #<issue-number>
-
-## Setup
-- Description of test fixture state needed for these cases
-
-## Cases
-
-### <case name>
-Description of what to do.
-- Expected outcome 1
-- Expected outcome 2
-```
+The structure is: `# Scenario:` header, `Relates to: Issue #N` line, `## Setup`
+section with fixture prerequisites, and `## Cases` section with one or more
+`### <Case name>` subsections each containing a description and outcome bullets.
 
 ## Rules
 
