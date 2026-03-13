@@ -37,7 +37,7 @@ Steps:
 {{- end}}
 
 CRITICAL RULES:
-{{.SharedRules}}{{- if .GeneratedPaths}}
+{{.SharedRules}}{{- if .GeneratedPaths -}}
 - Do NOT edit generated files directly ({{.GeneratedPaths}}); edit source files or re-run code generation instead
 {{- end}}
 {{- if .HasScenarioSpec}}

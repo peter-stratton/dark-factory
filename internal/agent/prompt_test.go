@@ -1115,7 +1115,8 @@ func TestSpecGeneratorPrompt_KeepsNarrowScenarioDirRule(t *testing.T) {
 		ProtectedPaths: "CLAUDE.md",
 		ScenarioDir:    "tests/scenarios/",
 		Slug:           "test-issue",
-		SharedRules:    buildSharedRules("CLAUDE.md", "tests/scenarios/"),
+		// SharedRules excludes ScenarioDir for spec_generator (narrow wording kept agent-side).
+		SharedRules: buildSharedRules("CLAUDE.md", ""),
 	}
 	rendered, err := RenderPrompt(p.SpecGenerator, data)
 	if err != nil {
@@ -1128,5 +1129,9 @@ func TestSpecGeneratorPrompt_KeepsNarrowScenarioDirRule(t *testing.T) {
 	// Narrow agent-specific ScenarioDir rule with "existing files" wording present.
 	if !strings.Contains(rendered, "Do NOT modify existing files in tests/scenarios/") {
 		t.Error("spec_generator prompt should retain the narrower 'existing files' ScenarioDir rule")
+	}
+	// Broad ScenarioDir rule must NOT appear — it would contradict spec_generator's task of creating files.
+	if strings.Contains(rendered, "Do NOT modify files in tests/scenarios/") {
+		t.Error("spec_generator prompt must not contain the broad 'Do NOT modify files in' ScenarioDir rule from SharedRules")
 	}
 }
