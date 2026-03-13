@@ -1152,13 +1152,12 @@ func extractSection(body, heading string) string {
 		// Only one line — return the whole heading.
 		return strings.TrimSpace(rest)
 	}
-	afterFirst := rest[firstNL+1:]
-	nextHeading := strings.Index(afterFirst, "\n## ")
+	nextHeading := strings.Index(rest[firstNL:], "\n## ")
 	var section string
 	if nextHeading < 0 {
 		section = rest
 	} else {
-		section = rest[:firstNL+1+nextHeading]
+		section = rest[:firstNL+nextHeading]
 	}
 	return strings.TrimSpace(section)
 }
