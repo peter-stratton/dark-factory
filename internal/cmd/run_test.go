@@ -209,8 +209,11 @@ func TestNoSandboxWarning(t *testing.T) {
 // TestTagResolutionSurfacesConfigError verifies that config.Load returns a
 // real error when the config file is syntactically valid YAML but fails
 // validation (e.g. wait_for_checks as a flat list instead of the struct
-// format). This ensures config validation problems produce useful messages
-// rather than silently falling back to "--repo is required when using --tag".
+// format). Note: config validation errors are NOT surfaced through the --tag
+// path in RunE when --repo is absent; that path uses bare yaml.Unmarshal via
+// resolveRepo, which skips validation and returns "", causing the user to see
+// "--repo is required when using --tag". This test only confirms that
+// config.Load itself returns a descriptive error for the invalid format.
 func TestTagResolutionSurfacesConfigError(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
