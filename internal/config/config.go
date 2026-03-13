@@ -111,6 +111,18 @@ type RiskThresholds struct {
 	MaxFiles int `yaml:"max_files"`
 }
 
+// TruncationLimits holds the maximum byte counts used when truncating
+// agent outputs before embedding them in prompts. Defaults are applied
+// in defaults() so usage sites never need to check for zero values.
+type TruncationLimits struct {
+	// VerifyOutput is the maximum number of bytes kept from combined
+	// stdout+stderr of a verify command. Default: 4096.
+	VerifyOutput int `yaml:"verify_output"`
+	// PRDiff is the maximum number of bytes included from a PR diff.
+	// Default: 30000.
+	PRDiff int `yaml:"pr_diff"`
+}
+
 // FeatureMergeStrategy controls whether and how the feature branch is merged
 // into the base branch after a successful review cycle.
 type FeatureMergeStrategy string
@@ -217,10 +229,11 @@ type Config struct {
 	// Valid values: "oauth" (default) or "api_key".
 	AuthPreference string `yaml:"auth_preference"`
 
-	Docker  Docker  `yaml:"docker"`
-	Prompts Prompts `yaml:"prompts"`
-	Quality Quality `yaml:"quality"`
-	Verify  Verify  `yaml:"verify"`
+	Docker      Docker           `yaml:"docker"`
+	Prompts     Prompts          `yaml:"prompts"`
+	Quality     Quality          `yaml:"quality"`
+	Verify      Verify           `yaml:"verify"`
+	Truncation  TruncationLimits `yaml:"truncation"`
 
 	// Modules maps module names to per-module build/test/lint/generate commands
 	// and dependency relationships. Nil (absent) means single-module mode.
@@ -361,6 +374,10 @@ func defaults() *Config {
 			MaxFixAttempts: 2,
 			Blocking:       true,
 		},
+		Truncation: TruncationLimits{
+			VerifyOutput: 4096,
+			PRDiff:       30000,
+		},
 	}
 }
 
@@ -414,6 +431,9 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if err := validateRiskThresholds(cfg.RiskThresholds); err != nil {
+		return err
+	}
+	if err := validateTruncationLimits(cfg.Truncation); err != nil {
 		return err
 	}
 	if err := validateNotify(cfg.Notify); err != nil {
@@ -553,6 +573,17 @@ func expandNotifySettings(cfg *Config) {
 		}
 		cfg.Notify[i].Settings = expanded
 	}
+}
+
+// validateTruncationLimits ensures TruncationLimits fields are positive.
+func validateTruncationLimits(t TruncationLimits) error {
+	if t.VerifyOutput <= 0 {
+		return fmt.Errorf("truncation.verify_output must be a positive integer, got %d", t.VerifyOutput)
+	}
+	if t.PRDiff <= 0 {
+		return fmt.Errorf("truncation.pr_diff must be a positive integer, got %d", t.PRDiff)
+	}
+	return nil
 }
 
 // validateNotify checks that every provider name and event name in the notify

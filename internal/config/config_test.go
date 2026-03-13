@@ -1877,3 +1877,78 @@ max_rebase_attempts: 0
 		t.Errorf("MaxRebaseAttempts = %d, want 0", cfg.MaxRebaseAttempts)
 	}
 }
+
+func TestTruncationLimitsDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Truncation.VerifyOutput != 4096 {
+		t.Errorf("Truncation.VerifyOutput = %d, want 4096", cfg.Truncation.VerifyOutput)
+	}
+	if cfg.Truncation.PRDiff != 30000 {
+		t.Errorf("Truncation.PRDiff = %d, want 30000", cfg.Truncation.PRDiff)
+	}
+}
+
+func TestTruncationLimitsValidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+truncation:
+  verify_output: 8192
+  pr_diff: 60000
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Truncation.VerifyOutput != 8192 {
+		t.Errorf("Truncation.VerifyOutput = %d, want 8192", cfg.Truncation.VerifyOutput)
+	}
+	if cfg.Truncation.PRDiff != 60000 {
+		t.Errorf("Truncation.PRDiff = %d, want 60000", cfg.Truncation.PRDiff)
+	}
+}
+
+func TestTruncationLimitsZeroVerifyOutput(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+truncation:
+  verify_output: 0
+  pr_diff: 30000
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for verify_output: 0, got nil")
+	}
+	if !strings.Contains(err.Error(), "truncation.verify_output") {
+		t.Errorf("error = %q, want mention of 'truncation.verify_output'", err.Error())
+	}
+}
+
+func TestTruncationLimitsNegativePRDiff(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+truncation:
+  verify_output: 4096
+  pr_diff: -1
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for pr_diff: -1, got nil")
+	}
+	if !strings.Contains(err.Error(), "truncation.pr_diff") {
+		t.Errorf("error = %q, want mention of 'truncation.pr_diff'", err.Error())
+	}
+}

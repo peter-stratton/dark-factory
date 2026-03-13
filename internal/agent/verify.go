@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
@@ -38,12 +39,10 @@ type VerifyResult struct {
 // exit code, and any execution error.
 type CommandRunner func(ctx context.Context, command string) (stdout, stderr []byte, exitCode int, err error)
 
-const verifyOutputLimit = 4096
-
 // RunVerify executes each check in sequence using the provided runner.
 // It stops at the first failure unless all checks are requested.
 // Returns a VerifyResult with outcomes for all checks that were run.
-func RunVerify(ctx context.Context, checks []Check, run CommandRunner) VerifyResult {
+func RunVerify(ctx context.Context, checks []Check, run CommandRunner, limits config.TruncationLimits) VerifyResult {
 	results := []CheckResult{}
 
 	for _, check := range checks {
@@ -58,7 +57,7 @@ func RunVerify(ctx context.Context, checks []Check, run CommandRunner) VerifyRes
 		stdout, stderr, exitCode, err := run(ctx, check.Command)
 
 		combined := bytes.Join([][]byte{stdout, stderr}, nil)
-		output := truncateVerifyOutput(combined)
+		output := truncateVerifyOutput(combined, limits.VerifyOutput)
 
 		passed := exitCode == 0 && err == nil
 		results = append(results, CheckResult{
@@ -76,12 +75,13 @@ func RunVerify(ctx context.Context, checks []Check, run CommandRunner) VerifyRes
 	return VerifyResult{Checks: results, AllPassed: true}
 }
 
-// truncateVerifyOutput keeps the last verifyOutputLimit bytes of output.
-func truncateVerifyOutput(b []byte) string {
-	if len(b) <= verifyOutputLimit {
+// truncateVerifyOutput keeps the last limit bytes of output.
+// A limit of 0 means no truncation.
+func truncateVerifyOutput(b []byte, limit int) string {
+	if limit <= 0 || len(b) <= limit {
 		return string(b)
 	}
-	return string(b[len(b)-verifyOutputLimit:])
+	return string(b[len(b)-limit:])
 }
 
 // sandboxCommandRunner returns a CommandRunner that executes verify commands

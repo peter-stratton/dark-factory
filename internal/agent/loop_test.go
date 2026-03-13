@@ -2063,7 +2063,7 @@ func TestBuildVerifyChecks_GenerateFailureStopsPipeline(t *testing.T) {
 		return []byte(""), nil, 0, nil
 	}
 
-	result := RunVerify(context.Background(), checks, runner)
+	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
 	if result.AllPassed {
 		t.Error("AllPassed = true, want false (generate failed)")
@@ -2093,7 +2093,7 @@ func TestBuildVerifyChecks_GenerateSuccessProceedsToBuild(t *testing.T) {
 		return []byte(""), nil, 0, nil
 	}
 
-	result := RunVerify(context.Background(), checks, runner)
+	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Error("AllPassed = false, want true (both generate and build pass)")
