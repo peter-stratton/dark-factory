@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -151,24 +152,34 @@ func (w *Writer) Dir() string {
 	return w.dir
 }
 
+// issueDir returns the directory path for the given issue number.
+func (w *Writer) issueDir(issueNum int) string {
+	return filepath.Join(w.dir, "issues", strconv.Itoa(issueNum))
+}
+
+// issueRetryDir returns the directory path for the given issue and retry number.
+func (w *Writer) issueRetryDir(issueNum, retryNum int) string {
+	return filepath.Join(w.issueDir(issueNum), "retries", strconv.Itoa(retryNum))
+}
+
 // WriteReconResult writes the recon step result for the given issue.
 // Path: issues/<issueNum>/recon.json
 func (w *Writer) WriteReconResult(issueNum int, step StepResult) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "recon.json")
+	path := filepath.Join(w.issueDir(issueNum), "recon.json")
 	return writeJSONMkdirs(path, step)
 }
 
 // WriteSpecGeneratorResult writes the spec generator step result for the given issue.
 // Path: issues/<issueNum>/spec-generator.json
 func (w *Writer) WriteSpecGeneratorResult(issueNum int, step StepResult) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "spec-generator.json")
+	path := filepath.Join(w.issueDir(issueNum), "spec-generator.json")
 	return writeJSONMkdirs(path, step)
 }
 
 // WriteImplementResult writes the implement step result for the given issue.
 // Path: issues/<issueNum>/implement.json
 func (w *Writer) WriteImplementResult(issueNum int, step StepResult) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "implement.json")
+	path := filepath.Join(w.issueDir(issueNum), "implement.json")
 	return writeJSONMkdirs(path, step)
 }
 
@@ -179,45 +190,42 @@ func (w *Writer) WriteReviewResult(issueNum int, kind string, step StepResult) e
 	if kind != "quality" && kind != "functional" {
 		return fmt.Errorf("review kind must be %q or %q, got %q", "quality", "functional", kind)
 	}
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), kind+"-review.json")
+	path := filepath.Join(w.issueDir(issueNum), kind+"-review.json")
 	return writeJSONMkdirs(path, step)
 }
 
 // WriteRetryResult writes a retry step result for the given issue and retry number.
 // Path: issues/<issueNum>/retries/<retryNum>/retry.json
 func (w *Writer) WriteRetryResult(issueNum, retryNum int, step StepResult) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum),
-		"retries", fmt.Sprintf("%d", retryNum), "retry.json")
+	path := filepath.Join(w.issueRetryDir(issueNum, retryNum), "retry.json")
 	return writeJSONMkdirs(path, step)
 }
 
 // WriteRetryReviewResult writes a quality review result for a retry step.
 // Path: issues/<issueNum>/retries/<retryNum>/quality-review.json
 func (w *Writer) WriteRetryReviewResult(issueNum, retryNum int, step StepResult) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum),
-		"retries", fmt.Sprintf("%d", retryNum), "quality-review.json")
+	path := filepath.Join(w.issueRetryDir(issueNum, retryNum), "quality-review.json")
 	return writeJSONMkdirs(path, step)
 }
 
 // WriteRetryFunctionalReviewResult writes the functional review that triggered a retry.
 // Path: issues/<issueNum>/retries/<retryNum>/functional-review.json
 func (w *Writer) WriteRetryFunctionalReviewResult(issueNum, retryNum int, step StepResult) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum),
-		"retries", fmt.Sprintf("%d", retryNum), "functional-review.json")
+	path := filepath.Join(w.issueRetryDir(issueNum, retryNum), "functional-review.json")
 	return writeJSONMkdirs(path, step)
 }
 
 // WriteOutcome writes the outcome for the issue identified by outcome.IssueNumber.
 // Path: issues/<issueNum>/outcome.json
 func (w *Writer) WriteOutcome(outcome Outcome) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", outcome.IssueNumber), "outcome.json")
+	path := filepath.Join(w.issueDir(outcome.IssueNumber), "outcome.json")
 	return writeJSONMkdirs(path, outcome)
 }
 
 // WriteIssueStatus writes the live execution status for the given issue.
 // Path: issues/<issueNum>/status.json
 func (w *Writer) WriteIssueStatus(issueNum int, status IssueStatus) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "status.json")
+	path := filepath.Join(w.issueDir(issueNum), "status.json")
 	return writeJSONMkdirs(path, status)
 }
 
@@ -254,7 +262,7 @@ type DialogueEntry struct {
 // WriteDialogue writes the dialogue entries for the given issue.
 // Path: issues/<issueNum>/dialogue.json
 func (w *Writer) WriteDialogue(issueNum int, entries []DialogueEntry) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "dialogue.json")
+	path := filepath.Join(w.issueDir(issueNum), "dialogue.json")
 	return writeJSONMkdirs(path, entries)
 }
 
@@ -277,8 +285,7 @@ type VerifyStepResult struct {
 // WriteVerifyResult writes a verify step result for the given issue and attempt.
 // Path: issues/<issueNum>/verify-<attempt>.json
 func (w *Writer) WriteVerifyResult(issueNum int, step VerifyStepResult) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum),
-		fmt.Sprintf("verify-%d.json", step.Attempt))
+	path := filepath.Join(w.issueDir(issueNum), fmt.Sprintf("verify-%d.json", step.Attempt))
 	return writeJSONMkdirs(path, step)
 }
 
@@ -298,7 +305,7 @@ type RiskAssessment struct {
 // WriteRiskAssessment writes the risk assessment for the given issue.
 // Path: issues/<issueNum>/risk-assessment.json
 func (w *Writer) WriteRiskAssessment(issueNum int, assessment RiskAssessment) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "risk-assessment.json")
+	path := filepath.Join(w.issueDir(issueNum), "risk-assessment.json")
 	return writeJSONMkdirs(path, assessment)
 }
 
@@ -320,14 +327,14 @@ type FailureAnalysis struct {
 // WriteFailureAnalysis writes the failure analysis for the given issue.
 // Path: issues/<issueNum>/failure-analysis.json
 func (w *Writer) WriteFailureAnalysis(issueNum int, analysis FailureAnalysis) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "failure-analysis.json")
+	path := filepath.Join(w.issueDir(issueNum), "failure-analysis.json")
 	return writeJSONMkdirs(path, analysis)
 }
 
 // WriteContainerLog writes the raw container log for the given issue.
 // Path: issues/<issueNum>/container-log.txt
 func (w *Writer) WriteContainerLog(issueNum int, log string) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "container-log.txt")
+	path := filepath.Join(w.issueDir(issueNum), "container-log.txt")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("creating directories for %s: %w", path, err)
 	}
@@ -348,7 +355,7 @@ type PunchlistData struct {
 // WritePunchlist writes the punchlist data for the given issue.
 // Path: issues/<issueNum>/punchlist.json
 func (w *Writer) WritePunchlist(issueNum int, data PunchlistData) error {
-	path := filepath.Join(w.dir, "issues", fmt.Sprintf("%d", issueNum), "punchlist.json")
+	path := filepath.Join(w.issueDir(issueNum), "punchlist.json")
 	return writeJSONMkdirs(path, data)
 }
 
