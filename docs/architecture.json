@@ -45,7 +45,7 @@
     {
       "name": "foundation",
       "description": "Zero-dependency utilities importable by all layers. Configuration and logging.",
-      "paths": ["internal/config/", "internal/logging/", "internal/label/"],
+      "paths": ["internal/config/", "internal/logging/", "internal/label/", "internal/mdutil/"],
       "may_depend_on": [],
       "must_not_depend_on": ["cmd", "orchestration", "service", "domain", "infrastructure", "presentation", "content"]
     },
