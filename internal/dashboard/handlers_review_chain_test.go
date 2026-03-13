@@ -37,7 +37,7 @@ func TestServer_ReviewChain_WithReconStep(t *testing.T) {
 		rundata.Outcome{IssueNumber: 8, Status: "implemented", PRNumber: 42},
 		rundata.StepResult{Output: "impl done", DurationSeconds: 60},
 		rundata.StepResult{},
-		rundata.StepResult{Output: "review done REVIEW_RESULT=APPROVED", DurationSeconds: 15},
+		rundata.StepResult{Output: "review done AGENT_RESULT=APPROVED", DurationSeconds: 15},
 	)
 	issueDir := filepath.Join(runDir, "issues", "8")
 	writeReconFile(t, issueDir, rundata.StepResult{
@@ -78,7 +78,7 @@ func TestServer_ReviewChain_WithoutReconStep(t *testing.T) {
 
 	writeIssueFiles(t, runDir, 9,
 		rundata.Outcome{IssueNumber: 9, Status: "implemented"},
-		rundata.StepResult{Output: "impl done REVIEW_RESULT=APPROVED", DurationSeconds: 30},
+		rundata.StepResult{Output: "impl done AGENT_RESULT=APPROVED", DurationSeconds: 30},
 		rundata.StepResult{},
 		rundata.StepResult{},
 	)
@@ -116,9 +116,9 @@ func TestServer_ReviewChain_WithSteps(t *testing.T) {
 
 	writeIssueFiles(t, runDir, 5,
 		rundata.Outcome{IssueNumber: 5, Status: "implemented", PRNumber: 99},
-		rundata.StepResult{Output: "impl trace QUALITY_RESULT=APPROVED", DurationSeconds: 45},
-		rundata.StepResult{Output: "quality trace QUALITY_RESULT=APPROVED", DurationSeconds: 12},
-		rundata.StepResult{Output: "functional trace REVIEW_RESULT=APPROVED", DurationSeconds: 8},
+		rundata.StepResult{Output: "impl trace AGENT_RESULT=APPROVED", DurationSeconds: 45},
+		rundata.StepResult{Output: "quality trace AGENT_RESULT=APPROVED", DurationSeconds: 12},
+		rundata.StepResult{Output: "functional trace AGENT_RESULT=APPROVED", DurationSeconds: 8},
 	)
 
 	srv := newServer(t, tmpDir)

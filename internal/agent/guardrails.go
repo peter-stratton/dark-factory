@@ -113,10 +113,10 @@ func ClosePR(repo string, prNum int, reason string) error {
 	return nil
 }
 
-// ParseReviewResult scans the agent stdout for a REVIEW_RESULT line and
+// ParseReviewResult scans the agent stdout for an AGENT_RESULT line and
 // returns "APPROVED", "CHANGES_REQUESTED", or "" if not found.
 func ParseReviewResult(stdout string) string {
-	return ParseVerdict(stdout, "REVIEW")
+	return ParseVerdict(stdout, "AGENT")
 }
 
 // HasScenarioSpec returns true if any .md file in scenarioDir (including

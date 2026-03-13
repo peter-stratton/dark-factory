@@ -5,7 +5,7 @@ import "testing"
 // --- ParseReviewResult verdict tests ---
 
 func TestParseReviewResult_Approved(t *testing.T) {
-	stdout := "some output\nREVIEW_RESULT=APPROVED\nmore output"
+	stdout := "some output\nAGENT_RESULT=APPROVED\nmore output"
 	got := ParseReviewResult(stdout)
 	if got != "APPROVED" {
 		t.Errorf("ParseReviewResult() = %q, want %q", got, "APPROVED")
@@ -13,7 +13,7 @@ func TestParseReviewResult_Approved(t *testing.T) {
 }
 
 func TestParseReviewResult_ChangesRequested(t *testing.T) {
-	stdout := "output\nREVIEW_RESULT=CHANGES_REQUESTED\n"
+	stdout := "output\nAGENT_RESULT=CHANGES_REQUESTED\n"
 	got := ParseReviewResult(stdout)
 	if got != "CHANGES_REQUESTED" {
 		t.Errorf("ParseReviewResult() = %q, want %q", got, "CHANGES_REQUESTED")
@@ -29,7 +29,7 @@ func TestParseReviewResult_NotFound(t *testing.T) {
 }
 
 func TestParseReviewResult_FirstMatchWins(t *testing.T) {
-	stdout := "REVIEW_RESULT=APPROVED\nREVIEW_RESULT=CHANGES_REQUESTED\n"
+	stdout := "AGENT_RESULT=APPROVED\nAGENT_RESULT=CHANGES_REQUESTED\n"
 	got := ParseReviewResult(stdout)
 	if got != "APPROVED" {
 		t.Errorf("ParseReviewResult() = %q, want %q (first match should win)", got, "APPROVED")
@@ -37,7 +37,7 @@ func TestParseReviewResult_FirstMatchWins(t *testing.T) {
 }
 
 func TestParseReviewResult_WhitespaceHandling(t *testing.T) {
-	stdout := "  REVIEW_RESULT=APPROVED  \n"
+	stdout := "  AGENT_RESULT=APPROVED  \n"
 	got := ParseReviewResult(stdout)
 	if got != "APPROVED" {
 		t.Errorf("ParseReviewResult() = %q, want %q", got, "APPROVED")
@@ -45,7 +45,7 @@ func TestParseReviewResult_WhitespaceHandling(t *testing.T) {
 }
 
 func TestParseReviewResult_ColonFormat(t *testing.T) {
-	stdout := "REVIEW RESULT: APPROVED\n"
+	stdout := "AGENT RESULT: APPROVED\n"
 	got := ParseReviewResult(stdout)
 	if got != "APPROVED" {
 		t.Errorf("ParseReviewResult() = %q, want %q", got, "APPROVED")
@@ -53,7 +53,7 @@ func TestParseReviewResult_ColonFormat(t *testing.T) {
 }
 
 func TestParseReviewResult_ColonFormatChanges(t *testing.T) {
-	stdout := "REVIEW RESULT: CHANGES_REQUESTED\n"
+	stdout := "AGENT RESULT: CHANGES_REQUESTED\n"
 	got := ParseReviewResult(stdout)
 	if got != "CHANGES_REQUESTED" {
 		t.Errorf("ParseReviewResult() = %q, want %q", got, "CHANGES_REQUESTED")
@@ -61,24 +61,32 @@ func TestParseReviewResult_ColonFormatChanges(t *testing.T) {
 }
 
 func TestParseReviewResult_CaseInsensitive(t *testing.T) {
-	stdout := "Review Result: Approved\n"
+	stdout := "Agent Result: Approved\n"
 	got := ParseReviewResult(stdout)
 	if got != "APPROVED" {
 		t.Errorf("ParseReviewResult() = %q, want %q", got, "APPROVED")
 	}
 }
 
+func TestParseReviewResult_OldFormatNotMatched(t *testing.T) {
+	stdout := "REVIEW_RESULT=APPROVED\n"
+	got := ParseReviewResult(stdout)
+	if got != "" {
+		t.Errorf("ParseReviewResult() = %q, want %q (old REVIEW_RESULT format must not match)", got, "")
+	}
+}
+
 // --- ParseQualityResult verdict tests ---
 
 func TestParseQualityResult_Approved(t *testing.T) {
-	got := ParseQualityResult("some output\nQUALITY_RESULT=APPROVED\nmore output")
+	got := ParseQualityResult("some output\nAGENT_RESULT=APPROVED\nmore output")
 	if got != "APPROVED" {
 		t.Errorf("ParseQualityResult() = %q, want %q", got, "APPROVED")
 	}
 }
 
 func TestParseQualityResult_ChangesRequested(t *testing.T) {
-	got := ParseQualityResult("QUALITY_RESULT=CHANGES_REQUESTED\n")
+	got := ParseQualityResult("AGENT_RESULT=CHANGES_REQUESTED\n")
 	if got != "CHANGES_REQUESTED" {
 		t.Errorf("ParseQualityResult() = %q, want %q", got, "CHANGES_REQUESTED")
 	}
@@ -88,5 +96,12 @@ func TestParseQualityResult_NoMatch(t *testing.T) {
 	got := ParseQualityResult("no sentinel here")
 	if got != "" {
 		t.Errorf("ParseQualityResult() = %q, want %q", got, "")
+	}
+}
+
+func TestParseQualityResult_OldFormatNotMatched(t *testing.T) {
+	got := ParseQualityResult("QUALITY_RESULT=APPROVED\n")
+	if got != "" {
+		t.Errorf("ParseQualityResult() = %q, want %q (old QUALITY_RESULT format must not match)", got, "")
 	}
 }
