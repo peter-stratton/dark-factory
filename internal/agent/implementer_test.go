@@ -709,3 +709,76 @@ func TestNewPromptData_EmptyGeneratedPaths(t *testing.T) {
 		t.Errorf("GeneratedPaths = %q, want empty string", data.GeneratedPaths)
 	}
 }
+
+func TestNewPromptData_SharedRulesContainsProtectedPaths(t *testing.T) {
+	cfg := testConfig() // ProtectedPaths: ["CLAUDE.md", "tests/scenarios/"]
+	cfg.ScenarioDir = ""
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	want := "CLAUDE.md, tests/scenarios/"
+	if !strings.Contains(data.SharedRules, want) {
+		t.Errorf("SharedRules = %q, want it to contain %q", data.SharedRules, want)
+	}
+}
+
+func TestNewPromptData_SharedRulesContainsScenarioDir(t *testing.T) {
+	cfg := testConfig() // ScenarioDir: "tests/scenarios/"
+	cfg.ProtectedPaths = nil
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	want := "tests/scenarios/"
+	if !strings.Contains(data.SharedRules, want) {
+		t.Errorf("SharedRules = %q, want it to contain %q", data.SharedRules, want)
+	}
+}
+
+func TestNewPromptData_SharedRulesEmptyWhenNoPaths(t *testing.T) {
+	cfg := testConfig()
+	cfg.ProtectedPaths = nil
+	cfg.ScenarioDir = ""
+
+	data := newPromptData(testIssue(), cfg, "test-slug")
+
+	if data.SharedRules != "" {
+		t.Errorf("SharedRules = %q, want empty string when both ProtectedPaths and ScenarioDir are empty", data.SharedRules)
+	}
+}
+
+func TestBuildSharedRules_BothSet(t *testing.T) {
+	got := buildSharedRules("CLAUDE.md, tests/scenarios/", "tests/scenarios/")
+	if !strings.Contains(got, "- Do NOT modify any protected paths: CLAUDE.md, tests/scenarios/") {
+		t.Errorf("buildSharedRules() missing protected paths line, got: %q", got)
+	}
+	if !strings.Contains(got, "- Do NOT modify files in tests/scenarios/") {
+		t.Errorf("buildSharedRules() missing scenario dir line, got: %q", got)
+	}
+}
+
+func TestBuildSharedRules_OnlyProtectedPaths(t *testing.T) {
+	got := buildSharedRules("CLAUDE.md", "")
+	if !strings.Contains(got, "- Do NOT modify any protected paths: CLAUDE.md") {
+		t.Errorf("buildSharedRules() missing protected paths line, got: %q", got)
+	}
+	if strings.Contains(got, "- Do NOT modify files in") {
+		t.Errorf("buildSharedRules() should not contain scenario dir line when ScenarioDir is empty, got: %q", got)
+	}
+}
+
+func TestBuildSharedRules_OnlyScenarioDir(t *testing.T) {
+	got := buildSharedRules("", "tests/scenarios/")
+	if strings.Contains(got, "protected paths") {
+		t.Errorf("buildSharedRules() should not contain protected paths line when ProtectedPaths is empty, got: %q", got)
+	}
+	if !strings.Contains(got, "- Do NOT modify files in tests/scenarios/") {
+		t.Errorf("buildSharedRules() missing scenario dir line, got: %q", got)
+	}
+}
+
+func TestBuildSharedRules_BothEmpty(t *testing.T) {
+	got := buildSharedRules("", "")
+	if got != "" {
+		t.Errorf("buildSharedRules() = %q, want empty string when both inputs are empty", got)
+	}
+}
