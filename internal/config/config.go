@@ -111,15 +111,59 @@ type RiskThresholds struct {
 	MaxFiles int `yaml:"max_files"`
 }
 
+// FeatureMergeStrategy controls whether and how the feature branch is merged
+// into the base branch after a successful review cycle.
+type FeatureMergeStrategy string
+
+const (
+	// MergeNone disables automatic feature-branch merging.
+	MergeNone FeatureMergeStrategy = "none"
+	// MergeLowRisk merges automatically only when the risk classifier deems
+	// the PR low-risk.
+	MergeLowRisk FeatureMergeStrategy = "low_risk"
+	// MergeAll merges automatically regardless of risk.
+	MergeAll FeatureMergeStrategy = "all"
+)
+
+// Valid reports whether s is a recognized FeatureMergeStrategy value.
+func (s FeatureMergeStrategy) Valid() bool {
+	switch s {
+	case MergeNone, MergeLowRisk, MergeAll:
+		return true
+	}
+	return false
+}
+
+// RollupMergeStrategy controls what happens to the base branch after a run
+// completes (base branch → default branch rollup PR).
+type RollupMergeStrategy string
+
+const (
+	// RollupNone disables rollup PR creation.
+	RollupNone RollupMergeStrategy = "none"
+	// RollupManual creates a rollup PR but leaves it open for human review.
+	RollupManual RollupMergeStrategy = "manual"
+	// RollupAuto creates and immediately merges the rollup PR.
+	RollupAuto RollupMergeStrategy = "auto"
+)
+
+// Valid reports whether s is a recognized RollupMergeStrategy value.
+func (s RollupMergeStrategy) Valid() bool {
+	switch s {
+	case RollupNone, RollupManual, RollupAuto:
+		return true
+	}
+	return false
+}
+
 // AutoMerge holds independent merge-strategy controls for the two merge
 // points introduced by configurable base branches.
 type AutoMerge struct {
 	// Feature controls merging of the feature branch into the base branch.
-	// Valid values: "none", "low_risk", "all".
-	Feature string `yaml:"feature"`
+	Feature FeatureMergeStrategy `yaml:"feature"`
 	// Rollup controls what happens to the base branch → default branch after
-	// a run completes. Valid values: "none", "manual", "auto".
-	Rollup string `yaml:"rollup"`
+	// a run completes.
+	Rollup RollupMergeStrategy `yaml:"rollup"`
 }
 
 // Config holds all configuration for a godark run.
@@ -295,7 +339,7 @@ func defaults() *Config {
 		MaxRetries:        3,
 		MaxResumeRetries:  2,
 		MaxRebaseAttempts: 1,
-		AutoMerge:      AutoMerge{Feature: "none", Rollup: "none"},
+		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupNone},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},
 		DeniedCommands: []string{
@@ -331,10 +375,10 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 		cfg.NoSandbox = *flags.NoSandbox
 	}
 	if flags.AutoMergeFeature != nil {
-		cfg.AutoMerge.Feature = *flags.AutoMergeFeature
+		cfg.AutoMerge.Feature = FeatureMergeStrategy(*flags.AutoMergeFeature)
 	}
 	if flags.AutoMergeRollup != nil {
-		cfg.AutoMerge.Rollup = *flags.AutoMergeRollup
+		cfg.AutoMerge.Rollup = RollupMergeStrategy(*flags.AutoMergeRollup)
 	}
 	if flags.BaseBranch != nil {
 		cfg.BaseBranch = *flags.BaseBranch
@@ -354,16 +398,10 @@ func validate(cfg *Config) error {
 	default:
 		return fmt.Errorf("auth_preference must be \"oauth\" or \"api_key\", got %q", cfg.AuthPreference)
 	}
-	switch cfg.AutoMerge.Feature {
-	case "none", "low_risk", "all":
-		// valid
-	default:
+	if !cfg.AutoMerge.Feature.Valid() {
 		return fmt.Errorf("auto_merge.feature must be \"none\", \"low_risk\", or \"all\", got %q", cfg.AutoMerge.Feature)
 	}
-	switch cfg.AutoMerge.Rollup {
-	case "none", "manual", "auto":
-		// valid
-	default:
+	if !cfg.AutoMerge.Rollup.Valid() {
 		return fmt.Errorf("auto_merge.rollup must be \"none\", \"manual\", or \"auto\", got %q", cfg.AutoMerge.Rollup)
 	}
 	if err := validateModules(cfg.Modules); err != nil {

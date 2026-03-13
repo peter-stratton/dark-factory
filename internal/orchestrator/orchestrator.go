@@ -90,7 +90,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 	if !dryRun {
 		issueNums := issueNumbers(issues)
 		var writerErr error
-		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: cfg.AutoMerge.Feature, Rollup: cfg.AutoMerge.Rollup})
+		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
 		if writerErr != nil {
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
 		} else if runLogger, logErr := logging.NewLogger(writer.Dir()); logErr == nil {
@@ -473,7 +473,7 @@ done:
 	var rollupPRNumber int
 	var rollupPRURL string
 	if stats.abortReason == "" &&
-		cfg.AutoMerge.Rollup != "none" &&
+		cfg.AutoMerge.Rollup != config.RollupNone &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
 		stats.implemented > 0 {
 		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger)
@@ -620,7 +620,7 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 	logger.Info("rollup PR created", "pr_number", prNum, "pr_url", prURL)
 	fmt.Printf("Rollup PR #%d created: %s\n", prNum, prURL)
 
-	if cfg.AutoMerge.Rollup == "auto" {
+	if cfg.AutoMerge.Rollup == config.RollupAuto {
 		// Wait for CI checks before merging if configured.
 		if cfg.WaitForChecks != nil {
 			timeout, err := time.ParseDuration(cfg.WaitForChecks.Timeout)
