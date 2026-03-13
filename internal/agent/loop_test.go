@@ -930,6 +930,7 @@ func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 
 // testRunDataHook is a simple RunDataHook implementation for unit tests.
 type testRunDataHook struct {
+	reconCalls                 int
 	specGeneratorCalls         int
 	implementCalls             int
 	reviewKinds                []string
@@ -942,6 +943,10 @@ type testRunDataHook struct {
 	riskAssessments            []rundata.RiskAssessment
 }
 
+func (h *testRunDataHook) WriteReconResult(_ int, _ rundata.StepResult) error {
+	h.reconCalls++
+	return nil
+}
 func (h *testRunDataHook) WriteSpecGeneratorResult(_ int, _ rundata.StepResult) error {
 	h.specGeneratorCalls++
 	return nil

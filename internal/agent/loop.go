@@ -125,10 +125,28 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
 		if reconErr != nil {
 			logger.Warn("recon agent failed, continuing without brief", "error", reconErr)
+			if hook != nil {
+				step := rundata.StepResult{Error: reconErr.Error()}
+				if writeErr := hook.WriteReconResult(issue.Number, step); writeErr != nil {
+					logger.Warn("failed to write recon result", "error", writeErr)
+				}
+			}
 		} else if reconResult.TimedOut {
 			logger.Warn("recon agent timed out, continuing without brief")
+			if hook != nil {
+				step := ResultToStep(reconResult)
+				step.Error = "timed out"
+				if writeErr := hook.WriteReconResult(issue.Number, step); writeErr != nil {
+					logger.Warn("failed to write recon result", "error", writeErr)
+				}
+			}
 		} else {
 			reconBrief = reconResult.ResultText
+			if hook != nil {
+				if writeErr := hook.WriteReconResult(issue.Number, ResultToStep(reconResult)); writeErr != nil {
+					logger.Warn("failed to write recon result", "error", writeErr)
+				}
+			}
 		}
 	}
 
