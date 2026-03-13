@@ -3790,3 +3790,249 @@ func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing
 		t.Errorf("Status = %q, want implemented when verify is non-blocking after quality-gate retry (err: %v)", outcome.Status, outcome.Err)
 	}
 }
+
+// TestProcessIssue_ReconRunsBeforeImplement verifies that when prompts.Recon is
+// configured, the recon agent is called before the implementer.
+func TestProcessIssue_ReconRunsBeforeImplement(t *testing.T) {
+	callOrder := []string{}
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		role := env["GODARK_ROLE"]
+		callOrder = append(callOrder, role)
+		callIdx++
+		switch callIdx {
+		case 1: // recon
+			return []byte(wrapRunnerJSON("recon brief text")), []byte(""), 0, nil
+		case 2: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:           "Recon issue #{{.IssueNumber}}",
+		Implementer:     "Implement #{{.IssueNumber}} {{.IssueTitle}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:        "Review PR #{{.PRNumber}}",
+		QualityReviewer: "Quality review PR #{{.PRNumber}}",
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	if len(callOrder) < 2 {
+		t.Fatalf("expected at least 2 agent calls, got %d", len(callOrder))
+	}
+	if callOrder[0] != "recon" {
+		t.Errorf("first agent call role = %q, want %q", callOrder[0], "recon")
+	}
+	if callOrder[1] != "implementer" {
+		t.Errorf("second agent call role = %q, want %q", callOrder[1], "implementer")
+	}
+}
+
+// TestProcessIssue_ReconOutputPassedToImplementer verifies that the recon
+// agent's ResultText is passed as reconBrief to the implementer prompt.
+func TestProcessIssue_ReconOutputPassedToImplementer(t *testing.T) {
+	var implementerPrompt string
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // recon
+			return []byte(wrapRunnerJSON("key finding: use approach X")), []byte(""), 0, nil
+		case 2: // implementer
+			implementerPrompt = env["GODARK_PROMPT"]
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:            "Recon issue #{{.IssueNumber}}",
+		Implementer:      "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:         "Review PR #{{.PRNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}}",
+	}
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	if !strings.Contains(implementerPrompt, "key finding: use approach X") {
+		t.Errorf("implementer prompt should contain recon output, got: %s", implementerPrompt)
+	}
+}
+
+// TestProcessIssue_ReconFailureNonBlocking verifies that when recon fails,
+// Implement is still called with an empty reconBrief.
+func TestProcessIssue_ReconFailureNonBlocking(t *testing.T) {
+	var implementerPrompt string
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // recon — simulate failure via non-zero exit
+			return []byte(""), []byte("error output"), 1, nil
+		case 2: // implementer
+			implementerPrompt = env["GODARK_PROMPT"]
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 3: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:            "Recon issue #{{.IssueNumber}}",
+		Implementer:      "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:         "Review PR #{{.PRNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}}",
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	// Implementation should still proceed even if recon failed.
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	if strings.Contains(implementerPrompt, "brief=") {
+		t.Errorf("implementer prompt should not contain brief when recon failed, got: %s", implementerPrompt)
+	}
+}
+
+// TestProcessIssue_ReconTimeoutNonBlocking verifies that when the recon agent
+// times out, a warning is logged and Implement() is still called with empty reconBrief.
+func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
+	var implementerPrompt string
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	callIdx := 0
+	Runner = func(innerCtx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // recon — cancel context to trigger TimedOut path
+			cancel()
+			return []byte(""), []byte(""), 0, nil
+		case 2: // implementer — capture prompt; context is cancelled so Run returns TimedOut
+			implementerPrompt = env["GODARK_PROMPT"]
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		default:
+			return []byte(wrapRunnerJSON("")), []byte(""), 0, nil
+		}
+	}
+
+	prompts := &Prompts{
+		Recon:            "Recon issue #{{.IssueNumber}}",
+		Implementer:      "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
+		ImplementerRetry: "Retry PR #{{.PRNumber}}",
+		Reviewer:         "Review PR #{{.PRNumber}}",
+		QualityReviewer:  "Quality review PR #{{.PRNumber}}",
+	}
+
+	ProcessIssue(ctx, loopIssue(), loopConfig(), prompts, nil, logger, nil)
+
+	// A warning must be logged when recon times out.
+	if !strings.Contains(logBuf.String(), "recon agent timed out") {
+		t.Errorf("expected warning about recon timeout in log, got: %s", logBuf.String())
+	}
+
+	// Implement() must still be called (Runner called at least twice).
+	if callIdx < 2 {
+		t.Errorf("Implement() was not called after recon timeout (Runner calls = %d)", callIdx)
+	}
+
+	// Implement() must receive an empty reconBrief (no "brief=" in its prompt).
+	if strings.Contains(implementerPrompt, "brief=") {
+		t.Errorf("implementer prompt should not contain brief when recon timed out, got: %s", implementerPrompt)
+	}
+}
+
+// TestProcessIssue_ReconSkippedWhenUnconfigured verifies that when prompts.Recon
+// is empty, the recon agent is not called and the implementer runs first.
+func TestProcessIssue_ReconSkippedWhenUnconfigured(t *testing.T) {
+	callOrder := []string{}
+
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		role := env["GODARK_ROLE"]
+		callOrder = append(callOrder, role)
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
+		case 2: // quality reviewer
+			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+		default: // functional reviewer
+			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	// No Recon prompt configured.
+	prompts := testPrompts(t)
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil)
+
+	if len(callOrder) == 0 {
+		t.Fatal("expected at least one agent call")
+	}
+	if callOrder[0] == "recon" {
+		t.Errorf("recon should not run when prompts.Recon is empty; call order: %v", callOrder)
+	}
+	if callOrder[0] != "implementer" {
+		t.Errorf("first agent call role = %q, want %q; call order: %v", callOrder[0], "implementer", callOrder)
+	}
+}
