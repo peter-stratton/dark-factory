@@ -851,7 +851,7 @@ accounts for changes made by prior issues.
 - Hybrid retry config — `max_resume_retries` config field (default 2), beyond
   which retries use fresh sessions with handoff artifact
 
-**Issues**: TBD
+**Issues**: #367–#372
 
 **Planning doc**: `docs/planning/phase-18-adaptive-agent-loop.md`
 

@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Recon agent prompt template and role
+## Issue 367: Recon agent prompt template and role
 
 ### Description
 
@@ -61,9 +61,9 @@ the agent's result text as-is.
 
 ---
 
-## Issue: Recon config and prompt data wiring
+## Issue 368: Recon config and prompt data wiring
 
-**Blocked by**: Recon agent prompt template and role
+**Blocked by**: #367
 
 ### Description
 
@@ -106,9 +106,9 @@ implementer as additional context via a `ReconBrief` template variable.
 
 ---
 
-## Issue: Recon orchestrator integration
+## Issue 369: Recon orchestrator integration
 
-**Blocked by**: Recon config and prompt data wiring
+**Blocked by**: #368
 
 ### Description
 
@@ -169,9 +169,9 @@ fails, the implementer proceeds without the brief.
 
 ---
 
-## Issue: Recon run data and dashboard
+## Issue 370: Recon run data and dashboard
 
-**Blocked by**: Recon orchestrator integration
+**Blocked by**: #369
 
 ### Description
 
@@ -221,7 +221,7 @@ runs for debugging prompt quality and recon accuracy.
 
 ---
 
-## Issue: Fresh agent with structured handoff on retry 3+
+## Issue 371: Fresh agent with structured handoff on retry 3+
 
 ### Description
 
@@ -294,9 +294,9 @@ The handoff context is assembled by `ProcessIssue()` (not `Retry()`) to keep
 
 ---
 
-## Issue: Hybrid retry config — max_resume_retries
+## Issue 372: Hybrid retry config — max_resume_retries
 
-**Blocked by**: Fresh agent with structured handoff on retry 3+
+**Blocked by**: #371
 
 ### Description
 
