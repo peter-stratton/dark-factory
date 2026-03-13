@@ -58,6 +58,10 @@ _ROLE_PERMISSIONS: dict[str, dict] = {
         "allowed_tools": ["Read", "Glob", "Grep"],
         "disallowed_tools": ["Write", "Edit", "Bash"],
     },
+    "recon": {
+        "allowed_tools": ["Read", "Glob", "Grep"],
+        "disallowed_tools": ["Write", "Edit", "Bash"],
+    },
 }
 
 

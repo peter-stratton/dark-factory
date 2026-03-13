@@ -383,6 +383,40 @@ func TestPromptTemplateVarsPreserved(t *testing.T) {
 	}
 }
 
+func TestLoadPrompts_ReconLoadedFromEmbedded(t *testing.T) {
+	cfg := &config.Config{}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.Recon == "" {
+		t.Error("Recon should be loaded from embedded default")
+	}
+}
+
+func TestReconPrompt_RendersWithIssueTitleAndBody(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber: 42,
+		IssueTitle:  "Add recon agent",
+		IssueBody:   "The recon agent explores the codebase before implementation.",
+	}
+	rendered, err := RenderPrompt(p.Recon, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "Add recon agent") {
+		t.Error("recon prompt should contain the issue title")
+	}
+	if !strings.Contains(rendered, "The recon agent explores the codebase before implementation.") {
+		t.Error("recon prompt should contain the issue body")
+	}
+}
+
 func TestSlugify(t *testing.T) {
 	tests := []struct {
 		input string

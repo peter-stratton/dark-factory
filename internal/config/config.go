@@ -212,6 +212,7 @@ type Prompts struct {
 	SpecGenerator    string `yaml:"spec_generator"`
 	Punchlist        string `yaml:"punchlist"`
 	VerifyFix        string `yaml:"verify_fix"`
+	Recon            string `yaml:"recon"`
 }
 
 // CLIFlags holds flag values passed on the command line.
