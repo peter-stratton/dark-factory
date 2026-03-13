@@ -1050,7 +1050,7 @@ func TestProcessIssue_HookCalledOnOutcome(t *testing.T) {
 	if len(hook.outcomes) != 1 {
 		t.Fatalf("WriteOutcome called %d times, want 1", len(hook.outcomes))
 	}
-	if hook.outcomes[0].Status != outcome.Status {
+	if hook.outcomes[0].Status != string(outcome.Status) {
 		t.Errorf("WriteOutcome status = %q, want %q", hook.outcomes[0].Status, outcome.Status)
 	}
 	if hook.outcomes[0].IssueNumber != loopIssue().Number {
