@@ -2,6 +2,8 @@ package dashboard
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +16,21 @@ import (
 	"github.com/phs/dark-factory/internal/analysis"
 	"github.com/phs/dark-factory/internal/rundata"
 )
+
+// writePartial renders a partial HTML fragment with ETag support. If the
+// client sends an If-None-Match header matching the content hash, a 304 Not
+// Modified is returned and no body is written.
+func (s *Server) writePartial(w http.ResponseWriter, r *http.Request, buf *bytes.Buffer) {
+	hash := sha256.Sum256(buf.Bytes())
+	etag := `"` + hex.EncodeToString(hash[:8]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	_, _ = buf.WriteTo(w)
+}
 
 // RunView is the view model for a single run in the list.
 type RunView struct {
@@ -147,8 +164,7 @@ func (s *Server) handleRunsTable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = buf.WriteTo(w)
+	s.writePartial(w, r, &buf)
 }
 
 func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
@@ -380,8 +396,7 @@ func (s *Server) handleIssuesTable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = buf.WriteTo(w)
+	s.writePartial(w, r, &buf)
 }
 
 func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
@@ -499,8 +514,7 @@ func (s *Server) handleReviewChain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = buf.WriteTo(w)
+	s.writePartial(w, r, &buf)
 }
 
 // issueToRowView converts an IssueDetail to the view model for the run detail table.
@@ -798,8 +812,7 @@ func (s *Server) handleAnalysisStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = buf.WriteTo(w)
+	s.writePartial(w, r, &buf)
 }
 
 func (s *Server) buildAnalysisData(repoFilter string) (*AnalysisData, error) {

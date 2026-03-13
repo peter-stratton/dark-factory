@@ -6,9 +6,11 @@
   <title>godark — Runs</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph-ext.min.js"></script>
+  <script src="/static/etag-cache.js"></script>
   <script src="/static/chart.min.js" defer></script>
 </head>
-<body>
+<body hx-ext="morph">
   <div class="shell">
 
     <!-- Top Bar -->
@@ -226,7 +228,7 @@
           <tbody id="runs-tbody"
                  hx-get="/partials/runs-table"
                  hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
-                 hx-swap="innerHTML"
+                 hx-swap="morph:innerHTML"
                  hx-include="[name='repo']">
             {{template "runs-rows" .Runs}}
           </tbody>
