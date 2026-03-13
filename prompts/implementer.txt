@@ -1,5 +1,15 @@
 Read CLAUDE.md completely before doing anything else.
 Then implement GitHub issue #{{.IssueNumber}} in the {{.Repo}} repository.
+{{- if .ReconBrief}}
+
+## Pre-implementation context (recon brief)
+
+The following is a summary of relevant files, signatures, and architectural
+notes gathered by the recon agent before implementation. Use it as context
+when reading code and planning your approach.
+
+{{.ReconBrief}}
+{{- end}}
 
 Issue title: {{.IssueTitle}}
 Issue body:
