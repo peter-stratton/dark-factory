@@ -108,8 +108,7 @@ func (s *Server) handleRunLogsEntries(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = buf.WriteTo(w)
+	s.writePartial(w, r, &buf)
 }
 
 // buildLogViewerData loads, filters, and paginates debug.log entries for the

@@ -6,8 +6,10 @@
   <title>godark — Logs: {{.Repo}} / {{.Timestamp}}</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph-ext.min.js"></script>
+  <script src="/static/etag-cache.js"></script>
 </head>
-<body>
+<body hx-ext="morph">
   <div class="shell">
 
     <!-- Top Bar -->
@@ -116,7 +118,7 @@
           <tbody id="log-entries-tbody"
                  hx-get="{{.LogsURL}}/entries"
                  hx-trigger="every 5s, visibilitychange[document.visibilityState==='visible'] from:document"
-                 hx-swap="innerHTML"
+                 hx-swap="morph:innerHTML"
                  hx-include="[name='level'], [name='search']">
             {{template "log-entries" .}}
           </tbody>
