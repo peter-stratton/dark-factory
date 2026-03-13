@@ -37,9 +37,7 @@ Steps:
 {{- end}}
 
 CRITICAL RULES:
-- Do NOT modify any protected paths: {{.ProtectedPaths}}
-- Do NOT modify files in {{.ScenarioDir}}
-{{- if .GeneratedPaths}}
+{{.SharedRules}}{{- if .GeneratedPaths}}
 - Do NOT edit generated files directly ({{.GeneratedPaths}}); edit source files or re-run code generation instead
 {{- end}}
 {{- if .HasScenarioSpec}}

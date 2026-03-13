@@ -304,6 +304,7 @@ func TestReviewerPrompt_ExpandsProtectedPaths(t *testing.T) {
 		ProtectedPaths: "CLAUDE.md,tests/scenarios/",
 		ScenarioDir:    "tests/scenarios/",
 		ReviewDir:      "tests/review/",
+		SharedRules:    buildSharedRules("CLAUDE.md,tests/scenarios/", "tests/scenarios/"),
 	}
 	rendered, err := RenderPrompt(p.Reviewer, data)
 	if err != nil {
@@ -1058,5 +1059,74 @@ func TestRenderPrompt_HandoffContextNotRenderedWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(rendered, "fresh session") {
 		t.Error("implementer_retry prompt should not include fresh session preamble when HandoffContext is empty")
+	}
+}
+
+func TestImplementerPrompt_RendersSharedRulesAndBranchAndGeneratedPaths(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		GeneratedPaths: "gen/",
+		Slug:           "test-issue",
+		SharedRules:    buildSharedRules("CLAUDE.md", "tests/scenarios/"),
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	// Shared rules present.
+	if !strings.Contains(rendered, "Do NOT modify any protected paths: CLAUDE.md") {
+		t.Error("implementer prompt should contain shared protected paths rule")
+	}
+	if !strings.Contains(rendered, "Do NOT modify files in tests/scenarios/") {
+		t.Error("implementer prompt should contain shared scenario dir rule (via SharedRules)")
+	}
+	// Agent-specific rules present.
+	if !strings.Contains(rendered, "git checkout") {
+		t.Error("implementer prompt should contain branch creation rule")
+	}
+	if !strings.Contains(rendered, "Do NOT modify files in tests/review/") {
+		t.Error("implementer prompt should contain agent-specific ReviewDir rule")
+	}
+	if !strings.Contains(rendered, "Do NOT edit generated files directly") {
+		t.Error("implementer prompt should contain agent-specific generated paths rule")
+	}
+}
+
+func TestSpecGeneratorPrompt_KeepsNarrowScenarioDirRule(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		Slug:           "test-issue",
+		SharedRules:    buildSharedRules("CLAUDE.md", "tests/scenarios/"),
+	}
+	rendered, err := RenderPrompt(p.SpecGenerator, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	// Shared protected paths rule present.
+	if !strings.Contains(rendered, "Do NOT modify any protected paths: CLAUDE.md") {
+		t.Error("spec_generator prompt should contain shared protected paths rule")
+	}
+	// Narrow agent-specific ScenarioDir rule with "existing files" wording present.
+	if !strings.Contains(rendered, "Do NOT modify existing files in tests/scenarios/") {
+		t.Error("spec_generator prompt should retain the narrower 'existing files' ScenarioDir rule")
 	}
 }
