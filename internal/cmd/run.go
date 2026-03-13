@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/pypi"
@@ -29,36 +28,11 @@ each unblocked issue through the implement → review → merge loop.`,
 		flags.Config = configPath
 
 		// Parse milestone/issue locally — these are per-run params, not config.
-		var milestone string
 		var issue int
 
-		if cmd.Flags().Changed("tag") && cmd.Flags().Changed("milestone") {
-			return fmt.Errorf("--milestone and --tag are mutually exclusive")
-		}
-		if cmd.Flags().Changed("tag") {
-			tag, _ := cmd.Flags().GetString("tag")
-			// Need repo to resolve tag — check flag first, then fall back to config.
-			repo := flags.Repo
-			if repo == nil {
-				cfgOnly, err := config.Load(configPath, config.CLIFlags{Config: configPath})
-				if err != nil {
-					return fmt.Errorf("loading config to resolve --tag: %w", err)
-				}
-				if cfgOnly.Repo != "" {
-					r := cfgOnly.Repo
-					repo = &r
-				}
-			}
-			if repo == nil || *repo == "" {
-				return fmt.Errorf("--repo is required when using --tag")
-			}
-			resolved, err := github.ResolveMilestoneByTag(*repo, tag)
-			if err != nil {
-				return err
-			}
-			milestone = resolved
-		} else if cmd.Flags().Changed("milestone") {
-			milestone, _ = cmd.Flags().GetString("milestone")
+		milestone, err := resolveTag(cmd)
+		if err != nil {
+			return err
 		}
 		if cmd.Flags().Changed("issue") {
 			issue, _ = cmd.Flags().GetInt("issue")
