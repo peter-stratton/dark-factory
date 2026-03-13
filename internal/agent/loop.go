@@ -91,35 +91,20 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if prompts.SpecGenerator != "" && !HasScenarioSpec(cfg.ScenarioDir, issue.Number) {
 		logger.Info("no scenario spec found, generating", "issue_number", issue.Number)
 		specResult, err := GenerateSpec(ctx, issue, cfg, prompts, authEnv, logger)
-		if err != nil {
-			logger.Warn("spec generation failed, continuing without spec", "error", err)
-			if hook != nil {
-				step := rundata.StepResult{Error: err.Error()}
-				if writeErr := hook.WriteSpecGeneratorResult(issue.Number, step); writeErr != nil {
-					logger.Warn("failed to write spec generator result", "error", writeErr)
-				}
+		var specWriteHook func(rundata.StepResult) error
+		if hook != nil {
+			specWriteHook = func(step rundata.StepResult) error {
+				return hook.WriteSpecGeneratorResult(issue.Number, step)
 			}
-		} else if specResult.TimedOut {
-			logger.Warn("spec generation timed out, continuing without spec")
-			if hook != nil {
-				step := ResultToStep(specResult)
-				step.Error = "timed out"
-				if writeErr := hook.WriteSpecGeneratorResult(issue.Number, step); writeErr != nil {
-					logger.Warn("failed to write spec generator result", "error", writeErr)
-				}
-			}
-		} else {
+		}
+		specText := handleNonBlockingResult(specResult, err, "spec-generator", logger, specWriteHook)
+		if specText != "" {
 			// The spec was committed to the remote branch inside the container.
 			// The file isn't on the host, but the reviewer container will see it
 			// when it checks out the PR branch. After merge and pull, the spec
 			// lands on main permanently.
 			specGenerated = true
 			logger.Info("spec generated on remote branch", "branch", branch)
-			if hook != nil {
-				if writeErr := hook.WriteSpecGeneratorResult(issue.Number, ResultToStep(specResult)); writeErr != nil {
-					logger.Warn("failed to write spec generator result", "error", writeErr)
-				}
-			}
 		}
 	}
 
@@ -134,31 +119,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	reconBrief := ""
 	if prompts.Recon != "" {
 		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
-		if reconErr != nil {
-			logger.Warn("recon agent failed, continuing without brief", "error", reconErr)
-			if hook != nil {
-				step := rundata.StepResult{Error: reconErr.Error()}
-				if writeErr := hook.WriteReconResult(issue.Number, step); writeErr != nil {
-					logger.Warn("failed to write recon result", "error", writeErr)
-				}
-			}
-		} else if reconResult.TimedOut {
-			logger.Warn("recon agent timed out, continuing without brief")
-			if hook != nil {
-				step := ResultToStep(reconResult)
-				step.Error = "timed out"
-				if writeErr := hook.WriteReconResult(issue.Number, step); writeErr != nil {
-					logger.Warn("failed to write recon result", "error", writeErr)
-				}
-			}
-		} else {
-			reconBrief = reconResult.ResultText
-			if hook != nil {
-				if writeErr := hook.WriteReconResult(issue.Number, ResultToStep(reconResult)); writeErr != nil {
-					logger.Warn("failed to write recon result", "error", writeErr)
-				}
+		var reconWriteHook func(rundata.StepResult) error
+		if hook != nil {
+			reconWriteHook = func(step rundata.StepResult) error {
+				return hook.WriteReconResult(issue.Number, step)
 			}
 		}
+		reconBrief = handleNonBlockingResult(reconResult, reconErr, "recon agent", logger, reconWriteHook)
 	}
 
 	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger, reconBrief)
@@ -888,6 +855,47 @@ func runVerifyPhase(
 		}
 	}
 	return nil
+}
+
+// handleNonBlockingResult handles the 3-way error/timeout/success dispatch
+// common to non-blocking agent steps (spec-gen, recon). It logs warnings for
+// failure and timeout, calls writeHook in all three cases (if non-nil), and
+// returns the agent's ResultText on success or empty string otherwise.
+// result may be nil when err is non-nil.
+func handleNonBlockingResult(
+	result *Result,
+	err error,
+	agentName string,
+	logger *slog.Logger,
+	writeHook func(rundata.StepResult) error,
+) (resultText string) {
+	if err != nil {
+		logger.Warn(agentName+" failed, continuing", "error", err)
+		if writeHook != nil {
+			step := rundata.StepResult{Error: err.Error()}
+			if writeErr := writeHook(step); writeErr != nil {
+				logger.Warn("failed to write "+agentName+" result", "error", writeErr)
+			}
+		}
+		return ""
+	}
+	if result.TimedOut {
+		logger.Warn(agentName + " timed out, continuing")
+		if writeHook != nil {
+			step := ResultToStep(result)
+			step.Error = "timed out"
+			if writeErr := writeHook(step); writeErr != nil {
+				logger.Warn("failed to write "+agentName+" result", "error", writeErr)
+			}
+		}
+		return ""
+	}
+	if writeHook != nil {
+		if writeErr := writeHook(ResultToStep(result)); writeErr != nil {
+			logger.Warn("failed to write "+agentName+" result", "error", writeErr)
+		}
+	}
+	return result.ResultText
 }
 
 // checkDriftAndClose checks for protected path modifications and closes the
