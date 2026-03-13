@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	gexec "github.com/phs/dark-factory/internal/exec"
 	"github.com/phs/dark-factory/internal/mdutil"
 )
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(name string, args ...string) ([]byte, error) {
+var CommandRunner gexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 

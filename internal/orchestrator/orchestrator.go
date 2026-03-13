@@ -14,6 +14,7 @@ import (
 	"github.com/phs/dark-factory/internal/deps"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/dialogue"
+	gexec "github.com/phs/dark-factory/internal/exec"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
@@ -666,7 +667,7 @@ func buildRollupBody(issues []github.Issue) string {
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(name string, args ...string) ([]byte, error) {
+var CommandRunner gexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
