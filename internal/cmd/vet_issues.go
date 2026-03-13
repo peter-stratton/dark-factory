@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
 )
@@ -23,17 +22,12 @@ var vetIssuesCmd = &cobra.Command{
 			return fmt.Errorf("--repo and either --milestone or --tag are required")
 		}
 
-		issues, err := github.FetchMilestoneIssues(repo, milestone)
+		issues, allNums, err := fetchVetData(repo, milestone)
 		if err != nil {
-			return fmt.Errorf("fetching milestone issues: %w", err)
+			return err
 		}
 		if len(issues) == 0 {
 			return fmt.Errorf("no open issues found for milestone %q — check that the milestone exists and has open issues", milestone)
-		}
-
-		allNums, err := github.FetchAllIssueNumbers(repo)
-		if err != nil {
-			return fmt.Errorf("fetching all issue numbers: %w", err)
 		}
 
 		phaseLabel := milestoneToLabel(milestone)

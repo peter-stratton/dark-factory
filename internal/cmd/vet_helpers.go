@@ -58,6 +58,33 @@ func resolveRepo(cmd *cobra.Command) string {
 	return cfg.Repo
 }
 
+// fetchVetData fetches milestone issues and all issue numbers for vet commands.
+// When milestone is non-empty, both FetchMilestoneIssues and FetchAllIssueNumbers
+// are called. When milestone is empty but repo is non-empty, only
+// FetchAllIssueNumbers is called (issues is nil). If both are empty, zero values
+// are returned with no error.
+func fetchVetData(repo, milestone string) (issues []github.Issue, allNums map[int]bool, err error) {
+	if milestone != "" {
+		issues, err = github.FetchMilestoneIssues(repo, milestone)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fetching milestone issues: %w", err)
+		}
+		allNums, err = github.FetchAllIssueNumbers(repo)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fetching all issue numbers: %w", err)
+		}
+		return issues, allNums, nil
+	}
+	if repo != "" {
+		allNums, err = github.FetchAllIssueNumbers(repo)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fetching all issue numbers: %w", err)
+		}
+		return nil, allNums, nil
+	}
+	return nil, nil, nil
+}
+
 // resolveTag resolves --milestone and --tag flags into a milestone title.
 // --milestone takes precedence. If --tag is provided, it looks up the
 // matching milestone from the repo. Returns ("", nil) if neither is set.
