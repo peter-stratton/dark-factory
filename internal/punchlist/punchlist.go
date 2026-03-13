@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/phs/dark-factory/internal/mdutil"
 )
 
 // CommandRunner executes a command and returns its combined output.
@@ -67,15 +69,9 @@ func FetchPRDiff(repo string, prNum int, maxLen int) (string, error) {
 func ReadScenarioSpec(scenarioDir string, issueNum int) (string, error) {
 	ref := fmt.Sprintf("#%d", issueNum)
 	var content string
-	err := filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	err := mdutil.WalkMarkdownFiles(scenarioDir, func(path string) error {
 		if content != "" {
 			return filepath.SkipAll
-		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
-			return nil
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
