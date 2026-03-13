@@ -70,13 +70,13 @@ func strictnessDirective(cycle, maxAttempts int, decay bool) string {
 		return ""
 	}
 	if cycle == maxAttempts-1 {
-		return "STRICTNESS OVERRIDE: This is the final quality review cycle. Only block on security vulnerabilities or data-safety issues. All other observations should be noted as comments but must NOT result in CHANGES_REQUESTED. Only print QUALITY_RESULT=CHANGES_REQUESTED if you find a genuine security vulnerability."
+		return "STRICTNESS OVERRIDE: This is the final quality review cycle. Only block on security vulnerabilities or data-safety issues. All other observations should be noted as comments but must NOT result in CHANGES_REQUESTED. Only print AGENT_RESULT=CHANGES_REQUESTED if you find a genuine security vulnerability."
 	}
-	return fmt.Sprintf("STRICTNESS OVERRIDE: This is quality review retry %d. Narrow your focus to security vulnerabilities and correctness issues only. Do not block on style, naming, minor performance, or code craft observations. Only print QUALITY_RESULT=CHANGES_REQUESTED for security or correctness defects.", cycle+1)
+	return fmt.Sprintf("STRICTNESS OVERRIDE: This is quality review retry %d. Narrow your focus to security vulnerabilities and correctness issues only. Do not block on style, naming, minor performance, or code craft observations. Only print AGENT_RESULT=CHANGES_REQUESTED for security or correctness defects.", cycle+1)
 }
 
-// ParseQualityResult scans agent output for a QUALITY_RESULT line and
+// ParseQualityResult scans agent output for an AGENT_RESULT line and
 // returns "APPROVED", "CHANGES_REQUESTED", or "" if not found.
 func ParseQualityResult(stdout string) string {
-	return ParseVerdict(stdout, "QUALITY")
+	return ParseVerdict(stdout, "AGENT")
 }

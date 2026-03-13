@@ -631,10 +631,8 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 	verdictClass := "neutral"
 	markerClass := "neutral"
 
-	approved := strings.Contains(step.Output, "QUALITY_RESULT=APPROVED") ||
-		strings.Contains(step.Output, "REVIEW_RESULT=APPROVED")
-	changesRequested := strings.Contains(step.Output, "QUALITY_RESULT=CHANGES_REQUESTED") ||
-		strings.Contains(step.Output, "REVIEW_RESULT=CHANGES_REQUESTED")
+	approved := strings.Contains(step.Output, "AGENT_RESULT=APPROVED")
+	changesRequested := strings.Contains(step.Output, "AGENT_RESULT=CHANGES_REQUESTED")
 
 	switch {
 	case step.Error != "":
