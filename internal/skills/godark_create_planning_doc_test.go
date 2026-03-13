@@ -8,31 +8,22 @@ import (
 	"github.com/phs/dark-factory/internal/skills"
 )
 
-func readCreatePlanningDocSkill(t *testing.T) string {
-	t.Helper()
-	data, err := fs.ReadFile(skills.SkillFiles, "godark-create-planning-doc/SKILL.md")
-	if err != nil {
-		t.Fatalf("reading godark-create-planning-doc/SKILL.md: %v", err)
-	}
-	return string(data)
-}
-
 func TestCreatePlanningDocSkillStep3ReferencesArchitectureJSON(t *testing.T) {
-	content := readCreatePlanningDocSkill(t)
+	content := readSkill(t, "godark-create-planning-doc")
 	if !strings.Contains(content, "docs/architecture.json") {
 		t.Error("step 3 does not reference docs/architecture.json")
 	}
 }
 
 func TestCreatePlanningDocSkillStep3ReferencesConventionsMD(t *testing.T) {
-	content := readCreatePlanningDocSkill(t)
+	content := readSkill(t, "godark-create-planning-doc")
 	if !strings.Contains(content, "docs/conventions.md") {
 		t.Error("step 3 does not reference docs/conventions.md")
 	}
 }
 
 func TestCreatePlanningDocSkillStep4PromptsArchitectureUpdate(t *testing.T) {
-	content := readCreatePlanningDocSkill(t)
+	content := readSkill(t, "godark-create-planning-doc")
 	if !strings.Contains(content, "docs/architecture.json") {
 		t.Error("step 4 does not mention updating docs/architecture.json when layers don't fit")
 	}
@@ -42,7 +33,7 @@ func TestCreatePlanningDocSkillStep4PromptsArchitectureUpdate(t *testing.T) {
 }
 
 func TestCreatePlanningDocSkillStep4MentionsDefineArchitectureSkill(t *testing.T) {
-	content := readCreatePlanningDocSkill(t)
+	content := readSkill(t, "godark-create-planning-doc")
 	if !strings.Contains(content, "/godark-define-architecture") {
 		t.Error("step 4 does not suggest /godark-define-architecture for revising layer definitions")
 	}
