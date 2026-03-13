@@ -989,3 +989,75 @@ func TestLoadRun_NoDepsNoBlockedBy(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRun_ReconJSONLoaded(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{10},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "10")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	recon := StepResult{Output: "recon brief", SessionID: "s1", CostUSD: 0.005, DurationSeconds: 20}
+	if err := writeJSON(filepath.Join(issueDir, "recon.json"), recon); err != nil {
+		t.Fatalf("writing recon.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	got := detail.Issues[0].Recon
+	if got.Output != "recon brief" {
+		t.Errorf("Recon.Output = %q, want %q", got.Output, "recon brief")
+	}
+	if got.SessionID != "s1" {
+		t.Errorf("Recon.SessionID = %q, want %q", got.SessionID, "s1")
+	}
+	if got.CostUSD != 0.005 {
+		t.Errorf("Recon.CostUSD = %v, want 0.005", got.CostUSD)
+	}
+}
+
+func TestLoadRun_MissingReconJSONNoError(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120001", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{11},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "11")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	// Write outcome but no recon.json — simulates a pre-Phase-18 run.
+	outcome := Outcome{IssueNumber: 11, Status: "implemented"}
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), outcome); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120001")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	recon := detail.Issues[0].Recon
+	// Recon should be zero value — no output, no cost, no duration.
+	if recon.Output != "" || recon.CostUSD != 0 || recon.DurationSeconds != 0 {
+		t.Errorf("Recon should be zero value for old run data, got: %+v", recon)
+	}
+}
