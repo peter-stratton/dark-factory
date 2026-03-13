@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
@@ -79,18 +78,5 @@ func strictnessDirective(cycle, maxAttempts int, decay bool) string {
 // ParseQualityResult scans agent output for a QUALITY_RESULT line and
 // returns "APPROVED", "CHANGES_REQUESTED", or "" if not found.
 func ParseQualityResult(stdout string) string {
-	upper := strings.ToUpper(stdout)
-	for _, line := range strings.Split(upper, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "APPROVED") && strings.Contains(line, "QUALITY") && strings.Contains(line, "RESULT") {
-			if strings.Contains(line, "CHANGES") {
-				return "CHANGES_REQUESTED"
-			}
-			return "APPROVED"
-		}
-		if strings.Contains(line, "CHANGES_REQUESTED") && strings.Contains(line, "QUALITY") {
-			return "CHANGES_REQUESTED"
-		}
-	}
-	return ""
+	return ParseVerdict(stdout, "QUALITY")
 }
