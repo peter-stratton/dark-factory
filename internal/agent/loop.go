@@ -18,10 +18,20 @@ import (
 	"github.com/phs/dark-factory/internal/rundata"
 )
 
+// OutcomeStatus represents the result of processing a single issue.
+type OutcomeStatus string
+
+const (
+	StatusImplemented      OutcomeStatus = "implemented"
+	StatusReadyToMerge     OutcomeStatus = "ready-to-merge"
+	StatusNeedsHumanReview OutcomeStatus = "needs-human-review"
+	StatusFailed           OutcomeStatus = "failed"
+)
+
 // IssueOutcome records the result of processing a single issue.
 type IssueOutcome struct {
 	IssueNumber int
-	Status      string // "implemented", "ready-to-merge", "failed", "needs-human-review"
+	Status      OutcomeStatus
 	PRNumber    int
 	Retries     int
 	Err         error
@@ -41,7 +51,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				IssueNumber: outcome.IssueNumber,
 				Title:       issue.Title,
 				Description: issue.Body,
-				Status:      outcome.Status,
+				Status:      string(outcome.Status),
 				PRNumber:    outcome.PRNumber,
 			}
 			if outcome.Err != nil {
@@ -54,7 +64,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			// stay stale at "implementing" or "in_review".
 			if outcome.Status != "" {
 				if err := hook.WriteIssueStatus(outcome.IssueNumber, rundata.IssueStatus{
-					Status: outcome.Status,
+					Status: string(outcome.Status),
 				}); err != nil {
 					logger.Warn("failed to update final issue status", "error", err)
 				}
@@ -70,7 +80,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// Record base SHA for drift detection.
 	baseSHAOut, err := GuardRunner("git", "rev-parse", "HEAD")
 	if err != nil {
-		outcome.Status = "failed"
+		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("getting base SHA: %w", err)
 		return outcome
 	}
@@ -153,13 +163,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger, reconBrief)
 	if err != nil {
-		outcome.Status = "failed"
+		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent: %w", err)
 		return outcome
 	}
 	if implResult.TimedOut {
 		runPostMortem(issue.Number, implResult, hook, logger)
-		outcome.Status = "failed"
+		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent timed out")
 		return outcome
 	}
@@ -175,13 +185,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// Step 2: Find PR.
 	prNum, err := FindPR(cfg.Repo, branch)
 	if err != nil {
-		outcome.Status = "failed"
+		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("finding PR: %w", err)
 		return outcome
 	}
 	if prNum == 0 {
 		runPostMortem(issue.Number, implResult, hook, logger)
-		outcome.Status = "failed"
+		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent did not create a PR")
 		return outcome
 	}
@@ -212,7 +222,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	}
 
 	if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-		outcome.Status = "failed"
+		outcome.Status = StatusFailed
 		outcome.Err = driftErr
 		return outcome
 	}
@@ -231,7 +241,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 	// Step 3.5: Verify. Runs between guard rails and quality review.
 	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
-		outcome.Status = "failed"
+		outcome.Status = StatusFailed
 		outcome.Err = verifyErr
 		return outcome
 	}
@@ -242,14 +252,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		qualityPassed := false
 		for qAttempt := 0; qAttempt < qualityMaxAttempts; qAttempt++ {
 			if ctx.Err() != nil {
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = ctx.Err()
 				return outcome
 			}
 
 			qResult, err := QualityReview(ctx, issue, prNum, cfg, prompts, authEnv, logger, qAttempt)
 			if err != nil {
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = fmt.Errorf("quality reviewer agent: %w", err)
 				return outcome
 			}
@@ -292,12 +302,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 				retryResult, err := Retry(ctx, issue, prNum, "", "", qualityHandoff, cfg, prompts, authEnv, logger)
 				if err != nil {
-					outcome.Status = "failed"
+					outcome.Status = StatusFailed
 					outcome.Err = fmt.Errorf("retry agent (quality): %w", err)
 					return outcome
 				}
 				if retryResult.TimedOut {
-					outcome.Status = "failed"
+					outcome.Status = StatusFailed
 					outcome.Err = fmt.Errorf("retry agent (quality) timed out")
 					return outcome
 				}
@@ -310,7 +320,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				sessionID = retryResult.SessionID
 
 				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-					outcome.Status = "failed"
+					outcome.Status = StatusFailed
 					outcome.Err = driftErr
 					return outcome
 				}
@@ -318,13 +328,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				// Re-run verify after quality-gate retry so that changes introduced
 				// by the retry agent are caught before the next quality review cycle.
 				if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
-					outcome.Status = "failed"
+					outcome.Status = StatusFailed
 					outcome.Err = fmt.Errorf("verify after quality-gate retry: %w", verifyErr)
 					return outcome
 				}
 
 			default:
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = fmt.Errorf("quality reviewer agent did not produce a verdict")
 				return outcome
 			}
@@ -343,7 +353,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
 				logger.Warn("failed to comment on PR", "error", err)
 			}
-			outcome.Status = "needs-human-review"
+			outcome.Status = StatusNeedsHumanReview
 			outcome.Retries = qualityMaxAttempts - 1
 			return outcome
 		}
@@ -358,14 +368,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	maxAttempts := cfg.MaxRetries + 1
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if ctx.Err() != nil {
-			outcome.Status = "failed"
+			outcome.Status = StatusFailed
 			outcome.Err = ctx.Err()
 			return outcome
 		}
 
 		reviewResult, err := Review(ctx, issue, prNum, cfg, prompts, authEnv, logger, hasSpec)
 		if err != nil {
-			outcome.Status = "failed"
+			outcome.Status = StatusFailed
 			outcome.Err = fmt.Errorf("reviewer agent: %w", err)
 			return outcome
 		}
@@ -415,7 +425,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					logger.Warn("failed to fetch PR stats for risk classification, labeling for human review",
 						"pr_number", prNum, "error", statsErr)
 					applyLifecycleLabel(label.AwaitingHumanReview)
-					outcome.Status = "ready-to-merge"
+					outcome.Status = StatusReadyToMerge
 					outcome.Retries = attempt
 					return outcome
 				}
@@ -424,7 +434,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					logger.Warn("failed to fetch PR changed files for risk classification, labeling for human review",
 						"pr_number", prNum, "error", filesErr)
 					applyLifecycleLabel(label.AwaitingHumanReview)
-					outcome.Status = "ready-to-merge"
+					outcome.Status = StatusReadyToMerge
 					outcome.Retries = attempt
 					return outcome
 				}
@@ -459,7 +469,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				if !assessment.IsLowRisk {
 					logger.Info("PR is not low-risk, labeling for human review", "pr_number", prNum)
 					applyLifecycleLabel(label.AwaitingHumanReview)
-					outcome.Status = "ready-to-merge"
+					outcome.Status = StatusReadyToMerge
 					outcome.Retries = attempt
 					return outcome
 				}
@@ -468,7 +478,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				// "none" or any unexpected value — skip merge safely.
 				logger.Info("PR approved, skipping merge", "pr_number", prNum, "auto_merge_feature", cfg.AutoMerge.Feature)
 				applyLifecycleLabel(label.AwaitingHumanReview)
-				outcome.Status = "ready-to-merge"
+				outcome.Status = StatusReadyToMerge
 				outcome.Retries = attempt
 				return outcome
 			}
@@ -477,7 +487,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				// Defensive: should not be reachable, but fail safe.
 				logger.Warn("merge decision fell through unexpectedly, skipping merge", "auto_merge_feature", cfg.AutoMerge.Feature)
 				applyLifecycleLabel(label.AwaitingHumanReview)
-				outcome.Status = "ready-to-merge"
+				outcome.Status = StatusReadyToMerge
 				outcome.Retries = attempt
 				return outcome
 			}
@@ -488,7 +498,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			if needsHR, rebaseErr := runPreMergeRebasePhase(
 				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles,
 			); rebaseErr != nil {
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = rebaseErr
 				return outcome
 			} else if needsHR {
@@ -500,7 +510,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
 					logger.Warn("failed to comment on PR", "error", err)
 				}
-				outcome.Status = "needs-human-review"
+				outcome.Status = StatusNeedsHumanReview
 				outcome.Retries = attempt
 				return outcome
 			}
@@ -510,13 +520,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
 				ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
 				if err != nil {
-					outcome.Status = "failed"
+					outcome.Status = StatusFailed
 					outcome.Err = fmt.Errorf("waiting for CI checks: %w", err)
 					return outcome
 				}
 				for ciAttempt := 0; len(ciFailures) > 0; ciAttempt++ {
 					if ctx.Err() != nil {
-						outcome.Status = "failed"
+						outcome.Status = StatusFailed
 						outcome.Err = ctx.Err()
 						return outcome
 					}
@@ -534,7 +544,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 						if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
 							logger.Warn("failed to comment on PR", "error", err)
 						}
-						outcome.Status = "needs-human-review"
+						outcome.Status = StatusNeedsHumanReview
 						outcome.Err = fmt.Errorf("CI checks failed: %s", strings.Join(names, ", "))
 						return outcome
 					}
@@ -548,26 +558,26 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					ciErrors := formatCheckFailures(ciFailures)
 					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, sessionID, cfg, prompts, authEnv, logger)
 					if err != nil {
-						outcome.Status = "failed"
+						outcome.Status = StatusFailed
 						outcome.Err = fmt.Errorf("CI fix agent: %w", err)
 						return outcome
 					}
 					if fixResult.TimedOut {
-						outcome.Status = "failed"
+						outcome.Status = StatusFailed
 						outcome.Err = fmt.Errorf("CI fix agent timed out")
 						return outcome
 					}
 					sessionID = fixResult.SessionID
 
 					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-						outcome.Status = "failed"
+						outcome.Status = StatusFailed
 						outcome.Err = driftErr
 						return outcome
 					}
 
 					ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
 					if err != nil {
-						outcome.Status = "failed"
+						outcome.Status = StatusFailed
 						outcome.Err = fmt.Errorf("waiting for CI checks: %w", err)
 						return outcome
 					}
@@ -575,7 +585,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			}
 			// Merge the PR.
 			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = fmt.Errorf("merging PR: %w", err)
 				return outcome
 			}
@@ -590,7 +600,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			for _, lbl := range label.All() {
 				_ = github.RemoveIssueLabel(cfg.Repo, prNum, lbl)
 			}
-			outcome.Status = "implemented"
+			outcome.Status = StatusImplemented
 			outcome.Retries = attempt
 			return outcome
 
@@ -626,12 +636,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 			retryResult, err := Retry(ctx, issue, prNum, sessionID, "", handoff, cfg, prompts, authEnv, logger)
 			if err != nil {
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = fmt.Errorf("retry agent: %w", err)
 				return outcome
 			}
 			if retryResult.TimedOut {
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = fmt.Errorf("retry agent timed out")
 				return outcome
 			}
@@ -646,7 +656,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 			// Re-check drift after retry.
 			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-				outcome.Status = "failed"
+				outcome.Status = StatusFailed
 				outcome.Err = driftErr
 				return outcome
 			}
@@ -658,7 +668,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 					logger.Warn("failed to write functional review result", "error", err)
 				}
 			}
-			outcome.Status = "failed"
+			outcome.Status = StatusFailed
 			outcome.Err = fmt.Errorf("reviewer agent did not produce a verdict")
 			return outcome
 		}
@@ -674,7 +684,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		logger.Warn("failed to comment on PR", "error", err)
 	}
 
-	outcome.Status = "needs-human-review"
+	outcome.Status = StatusNeedsHumanReview
 	outcome.Retries = maxAttempts - 1
 	return outcome
 }
