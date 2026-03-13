@@ -15,9 +15,11 @@ import (
 
 // Implement runs the implementer agent for a fresh issue implementation.
 // It renders the implementer prompt and invokes Run.
-func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+// reconBrief, if non-empty, is injected into the prompt as recon agent context.
+func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, reconBrief string) (*Result, error) {
 	slug := Slugify(issue.Title)
 	data := newPromptData(issue, cfg, slug)
+	data.ReconBrief = reconBrief
 
 	// Check if the feature branch already exists on the remote.
 	branch := BranchName(issue.Number, slug)
