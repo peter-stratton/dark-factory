@@ -2,7 +2,7 @@ repo: peter-stratton/dark-factory
 
 auto_merge:
   feature: all
-  rollup: all
+  rollup: auto
 
 protected_paths: ["CLAUDE.md", "tests/scenarios/"]
 
