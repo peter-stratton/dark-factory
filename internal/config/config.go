@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
+	darkexec "github.com/phs/dark-factory/internal/exec"
 	"gopkg.in/yaml.v3"
 )
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(name string, args ...string) ([]byte, error) {
+var CommandRunner darkexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 

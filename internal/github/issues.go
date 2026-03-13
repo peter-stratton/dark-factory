@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	darkexec "github.com/phs/dark-factory/internal/exec"
 )
 
 // Issue represents a GitHub issue with the fields needed for orchestration.
@@ -41,7 +43,7 @@ var priorityRank = map[string]int{
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(name string, args ...string) ([]byte, error) {
+var CommandRunner darkexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).Output()
 }
 
