@@ -1004,3 +1004,59 @@ func TestImplementerPrompt_WithoutReconBrief_OmitsReconSection(t *testing.T) {
 		t.Error("implementer prompt should not contain 'recon brief' when ReconBrief is empty")
 	}
 }
+
+func TestRenderPrompt_HandoffContextRendered(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	handoff := "## Implementation Notes\nPrevious attempt failed due to X."
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		PRNumber:       10,
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		HandoffContext: handoff,
+	}
+	rendered, err := RenderPrompt(p.ImplementerRetry, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "fresh session") {
+		t.Error("implementer_retry prompt should include fresh session preamble when HandoffContext is set")
+	}
+	if !strings.Contains(rendered, handoff) {
+		t.Errorf("implementer_retry prompt should include handoff content, got: %s", rendered)
+	}
+}
+
+func TestRenderPrompt_HandoffContextNotRenderedWhenEmpty(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:    1,
+		IssueTitle:     "Test Issue",
+		Repo:           "owner/repo",
+		PRNumber:       10,
+		BuildCommand:   "make build",
+		TestCommand:    "make test",
+		ProtectedPaths: "CLAUDE.md",
+		ScenarioDir:    "tests/scenarios/",
+		ReviewDir:      "tests/review/",
+		HandoffContext: "",
+	}
+	rendered, err := RenderPrompt(p.ImplementerRetry, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "fresh session") {
+		t.Error("implementer_retry prompt should not include fresh session preamble when HandoffContext is empty")
+	}
+}

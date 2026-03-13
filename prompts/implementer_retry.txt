@@ -4,6 +4,13 @@ Issue title: {{.IssueTitle}}
 Issue body:
 {{.IssueBody}}
 
+{{- if .HandoffContext}}
+
+This is a fresh session. Prior implementation attempts and reviewer feedback are summarized below.
+Do NOT resume a prior session — start from scratch using this context to understand what was tried and what failed.
+
+{{.HandoffContext}}
+{{end -}}
 {{- if .ReviewFeedback}}
 Human reviewer feedback:
 {{.ReviewFeedback}}
