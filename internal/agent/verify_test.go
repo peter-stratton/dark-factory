@@ -299,6 +299,22 @@ func TestRunVerify_NoChecks(t *testing.T) {
 	}
 }
 
+func TestRunVerify_CustomOutputLimit(t *testing.T) {
+	const customLimit = 100
+	bigOutput := strings.Repeat("x", 5000)
+	run := makeRunner(0, bigOutput, "")
+	checks := []Check{{Name: "build", Command: "go build ./..."}}
+
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: customLimit})
+
+	if len(result.Checks) != 1 {
+		t.Fatalf("len(Checks) = %d, want 1", len(result.Checks))
+	}
+	if len(result.Checks[0].Output) != customLimit {
+		t.Errorf("Output length = %d, want %d (custom limit)", len(result.Checks[0].Output), customLimit)
+	}
+}
+
 func TestRunVerify_OutputWithinLimitNotTruncated(t *testing.T) {
 	smallOutput := strings.Repeat("y", 100)
 	run := func(ctx context.Context, command string) ([]byte, []byte, int, error) {

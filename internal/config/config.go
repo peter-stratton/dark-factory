@@ -433,6 +433,9 @@ func validate(cfg *Config) error {
 	if err := validateRiskThresholds(cfg.RiskThresholds); err != nil {
 		return err
 	}
+	if err := validateTruncationLimits(cfg.Truncation); err != nil {
+		return err
+	}
 	if err := validateNotify(cfg.Notify); err != nil {
 		return err
 	}
@@ -570,6 +573,17 @@ func expandNotifySettings(cfg *Config) {
 		}
 		cfg.Notify[i].Settings = expanded
 	}
+}
+
+// validateTruncationLimits ensures TruncationLimits fields are positive.
+func validateTruncationLimits(t TruncationLimits) error {
+	if t.VerifyOutput <= 0 {
+		return fmt.Errorf("truncation.verify_output must be a positive integer, got %d", t.VerifyOutput)
+	}
+	if t.PRDiff <= 0 {
+		return fmt.Errorf("truncation.pr_diff must be a positive integer, got %d", t.PRDiff)
+	}
+	return nil
 }
 
 // validateNotify checks that every provider name and event name in the notify
