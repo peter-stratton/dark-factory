@@ -1800,3 +1800,50 @@ max_resume_retries: 0
 		t.Errorf("MaxResumeRetries = %d, want 0", cfg.MaxResumeRetries)
 	}
 }
+
+func TestMaxRebaseAttemptsDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxRebaseAttempts != 1 {
+		t.Errorf("MaxRebaseAttempts = %d, want 1", cfg.MaxRebaseAttempts)
+	}
+}
+
+func TestMaxRebaseAttemptsOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+max_rebase_attempts: 3
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxRebaseAttempts != 3 {
+		t.Errorf("MaxRebaseAttempts = %d, want 3", cfg.MaxRebaseAttempts)
+	}
+}
+
+func TestMaxRebaseAttemptsZeroDisables(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+max_rebase_attempts: 0
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxRebaseAttempts != 0 {
+		t.Errorf("MaxRebaseAttempts = %d, want 0", cfg.MaxRebaseAttempts)
+	}
+}

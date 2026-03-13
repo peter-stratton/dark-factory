@@ -132,6 +132,12 @@ type Config struct {
 	// A value of 0 means all retries use fresh mode. A value >= MaxRetries
 	// means all retries use session resumption. Default: 2.
 	MaxResumeRetries int `yaml:"max_resume_retries"`
+	// MaxRebaseAttempts controls how many automatic rebase/conflict-fix cycles
+	// are attempted before a conflicting PR is labeled needs-human-review.
+	// Each cycle tries gh pr update-branch first; if that fails it invokes the
+	// implementer to resolve conflicts. A value of 0 disables the pre-merge
+	// rebase check entirely. Default: 1.
+	MaxRebaseAttempts int `yaml:"max_rebase_attempts"`
 
 	AgentTimeout  string            `yaml:"agent_timeout"`
 	FormatCommand string            `yaml:"format_command"`
@@ -286,8 +292,9 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 
 func defaults() *Config {
 	return &Config{
-		MaxRetries:       3,
-		MaxResumeRetries: 2,
+		MaxRetries:        3,
+		MaxResumeRetries:  2,
+		MaxRebaseAttempts: 1,
 		AutoMerge:      AutoMerge{Feature: "none", Rollup: "none"},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},

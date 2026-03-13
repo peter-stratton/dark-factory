@@ -478,6 +478,29 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				return outcome
 			}
 
+			// Step 5.45: Pre-merge rebase check. Verifies the PR is still
+			// mergeable after approval; if not, attempts automatic rebase or
+			// triggers a conflict-fix cycle.
+			if needsHR, rebaseErr := runPreMergeRebasePhase(
+				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles,
+			); rebaseErr != nil {
+				outcome.Status = "failed"
+				outcome.Err = rebaseErr
+				return outcome
+			} else if needsHR {
+				if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+					logger.Warn("failed to label PR", "error", err)
+				}
+				applyLifecycleLabel(label.AwaitingHumanReview)
+				comment := fmt.Sprintf("PR has unresolvable conflicts after %d rebase attempt(s). Labeling for human review.", cfg.MaxRebaseAttempts)
+				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+					logger.Warn("failed to comment on PR", "error", err)
+				}
+				outcome.Status = "needs-human-review"
+				outcome.Retries = attempt
+				return outcome
+			}
+
 			// Step 5.5: Wait for CI checks if configured.
 			if cfg.WaitForChecks != nil {
 				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
@@ -1177,4 +1200,106 @@ func logAndRecordFlags(flags []quality.Flag, logger *slog.Logger, issueNum int) 
 		rdFlags[i] = rundata.Flag{Code: f.Code, Message: f.Message}
 	}
 	return rdFlags
+}
+
+// runPreMergeRebasePhase checks whether the PR has conflicts before merging.
+// If the PR is CONFLICTING, it attempts to resolve them via automatic rebase
+// (gh pr update-branch) or by invoking the implementer in a conflict-fix cycle.
+// After any successful rebase, the verify pipeline is re-run since branch
+// content has changed. The cycle repeats up to cfg.MaxRebaseAttempts times.
+//
+// Returns (true, nil) when all attempts are exhausted and the caller should
+// label the PR for human review. Returns (false, nil) when the PR is ready to
+// merge. Returns (false, err) on hard errors (agent failure, context cancel,
+// drift detection).
+//
+// If cfg.MaxRebaseAttempts is 0 the function is a no-op and returns (false, nil).
+func runPreMergeRebasePhase(
+	ctx context.Context,
+	issue github.Issue,
+	prNum int,
+	branch string,
+	baseSHA string,
+	cfg *config.Config,
+	prompts *Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	hook RunDataHook,
+	sessionID *string,
+	fixCycles *int,
+) (needsHumanReview bool, err error) {
+	if cfg.MaxRebaseAttempts <= 0 {
+		return false, nil
+	}
+
+	for attempt := 0; attempt < cfg.MaxRebaseAttempts; attempt++ {
+		mergeable, checkErr := github.CheckMergeable(cfg.Repo, prNum)
+		if checkErr != nil {
+			// Best-effort: log and proceed; the merge call will fail naturally
+			// if the PR is actually conflicting.
+			logger.Warn("failed to check mergeable status, proceeding to merge",
+				"pr_number", prNum, "error", checkErr)
+			return false, nil
+		}
+
+		if mergeable != "CONFLICTING" {
+			// MERGEABLE or UNKNOWN — proceed with merge.
+			return false, nil
+		}
+
+		logger.Info("PR is conflicting, attempting automatic rebase",
+			"pr_number", prNum,
+			"attempt", attempt+1,
+			"max_attempts", cfg.MaxRebaseAttempts,
+		)
+
+		updateErr := github.UpdateBranch(cfg.Repo, prNum)
+		if updateErr != nil {
+			// Automatic rebase failed — invoke the implementer in a fix cycle
+			// so it can resolve the conflicts manually.
+			logger.Info("automatic rebase failed, invoking conflict fix cycle",
+				"pr_number", prNum,
+				"attempt", attempt+1,
+				"error", updateErr,
+			)
+			conflictInfo := fmt.Sprintf(
+				"PR #%d has merge conflicts with the base branch that could not be automatically resolved.\n\nError: %v\n\nPlease resolve the merge conflicts, push the changes, and ensure the branch is up to date with the base branch.",
+				prNum, updateErr,
+			)
+			retryResult, retryErr := Retry(ctx, issue, prNum, *sessionID, conflictInfo, "", cfg, prompts, authEnv, logger)
+			if retryErr != nil {
+				return false, fmt.Errorf("conflict fix agent: %w", retryErr)
+			}
+			if retryResult.TimedOut {
+				return false, fmt.Errorf("conflict fix agent timed out")
+			}
+			*sessionID = retryResult.SessionID
+
+			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+				return false, driftErr
+			}
+		}
+
+		// Re-run verify since the branch content has changed (either by
+		// automatic rebase or by the implementer's conflict fix).
+		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, sessionID, fixCycles); verifyErr != nil {
+			return false, fmt.Errorf("verify after rebase attempt %d: %w", attempt+1, verifyErr)
+		}
+	}
+
+	// All attempts used; check one final time.
+	mergeable, checkErr := github.CheckMergeable(cfg.Repo, prNum)
+	if checkErr != nil {
+		logger.Warn("failed to check mergeable status after rebase attempts, proceeding",
+			"pr_number", prNum, "error", checkErr)
+		return false, nil
+	}
+	if mergeable == "CONFLICTING" {
+		logger.Warn("PR still conflicting after all rebase attempts, labeling for human review",
+			"pr_number", prNum,
+			"max_attempts", cfg.MaxRebaseAttempts,
+		)
+		return true, nil
+	}
+	return false, nil
 }
