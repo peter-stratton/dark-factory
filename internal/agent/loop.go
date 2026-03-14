@@ -238,332 +238,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	}
 
 	// Step 5: Review/retry loop.
-	if hook != nil {
-		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "in_review"}); err != nil {
-			logger.Warn("failed to write issue status", "error", err)
-		}
-	}
-	maxAttempts := cfg.MaxRetries + 1
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if ctx.Err() != nil {
-			outcome.Status = StatusFailed
-			outcome.Err = ctx.Err()
-			return outcome
-		}
-
-		reviewResult, err := Review(ctx, issue, prNum, cfg, prompts, authEnv, logger, hasSpec)
-		if err != nil {
-			outcome.Status = StatusFailed
-			outcome.Err = fmt.Errorf("reviewer agent: %w", err)
-			return outcome
-		}
-		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
-		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec)
-		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
-		fStep := ResultToStep(reviewResult.AgentResult)
-		fStep.Flags = fRDFlags
-
-		// Pre-merge guard: if the reviewer approved without writing tests to the
-		// review dir, re-run the reviewer. The reviewer is the agent responsible
-		// for writing tests to ReviewDir — retrying the implementer would be
-		// pointless since the implementer is forbidden from touching ReviewDir.
-		if reviewResult.Verdict == "APPROVED" && hasQualityFlag(fFlags, "no_review_tests_written") {
-			logger.Warn("functional review approved without writing tests — re-running reviewer",
-				"issue_number", issue.Number,
-				"attempt", attempt+1,
-			)
-			// Delete the stale review comment so the dialogue doesn't show a phantom round.
-			if err := github.DeleteLastPRCommentWithHeader(cfg.Repo, prNum, "## Review Notes"); err != nil {
-				logger.Warn("failed to delete stale review comment", "error", err)
-			}
-			continue
-		}
-
-		switch reviewResult.Verdict {
-		case "APPROVED":
-			// Final result — write to top-level functional-review.json.
-			if hook != nil {
-				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
-					logger.Warn("failed to write functional review result", "error", err)
-				}
-			}
-			// Merge decision: explicit opt-in only. Merge requires
-			// auto_merge="all" or "low_risk" (with passing risk check).
-			// Any other value — including "none" or unexpected — skips
-			// merge safely. This prevents accidental merges if the
-			// config value is empty or unrecognized.
-			shouldMerge := false
-			switch cfg.AutoMerge.Feature {
-			case config.MergeAll:
-				logger.Info("PR approved, will merge (auto_merge.feature=all)", "pr_number", prNum)
-				shouldMerge = true
-			case config.MergeLowRisk:
-				additions, deletions, fileCount, statsErr := github.FetchPRStats(cfg.Repo, prNum)
-				if statsErr != nil {
-					logger.Warn("failed to fetch PR stats for risk classification, labeling for human review",
-						"pr_number", prNum, "error", statsErr)
-					applyLifecycleLabel(label.AwaitingHumanReview)
-					outcome.Status = StatusReadyToMerge
-					outcome.Retries = attempt
-					return outcome
-				}
-				changedFiles, filesErr := github.FetchPRChangedFiles(cfg.Repo, prNum)
-				if filesErr != nil {
-					logger.Warn("failed to fetch PR changed files for risk classification, labeling for human review",
-						"pr_number", prNum, "error", filesErr)
-					applyLifecycleLabel(label.AwaitingHumanReview)
-					outcome.Status = StatusReadyToMerge
-					outcome.Retries = attempt
-					return outcome
-				}
-
-				var maxLines, maxFiles int
-				if cfg.RiskThresholds != nil {
-					maxLines = cfg.RiskThresholds.MaxLines
-					maxFiles = cfg.RiskThresholds.MaxFiles
-				}
-				riskInput := quality.RiskInput{
-					LinesChanged:   additions + deletions,
-					FilesChanged:   fileCount,
-					ChangedFiles:   changedFiles,
-					ProtectedPaths: cfg.ProtectedPaths,
-					FixCycles:      fixCycles,
-					QualityFlags:   fFlags,
-				}
-				assessment := quality.ClassifyRisk(riskInput, maxLines, maxFiles)
-
-				if hook != nil {
-					if err := hook.WriteRiskAssessment(issue.Number, toRundataRiskAssessment(assessment)); err != nil {
-						logger.Warn("failed to write risk assessment", "error", err)
-					}
-				}
-
-				logger.Info("risk classification result",
-					"issue_number", issue.Number,
-					"pr_number", prNum,
-					"is_low_risk", assessment.IsLowRisk,
-				)
-
-				if !assessment.IsLowRisk {
-					logger.Info("PR is not low-risk, labeling for human review", "pr_number", prNum)
-					applyLifecycleLabel(label.AwaitingHumanReview)
-					outcome.Status = StatusReadyToMerge
-					outcome.Retries = attempt
-					return outcome
-				}
-				shouldMerge = true
-			default:
-				// "none" or any unexpected value — skip merge safely.
-				logger.Info("PR approved, skipping merge", "pr_number", prNum, "auto_merge_feature", cfg.AutoMerge.Feature)
-				applyLifecycleLabel(label.AwaitingHumanReview)
-				outcome.Status = StatusReadyToMerge
-				outcome.Retries = attempt
-				return outcome
-			}
-
-			if !shouldMerge {
-				// Defensive: should not be reachable, but fail safe.
-				logger.Warn("merge decision fell through unexpectedly, skipping merge", "auto_merge_feature", cfg.AutoMerge.Feature)
-				applyLifecycleLabel(label.AwaitingHumanReview)
-				outcome.Status = StatusReadyToMerge
-				outcome.Retries = attempt
-				return outcome
-			}
-
-			// Step 5.45: Pre-merge rebase check. Verifies the PR is still
-			// mergeable after approval; if not, attempts automatic rebase or
-			// triggers a conflict-fix cycle.
-			if needsHR, rebaseErr := runPreMergeRebasePhase(
-				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles,
-			); rebaseErr != nil {
-				outcome.Status = StatusFailed
-				outcome.Err = rebaseErr
-				return outcome
-			} else if needsHR {
-				if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
-					logger.Warn("failed to label PR", "error", err)
-				}
-				applyLifecycleLabel(label.AwaitingHumanReview)
-				comment := fmt.Sprintf("PR has unresolvable conflicts after %d rebase attempt(s). Labeling for human review.", cfg.MaxRebaseAttempts)
-				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
-					logger.Warn("failed to comment on PR", "error", err)
-				}
-				outcome.Status = StatusNeedsHumanReview
-				outcome.Retries = attempt
-				return outcome
-			}
-
-			// Step 5.5: Wait for CI checks if configured.
-			if cfg.WaitForChecks != nil {
-				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
-				ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
-				if err != nil {
-					outcome.Status = StatusFailed
-					outcome.Err = fmt.Errorf("waiting for CI checks: %w", err)
-					return outcome
-				}
-				for ciAttempt := 0; len(ciFailures) > 0; ciAttempt++ {
-					if ctx.Err() != nil {
-						outcome.Status = StatusFailed
-						outcome.Err = ctx.Err()
-						return outcome
-					}
-					if ciAttempt >= cfg.Verify.MaxFixAttempts || prompts.VerifyFix == "" {
-						var names []string
-						for _, f := range ciFailures {
-							names = append(names, f.Name)
-						}
-						if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
-							logger.Warn("failed to label PR", "error", err)
-						}
-						applyLifecycleLabel(label.AwaitingHumanReview)
-						comment := fmt.Sprintf("CI checks failed after %d fix attempt(s): %s. Labeling for human review.",
-							ciAttempt, strings.Join(names, ", "))
-						if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
-							logger.Warn("failed to comment on PR", "error", err)
-						}
-						outcome.Status = StatusNeedsHumanReview
-						outcome.Err = fmt.Errorf("CI checks failed: %s", strings.Join(names, ", "))
-						return outcome
-					}
-
-					logger.Info("CI check failed, triggering fix cycle",
-						"issue_number", issue.Number,
-						"attempt", ciAttempt+1,
-						"max_attempts", cfg.Verify.MaxFixAttempts,
-					)
-
-					ciErrors := formatCheckFailures(ciFailures)
-					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, sessionID, cfg, prompts, authEnv, logger)
-					if err != nil {
-						outcome.Status = StatusFailed
-						outcome.Err = fmt.Errorf("CI fix agent: %w", err)
-						return outcome
-					}
-					if fixResult.TimedOut {
-						outcome.Status = StatusFailed
-						outcome.Err = fmt.Errorf("CI fix agent timed out")
-						return outcome
-					}
-					sessionID = fixResult.SessionID
-
-					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-						outcome.Status = StatusFailed
-						outcome.Err = driftErr
-						return outcome
-					}
-
-					ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
-					if err != nil {
-						outcome.Status = StatusFailed
-						outcome.Err = fmt.Errorf("waiting for CI checks: %w", err)
-						return outcome
-					}
-				}
-			}
-			// Merge the PR.
-			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
-				outcome.Status = StatusFailed
-				outcome.Err = fmt.Errorf("merging PR: %w", err)
-				return outcome
-			}
-			// Explicitly close the issue after merge. GitHub's "Closes #N"
-			// keyword only auto-closes on merge to the default branch, so
-			// when the base branch differs we must close it ourselves.
-			if err := github.CloseIssue(cfg.Repo, issue.Number); err != nil {
-				logger.Warn("failed to close issue after merge", "issue", issue.Number, "error", err)
-			}
-			// Remove all lifecycle labels after merge (best-effort). This cleans up
-			// labels applied in a previous run or manually, not just the current run.
-			for _, lbl := range label.All() {
-				_ = github.RemoveIssueLabel(cfg.Repo, prNum, lbl)
-			}
-			outcome.Status = StatusImplemented
-			outcome.Retries = attempt
-			return outcome
-
-		case "CHANGES_REQUESTED":
-			retriesLeft := maxAttempts - attempt - 1
-			if retriesLeft <= 0 {
-				// Exhausted retries — write to top-level functional-review.json.
-				if hook != nil {
-					if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
-						logger.Warn("failed to write functional review result", "error", err)
-					}
-				}
-				break // exit loop, will label needs-human-review
-			}
-
-			// More retries available — write to retry dir so the pre-retry review is preserved.
-			if hook != nil {
-				if err := hook.WriteRetryFunctionalReviewResult(issue.Number, attempt, fStep); err != nil {
-					logger.Warn("failed to write functional review result", "error", err)
-				}
-			}
-
-			logger.Info("retrying implementation",
-				"issue_number", issue.Number,
-				"attempt", attempt+1,
-				"retries_left", retriesLeft,
-			)
-
-			var handoff string
-			if shouldHandoff(attempt, cfg.MaxResumeRetries) {
-				handoff = assembleHandoffContext(cfg.Repo, prNum, logger)
-			}
-
-			retryResult, err := Retry(ctx, issue, prNum, sessionID, "", handoff, cfg, prompts, authEnv, logger)
-			if err != nil {
-				outcome.Status = StatusFailed
-				outcome.Err = fmt.Errorf("retry agent: %w", err)
-				return outcome
-			}
-			if retryResult.TimedOut {
-				outcome.Status = StatusFailed
-				outcome.Err = fmt.Errorf("retry agent timed out")
-				return outcome
-			}
-			if hook != nil {
-				if err := hook.WriteRetryResult(issue.Number, attempt, ResultToStep(retryResult)); err != nil {
-					logger.Warn("failed to write retry result", "error", err)
-				}
-			}
-
-			// Update session ID so the next retry can resume this session's context.
-			sessionID = retryResult.SessionID
-
-			// Re-check drift after retry.
-			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-				outcome.Status = StatusFailed
-				outcome.Err = driftErr
-				return outcome
-			}
-
-		default:
-			// No verdict found — write to top-level and treat as failure.
-			if hook != nil {
-				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
-					logger.Warn("failed to write functional review result", "error", err)
-				}
-			}
-			outcome.Status = StatusFailed
-			outcome.Err = fmt.Errorf("reviewer agent did not produce a verdict")
-			return outcome
-		}
-	}
-
-	// Exhausted retries.
-	if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
-		logger.Warn("failed to label PR", "error", err)
-	}
-	applyLifecycleLabel(label.AwaitingHumanReview)
-	comment := fmt.Sprintf("Exhausted %d review/retry cycles. Labeling for human review.", maxAttempts)
-	if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
-		logger.Warn("failed to comment on PR", "error", err)
-	}
-
-	outcome.Status = StatusNeedsHumanReview
-	outcome.Retries = maxAttempts - 1
+	outcome.Status, _, outcome.Retries, outcome.Err = runFunctionalReviewCycle(
+		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec,
+	)
 	return outcome
 }
 
@@ -931,6 +608,326 @@ func runQualityReviewCycle(
 		}
 	}
 	return false, nil
+}
+
+// runFunctionalReviewCycle runs the functional review/retry loop for a single issue.
+// It calls Review up to cfg.MaxRetries+1 times, invoking Retry on each
+// CHANGES_REQUESTED verdict. On approval, it optionally merges the PR based on
+// cfg.AutoMerge settings. Returns the final status, whether the PR was merged,
+// the number of retries used, and any hard error. sessionID and fixCycles are
+// updated in-place.
+func runFunctionalReviewCycle(
+	ctx context.Context,
+	issue github.Issue,
+	prNum int,
+	branch string,
+	baseSHA string,
+	cfg *config.Config,
+	prompts *Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	hook RunDataHook,
+	sessionID *string,
+	fixCycles *int,
+	hasSpec bool,
+) (status OutcomeStatus, prMerged bool, retries int, err error) {
+	if hook != nil {
+		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "in_review"}); err != nil {
+			logger.Warn("failed to write issue status", "error", err)
+		}
+	}
+
+	// Re-declare the lifecycle label closure from scratch. At this call site,
+	// the label state is "" (the quality gate only transitions labels on failure
+	// paths that return early; the approval path that reaches here does not).
+	currentLifecycleLabel := ""
+	applyLifecycleLabel := func(lbl string) {
+		if !label.Transition(currentLifecycleLabel, lbl) {
+			logger.Warn("invalid lifecycle label transition",
+				"from", currentLifecycleLabel, "to", lbl, "pr_number", prNum)
+		}
+		if err := github.AddIssueLabel(cfg.Repo, prNum, lbl); err != nil {
+			logger.Warn("failed to apply lifecycle label", "label", lbl, "pr_number", prNum, "error", err)
+			return
+		}
+		currentLifecycleLabel = lbl
+	}
+
+	maxAttempts := cfg.MaxRetries + 1
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return StatusFailed, false, 0, ctx.Err()
+		}
+
+		reviewResult, err := Review(ctx, issue, prNum, cfg, prompts, authEnv, logger, hasSpec)
+		if err != nil {
+			return StatusFailed, false, 0, fmt.Errorf("reviewer agent: %w", err)
+		}
+		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
+		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec)
+		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
+		fStep := ResultToStep(reviewResult.AgentResult)
+		fStep.Flags = fRDFlags
+
+		// Pre-merge guard: if the reviewer approved without writing tests to the
+		// review dir, re-run the reviewer. The reviewer is the agent responsible
+		// for writing tests to ReviewDir — retrying the implementer would be
+		// pointless since the implementer is forbidden from touching ReviewDir.
+		if reviewResult.Verdict == "APPROVED" && hasQualityFlag(fFlags, "no_review_tests_written") {
+			logger.Warn("functional review approved without writing tests — re-running reviewer",
+				"issue_number", issue.Number,
+				"attempt", attempt+1,
+			)
+			// Delete the stale review comment so the dialogue doesn't show a phantom round.
+			if err := github.DeleteLastPRCommentWithHeader(cfg.Repo, prNum, "## Review Notes"); err != nil {
+				logger.Warn("failed to delete stale review comment", "error", err)
+			}
+			continue
+		}
+
+		switch reviewResult.Verdict {
+		case "APPROVED":
+			// Final result — write to top-level functional-review.json.
+			if hook != nil {
+				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
+			}
+			// Merge decision: explicit opt-in only. Merge requires
+			// auto_merge="all" or "low_risk" (with passing risk check).
+			// Any other value — including "none" or unexpected — skips
+			// merge safely. This prevents accidental merges if the
+			// config value is empty or unrecognized.
+			shouldMerge := false
+			switch cfg.AutoMerge.Feature {
+			case config.MergeAll:
+				logger.Info("PR approved, will merge (auto_merge.feature=all)", "pr_number", prNum)
+				shouldMerge = true
+			case config.MergeLowRisk:
+				additions, deletions, fileCount, statsErr := github.FetchPRStats(cfg.Repo, prNum)
+				if statsErr != nil {
+					logger.Warn("failed to fetch PR stats for risk classification, labeling for human review",
+						"pr_number", prNum, "error", statsErr)
+					applyLifecycleLabel(label.AwaitingHumanReview)
+					return StatusReadyToMerge, false, attempt, nil
+				}
+				changedFiles, filesErr := github.FetchPRChangedFiles(cfg.Repo, prNum)
+				if filesErr != nil {
+					logger.Warn("failed to fetch PR changed files for risk classification, labeling for human review",
+						"pr_number", prNum, "error", filesErr)
+					applyLifecycleLabel(label.AwaitingHumanReview)
+					return StatusReadyToMerge, false, attempt, nil
+				}
+
+				var maxLines, maxFiles int
+				if cfg.RiskThresholds != nil {
+					maxLines = cfg.RiskThresholds.MaxLines
+					maxFiles = cfg.RiskThresholds.MaxFiles
+				}
+				riskInput := quality.RiskInput{
+					LinesChanged:   additions + deletions,
+					FilesChanged:   fileCount,
+					ChangedFiles:   changedFiles,
+					ProtectedPaths: cfg.ProtectedPaths,
+					FixCycles:      *fixCycles,
+					QualityFlags:   fFlags,
+				}
+				assessment := quality.ClassifyRisk(riskInput, maxLines, maxFiles)
+
+				if hook != nil {
+					if err := hook.WriteRiskAssessment(issue.Number, toRundataRiskAssessment(assessment)); err != nil {
+						logger.Warn("failed to write risk assessment", "error", err)
+					}
+				}
+
+				logger.Info("risk classification result",
+					"issue_number", issue.Number,
+					"pr_number", prNum,
+					"is_low_risk", assessment.IsLowRisk,
+				)
+
+				if !assessment.IsLowRisk {
+					logger.Info("PR is not low-risk, labeling for human review", "pr_number", prNum)
+					applyLifecycleLabel(label.AwaitingHumanReview)
+					return StatusReadyToMerge, false, attempt, nil
+				}
+				shouldMerge = true
+			default:
+				// "none" or any unexpected value — skip merge safely.
+				logger.Info("PR approved, skipping merge", "pr_number", prNum, "auto_merge_feature", cfg.AutoMerge.Feature)
+				applyLifecycleLabel(label.AwaitingHumanReview)
+				return StatusReadyToMerge, false, attempt, nil
+			}
+
+			if !shouldMerge {
+				// Defensive: should not be reachable, but fail safe.
+				logger.Warn("merge decision fell through unexpectedly, skipping merge", "auto_merge_feature", cfg.AutoMerge.Feature)
+				applyLifecycleLabel(label.AwaitingHumanReview)
+				return StatusReadyToMerge, false, attempt, nil
+			}
+
+			// Step 5.45: Pre-merge rebase check. Verifies the PR is still
+			// mergeable after approval; if not, attempts automatic rebase or
+			// triggers a conflict-fix cycle.
+			if needsHR, rebaseErr := runPreMergeRebasePhase(
+				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, sessionID, fixCycles,
+			); rebaseErr != nil {
+				return StatusFailed, false, 0, rebaseErr
+			} else if needsHR {
+				if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+					logger.Warn("failed to label PR", "error", err)
+				}
+				applyLifecycleLabel(label.AwaitingHumanReview)
+				comment := fmt.Sprintf("PR has unresolvable conflicts after %d rebase attempt(s). Labeling for human review.", cfg.MaxRebaseAttempts)
+				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+					logger.Warn("failed to comment on PR", "error", err)
+				}
+				return StatusNeedsHumanReview, false, attempt, nil
+			}
+
+			// Step 5.5: Wait for CI checks if configured.
+			if cfg.WaitForChecks != nil {
+				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
+				ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
+				if err != nil {
+					return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
+				}
+				for ciAttempt := 0; len(ciFailures) > 0; ciAttempt++ {
+					if ctx.Err() != nil {
+						return StatusFailed, false, 0, ctx.Err()
+					}
+					if ciAttempt >= cfg.Verify.MaxFixAttempts || prompts.VerifyFix == "" {
+						var names []string
+						for _, f := range ciFailures {
+							names = append(names, f.Name)
+						}
+						if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+							logger.Warn("failed to label PR", "error", err)
+						}
+						applyLifecycleLabel(label.AwaitingHumanReview)
+						comment := fmt.Sprintf("CI checks failed after %d fix attempt(s): %s. Labeling for human review.",
+							ciAttempt, strings.Join(names, ", "))
+						if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+							logger.Warn("failed to comment on PR", "error", err)
+						}
+						return StatusNeedsHumanReview, false, 0, fmt.Errorf("CI checks failed: %s", strings.Join(names, ", "))
+					}
+
+					logger.Info("CI check failed, triggering fix cycle",
+						"issue_number", issue.Number,
+						"attempt", ciAttempt+1,
+						"max_attempts", cfg.Verify.MaxFixAttempts,
+					)
+
+					ciErrors := formatCheckFailures(ciFailures)
+					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, *sessionID, cfg, prompts, authEnv, logger)
+					if err != nil {
+						return StatusFailed, false, 0, fmt.Errorf("CI fix agent: %w", err)
+					}
+					if fixResult.TimedOut {
+						return StatusFailed, false, 0, fmt.Errorf("CI fix agent timed out")
+					}
+					*sessionID = fixResult.SessionID
+
+					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+						return StatusFailed, false, 0, driftErr
+					}
+
+					ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
+					if err != nil {
+						return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
+					}
+				}
+			}
+			// Merge the PR.
+			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
+				return StatusFailed, false, 0, fmt.Errorf("merging PR: %w", err)
+			}
+			// Explicitly close the issue after merge. GitHub's "Closes #N"
+			// keyword only auto-closes on merge to the default branch, so
+			// when the base branch differs we must close it ourselves.
+			if err := github.CloseIssue(cfg.Repo, issue.Number); err != nil {
+				logger.Warn("failed to close issue after merge", "issue", issue.Number, "error", err)
+			}
+			// Remove all lifecycle labels after merge (best-effort). This cleans up
+			// labels applied in a previous run or manually, not just the current run.
+			for _, lbl := range label.All() {
+				_ = github.RemoveIssueLabel(cfg.Repo, prNum, lbl)
+			}
+			return StatusImplemented, true, attempt, nil
+
+		case "CHANGES_REQUESTED":
+			retriesLeft := maxAttempts - attempt - 1
+			if retriesLeft <= 0 {
+				// Exhausted retries — write to top-level functional-review.json.
+				if hook != nil {
+					if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+						logger.Warn("failed to write functional review result", "error", err)
+					}
+				}
+				break // exit loop, will label needs-human-review
+			}
+
+			// More retries available — write to retry dir so the pre-retry review is preserved.
+			if hook != nil {
+				if err := hook.WriteRetryFunctionalReviewResult(issue.Number, attempt, fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
+			}
+
+			logger.Info("retrying implementation",
+				"issue_number", issue.Number,
+				"attempt", attempt+1,
+				"retries_left", retriesLeft,
+			)
+
+			var handoff string
+			if shouldHandoff(attempt, cfg.MaxResumeRetries) {
+				handoff = assembleHandoffContext(cfg.Repo, prNum, logger)
+			}
+
+			retryResult, err := Retry(ctx, issue, prNum, *sessionID, "", handoff, cfg, prompts, authEnv, logger)
+			if err != nil {
+				return StatusFailed, false, 0, fmt.Errorf("retry agent: %w", err)
+			}
+			if retryResult.TimedOut {
+				return StatusFailed, false, 0, fmt.Errorf("retry agent timed out")
+			}
+			if hook != nil {
+				if err := hook.WriteRetryResult(issue.Number, attempt, ResultToStep(retryResult)); err != nil {
+					logger.Warn("failed to write retry result", "error", err)
+				}
+			}
+
+			// Update session ID so the next retry can resume this session's context.
+			*sessionID = retryResult.SessionID
+
+			// Re-check drift after retry.
+			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+				return StatusFailed, false, 0, driftErr
+			}
+
+		default:
+			// No verdict found — write to top-level and treat as failure.
+			if hook != nil {
+				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
+			}
+			return StatusFailed, false, 0, fmt.Errorf("reviewer agent did not produce a verdict")
+		}
+	}
+
+	// Exhausted retries.
+	if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+		logger.Warn("failed to label PR", "error", err)
+	}
+	applyLifecycleLabel(label.AwaitingHumanReview)
+	comment := fmt.Sprintf("Exhausted %d review/retry cycles. Labeling for human review.", maxAttempts)
+	if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+		logger.Warn("failed to comment on PR", "error", err)
+	}
+	return StatusNeedsHumanReview, false, maxAttempts - 1, nil
 }
 
 // topologicalSortModules returns module names sorted in dependency order
