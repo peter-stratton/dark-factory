@@ -1,3 +1,35 @@
+pre-commit:
+  commands:
+    secrets:
+      run: |
+        patterns=(
+          'AKIA[0-9A-Z]{16}'
+          '[Aa][Pp][Ii][_-]?[Kk][Ee][Yy][[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_/+]{16,}'
+          '[Ss][Ee][Cc][Rr][Ee][Tt][_-]?[Kk][Ee][Yy][[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_/+]{16,}'
+          '[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][[:space:]]*[:=][[:space:]]*["'"'"'].+'
+          '[Pp][Aa][Ss][Ss][Ww][Dd][[:space:]]*[:=][[:space:]]*["'"'"'].+'
+          '[Tt][Oo][Kk][Ee][Nn][[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_/+]{16,}'
+          '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
+          'ghp_[0-9a-zA-Z]{36}'
+          'gho_[0-9a-zA-Z]{36}'
+          'ghu_[0-9a-zA-Z]{36}'
+          'ghs_[0-9a-zA-Z]{36}'
+          'sk-[0-9a-zA-Z]{32,}'
+          'xox[bpars]-[0-9a-zA-Z-]+'
+        )
+        joined=$(IFS='|'; echo "${patterns[*]}")
+        files=$(git diff --cached --name-only --diff-filter=ACM)
+        if [ -z "$files" ]; then exit 0; fi
+        matches=$(echo "$files" | xargs grep -EnH "$joined" 2>/dev/null || true)
+        if [ -n "$matches" ]; then
+          echo "🚨 Possible secrets detected in staged files:"
+          echo "$matches"
+          echo ""
+          echo "If these are false positives, commit with --no-verify."
+          exit 1
+        fi
+      glob: "*.{go,yaml,yml,json,toml,env,sh,bash,zsh,py,js,ts,txt,md,cfg,ini,conf}"
+
 pre-push:
   commands:
     test:
