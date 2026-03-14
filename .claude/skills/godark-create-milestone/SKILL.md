@@ -1,11 +1,11 @@
 ---
-name: godark-create-roadmap
+name: godark-create-milestone
 description: Create a project roadmap and GitHub milestones through conversation
 argument-hint: "<project-goal>"
 disable-model-invocation: true
 ---
 
-# Create Roadmap
+# Create Milestone
 
 Help the user define a phased roadmap for their project and write it to
 `docs/ROADMAP.md`. Create a GitHub milestone for each phase.
@@ -19,7 +19,7 @@ Help the user define a phased roadmap for their project and write it to
    `roadmap_path` (default: `docs/ROADMAP.md`).
 
    If `docs/architecture.json` is empty or missing, note this and suggest running
-   `/godark-define-architecture` before or after creating the roadmap so that
+   `/godark-define-architecture` before or after creating milestones so that
    structural decisions are captured in a machine-readable form.
 
 2. **Discuss goals** — Ask the user about:

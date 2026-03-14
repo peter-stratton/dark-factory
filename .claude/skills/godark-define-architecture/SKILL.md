@@ -87,7 +87,7 @@ language and framework and propose idiomatic layers. Writes
 10. **Check for discrepancies** — If `godark vet architecture` reports
     discrepancies between the defined layers and the actual codebase (e.g.
     packages in the wrong layer, imports that violate layer rules), suggest
-    running `/godark-create-roadmap` to plan a codebase alignment phase that
+    running `/godark-create-milestone` to plan a codebase alignment phase that
     migrates the code to match the architecture.
 
 ## Rules

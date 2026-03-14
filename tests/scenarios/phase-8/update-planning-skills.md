@@ -10,13 +10,13 @@ Relates to: Issue #129
 
 ## Cases
 
-### Roadmap skill reads architecture context
-Read `internal/skills/godark-create-roadmap/SKILL.md`.
+### Milestone skill reads architecture context
+Read `internal/skills/godark-create-milestone/SKILL.md`.
 - Step 1 (gather context) references reading `docs/architecture.json`
 - Step 1 references reading `docs/conventions.md`
 
-### Roadmap skill suggests define-architecture
-Read `internal/skills/godark-create-roadmap/SKILL.md`.
+### Milestone skill suggests define-architecture
+Read `internal/skills/godark-create-milestone/SKILL.md`.
 - The content mentions `/godark-define-architecture` as a suggestion when
   architecture docs are missing or empty
 

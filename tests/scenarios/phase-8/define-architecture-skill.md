@@ -31,9 +31,9 @@ Read the SKILL.md body content.
 Read the SKILL.md body content.
 - The steps include running `godark vet architecture`
 
-### Steps suggest roadmap for discrepancies
+### Steps suggest milestone for discrepancies
 Read the SKILL.md body content.
-- The steps include suggesting `/godark-create-roadmap` when discrepancies
+- The steps include suggesting `/godark-create-milestone` when discrepancies
   exist between defined layers and the actual codebase
 
 ### Skill writes both output files

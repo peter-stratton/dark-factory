@@ -9,7 +9,7 @@ Relates to: Issue #399
 ## Cases
 
 ### readSkill loads file
-Call `readSkill(t, "godark-create-roadmap")`.
+Call `readSkill(t, "godark-create-milestone")`.
 - Returns non-empty string containing YAML frontmatter
 
 ### readSkill fatals on missing

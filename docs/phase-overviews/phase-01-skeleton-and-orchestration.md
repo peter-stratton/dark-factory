@@ -147,7 +147,7 @@ The `init` command writes everything a project needs to work with godark: Claude
 $ cd ~/code/my-service
 $ godark init --repo acme/my-service
 
-wrote .claude/skills/godark-create-roadmap/...
+wrote .claude/skills/godark-create-milestone/...
 wrote .claude/skills/godark-create-issues/...
 wrote .claude/skills/godark-create-planning-doc/...
 wrote .claude/skills/godark-create-scenarios/...
@@ -169,7 +169,7 @@ Running `godark init` again is safe -- it overwrites the managed skill files (so
 
 Phase 1 shipped four Claude Code skills that turn high-level project goals into actionable GitHub issues. These are slash commands you invoke inside Claude Code to plan work before godark executes it.
 
-**`/godark-create-roadmap`** -- Generates a phased roadmap document from your project goals, writing it to `docs/ROADMAP.md`.
+**`/godark-create-milestone`** -- Generates a phased roadmap document from your project goals, writing it to `docs/ROADMAP.md`.
 
 **`/godark-create-planning-doc`** -- Produces a detailed planning document for a specific phase, breaking it into concrete implementation tasks.
 
@@ -180,7 +180,7 @@ Phase 1 shipped four Claude Code skills that turn high-level project goals into 
 **In practice:** The typical workflow is a pipeline from goals to executable issues.
 
 ```
-> /godark-create-roadmap
+> /godark-create-milestone
   (writes docs/ROADMAP.md with phased milestones)
 
 > /godark-create-planning-doc

@@ -79,10 +79,10 @@ func TestDefineConventionsSkillStepsFlagConventionOverConfiguration(t *testing.T
 	}
 }
 
-func TestDefineConventionsSkillStepsSuggestRoadmapForInconsistencies(t *testing.T) {
+func TestDefineConventionsSkillStepsSuggestMilestoneForInconsistencies(t *testing.T) {
 	content := readSkill(t, "godark-define-conventions")
-	if !strings.Contains(content, "/godark-create-roadmap") {
-		t.Error("steps do not suggest running /godark-create-roadmap for inconsistent conventions")
+	if !strings.Contains(content, "/godark-create-milestone") {
+		t.Error("steps do not suggest running /godark-create-milestone for inconsistent conventions")
 	}
 }
 

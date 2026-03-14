@@ -35,9 +35,9 @@ Read the SKILL.md body content.
 - The steps mention heavy code generation as an impediment
 - The steps mention convention-over-configuration magic as an impediment
 
-### Steps suggest roadmap for inconsistencies
+### Steps suggest milestone for inconsistencies
 Read the SKILL.md body content.
-- The steps include suggesting `/godark-create-roadmap` when the codebase uses
+- The steps include suggesting `/godark-create-milestone` when the codebase uses
   inconsistent conventions
 
 ### Skill writes conventions doc

@@ -197,7 +197,7 @@ prepare issues for agent execution:
 
 | Step | Skill | What it does |
 |------|-------|--------------|
-| 1 | `/godark-create-roadmap <goal>` | Discuss project goals, create a phased roadmap, and set up GitHub milestones |
+| 1 | `/godark-create-milestone <goal>` | Discuss project goals, create a phased roadmap, and set up GitHub milestones |
 | 2 | `/godark-create-planning-doc <phase>` | Flesh out each issue in a phase with specs, constraints, acceptance criteria, and test cases |
 | 3 | `/godark-create-issues <phase>` | Create GitHub issues from the planning doc |
 | 4 | `/godark-create-scenarios <phase>` | Generate scenario spec files the functional reviewer uses to write integration tests |

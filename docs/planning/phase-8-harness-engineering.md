@@ -167,7 +167,7 @@ not create), then runs the equivalent of `godark init` internally.
      directory, with `--repo` passed through if provided
   7. Print summary of created files
   8. Print next-steps guidance: fill in CLAUDE.md sections, run
-     `/godark-create-roadmap`
+     `/godark-create-milestone`
 - The init logic must work when called from a different directory than
   the current working directory — either `chdir` before calling or pass
   the target directory as a parameter
@@ -391,7 +391,7 @@ and proposes idiomatic layers. Writes `docs/architecture.json` and
   7. Update `docs/architecture.md` prose to describe the layers
   8. Run `godark vet architecture` to validate the result
   9. If discrepancies exist between defined layers and actual codebase,
-     suggest running `/godark-create-roadmap` to plan a codebase alignment
+     suggest running `/godark-create-milestone` to plan a codebase alignment
      phase
 - Re-runnable — reads existing definitions and proposes updates rather
   than overwriting
@@ -404,7 +404,7 @@ and proposes idiomatic layers. Writes `docs/architecture.json` and
 - [ ] Steps include codebase scanning for existing projects
 - [ ] Steps include idiomatic recommendations for new projects
 - [ ] Writes both `architecture.json` and `architecture.md`
-- [ ] Suggests `/godark-create-roadmap` for discrepancies
+- [ ] Suggests `/godark-create-milestone` for discrepancies
 
 ### Test cases
 
@@ -450,7 +450,7 @@ agent-friendliness. Writes `docs/conventions.md`.
   8. Discuss with user — ask what to standardize on
   9. Write `docs/conventions.md` with agreed conventions
   10. If codebase uses inconsistent conventions, suggest running
-      `/godark-create-roadmap` to plan a standardization phase
+      `/godark-create-milestone` to plan a standardization phase
 - Re-runnable — reads existing conventions and proposes updates
 - `disable-model-invocation: true`
 
@@ -460,7 +460,7 @@ agent-friendliness. Writes `docs/conventions.md`.
 - [ ] Steps include source file analysis for existing projects
 - [ ] Steps include agent-friendliness filter recommendations
 - [ ] Steps flag conventions that impede agentic development
-- [ ] Suggests `/godark-create-roadmap` for inconsistencies
+- [ ] Suggests `/godark-create-milestone` for inconsistencies
 
 ### Test cases
 
@@ -484,7 +484,7 @@ two new skills to the embed directive in `embed.go`.
 
 ### Key constraints
 
-- Modify `internal/skills/godark-create-roadmap/SKILL.md`:
+- Modify `internal/skills/godark-create-milestone/SKILL.md`:
   - In step 1 (gather context), add: read `docs/architecture.json` and
     `docs/conventions.md` if they exist
   - In step 2 (discuss goals), add: ask about architecture layers when
@@ -503,8 +503,8 @@ two new skills to the embed directive in `embed.go`.
 
 ### Acceptance criteria
 
-- [ ] `/godark-create-roadmap` reads architecture and conventions docs
-- [ ] `/godark-create-roadmap` suggests `/godark-define-architecture` when needed
+- [ ] `/godark-create-milestone` reads architecture and conventions docs
+- [ ] `/godark-create-milestone` suggests `/godark-define-architecture` when needed
 - [ ] `/godark-create-planning-doc` reads architecture and conventions docs
 - [ ] `/godark-create-planning-doc` prompts for architecture updates
 - [ ] New skills are included in the embed directive

@@ -21,7 +21,7 @@ prints the execution plan. No agent execution in this phase.
 - Orchestration loop with dry-run mode
 - CLAUDE.md and scenario specs for Phase 2 validation
 - `godark init` command — installs skills and default config into a project
-- Planning skills: `/godark-create-roadmap`, `/godark-create-planning-doc`, `/godark-create-issues`, `/godark-create-scenarios`
+- Planning skills: `/godark-create-milestone`, `/godark-create-planning-doc`, `/godark-create-issues`, `/godark-create-scenarios`
 
 **Issues**: #1–#7 (all closed), init + skills added post-milestone
 
@@ -289,13 +289,13 @@ comments. Architecture constraints are validated before execution.
   architecture/conventions doc references via template variables
 - `/godark-define-architecture` skill — analyzes existing codebase or
   recommends idiomatic layers for new projects; suggests
-  `/godark-create-roadmap` when discrepancies found between definition
+  `/godark-create-milestone` when discrepancies found between definition
   and codebase
 - `/godark-define-conventions` skill — analyzes existing codebase or
   recommends idiomatic conventions with agent-friendliness filter; suggests
-  `/godark-create-roadmap` for standardization phases
+  `/godark-create-milestone` for standardization phases
 - Update planning skills and embed new skills — update
-  `/godark-create-roadmap` and `/godark-create-planning-doc` to read
+  `/godark-create-milestone` and `/godark-create-planning-doc` to read
   architecture/conventions docs and prompt for updates; add new skills
   to `embed.go`
 

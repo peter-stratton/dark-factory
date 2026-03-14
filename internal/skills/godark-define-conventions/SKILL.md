@@ -104,7 +104,7 @@ filtered for agent-friendliness. Writes `docs/conventions.md`.
 
 11. **Suggest next steps for inconsistencies** — If the existing codebase uses
     inconsistent conventions (e.g. two different logging libraries, mixed error
-    handling styles), suggest running `/godark-create-roadmap` to plan a
+    handling styles), suggest running `/godark-create-milestone` to plan a
     standardization phase that migrates the codebase to the agreed conventions.
 
 ## Format

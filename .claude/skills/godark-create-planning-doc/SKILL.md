@@ -117,7 +117,7 @@ description, constraints, acceptance criteria, and test cases.
 - Issue headings use `## Issue: <Title>` (not `## Issue N:`) — issue numbers
   are added later by `/godark-create-issues`.
 - Do not create GitHub issues — that is handled by `/godark-create-issues`.
-- Do not modify the roadmap — that is handled by `/godark-create-roadmap`.
+- Do not modify the roadmap — that is handled by `/godark-create-milestone`.
 - If a planning doc already exists for this phase, ask the user whether to
   replace it or update specific issues.
 

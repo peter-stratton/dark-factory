@@ -72,10 +72,10 @@ func TestDefineArchitectureSkillStepsIncludeVetArchitecture(t *testing.T) {
 	}
 }
 
-func TestDefineArchitectureSkillStepsSuggestCreateRoadmapForDiscrepancies(t *testing.T) {
+func TestDefineArchitectureSkillStepsSuggestCreateMilestoneForDiscrepancies(t *testing.T) {
 	content := readSkill(t, "godark-define-architecture")
-	if !strings.Contains(content, "/godark-create-roadmap") {
-		t.Error("steps do not suggest running /godark-create-roadmap for discrepancies")
+	if !strings.Contains(content, "/godark-create-milestone") {
+		t.Error("steps do not suggest running /godark-create-milestone for discrepancies")
 	}
 }
 

@@ -6,7 +6,7 @@ Phase 8 makes any project — new or existing — ready for agent-driven develop
 
 ## `godark new` — Create a harness-ready project from scratch
 
-Creates a new directory with every harness file an agent needs to operate: CLAUDE.md, architecture and conventions templates, prompt templates, a roadmap skeleton, and a default `godark.yaml`. Runs `git init` and installs planning skills. The result is a project that is immediately ready for `/godark-create-roadmap` and then `godark run`.
+Creates a new directory with every harness file an agent needs to operate: CLAUDE.md, architecture and conventions templates, prompt templates, a roadmap skeleton, and a default `godark.yaml`. Runs `git init` and installs planning skills. The result is a project that is immediately ready for `/godark-create-milestone` and then `godark run`.
 
 ### Example
 
@@ -16,7 +16,7 @@ $ godark new billing-service --repo acme/billing-service
 wrote billing-service/CLAUDE.md
 wrote billing-service/.gitignore
 initialized git repository in billing-service/
-wrote .claude/skills/godark-create-roadmap/SKILL.md
+wrote .claude/skills/godark-create-milestone/SKILL.md
 wrote .claude/skills/godark-create-planning-doc/SKILL.md
 wrote .claude/skills/godark-create-issues/SKILL.md
 wrote .claude/skills/godark-create-scenarios/SKILL.md
@@ -35,7 +35,7 @@ Project "billing-service" created.
 
 Next steps:
   1. Fill in the language-specific sections of CLAUDE.md
-  2. Run /godark-create-roadmap to define phases
+  2. Run /godark-create-milestone to define phases
   3. Use `godark vet` to validate before execution
 ```
 
@@ -66,7 +66,7 @@ For projects that already have code, `godark init` scaffolds the same harness do
 $ cd ~/code/existing-api
 $ godark init
 
-wrote .claude/skills/godark-create-roadmap/SKILL.md
+wrote .claude/skills/godark-create-milestone/SKILL.md
 wrote .claude/skills/godark-define-architecture/SKILL.md
 wrote .claude/skills/godark-define-conventions/SKILL.md
 ...
@@ -225,7 +225,7 @@ The reviewer prompt gets both the prose architecture doc and the machine-readabl
 
 ## `/godark-define-architecture` skill
 
-An interactive skill that helps you create or update `docs/architecture.json` and `docs/architecture.md`. For existing codebases, it scans package directories and import relationships to propose layers. For new projects, it asks about your language and framework and recommends idiomatic layers. It runs `godark vet architecture` to validate the result, and if it finds discrepancies between your defined layers and actual code, suggests running `/godark-create-roadmap` to plan a codebase alignment phase.
+An interactive skill that helps you create or update `docs/architecture.json` and `docs/architecture.md`. For existing codebases, it scans package directories and import relationships to propose layers. For new projects, it asks about your language and framework and recommends idiomatic layers. It runs `godark vet architecture` to validate the result, and if it finds discrepancies between your defined layers and actual code, suggests running `/godark-create-milestone` to plan a codebase alignment phase.
 
 ### Example session
 
@@ -261,13 +261,13 @@ An interactive skill that helps you create or update `docs/conventions.md`. For 
 - **Clear boundaries** — interfaces between layers, not deep inheritance
 - **Discoverable** — patterns visible in a few files, not requiring whole-system knowledge
 
-The skill flags patterns that impede agentic development (heavy code generation, convention-over-configuration magic, implicit runtime behavior) and suggests agent-friendly alternatives. If the codebase uses inconsistent conventions, it suggests `/godark-create-roadmap` to plan a standardization phase.
+The skill flags patterns that impede agentic development (heavy code generation, convention-over-configuration magic, implicit runtime behavior) and suggests agent-friendly alternatives. If the codebase uses inconsistent conventions, it suggests `/godark-create-milestone` to plan a standardization phase.
 
 ---
 
 ## Updated planning skills
 
-The existing `/godark-create-roadmap` and `/godark-create-planning-doc` skills were updated to read `docs/architecture.json` and `docs/conventions.md` for context. When a roadmap conversation reveals architectural decisions, the skill prompts you to run `/godark-define-architecture`. When a planning doc introduces packages that don't fit the current layer structure, the skill prompts you to update `docs/architecture.json`. This closes the loop: planning conversations feed harness files, and harness files feed agent execution.
+The existing `/godark-create-milestone` and `/godark-create-planning-doc` skills were updated to read `docs/architecture.json` and `docs/conventions.md` for context. When a roadmap conversation reveals architectural decisions, the skill prompts you to run `/godark-define-architecture`. When a planning doc introduces packages that don't fit the current layer structure, the skill prompts you to update `docs/architecture.json`. This closes the loop: planning conversations feed harness files, and harness files feed agent execution.
 
 ---
 

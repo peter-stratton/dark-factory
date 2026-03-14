@@ -98,7 +98,7 @@ needed, not loaded into every session.
 ### Updated
 
 - **By the human**, as decisions are made.
-- **By the planning skills** — `/godark-create-roadmap` and
+- **By the planning skills** — `/godark-create-milestone` and
   `/godark-create-planning-doc` read these files and prompt the user to
   update them when the conversation reveals new context.
 
@@ -452,7 +452,7 @@ Reviewer: approved + final review notes
 godark new              scaffolds all harness files (templates)
   |
   v
-/godark-create-roadmap  fills ROADMAP.md, prompts for architecture
+/godark-create-milestone  fills ROADMAP.md, prompts for architecture
   |                     and conventions updates
   v
 /godark-create-planning-doc   fills planning docs, updates architecture

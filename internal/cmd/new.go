@@ -115,7 +115,7 @@ func runNew(cmd *cobra.Command, projectName, repo string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "\nProject %q created.\n", projectName)
 	fmt.Fprintf(cmd.OutOrStdout(), "\nNext steps:\n")
 	fmt.Fprintf(cmd.OutOrStdout(), "  1. Fill in the language-specific sections of CLAUDE.md\n")
-	fmt.Fprintf(cmd.OutOrStdout(), "  2. Run /godark-create-roadmap to define phases\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "  2. Run /godark-create-milestone to define phases\n")
 	fmt.Fprintf(cmd.OutOrStdout(), "  3. Use `godark vet` to validate before execution\n")
 
 	return nil

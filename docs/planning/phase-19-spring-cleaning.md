@@ -1121,7 +1121,7 @@ helper file.
 
 ### Test cases
 
-- **readSkill loads file**: `readSkill(t, "godark-create-roadmap")` returns
+- **readSkill loads file**: `readSkill(t, "godark-create-milestone")` returns
   non-empty content containing expected frontmatter
 - **readSkill panics on missing**: `readSkill(t, "nonexistent")` calls
   `t.Fatalf`

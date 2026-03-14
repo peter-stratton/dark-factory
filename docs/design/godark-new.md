@@ -94,7 +94,7 @@ fills in language-specific conventions during planning.
 ### docs/ROADMAP.md
 
 Minimal template with the standard format header. Ready for
-`/godark-create-roadmap`.
+`/godark-create-milestone`.
 
 ### prompts/*.txt
 
@@ -121,7 +121,7 @@ Same as current `godark init` output, with `repo` pre-populated if
 5. Print a summary of created files.
 6. Print next steps:
    - Fill in the language-specific sections of CLAUDE.md
-   - Run `/godark-create-roadmap` to define phases
+   - Run `/godark-create-milestone` to define phases
    - Use `godark vet` to validate before execution
 
 ## Flags
@@ -134,7 +134,7 @@ Same as current `godark init` output, with `repo` pre-populated if
 
 - No language-specific scaffolding (use `go mod init`, `npm init`, etc.)
 - No GitHub repo creation (use `gh repo create`)
-- No milestone creation (use `/godark-create-roadmap`)
+- No milestone creation (use `/godark-create-milestone`)
 - No issue creation (use `/godark-create-issues`)
 - No style rules in CLAUDE.md (use linters)
 - No code examples in templates (they go stale)
