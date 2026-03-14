@@ -43,36 +43,8 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		force, _ := cmd.Flags().GetBool("force")
 
-		flags := config.CLIFlags{Config: configPath}
-
-		if cmd.Flags().Changed("repo") {
-			v, _ := cmd.Flags().GetString("repo")
-			flags.Repo = &v
-		}
-		if cmd.Flags().Changed("max-retries") {
-			v, _ := cmd.Flags().GetInt("max-retries")
-			flags.MaxRetries = &v
-		}
-		if cmd.Flags().Changed("no-sandbox") {
-			v, _ := cmd.Flags().GetBool("no-sandbox")
-			flags.NoSandbox = &v
-		}
-		if cmd.Flags().Changed("auto-merge-feature") {
-			v, _ := cmd.Flags().GetString("auto-merge-feature")
-			flags.AutoMergeFeature = &v
-		}
-		if cmd.Flags().Changed("auto-merge-rollup") {
-			v, _ := cmd.Flags().GetString("auto-merge-rollup")
-			flags.AutoMergeRollup = &v
-		}
-		if cmd.Flags().Changed("base-branch") {
-			v, _ := cmd.Flags().GetString("base-branch")
-			flags.BaseBranch = &v
-		}
-		if cmd.Flags().Changed("default-branch") {
-			v, _ := cmd.Flags().GetString("default-branch")
-			flags.DefaultBranch = &v
-		}
+		flags := parseCLIFlags(cmd)
+		flags.Config = configPath
 
 		cfg, err := config.Load(configPath, flags)
 		if err != nil {
@@ -108,7 +80,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 
 		// Create RunDataWriter first to get the run directory for the log file.
 		var hook agent.RunDataHook
-		writer, writerErr := rundata.New(cfg.Repo, "", issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: cfg.AutoMerge.Feature, Rollup: cfg.AutoMerge.Rollup})
+		writer, writerErr := rundata.New(cfg.Repo, "", issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
 		var logDir string
 		if writerErr != nil {
 			// Fall back to a private temp directory so each run is isolated.
@@ -238,16 +210,16 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			}
 
 			switch outcome.Status {
-			case "implemented":
+			case agent.StatusImplemented:
 				implemented++
 				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
 				if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
 					logger.Warn("could not sync local repo after merge", "error", err)
 				}
-			case "ready-to-merge":
+			case agent.StatusReadyToMerge:
 				readyToMerge++
 				fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
-			case "needs-human-review":
+			case agent.StatusNeedsHumanReview:
 				needsHumanReview++
 				fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
 			default:

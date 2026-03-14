@@ -324,8 +324,8 @@ func TestProcessIssue_WaitForChecks_AllPass(t *testing.T) {
 	// Agent outputs: implementer, quality(APPROVED), reviewer(APPROVED)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -363,8 +363,8 @@ func TestProcessIssue_WaitForChecks_Nil(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -406,8 +406,8 @@ func TestProcessIssue_WaitForChecks_Timeout(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -457,8 +457,8 @@ func TestProcessIssue_WaitForChecks_FixSucceeds(t *testing.T) {
 	// Agent outputs: implementer, quality(APPROVED), reviewer(APPROVED), verify-fix agent
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 		"verify-fix output", // CI fix agent
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
@@ -518,8 +518,8 @@ func TestProcessIssue_WaitForChecks_FixExhausted(t *testing.T) {
 	// Agent outputs: implementer, quality(APPROVED), reviewer(APPROVED), one verify-fix attempt
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 		"verify-fix output",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
@@ -571,8 +571,8 @@ func TestProcessIssue_WaitForChecks_NoVerifyFix(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {

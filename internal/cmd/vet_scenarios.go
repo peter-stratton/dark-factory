@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
 )
@@ -21,28 +20,13 @@ var vetScenariosCmd = &cobra.Command{
 			return err
 		}
 
-		var issues []github.Issue
-		var allNums map[int]bool
+		if milestone != "" && repo == "" {
+			return fmt.Errorf("--repo is required when --milestone or --tag is specified")
+		}
 
-		if milestone != "" {
-			if repo == "" {
-				return fmt.Errorf("--repo is required when --milestone or --tag is specified")
-			}
-			var err error
-			issues, err = github.FetchMilestoneIssues(repo, milestone)
-			if err != nil {
-				return fmt.Errorf("fetching milestone issues: %w", err)
-			}
-			allNums, err = github.FetchAllIssueNumbers(repo)
-			if err != nil {
-				return fmt.Errorf("fetching all issue numbers: %w", err)
-			}
-		} else if repo != "" {
-			var err error
-			allNums, err = github.FetchAllIssueNumbers(repo)
-			if err != nil {
-				return fmt.Errorf("fetching all issue numbers: %w", err)
-			}
+		issues, allNums, err := fetchVetData(repo, milestone)
+		if err != nil {
+			return err
 		}
 
 		report := vet.ValidateScenarios(scenarioDir, issues, allNums)

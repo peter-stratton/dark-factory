@@ -356,7 +356,7 @@ func TestAutoMergeFeatureValidValues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for auto_merge.feature=%q: %v", value, err)
 			}
-			if cfg.AutoMerge.Feature != value {
+			if cfg.AutoMerge.Feature != FeatureMergeStrategy(value) {
 				t.Errorf("AutoMerge.Feature = %q, want %q", cfg.AutoMerge.Feature, value)
 			}
 		})
@@ -372,7 +372,7 @@ func TestAutoMergeRollupValidValues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for auto_merge.rollup=%q: %v", value, err)
 			}
-			if cfg.AutoMerge.Rollup != value {
+			if cfg.AutoMerge.Rollup != RollupMergeStrategy(value) {
 				t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, value)
 			}
 		})
@@ -434,6 +434,36 @@ auto_merge:
 	}
 	if cfg.AutoMerge.Rollup != "auto" {
 		t.Errorf("AutoMerge.Rollup = %q, want %q (flag should override)", cfg.AutoMerge.Rollup, "auto")
+	}
+}
+
+func TestFeatureMergeStrategyValid(t *testing.T) {
+	valid := []FeatureMergeStrategy{MergeNone, MergeLowRisk, MergeAll}
+	for _, s := range valid {
+		if !s.Valid() {
+			t.Errorf("FeatureMergeStrategy(%q).Valid() = false, want true", s)
+		}
+	}
+	if FeatureMergeStrategy("invalid").Valid() {
+		t.Errorf("FeatureMergeStrategy(\"invalid\").Valid() = true, want false")
+	}
+	if FeatureMergeStrategy("").Valid() {
+		t.Errorf("FeatureMergeStrategy(\"\").Valid() = true, want false")
+	}
+}
+
+func TestRollupMergeStrategyValid(t *testing.T) {
+	valid := []RollupMergeStrategy{RollupNone, RollupManual, RollupAuto}
+	for _, s := range valid {
+		if !s.Valid() {
+			t.Errorf("RollupMergeStrategy(%q).Valid() = false, want true", s)
+		}
+	}
+	if RollupMergeStrategy("invalid").Valid() {
+		t.Errorf("RollupMergeStrategy(\"invalid\").Valid() = true, want false")
+	}
+	if RollupMergeStrategy("").Valid() {
+		t.Errorf("RollupMergeStrategy(\"\").Valid() = true, want false")
 	}
 }
 
@@ -1845,5 +1875,80 @@ max_rebase_attempts: 0
 	}
 	if cfg.MaxRebaseAttempts != 0 {
 		t.Errorf("MaxRebaseAttempts = %d, want 0", cfg.MaxRebaseAttempts)
+	}
+}
+
+func TestTruncationLimitsDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Truncation.VerifyOutput != 4096 {
+		t.Errorf("Truncation.VerifyOutput = %d, want 4096", cfg.Truncation.VerifyOutput)
+	}
+	if cfg.Truncation.PRDiff != 30000 {
+		t.Errorf("Truncation.PRDiff = %d, want 30000", cfg.Truncation.PRDiff)
+	}
+}
+
+func TestTruncationLimitsValidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+truncation:
+  verify_output: 8192
+  pr_diff: 60000
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Truncation.VerifyOutput != 8192 {
+		t.Errorf("Truncation.VerifyOutput = %d, want 8192", cfg.Truncation.VerifyOutput)
+	}
+	if cfg.Truncation.PRDiff != 60000 {
+		t.Errorf("Truncation.PRDiff = %d, want 60000", cfg.Truncation.PRDiff)
+	}
+}
+
+func TestTruncationLimitsZeroVerifyOutput(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+truncation:
+  verify_output: 0
+  pr_diff: 30000
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for verify_output: 0, got nil")
+	}
+	if !strings.Contains(err.Error(), "truncation.verify_output") {
+		t.Errorf("error = %q, want mention of 'truncation.verify_output'", err.Error())
+	}
+}
+
+func TestTruncationLimitsNegativePRDiff(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+truncation:
+  verify_output: 4096
+  pr_diff: -1
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for pr_diff: -1, got nil")
+	}
+	if !strings.Contains(err.Error(), "truncation.pr_diff") {
+		t.Errorf("error = %q, want mention of 'truncation.pr_diff'", err.Error())
 	}
 }

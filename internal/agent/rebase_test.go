@@ -356,8 +356,8 @@ func TestProcessIssue_PreMergeRebase_LabelsNeedsHumanReview(t *testing.T) {
 	// Agent calls: implementer, quality_reviewer (APPROVED), reviewer (APPROVED), conflict fix
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 		"conflict fix output",
 	}, standardLoopGuard())
 

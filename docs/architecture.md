@@ -100,10 +100,10 @@ content.
 
 ### foundation
 
-**Paths:** `internal/config/`, `internal/logging/`, `internal/label/`
+**Paths:** `internal/config/`, `internal/logging/`, `internal/label/`, `internal/mdutil/`, `internal/exec/`
 
 **Purpose:** Zero-dependency utilities that any layer may import. Configuration
-loading and structured logging.
+loading, structured logging, and command execution.
 
 **May depend on:** (none).
 

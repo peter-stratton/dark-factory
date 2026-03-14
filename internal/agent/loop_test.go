@@ -125,8 +125,8 @@ func TestProcessIssue_ImplementedOnFirstApproval(t *testing.T) {
 	// Agent outputs: 1=implementer, 2=quality_reviewer(APPROVED), 3=reviewer(APPROVED)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -162,10 +162,10 @@ func TestProcessIssue_RetriesOnChangesRequested(t *testing.T) {
 	callIdx := 0
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -201,10 +201,10 @@ func TestProcessIssue_NeedsHumanReviewAfterMaxRetries(t *testing.T) {
 	// Agent outputs: implementer, quality(APPROVED), reviewer(CHANGES), retry, reviewer(CHANGES)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -283,8 +283,8 @@ func TestProcessIssue_RechecksProtectedDriftAfterRetry(t *testing.T) {
 	driftCheckCount := 0
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
@@ -322,8 +322,8 @@ func TestProcessIssue_MergeOnApproval(t *testing.T) {
 	var mergedCalled bool
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -357,6 +357,27 @@ func TestProcessIssue_MergeOnApproval(t *testing.T) {
 	}
 	if !mergedCalled {
 		t.Error("expected gh pr merge to be called")
+	}
+}
+
+func TestShouldHandoff(t *testing.T) {
+	tests := []struct {
+		name             string
+		attempt          int
+		maxResumeRetries int
+		want             bool
+	}{
+		{"at threshold returns true", 2, 2, true},
+		{"below threshold returns false", 1, 2, false},
+		{"zero threshold returns true", 0, 0, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldHandoff(tc.attempt, tc.maxResumeRetries)
+			if got != tc.want {
+				t.Errorf("shouldHandoff(%d, %d) = %v, want %v", tc.attempt, tc.maxResumeRetries, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -414,7 +435,7 @@ func TestProcessIssue_SkipsSpecGenWhenNoPrompt(t *testing.T) {
 	agentCallCount := 0
 	setupLoopTest(t, []string{
 		"implementer output",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -441,9 +462,9 @@ func TestProcessIssue_SkipsSpecGenWhenNoPrompt(t *testing.T) {
 		case 1:
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2:
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default:
-			return []byte(wrapRunnerJSON("reviewer output\nREVIEW_RESULT=APPROVED\n")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("reviewer output\nAGENT_RESULT=APPROVED\n")), []byte(""), 0, nil
 		}
 	}
 
@@ -496,9 +517,9 @@ func TestProcessIssue_PassesSessionIDToFirstRetry(t *testing.T) {
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		case 3: // reviewer — requests changes
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 4: // first retry — capture env
 			retryEnv = make(map[string]string, len(env))
 			for k, v := range env {
@@ -507,7 +528,7 @@ func TestProcessIssue_PassesSessionIDToFirstRetry(t *testing.T) {
 			out := `{"session_id":"sess-retry-002","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		default: // reviewer after retry — approve
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -543,14 +564,14 @@ func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
 			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		case 3: // reviewer — changes requested
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 4: // first retry — returns its own session ID
 			out := `{"session_id":"sess-retry-1","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 5: // reviewer — changes requested again
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 6: // second retry — capture env
 			secondRetryEnv = make(map[string]string, len(env))
 			for k, v := range env {
@@ -559,7 +580,7 @@ func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
 			out := `{"session_id":"sess-retry-2","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		default: // reviewer after second retry — approve
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -592,14 +613,14 @@ func TestProcessIssue_ReviewerHasNoSessionID(t *testing.T) {
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // reviewer calls — capture env
 			captured := make(map[string]string, len(env))
 			for k, v := range env {
 				captured[k] = v
 			}
 			reviewerEnvs = append(reviewerEnvs, captured)
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -619,10 +640,10 @@ func TestProcessIssue_QualityReviewChangesRequestedTriggersRetry(t *testing.T) {
 	// Agent outputs: implementer, quality(CHANGES), retry, quality(APPROVED), reviewer(APPROVED)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -676,16 +697,16 @@ func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
 			if env["GODARK_ROLE"] == "quality_reviewer" {
 				qualityPrompts = append(qualityPrompts, env["GODARK_PROMPT"])
 			}
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 3: // retry
 			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
 		case 4: // quality review cycle=1 (should have directive)
 			if env["GODARK_ROLE"] == "quality_reviewer" {
 				qualityPrompts = append(qualityPrompts, env["GODARK_PROMPT"])
 			}
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -714,8 +735,8 @@ func TestProcessIssue_AutoMergeNone_SkipsMergeOnApproval(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -755,8 +776,8 @@ func TestProcessIssue_AutoMergeNone_OutcomeStatus(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -775,8 +796,8 @@ func TestProcessIssue_AutoMergeEmpty_SkipsMerge(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -814,8 +835,8 @@ func TestProcessIssue_AutoMergeAll_Merges(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -869,9 +890,9 @@ func TestProcessIssue_AutoMergeNone_QualityReviewStillRuns(t *testing.T) {
 			if env["GODARK_ROLE"] != "quality_reviewer" {
 				return []byte(wrapRunnerJSON("unexpected role: " + env["GODARK_ROLE"])), []byte(""), 0, nil
 			}
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -912,7 +933,7 @@ func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 		case 1:
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		default:
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -994,8 +1015,8 @@ func TestProcessIssue_HookCalledOnImplement(t *testing.T) {
 	hook := &testRunDataHook{}
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
@@ -1009,8 +1030,8 @@ func TestProcessIssue_HookCalledOnReview(t *testing.T) {
 	hook := &testRunDataHook{}
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
@@ -1041,8 +1062,8 @@ func TestProcessIssue_HookCalledOnOutcome(t *testing.T) {
 	hook := &testRunDataHook{}
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
@@ -1050,7 +1071,7 @@ func TestProcessIssue_HookCalledOnOutcome(t *testing.T) {
 	if len(hook.outcomes) != 1 {
 		t.Fatalf("WriteOutcome called %d times, want 1", len(hook.outcomes))
 	}
-	if hook.outcomes[0].Status != outcome.Status {
+	if hook.outcomes[0].Status != string(outcome.Status) {
 		t.Errorf("WriteOutcome status = %q, want %q", hook.outcomes[0].Status, outcome.Status)
 	}
 	if hook.outcomes[0].IssueNumber != loopIssue().Number {
@@ -1105,8 +1126,8 @@ func TestProcessIssue_HookOutcomeIncludesError(t *testing.T) {
 func TestProcessIssue_NilHookSafe(t *testing.T) {
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	// Should not panic with nil hook.
@@ -1120,8 +1141,8 @@ func TestProcessIssue_HookWritesImplementingAndInReviewStatuses(t *testing.T) {
 	hook := &testRunDataHook{}
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
@@ -1161,8 +1182,8 @@ func TestProcessIssue_HookCalledOnSpecGeneratorSuccess(t *testing.T) {
 	setupLoopTest(t, []string{
 		"spec gen output",
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPromptsWithSpecGen(t), nil, testLogger(t), hook)
@@ -1191,7 +1212,7 @@ func TestProcessIssue_HookCalledOnSpecGeneratorError(t *testing.T) {
 			return nil, nil, 0, fmt.Errorf("spec gen failed")
 		}
 		// Subsequent calls: implementer, quality reviewer, reviewer
-		outputs := []string{"implementer output", "QUALITY_RESULT=APPROVED", "REVIEW_RESULT=APPROVED"}
+		outputs := []string{"implementer output", "AGENT_RESULT=APPROVED", "AGENT_RESULT=APPROVED"}
 		idx := callIdx - 2
 		if idx < len(outputs) {
 			return []byte(wrapRunnerJSON(outputs[idx])), []byte(""), 0, nil
@@ -1227,7 +1248,7 @@ func TestProcessIssue_HookCalledOnSpecGeneratorTimeout(t *testing.T) {
 			cancel()
 			return []byte(""), []byte(""), 0, nil
 		}
-		outputs := []string{"implementer output", "QUALITY_RESULT=APPROVED", "REVIEW_RESULT=APPROVED"}
+		outputs := []string{"implementer output", "AGENT_RESULT=APPROVED", "AGENT_RESULT=APPROVED"}
 		idx := callIdx - 2
 		if idx < len(outputs) {
 			return []byte(wrapRunnerJSON(outputs[idx])), []byte(""), 0, nil
@@ -1247,8 +1268,8 @@ func TestProcessIssue_HookCalledOnVerifyPass(t *testing.T) {
 	cfg := verifyLoopConfig(true)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -1289,8 +1310,8 @@ func TestProcessIssue_HookCalledOnVerifyFixRetries(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 		"verify-fix output",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
@@ -1444,8 +1465,8 @@ func TestProcessIssue_QualityFlagsLoggedAsWarnings(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, logger, nil)
@@ -1471,8 +1492,8 @@ func TestProcessIssue_FlagsIncludedInHookStepResult(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
@@ -1515,8 +1536,8 @@ func TestProcessIssue_QualityReviewerExemptInLoop(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
@@ -1597,7 +1618,7 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 
 	reviewerWithoutTests := func() []byte {
 		final := runnerFinalResult{
-			Result:    "REVIEW_RESULT=APPROVED",
+			Result:    "AGENT_RESULT=APPROVED",
 			ToolTrace: []string{"Read tests/existing_test.go", "go test ./..."},
 		}
 		b, _ := json.Marshal(final)
@@ -1606,7 +1627,7 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 
 	reviewerWithTests := func() []byte {
 		final := runnerFinalResult{
-			Result:    "REVIEW_RESULT=APPROVED",
+			Result:    "AGENT_RESULT=APPROVED",
 			ToolTrace: []string{"Write tests/review/my_test.go", "go test ./..."},
 		}
 		b, _ := json.Marshal(final)
@@ -1619,7 +1640,7 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 		case 1: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		case 3: // functional reviewer — approves without writing tests (guard re-runs reviewer)
 			return reviewerWithoutTests(), []byte(""), 0, nil
 		default: // second functional reviewer — approves with tests written (no implementer retry in between)
@@ -1691,9 +1712,9 @@ func TestProcessIssue_SpecGeneratedNoFetchNeeded(t *testing.T) {
 		case 2: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer — include Write to review dir
-			return []byte(wrapRunnerJSONWithTrace("REVIEW_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil
+			return []byte(wrapRunnerJSONWithTrace("AGENT_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil
 		}
 	}
 
@@ -1754,9 +1775,9 @@ func TestProcessIssue_SpecGeneratedSetsHasSpec(t *testing.T) {
 		case 2: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer — must include Write to review dir
-			return []byte(wrapRunnerJSONWithTrace("REVIEW_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil
+			return []byte(wrapRunnerJSONWithTrace("AGENT_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil
 		}
 	}
 
@@ -1799,10 +1820,10 @@ func TestProcessIssue_PreMergeGuardAllowsApprovalWithTests(t *testing.T) {
 		case 1: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer — approves WITH tests written
 			final := runnerFinalResult{
-				Result:    "REVIEW_RESULT=APPROVED",
+				Result:    "AGENT_RESULT=APPROVED",
 				ToolTrace: []string{"Write tests/review/my_test.go", "go test ./..."},
 			}
 			b, _ := json.Marshal(final)
@@ -1848,10 +1869,10 @@ func TestProcessIssue_FunctionalReviewOnRetry_WritesToRetryDir(t *testing.T) {
 	hook := &captureRetryFunctionalHook{}
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
@@ -1887,10 +1908,10 @@ func TestProcessIssue_FunctionalReviewExhausted_WritesToTopLevel(t *testing.T) {
 	hook := &captureRetryFunctionalHook{}
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook)
@@ -1921,8 +1942,8 @@ func TestProcessIssue_FunctionalReviewApproved_WritesToTopLevel(t *testing.T) {
 	hook := &captureRetryFunctionalHook{}
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook)
@@ -2063,7 +2084,7 @@ func TestBuildVerifyChecks_GenerateFailureStopsPipeline(t *testing.T) {
 		return []byte(""), nil, 0, nil
 	}
 
-	result := RunVerify(context.Background(), checks, runner)
+	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
 	if result.AllPassed {
 		t.Error("AllPassed = true, want false (generate failed)")
@@ -2093,7 +2114,7 @@ func TestBuildVerifyChecks_GenerateSuccessProceedsToBuild(t *testing.T) {
 		return []byte(""), nil, 0, nil
 	}
 
-	result := RunVerify(context.Background(), checks, runner)
+	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Error("AllPassed = false, want true (both generate and build pass)")
@@ -2164,8 +2185,8 @@ func TestNewHostRunner_UsesShC(t *testing.T) {
 func TestProcessIssue_VerifyPassedProceedsToReview(t *testing.T) {
 	stubs := setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -2196,8 +2217,8 @@ func TestProcessIssue_VerifyPassedProceedsToReview(t *testing.T) {
 func TestProcessIssue_VerifySkippedWhenNoCommands(t *testing.T) {
 	stubs := setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, loopGuardFn)
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil)
@@ -2219,8 +2240,8 @@ func TestProcessIssue_VerifyHostMode(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -2297,8 +2318,8 @@ func TestProcessIssue_VerifyBlockingFailure(t *testing.T) {
 func TestProcessIssue_VerifyNonBlockingProceedsToReview(t *testing.T) {
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -2465,9 +2486,9 @@ func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -2579,9 +2600,9 @@ func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 3: // quality reviewer (non-blocking proceeds here)
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -2705,9 +2726,9 @@ func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -2770,9 +2791,9 @@ func TestProcessIssue_VerifyFixPromptContainsErrorOutput(t *testing.T) {
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -2887,8 +2908,8 @@ func TestProcessIssue_VerifySandboxMode(t *testing.T) {
 	// Agent runs go through Docker in sandbox mode; stub Docker infrastructure.
 	setupSandboxDockerStubs(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	})
 
 	// git/gh commands still run on the host.
@@ -2926,8 +2947,8 @@ func TestProcessIssue_VerifyHostModeUnchangedWithNoSandbox(t *testing.T) {
 	var shCalled bool
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		if name == "sh" && len(args) > 0 && args[0] == "-c" {
 			shCalled = true
@@ -3000,7 +3021,7 @@ func TestProcessIssue_QualityRetryHasNoSessionID(t *testing.T) {
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 3: // quality retry — capture env
 			qualityRetryEnv = make(map[string]string, len(env))
 			for k, v := range env {
@@ -3009,9 +3030,9 @@ func TestProcessIssue_QualityRetryHasNoSessionID(t *testing.T) {
 			out := `{"session_id":"sess-qual-retry","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 4: // quality reviewer — approves after retry
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer — approves
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -3047,9 +3068,9 @@ func TestProcessIssue_FunctionalRetryHasSessionID(t *testing.T) {
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 2: // quality reviewer — approves
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		case 3: // functional reviewer — requests changes
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 4: // functional retry — capture env
 			functionalRetryEnv = make(map[string]string, len(env))
 			for k, v := range env {
@@ -3058,7 +3079,7 @@ func TestProcessIssue_FunctionalRetryHasSessionID(t *testing.T) {
 			out := `{"session_id":"sess-func-retry","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		default: // functional reviewer — approves after retry
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -3097,14 +3118,14 @@ func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
 			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 3: // quality retry — returns its own session ID
 			out := `{"session_id":"sess-qual-retry","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		case 4: // quality reviewer — approves
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		case 5: // functional reviewer — requests changes
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 6: // functional retry — capture env; should have quality retry's session ID
 			functionalRetryEnv = make(map[string]string, len(env))
 			for k, v := range env {
@@ -3113,7 +3134,7 @@ func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
 			out := `{"session_id":"sess-func-retry","result":"ok","cost_usd":0,"is_error":false}`
 			return []byte(out), []byte(""), 0, nil
 		default: // functional reviewer — approves
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -3181,8 +3202,8 @@ func TestProcessIssue_NoneModeLabelsAwaitingReview(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, standardLoopGuard())
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -3231,8 +3252,8 @@ func TestProcessIssue_LowRiskMode_HighRiskLabelsAwaitingReview(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, standardLoopGuard())
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -3284,14 +3305,14 @@ func TestProcessIssue_LowRiskMode_LowRiskMerges(t *testing.T) {
 		Runner = origRunner
 		GuardRunner = origGuard
 	})
-	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nREVIEW_RESULT=APPROVED\n", []string{"Read pr diff"})
+	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nAGENT_RESULT=APPROVED\n", []string{"Read pr diff"})
 	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer
 			return []byte(reviewerOut), []byte(""), 0, nil
 		}
@@ -3355,8 +3376,8 @@ func TestProcessIssue_LowRiskMode_ProtectedPathLabels(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, standardLoopGuard())
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -3407,14 +3428,14 @@ func TestProcessIssue_LowRiskMode_RiskAssessmentWritten(t *testing.T) {
 		Runner = origRunner
 		GuardRunner = origGuard
 	})
-	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nREVIEW_RESULT=APPROVED\n", []string{"Read pr diff"})
+	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nAGENT_RESULT=APPROVED\n", []string{"Read pr diff"})
 	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		callIdx++
 		switch callIdx {
 		case 1:
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2:
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default:
 			return []byte(reviewerOut), []byte(""), 0, nil
 		}
@@ -3455,8 +3476,8 @@ func TestProcessIssue_AllMode_IgnoresRisk(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -3495,8 +3516,8 @@ func TestProcessIssue_AllModeSkipsLifecycleLabel(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, standardLoopGuard())
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -3520,8 +3541,8 @@ func TestProcessIssue_MergeRemovesLifecycleLabels(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"reviewer output\nREVIEW_RESULT=APPROVED\n",
+		"AGENT_RESULT=APPROVED",
+		"reviewer output\nAGENT_RESULT=APPROVED\n",
 	}, standardLoopGuard())
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -3563,8 +3584,8 @@ func TestProcessIssue_FunctionalEscalationLabelsAwaitingReview(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 	}, standardLoopGuard())
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -3594,7 +3615,7 @@ func TestProcessIssue_QualityEscalationLabelsAwaitingReview(t *testing.T) {
 
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 	}, standardLoopGuard())
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -3655,13 +3676,13 @@ func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
 		case 1: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 3: // retry agent
 			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
 		case 4: // quality reviewer — approves after retry+verify
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -3722,7 +3743,7 @@ func TestProcessIssue_VerifyBlockingFailsAfterQualityGateRetry(t *testing.T) {
 		case 1: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		default: // retry agent
 			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
 		}
@@ -3778,13 +3799,13 @@ func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing
 		case 1: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
 		case 3: // retry agent
 			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
 		case 4: // quality reviewer — approves (verify non-blocking, so we get here)
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -3820,9 +3841,9 @@ func TestProcessIssue_ReconRunsBeforeImplement(t *testing.T) {
 		case 2: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -3870,9 +3891,9 @@ func TestProcessIssue_ReconOutputPassedToImplementer(t *testing.T) {
 			implementerPrompt = env["GODARK_PROMPT"]
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -3914,9 +3935,9 @@ func TestProcessIssue_ReconFailureNonBlocking(t *testing.T) {
 			implementerPrompt = env["GODARK_PROMPT"]
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -4020,9 +4041,9 @@ func TestProcessIssue_ReconSkippedWhenUnconfigured(t *testing.T) {
 		case 1: // implementer
 			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil
 		case 2: // quality reviewer
-			return []byte(wrapRunnerJSON("QUALITY_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("REVIEW_RESULT=APPROVED")), []byte(""), 0, nil
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
 		}
 	}
 
@@ -4187,10 +4208,10 @@ func TestProcessIssue_ResumeOnAttempt0WithMaxResumeRetries2(t *testing.T) {
 	// Agent outputs: implementer, quality(APPROVED), reviewer(CHANGES), retry, reviewer(APPROVED)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, handoffTrackingGuard(&handoffCallCount))
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -4214,14 +4235,14 @@ func TestProcessIssue_FreshOnAttempt2WithMaxResumeRetries2(t *testing.T) {
 	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×3, retry×3, review(APPROVED)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 1",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 2",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 3",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -4265,12 +4286,12 @@ func TestProcessIssue_AllFreshWithMaxResumeRetries0(t *testing.T) {
 	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×2, retry×2, review(APPROVED)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 1",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 2",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -4314,14 +4335,14 @@ func TestProcessIssue_AllResumeWithMaxResumeRetriesHigherThanMaxRetries(t *testi
 	// Agent outputs: implementer, quality(APPROVED), review(CHANGES)×3, retry×3, review(APPROVED)
 	setupLoopTest(t, []string{
 		"implementer output",
-		"QUALITY_RESULT=APPROVED",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 1",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 2",
-		"REVIEW_RESULT=CHANGES_REQUESTED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
 		"retry output 3",
-		"REVIEW_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
 	}, handoffTrackingGuard(&handoffCalled))
 
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
@@ -4331,5 +4352,336 @@ func TestProcessIssue_AllResumeWithMaxResumeRetriesHigherThanMaxRetries(t *testi
 	}
 	if handoffCalled != 0 {
 		t.Errorf("assembleHandoffContext called %d time(s) with MaxResumeRetries=10, expected all-resume mode (0 calls)", handoffCalled)
+	}
+}
+
+func TestHandleNonBlockingResult_Error(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := bufferLogger(&logBuf)
+
+	var hookStep rundata.StepResult
+	hookCalled := false
+	writeHook := func(step rundata.StepResult) error {
+		hookStep = step
+		hookCalled = true
+		return nil
+	}
+
+	result := handleNonBlockingResult(nil, fmt.Errorf("something went wrong"), "test-agent", logger, writeHook)
+
+	if result != "" {
+		t.Errorf("expected empty string on error, got %q", result)
+	}
+	if !hookCalled {
+		t.Error("expected writeHook to be called on error")
+	}
+	if hookStep.Error != "something went wrong" {
+		t.Errorf("hookStep.Error = %q, want %q", hookStep.Error, "something went wrong")
+	}
+	if !strings.Contains(logBuf.String(), "test-agent failed, continuing") {
+		t.Errorf("expected warning log for failure, got: %s", logBuf.String())
+	}
+}
+
+func TestHandleNonBlockingResult_Timeout(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := bufferLogger(&logBuf)
+
+	var hookStep rundata.StepResult
+	hookCalled := false
+	writeHook := func(step rundata.StepResult) error {
+		hookStep = step
+		hookCalled = true
+		return nil
+	}
+
+	r := &Result{TimedOut: true, ResultText: "ignored"}
+	result := handleNonBlockingResult(r, nil, "test-agent", logger, writeHook)
+
+	if result != "" {
+		t.Errorf("expected empty string on timeout, got %q", result)
+	}
+	if !hookCalled {
+		t.Error("expected writeHook to be called on timeout")
+	}
+	if hookStep.Error != "timed out" {
+		t.Errorf("hookStep.Error = %q, want %q", hookStep.Error, "timed out")
+	}
+	if !strings.Contains(logBuf.String(), "test-agent timed out, continuing") {
+		t.Errorf("expected timeout warning log, got: %s", logBuf.String())
+	}
+}
+
+func TestHandleNonBlockingResult_Success(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := bufferLogger(&logBuf)
+
+	var hookStep rundata.StepResult
+	hookCalled := false
+	writeHook := func(step rundata.StepResult) error {
+		hookStep = step
+		hookCalled = true
+		return nil
+	}
+
+	r := &Result{ResultText: "the brief", TimedOut: false}
+	result := handleNonBlockingResult(r, nil, "test-agent", logger, writeHook)
+
+	if result != "the brief" {
+		t.Errorf("expected result text %q, got %q", "the brief", result)
+	}
+	if !hookCalled {
+		t.Error("expected writeHook to be called on success")
+	}
+	if hookStep.Error != "" {
+		t.Errorf("hookStep.Error should be empty on success, got %q", hookStep.Error)
+	}
+}
+
+func TestHandleNonBlockingResult_NilHook(t *testing.T) {
+	logger := slog.Default()
+
+	// Should not panic with nil writeHook in any case.
+	result := handleNonBlockingResult(nil, fmt.Errorf("oops"), "test-agent", logger, nil)
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
+	}
+
+	r := &Result{TimedOut: true}
+	result = handleNonBlockingResult(r, nil, "test-agent", logger, nil)
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
+	}
+
+	r2 := &Result{ResultText: "ok"}
+	result = handleNonBlockingResult(r2, nil, "test-agent", logger, nil)
+	if result != "ok" {
+		t.Errorf("expected %q, got %q", "ok", result)
+	}
+}
+
+// qualityGuardFn is a minimal GuardRunner stub for runQualityReviewCycle tests.
+// It handles git rev-parse (baseSHA), git diff (drift check), gh pr view, and
+// gh pr comment without error.
+func qualityGuardFn(name string, args ...string) ([]byte, error) {
+	joined := strings.Join(args, " ")
+	if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+		return []byte("abc123\n"), nil
+	}
+	if name == "git" && strings.Contains(joined, "diff --name-only") {
+		return []byte("src/main.go\n"), nil // non-protected file → no drift
+	}
+	if name == "gh" && strings.Contains(joined, "pr view") {
+		return []byte(""), nil
+	}
+	if name == "gh" && strings.Contains(joined, "pr comment") {
+		return []byte(""), nil
+	}
+	return []byte(""), nil
+}
+
+// TestRunQualityReviewCycle_ApprovedFirstTry verifies that the cycle returns
+// (true, nil) when the quality reviewer approves on the first attempt.
+func TestRunQualityReviewCycle_ApprovedFirstTry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = qualityGuardFn
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
+	}
+
+	cfg := loopConfig()
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if !passed {
+		t.Errorf("passed = false, want true")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestRunQualityReviewCycle_ApprovedAfterRetry verifies that the cycle returns
+// (true, nil) after CHANGES_REQUESTED on the first attempt and APPROVED on
+// the second.
+func TestRunQualityReviewCycle_ApprovedAfterRetry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = qualityGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 2: // retry agent
+			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+		default: // quality reviewer — approves
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := loopConfig()
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if !passed {
+		t.Errorf("passed = false, want true")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestRunQualityReviewCycle_ExhaustsRetries verifies that the cycle returns
+// (false, nil) when all quality review attempts are exhausted without approval.
+func TestRunQualityReviewCycle_ExhaustsRetries(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = qualityGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		if callIdx%2 == 1 {
+			// quality reviewer — always requests changes
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		}
+		// retry agent
+		return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+	}
+
+	cfg := loopConfig()
+	cfg.MaxRetries = 1 // qualityMaxAttempts = 2
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if passed {
+		t.Errorf("passed = true, want false")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestRunQualityReviewCycle_DriftDuringQuality verifies that the cycle returns
+// (false, driftErr) when drift is detected after a quality-gate retry.
+func TestRunQualityReviewCycle_DriftDuringQuality(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		if callIdx == 1 {
+			// quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		}
+		// retry agent
+		return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+	}
+
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			// Return a protected file to trigger drift detection.
+			return []byte("CLAUDE.md\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") {
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	}
+
+	cfg := loopConfig()
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if passed {
+		t.Errorf("passed = true, want false")
+	}
+	if err == nil {
+		t.Errorf("err = nil, want drift error")
+	}
+	if !strings.Contains(err.Error(), "protected path drift") {
+		t.Errorf("err = %q, want to contain %q", err.Error(), "protected path drift")
 	}
 }

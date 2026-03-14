@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/phs/dark-factory/internal/harness/templates"
-	"github.com/phs/dark-factory/prompts"
 	"github.com/spf13/cobra"
 )
 
@@ -148,14 +147,7 @@ func writeNewProjectHarnessDocs(cmd *cobra.Command) error {
 		}
 	}
 
-	docFiles := []struct{ src, dest string }{
-		{"architecture.md", "docs/architecture.md"},
-		{"architecture.json", "docs/architecture.json"},
-		{"conventions.md", "docs/conventions.md"},
-		{"roadmap.md", "docs/ROADMAP.md"},
-	}
-
-	for _, f := range docFiles {
+	for _, f := range harnessDocFiles {
 		written, err := templates.WriteIfNotExists(f.src, f.dest)
 		if err != nil {
 			return err
@@ -167,25 +159,5 @@ func writeNewProjectHarnessDocs(cmd *cobra.Command) error {
 
 	// Prompt templates are always overwritten from prompts.FS (single source
 	// of truth), matching the behavior of godark init.
-	promptFiles := []struct{ name, dest string }{
-		{"implementer.txt", "prompts/implementer.txt"},
-		{"implementer_retry.txt", "prompts/implementer_retry.txt"},
-		{"reviewer.txt", "prompts/reviewer.txt"},
-	}
-
-	for _, f := range promptFiles {
-		data, err := prompts.FS.ReadFile(f.name)
-		if err != nil {
-			return fmt.Errorf("reading embedded prompt %s: %w", f.name, err)
-		}
-		if err := os.MkdirAll(filepath.Dir(f.dest), 0o755); err != nil {
-			return fmt.Errorf("creating directory for %s: %w", f.dest, err)
-		}
-		if err := os.WriteFile(f.dest, data, 0o644); err != nil {
-			return fmt.Errorf("writing %s: %w", f.dest, err)
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", f.dest)
-	}
-
-	return nil
+	return writeHarnessPrompts(cmd)
 }

@@ -14,6 +14,10 @@ import (
 func GenerateSpec(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
 	data := newPromptData(issue, cfg, slug)
+	// spec_generator uses narrower ScenarioDir wording ("existing files") to allow
+	// creating new files inside ScenarioDir. Exclude the broad ScenarioDir bullet from
+	// SharedRules to avoid contradicting that agent-specific rule.
+	data.SharedRules = buildSharedRules(data.ProtectedPaths, "")
 
 	rendered, err := RenderPrompt(prompts.SpecGenerator, data)
 	if err != nil {

@@ -557,13 +557,13 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 func issueStatusLabelAndClass(issue rundata.IssueDetail) (label, class string) {
 	// Final outcomes take precedence over live status.
 	switch issue.Outcome.Status {
-	case "implemented":
+	case rundata.OutcomeStatusImplemented:
 		return "Implemented", "success"
-	case "ready-to-merge":
+	case rundata.OutcomeStatusReadyToMerge:
 		return "Ready to Merge", "success"
-	case "needs-human-review":
+	case rundata.OutcomeStatusNeedsHumanReview:
 		return "Needs Human Review", "warning"
-	case "failed":
+	case rundata.OutcomeStatusFailed:
 		return "Failed", "danger"
 	}
 
@@ -631,10 +631,8 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 	verdictClass := "neutral"
 	markerClass := "neutral"
 
-	approved := strings.Contains(step.Output, "QUALITY_RESULT=APPROVED") ||
-		strings.Contains(step.Output, "REVIEW_RESULT=APPROVED")
-	changesRequested := strings.Contains(step.Output, "QUALITY_RESULT=CHANGES_REQUESTED") ||
-		strings.Contains(step.Output, "REVIEW_RESULT=CHANGES_REQUESTED")
+	approved := strings.Contains(step.Output, "AGENT_RESULT=APPROVED")
+	changesRequested := strings.Contains(step.Output, "AGENT_RESULT=CHANGES_REQUESTED")
 
 	switch {
 	case step.Error != "":

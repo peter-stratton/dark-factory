@@ -37,9 +37,7 @@ Steps:
 {{- end}}
 
 CRITICAL RULES:
-- Do NOT modify any protected paths: {{.ProtectedPaths}}
-- Do NOT modify files in {{.ScenarioDir}}
-{{- if .GeneratedPaths}}
+{{.SharedRules}}{{- if .GeneratedPaths -}}
 - Do NOT edit generated files directly ({{.GeneratedPaths}}); edit source files or re-run code generation instead
 {{- end}}
 {{- if .HasScenarioSpec}}
@@ -54,9 +52,9 @@ criteria check, architecture compliance) to your output — even if you also pos
 a PR comment. This analysis is captured for operational review in the run dashboard.
 
 - If ALL tests pass and the implementation meets acceptance criteria:
-  Delete the {{.ReviewDir}} directory, approve the PR, and print REVIEW_RESULT=APPROVED
+  Delete the {{.ReviewDir}} directory, approve the PR, and print AGENT_RESULT=APPROVED
 - If ANY tests fail or acceptance criteria are not met:
-  Delete the {{.ReviewDir}} directory, request changes on the PR with specific feedback, and print REVIEW_RESULT=CHANGES_REQUESTED
+  Delete the {{.ReviewDir}} directory, request changes on the PR with specific feedback, and print AGENT_RESULT=CHANGES_REQUESTED
 
 ALWAYS post a PR comment with the following format, regardless of your verdict.
 This comment is required for the dialogue trail visible in the run dashboard.
@@ -89,5 +87,5 @@ scenario it violates.
 After posting the comment, print your verdict.
 
 CRITICAL: You MUST print exactly one of these lines:
-  REVIEW_RESULT=APPROVED
-  REVIEW_RESULT=CHANGES_REQUESTED
+  AGENT_RESULT=APPROVED
+  AGENT_RESULT=CHANGES_REQUESTED

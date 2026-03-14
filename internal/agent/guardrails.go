@@ -6,14 +6,16 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	gexec "github.com/phs/dark-factory/internal/exec"
+	"github.com/phs/dark-factory/internal/mdutil"
 )
 
 // GuardRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var GuardRunner = func(name string, args ...string) ([]byte, error) {
+var GuardRunner gexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
@@ -111,24 +113,10 @@ func ClosePR(repo string, prNum int, reason string) error {
 	return nil
 }
 
-// ParseReviewResult scans the agent stdout for a REVIEW_RESULT line and
+// ParseReviewResult scans the agent stdout for an AGENT_RESULT line and
 // returns "APPROVED", "CHANGES_REQUESTED", or "" if not found.
 func ParseReviewResult(stdout string) string {
-	upper := strings.ToUpper(stdout)
-	for _, line := range strings.Split(upper, "\n") {
-		line = strings.TrimSpace(line)
-		// Accept both "REVIEW_RESULT=APPROVED" and "REVIEW RESULT: APPROVED" etc.
-		if strings.Contains(line, "APPROVED") && strings.Contains(line, "REVIEW") && strings.Contains(line, "RESULT") {
-			if strings.Contains(line, "CHANGES") {
-				return "CHANGES_REQUESTED"
-			}
-			return "APPROVED"
-		}
-		if strings.Contains(line, "CHANGES_REQUESTED") && strings.Contains(line, "REVIEW") {
-			return "CHANGES_REQUESTED"
-		}
-	}
-	return ""
+	return ParseVerdict(stdout, "AGENT")
 }
 
 // HasScenarioSpec returns true if any .md file in scenarioDir (including
@@ -137,11 +125,8 @@ func HasScenarioSpec(scenarioDir string, issueNum int) bool {
 	ref := fmt.Sprintf("#%d", issueNum)
 
 	found := false
-	_ = filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || found {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+	_ = mdutil.WalkMarkdownFiles(scenarioDir, func(path string) error {
+		if found {
 			return nil
 		}
 		data, err := os.ReadFile(path)

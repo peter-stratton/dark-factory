@@ -2,20 +2,20 @@ package doctor
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // stubRunner returns a CommandRunner stub that succeeds for the listed
 // commands (identified by name+args[0] if any) and fails for all others.
-func stubRunner(pass ...string) func(context.Context, string, ...string) ([]byte, error) {
+func stubRunner(pass ...string) func(string, ...string) ([]byte, error) {
 	passSet := make(map[string]bool, len(pass))
 	for _, p := range pass {
 		passSet[p] = true
 	}
-	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return func(name string, args ...string) ([]byte, error) {
 		key := name
 		if len(args) > 0 {
 			key = name + " " + args[0]
@@ -283,5 +283,37 @@ func TestRuntimeVersionCmd(t *testing.T) {
 		if bin != tc.wantBin {
 			t.Errorf("runtimeVersionCmd(%q) bin = %q, want %q", tc.runtime, bin, tc.wantBin)
 		}
+	}
+}
+
+func TestRun_Timeout(t *testing.T) {
+	origTimeout := CheckTimeout
+	defer func() { CheckTimeout = origTimeout }()
+	CheckTimeout = 50 * time.Millisecond
+
+	// A check that blocks indefinitely.
+	block := make(chan struct{})
+	checks := []*Check{
+		{
+			Name: "blocking check",
+			Fix:  "unblock it",
+			run: func() bool {
+				<-block // never returns
+				return true
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	passed := Run(&buf, checks)
+
+	close(block) // allow goroutine to exit after test
+
+	if passed {
+		t.Error("expected Run to return false on timeout")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[FAIL] blocking check") {
+		t.Errorf("expected blocking check to be reported as FAIL, got:\n%s", out)
 	}
 }

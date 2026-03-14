@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
+	darkexec "github.com/phs/dark-factory/internal/exec"
 	"gopkg.in/yaml.v3"
 )
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(name string, args ...string) ([]byte, error) {
+var CommandRunner darkexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
@@ -111,15 +112,71 @@ type RiskThresholds struct {
 	MaxFiles int `yaml:"max_files"`
 }
 
+// TruncationLimits holds the maximum byte counts used when truncating
+// agent outputs before embedding them in prompts. Defaults are applied
+// in defaults() so usage sites never need to check for zero values.
+type TruncationLimits struct {
+	// VerifyOutput is the maximum number of bytes kept from combined
+	// stdout+stderr of a verify command. Default: 4096.
+	VerifyOutput int `yaml:"verify_output"`
+	// PRDiff is the maximum number of bytes included from a PR diff.
+	// Default: 30000.
+	PRDiff int `yaml:"pr_diff"`
+}
+
+// FeatureMergeStrategy controls whether and how the feature branch is merged
+// into the base branch after a successful review cycle.
+type FeatureMergeStrategy string
+
+const (
+	// MergeNone disables automatic feature-branch merging.
+	MergeNone FeatureMergeStrategy = "none"
+	// MergeLowRisk merges automatically only when the risk classifier deems
+	// the PR low-risk.
+	MergeLowRisk FeatureMergeStrategy = "low_risk"
+	// MergeAll merges automatically regardless of risk.
+	MergeAll FeatureMergeStrategy = "all"
+)
+
+// Valid reports whether s is a recognized FeatureMergeStrategy value.
+func (s FeatureMergeStrategy) Valid() bool {
+	switch s {
+	case MergeNone, MergeLowRisk, MergeAll:
+		return true
+	}
+	return false
+}
+
+// RollupMergeStrategy controls what happens to the base branch after a run
+// completes (base branch → default branch rollup PR).
+type RollupMergeStrategy string
+
+const (
+	// RollupNone disables rollup PR creation.
+	RollupNone RollupMergeStrategy = "none"
+	// RollupManual creates a rollup PR but leaves it open for human review.
+	RollupManual RollupMergeStrategy = "manual"
+	// RollupAuto creates and immediately merges the rollup PR.
+	RollupAuto RollupMergeStrategy = "auto"
+)
+
+// Valid reports whether s is a recognized RollupMergeStrategy value.
+func (s RollupMergeStrategy) Valid() bool {
+	switch s {
+	case RollupNone, RollupManual, RollupAuto:
+		return true
+	}
+	return false
+}
+
 // AutoMerge holds independent merge-strategy controls for the two merge
 // points introduced by configurable base branches.
 type AutoMerge struct {
 	// Feature controls merging of the feature branch into the base branch.
-	// Valid values: "none", "low_risk", "all".
-	Feature string `yaml:"feature"`
+	Feature FeatureMergeStrategy `yaml:"feature"`
 	// Rollup controls what happens to the base branch → default branch after
-	// a run completes. Valid values: "none", "manual", "auto".
-	Rollup string `yaml:"rollup"`
+	// a run completes.
+	Rollup RollupMergeStrategy `yaml:"rollup"`
 }
 
 // Config holds all configuration for a godark run.
@@ -173,10 +230,11 @@ type Config struct {
 	// Valid values: "oauth" (default) or "api_key".
 	AuthPreference string `yaml:"auth_preference"`
 
-	Docker  Docker  `yaml:"docker"`
-	Prompts Prompts `yaml:"prompts"`
-	Quality Quality `yaml:"quality"`
-	Verify  Verify  `yaml:"verify"`
+	Docker      Docker           `yaml:"docker"`
+	Prompts     Prompts          `yaml:"prompts"`
+	Quality     Quality          `yaml:"quality"`
+	Verify      Verify           `yaml:"verify"`
+	Truncation  TruncationLimits `yaml:"truncation"`
 
 	// Modules maps module names to per-module build/test/lint/generate commands
 	// and dependency relationships. Nil (absent) means single-module mode.
@@ -295,7 +353,7 @@ func defaults() *Config {
 		MaxRetries:        3,
 		MaxResumeRetries:  2,
 		MaxRebaseAttempts: 1,
-		AutoMerge:      AutoMerge{Feature: "none", Rollup: "none"},
+		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupNone},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},
 		DeniedCommands: []string{
@@ -317,6 +375,10 @@ func defaults() *Config {
 			MaxFixAttempts: 2,
 			Blocking:       true,
 		},
+		Truncation: TruncationLimits{
+			VerifyOutput: 4096,
+			PRDiff:       30000,
+		},
 	}
 }
 
@@ -331,10 +393,10 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 		cfg.NoSandbox = *flags.NoSandbox
 	}
 	if flags.AutoMergeFeature != nil {
-		cfg.AutoMerge.Feature = *flags.AutoMergeFeature
+		cfg.AutoMerge.Feature = FeatureMergeStrategy(*flags.AutoMergeFeature)
 	}
 	if flags.AutoMergeRollup != nil {
-		cfg.AutoMerge.Rollup = *flags.AutoMergeRollup
+		cfg.AutoMerge.Rollup = RollupMergeStrategy(*flags.AutoMergeRollup)
 	}
 	if flags.BaseBranch != nil {
 		cfg.BaseBranch = *flags.BaseBranch
@@ -354,16 +416,10 @@ func validate(cfg *Config) error {
 	default:
 		return fmt.Errorf("auth_preference must be \"oauth\" or \"api_key\", got %q", cfg.AuthPreference)
 	}
-	switch cfg.AutoMerge.Feature {
-	case "none", "low_risk", "all":
-		// valid
-	default:
+	if !cfg.AutoMerge.Feature.Valid() {
 		return fmt.Errorf("auto_merge.feature must be \"none\", \"low_risk\", or \"all\", got %q", cfg.AutoMerge.Feature)
 	}
-	switch cfg.AutoMerge.Rollup {
-	case "none", "manual", "auto":
-		// valid
-	default:
+	if !cfg.AutoMerge.Rollup.Valid() {
 		return fmt.Errorf("auto_merge.rollup must be \"none\", \"manual\", or \"auto\", got %q", cfg.AutoMerge.Rollup)
 	}
 	if err := validateModules(cfg.Modules); err != nil {
@@ -376,6 +432,9 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if err := validateRiskThresholds(cfg.RiskThresholds); err != nil {
+		return err
+	}
+	if err := validateTruncationLimits(cfg.Truncation); err != nil {
 		return err
 	}
 	if err := validateNotify(cfg.Notify); err != nil {
@@ -515,6 +574,17 @@ func expandNotifySettings(cfg *Config) {
 		}
 		cfg.Notify[i].Settings = expanded
 	}
+}
+
+// validateTruncationLimits ensures TruncationLimits fields are positive.
+func validateTruncationLimits(t TruncationLimits) error {
+	if t.VerifyOutput <= 0 {
+		return fmt.Errorf("truncation.verify_output must be a positive integer, got %d", t.VerifyOutput)
+	}
+	if t.PRDiff <= 0 {
+		return fmt.Errorf("truncation.pr_diff must be a positive integer, got %d", t.PRDiff)
+	}
+	return nil
 }
 
 // validateNotify checks that every provider name and event name in the notify

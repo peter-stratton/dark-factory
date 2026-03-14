@@ -65,8 +65,8 @@ violates (security, performance, idiom, or code craft).
 After posting the comment, print your verdict.
 
 CRITICAL: You MUST print exactly one of these lines:
-  QUALITY_RESULT=APPROVED
-  QUALITY_RESULT=CHANGES_REQUESTED
+  AGENT_RESULT=APPROVED
+  AGENT_RESULT=CHANGES_REQUESTED
 {{if .StrictnessDirective}}
 {{.StrictnessDirective}}
 {{end}}

@@ -131,6 +131,7 @@ func BranchName(issueNumber int, slug string) string {
 }
 
 func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptData {
+	protectedPaths := strings.Join(cfg.ProtectedPaths, ", ")
 	return PromptData{
 		IssueNumber:            issue.Number,
 		IssueTitle:             issue.Title,
@@ -139,7 +140,7 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		Repo:                   cfg.Repo,
 		BuildCommand:           cfg.BuildCommand,
 		TestCommand:            cfg.TestCommand,
-		ProtectedPaths:         strings.Join(cfg.ProtectedPaths, ", "),
+		ProtectedPaths:         protectedPaths,
 		GeneratedPaths:         strings.Join(cfg.GeneratedPaths, ", "),
 		ScenarioDir:            cfg.ScenarioDir,
 		ReviewDir:              cfg.ReviewDir,
@@ -150,7 +151,27 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ConventionsDocContent:  readFileOrEmpty(cfg.ConventionsDoc),
 		ModuleContext:          buildModuleContext(cfg.Modules),
 		BaseBranch:             cfg.BaseBranch,
+		SharedRules:            buildSharedRules(protectedPaths, cfg.ScenarioDir),
 	}
+}
+
+// buildSharedRules assembles the universally shared subset of CRITICAL RULES
+// that appears in every agent prompt: protected path protection and scenario
+// directory protection. Each present rule is a bullet terminated by a newline.
+// Returns an empty string when neither ProtectedPaths nor ScenarioDir is set.
+func buildSharedRules(protectedPaths, scenarioDir string) string {
+	var sb strings.Builder
+	if protectedPaths != "" {
+		sb.WriteString("- Do NOT modify any protected paths: ")
+		sb.WriteString(protectedPaths)
+		sb.WriteString("\n")
+	}
+	if scenarioDir != "" {
+		sb.WriteString("- Do NOT modify files in ")
+		sb.WriteString(scenarioDir)
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // buildModuleContext renders a human-readable summary of configured modules

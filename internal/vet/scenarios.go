@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/mdutil"
 	"github.com/phs/dark-factory/internal/patterns"
 )
 
@@ -21,13 +22,8 @@ func ValidateScenarios(scenarioDir string, milestoneIssues []github.Issue, allIs
 	r := &Report{}
 
 	var files []string
-	err := filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".md") {
-			files = append(files, path)
-		}
+	err := mdutil.WalkMarkdownFiles(scenarioDir, func(path string) error {
+		files = append(files, path)
 		return nil
 	})
 	if err != nil {

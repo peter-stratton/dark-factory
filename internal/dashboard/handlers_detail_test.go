@@ -786,7 +786,7 @@ func TestServer_IssueDetail_ToolTraceSection(t *testing.T) {
 		rundata.Outcome{IssueNumber: 6, Status: "implemented"})
 	writeJSON(t, filepath.Join(issueDir, "functional-review.json"),
 		rundata.StepResult{
-			Output:          "REVIEW_RESULT=APPROVED",
+			Output:          "AGENT_RESULT=APPROVED",
 			ToolTrace:       []string{"Read src/main.go", "Write tests/review/test_main.go", "go test ./..."},
 			DurationSeconds: 15,
 		})
@@ -848,13 +848,13 @@ func TestServer_IssueDetail_RetryFunctionalReviewInTimeline(t *testing.T) {
 		t.Fatalf("creating retry dir: %v", err)
 	}
 	writeJSON(t, filepath.Join(retryDir, "functional-review.json"),
-		rundata.StepResult{Output: "REVIEW_RESULT=CHANGES_REQUESTED", DurationSeconds: 8})
+		rundata.StepResult{Output: "AGENT_RESULT=CHANGES_REQUESTED", DurationSeconds: 8})
 	writeJSON(t, filepath.Join(retryDir, "retry.json"),
 		rundata.StepResult{Output: "retry output", DurationSeconds: 25})
 
 	// Final functional review (APPROVED)
 	writeJSON(t, filepath.Join(issueDir, "functional-review.json"),
-		rundata.StepResult{Output: "REVIEW_RESULT=APPROVED", DurationSeconds: 7})
+		rundata.StepResult{Output: "AGENT_RESULT=APPROVED", DurationSeconds: 7})
 
 	srv := newServer(t, tmpDir)
 	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/15", nil)
@@ -874,9 +874,9 @@ func TestServer_IssueDetail_RetryFunctionalReviewInTimeline(t *testing.T) {
 	}
 
 	// The pre-retry functional review (Changes Requested) should appear before Retry 1.
-	idxFR := strings.Index(body, "REVIEW_RESULT=CHANGES_REQUESTED")
+	idxFR := strings.Index(body, "AGENT_RESULT=CHANGES_REQUESTED")
 	idxRetry := strings.Index(body, "retry output")
-	idxFinal := strings.Index(body, "REVIEW_RESULT=APPROVED")
+	idxFinal := strings.Index(body, "AGENT_RESULT=APPROVED")
 
 	if idxFR < 0 {
 		t.Error("body missing pre-retry functional review output")

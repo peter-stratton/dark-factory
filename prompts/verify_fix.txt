@@ -13,8 +13,7 @@ Steps to fix:
 3. Fix the issues in the code — do not re-run the checks yourself; dark-factory will re-verify after you push
 
 CRITICAL RULES:
-- Do NOT modify any protected paths: {{.ProtectedPaths}}
-- Push to the existing PR branch — do not open a new PR
+{{.SharedRules}}- Push to the existing PR branch — do not open a new PR
 
 After fixing:
 1. Commit your fixes with a message referencing the PR (e.g. "Fix verify failures on PR #{{.PRNumber}}")

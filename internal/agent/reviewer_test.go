@@ -7,7 +7,7 @@ import (
 
 func TestReview_ReturnsVerdict(t *testing.T) {
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		out := `{"session_id":"","result":"output\nREVIEW_RESULT=APPROVED\nmore output","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"output\nAGENT_RESULT=APPROVED\nmore output","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -22,7 +22,7 @@ func TestReview_ReturnsVerdict(t *testing.T) {
 
 func TestReview_ChangesRequested(t *testing.T) {
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		out := `{"session_id":"","result":"REVIEW_RESULT=CHANGES_REQUESTED\n","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=CHANGES_REQUESTED\n","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -39,7 +39,7 @@ func TestReview_SetsReviewerRole(t *testing.T) {
 	var capturedEnv map[string]string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedEnv = env
-		return []byte("REVIEW_RESULT=APPROVED\n"), []byte(""), 0, nil
+		return []byte("AGENT_RESULT=APPROVED\n"), []byte(""), 0, nil
 	})
 
 	_, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
@@ -85,7 +85,7 @@ func TestReview_StructuredVerdictChangesRequested(t *testing.T) {
 func TestReview_NoStructuredVerdict_FallsBackToStdout(t *testing.T) {
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		// No verdict field in JSON; result text contains the sentinel.
-		out := `{"session_id":"","result":"REVIEW_RESULT=APPROVED\n","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED\n","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 

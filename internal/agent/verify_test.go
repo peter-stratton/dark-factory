@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
@@ -24,7 +25,7 @@ func TestRunVerify_AllPass(t *testing.T) {
 	}
 	run := makeRunner(0, "ok", "")
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Errorf("AllPassed = false, want true")
@@ -55,7 +56,7 @@ func TestRunVerify_BuildFails(t *testing.T) {
 		{Name: "test", Command: "go test ./..."},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if result.AllPassed {
 		t.Errorf("AllPassed = true, want false")
@@ -90,7 +91,7 @@ func TestRunVerify_LintFails(t *testing.T) {
 		{Name: "test", Command: "go test ./..."},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if result.AllPassed {
 		t.Errorf("AllPassed = true, want false")
@@ -122,7 +123,7 @@ func TestRunVerify_EmptyCommandSkipped(t *testing.T) {
 		{Name: "test", Command: "go test ./..."},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Errorf("AllPassed = false, want true")
@@ -153,7 +154,7 @@ func TestRunVerify_AllEmptyCommands(t *testing.T) {
 		{Name: "test", Command: ""},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Errorf("AllPassed = false, want true when all commands empty")
@@ -177,7 +178,7 @@ func TestRunVerify_OutputTruncation(t *testing.T) {
 		{Name: "build", Command: "go build ./..."},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Errorf("AllPassed = false, want true")
@@ -187,11 +188,11 @@ func TestRunVerify_OutputTruncation(t *testing.T) {
 	}
 
 	got := result.Checks[0].Output
-	if len(got) != verifyOutputLimit {
-		t.Errorf("Output length = %d, want %d", len(got), verifyOutputLimit)
+	if len(got) != 4096 {
+		t.Errorf("Output length = %d, want %d", len(got), 4096)
 	}
 	// The tail of the big output should be all 'x'.
-	if got != strings.Repeat("x", verifyOutputLimit) {
+	if got != strings.Repeat("x", 4096) {
 		t.Errorf("Output is not the tail of the big output")
 	}
 }
@@ -205,7 +206,7 @@ func TestRunVerify_OutputCombinesStdoutAndStderr(t *testing.T) {
 		{Name: "build", Command: "go build ./..."},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if len(result.Checks) != 1 {
 		t.Fatalf("len(Checks) = %d, want 1", len(result.Checks))
@@ -244,7 +245,7 @@ func TestRunVerify_ContextCancellation(t *testing.T) {
 		{Name: "test", Command: "go test ./..."},
 	}
 
-	result := RunVerify(ctx, checks, run)
+	result := RunVerify(ctx, checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	// First check passed; second was cancelled (non-zero exit or err) so we stopped.
 	// Results so far are returned.
@@ -265,7 +266,7 @@ func TestRunVerify_ExitCodeRecordedInResult(t *testing.T) {
 		{Name: "build", Command: "go build ./..."},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if len(result.Checks) != 1 {
 		t.Fatalf("len(Checks) = %d, want 1", len(result.Checks))
@@ -285,7 +286,7 @@ func TestRunVerify_NoChecks(t *testing.T) {
 		return nil, nil, 0, nil
 	}
 
-	result := RunVerify(context.Background(), nil, run)
+	result := RunVerify(context.Background(), nil, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Errorf("AllPassed = false, want true for empty checks")
@@ -295,6 +296,22 @@ func TestRunVerify_NoChecks(t *testing.T) {
 	}
 	if calledCount != 0 {
 		t.Errorf("runner called %d times, want 0", calledCount)
+	}
+}
+
+func TestRunVerify_CustomOutputLimit(t *testing.T) {
+	const customLimit = 100
+	bigOutput := strings.Repeat("x", 5000)
+	run := makeRunner(0, bigOutput, "")
+	checks := []Check{{Name: "build", Command: "go build ./..."}}
+
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: customLimit})
+
+	if len(result.Checks) != 1 {
+		t.Fatalf("len(Checks) = %d, want 1", len(result.Checks))
+	}
+	if len(result.Checks[0].Output) != customLimit {
+		t.Errorf("Output length = %d, want %d (custom limit)", len(result.Checks[0].Output), customLimit)
 	}
 }
 
@@ -308,7 +325,7 @@ func TestRunVerify_OutputWithinLimitNotTruncated(t *testing.T) {
 		{Name: "build", Command: "go build ./..."},
 	}
 
-	result := RunVerify(context.Background(), checks, run)
+	result := RunVerify(context.Background(), checks, run, config.TruncationLimits{VerifyOutput: 4096})
 
 	if result.Checks[0].Output != smallOutput {
 		t.Errorf("Output = %q, want %q (should not be truncated)", result.Checks[0].Output, smallOutput)
@@ -522,7 +539,7 @@ func TestSandboxCommandRunner_CheckIsPassedWhenExitZero(t *testing.T) {
 
 	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
 	checks := []Check{{Name: "build", Command: "go build ./..."}}
-	result := RunVerify(context.Background(), checks, runner)
+	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
 	if !result.AllPassed {
 		t.Errorf("AllPassed = false, want true for exit code 0")
@@ -536,7 +553,7 @@ func TestSandboxCommandRunner_CheckFailsWhenExitNonZero(t *testing.T) {
 
 	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
 	checks := []Check{{Name: "build", Command: "go build ./..."}}
-	result := RunVerify(context.Background(), checks, runner)
+	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
 	if result.AllPassed {
 		t.Errorf("AllPassed = true, want false for non-zero exit code")

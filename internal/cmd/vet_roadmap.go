@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
 )
@@ -24,14 +23,9 @@ var vetRoadmapCmd = &cobra.Command{
 			return fmt.Errorf("--repo and either --milestone or --tag are required")
 		}
 
-		issues, err := github.FetchMilestoneIssues(repo, milestone)
+		issues, allNums, err := fetchVetData(repo, milestone)
 		if err != nil {
-			return fmt.Errorf("fetching milestone issues: %w", err)
-		}
-
-		allNums, err := github.FetchAllIssueNumbers(repo)
-		if err != nil {
-			return fmt.Errorf("fetching all issue numbers: %w", err)
+			return err
 		}
 
 		report := vet.ValidateRoadmap(planningDir, issues, milestone, allNums)

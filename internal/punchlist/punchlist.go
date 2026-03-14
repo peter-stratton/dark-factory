@@ -6,11 +6,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	gexec "github.com/phs/dark-factory/internal/exec"
+	"github.com/phs/dark-factory/internal/mdutil"
 )
 
 // CommandRunner executes a command and returns its combined output.
 // Replaceable for testing.
-var CommandRunner = func(name string, args ...string) ([]byte, error) {
+var CommandRunner gexec.CommandRunnerFunc = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
@@ -67,15 +70,9 @@ func FetchPRDiff(repo string, prNum int, maxLen int) (string, error) {
 func ReadScenarioSpec(scenarioDir string, issueNum int) (string, error) {
 	ref := fmt.Sprintf("#%d", issueNum)
 	var content string
-	err := filepath.WalkDir(scenarioDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	err := mdutil.WalkMarkdownFiles(scenarioDir, func(path string) error {
 		if content != "" {
 			return filepath.SkipAll
-		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
-			return nil
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -167,6 +164,17 @@ func (e Entry) ExtractScenarioCases() []string {
 	return extractScenarioCases(e.ScenarioSpec)
 }
 
+// extractPrefixedItem checks each prefix in order and returns the line with the
+// first matching prefix stripped. Returns ("", false) if no prefix matches.
+func extractPrefixedItem(line string, prefixes ...string) (string, bool) {
+	for _, p := range prefixes {
+		if strings.HasPrefix(line, p) {
+			return strings.TrimPrefix(line, p), true
+		}
+	}
+	return "", false
+}
+
 // extractVerificationSteps extracts manual verification items from an issue body.
 // It collects checkbox items (- [ ]) from anywhere in the body, plus plain
 // bullet points within test/acceptance/verification/cases section headers.
@@ -189,29 +197,15 @@ func extractVerificationSteps(body string) []string {
 		}
 
 		// Explicit checkboxes anywhere in the body.
-		if strings.HasPrefix(trimmed, "- [ ] ") || strings.HasPrefix(trimmed, "* [ ] ") {
-			var item string
-			if strings.HasPrefix(trimmed, "- [ ] ") {
-				item = strings.TrimPrefix(trimmed, "- [ ] ")
-			} else {
-				item = strings.TrimPrefix(trimmed, "* [ ] ")
-			}
+		if item, ok := extractPrefixedItem(trimmed, "- [ ] ", "* [ ] "); ok {
 			items = append(items, item)
 			continue
 		}
 
 		// Bullet points within test/acceptance sections.
 		if inTestSection {
-			if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
-				var item string
-				if strings.HasPrefix(trimmed, "- ") {
-					item = strings.TrimPrefix(trimmed, "- ")
-				} else {
-					item = strings.TrimPrefix(trimmed, "* ")
-				}
-				if item != "" {
-					items = append(items, item)
-				}
+			if item, ok := extractPrefixedItem(trimmed, "- ", "* "); ok && item != "" {
+				items = append(items, item)
 			}
 		}
 	}

@@ -29,8 +29,7 @@ Steps:
    challenge explicitly
 
 CRITICAL RULES:
-- Do NOT modify any protected paths: {{.ProtectedPaths}}
-- Do NOT modify files in {{.ScenarioDir}} or {{.ReviewDir}}
+{{.SharedRules}}- Do NOT modify files in {{.ReviewDir}}
 
 After fixing:
 {{- if .TestCommand}}

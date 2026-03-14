@@ -10,7 +10,7 @@ import (
 
 func TestQualityReview_ReturnsVerdict(t *testing.T) {
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		out := `{"session_id":"","result":"output\nQUALITY_RESULT=APPROVED\nmore output","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"output\nAGENT_RESULT=APPROVED\nmore output","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -25,7 +25,7 @@ func TestQualityReview_ReturnsVerdict(t *testing.T) {
 
 func TestQualityReview_ChangesRequested(t *testing.T) {
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		out := `{"session_id":"","result":"QUALITY_RESULT=CHANGES_REQUESTED\n","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=CHANGES_REQUESTED\n","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -42,7 +42,7 @@ func TestQualityReview_SetsQualityReviewerRole(t *testing.T) {
 	var capturedEnv map[string]string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedEnv = env
-		return []byte("QUALITY_RESULT=APPROVED\n"), []byte(""), 0, nil
+		return []byte("AGENT_RESULT=APPROVED\n"), []byte(""), 0, nil
 	})
 
 	_, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
@@ -67,27 +67,6 @@ func TestQualityReview_StructuredVerdict(t *testing.T) {
 	}
 	if result.Verdict != "APPROVED" {
 		t.Errorf("Verdict = %q, want %q", result.Verdict, "APPROVED")
-	}
-}
-
-func TestParseQualityResult_Approved(t *testing.T) {
-	got := ParseQualityResult("some output\nQUALITY_RESULT=APPROVED\nmore output")
-	if got != "APPROVED" {
-		t.Errorf("ParseQualityResult() = %q, want %q", got, "APPROVED")
-	}
-}
-
-func TestParseQualityResult_ChangesRequested(t *testing.T) {
-	got := ParseQualityResult("QUALITY_RESULT=CHANGES_REQUESTED\n")
-	if got != "CHANGES_REQUESTED" {
-		t.Errorf("ParseQualityResult() = %q, want %q", got, "CHANGES_REQUESTED")
-	}
-}
-
-func TestParseQualityResult_NoMatch(t *testing.T) {
-	got := ParseQualityResult("no sentinel here")
-	if got != "" {
-		t.Errorf("ParseQualityResult() = %q, want %q", got, "")
 	}
 }
 
@@ -161,7 +140,7 @@ func TestQualityReview_Cycle0NoDirectiveInPrompt(t *testing.T) {
 	var capturedPrompt string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedPrompt = env["GODARK_PROMPT"]
-		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -180,7 +159,7 @@ func TestQualityReview_Cycle1NarrowsScope(t *testing.T) {
 	var capturedPrompt string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedPrompt = env["GODARK_PROMPT"]
-		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -199,7 +178,7 @@ func TestQualityReview_FinalCycleSecurityOnly(t *testing.T) {
 	var capturedPrompt string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedPrompt = env["GODARK_PROMPT"]
-		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -221,7 +200,7 @@ func TestQualityReview_SingleAttemptNoDirective(t *testing.T) {
 	var capturedPrompt string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedPrompt = env["GODARK_PROMPT"]
-		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -240,7 +219,7 @@ func TestQualityReview_DecayDisabledNoDirective(t *testing.T) {
 	var capturedPrompt string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedPrompt = env["GODARK_PROMPT"]
-		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
@@ -261,7 +240,7 @@ func TestQualityReview_DirectiveAppendedNotReplaced(t *testing.T) {
 	var capturedPrompt string
 	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
 		capturedPrompt = env["GODARK_PROMPT"]
-		out := `{"session_id":"","result":"QUALITY_RESULT=APPROVED","cost_usd":0,"is_error":false}`
+		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
 		return []byte(out), []byte(""), 0, nil
 	})
 
