@@ -4459,3 +4459,229 @@ func TestHandleNonBlockingResult_NilHook(t *testing.T) {
 		t.Errorf("expected %q, got %q", "ok", result)
 	}
 }
+
+// qualityGuardFn is a minimal GuardRunner stub for runQualityReviewCycle tests.
+// It handles git rev-parse (baseSHA), git diff (drift check), gh pr view, and
+// gh pr comment without error.
+func qualityGuardFn(name string, args ...string) ([]byte, error) {
+	joined := strings.Join(args, " ")
+	if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+		return []byte("abc123\n"), nil
+	}
+	if name == "git" && strings.Contains(joined, "diff --name-only") {
+		return []byte("src/main.go\n"), nil // non-protected file → no drift
+	}
+	if name == "gh" && strings.Contains(joined, "pr view") {
+		return []byte(""), nil
+	}
+	if name == "gh" && strings.Contains(joined, "pr comment") {
+		return []byte(""), nil
+	}
+	return []byte(""), nil
+}
+
+// TestRunQualityReviewCycle_ApprovedFirstTry verifies that the cycle returns
+// (true, nil) when the quality reviewer approves on the first attempt.
+func TestRunQualityReviewCycle_ApprovedFirstTry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = qualityGuardFn
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
+	}
+
+	cfg := loopConfig()
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if !passed {
+		t.Errorf("passed = false, want true")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestRunQualityReviewCycle_ApprovedAfterRetry verifies that the cycle returns
+// (true, nil) after CHANGES_REQUESTED on the first attempt and APPROVED on
+// the second.
+func TestRunQualityReviewCycle_ApprovedAfterRetry(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = qualityGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		case 2: // retry agent
+			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+		default: // quality reviewer — approves
+			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil
+		}
+	}
+
+	cfg := loopConfig()
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if !passed {
+		t.Errorf("passed = false, want true")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestRunQualityReviewCycle_ExhaustsRetries verifies that the cycle returns
+// (false, nil) when all quality review attempts are exhausted without approval.
+func TestRunQualityReviewCycle_ExhaustsRetries(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = qualityGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		if callIdx%2 == 1 {
+			// quality reviewer — always requests changes
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		}
+		// retry agent
+		return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+	}
+
+	cfg := loopConfig()
+	cfg.MaxRetries = 1 // qualityMaxAttempts = 2
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if passed {
+		t.Errorf("passed = true, want false")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestRunQualityReviewCycle_DriftDuringQuality verifies that the cycle returns
+// (false, driftErr) when drift is detected after a quality-gate retry.
+func TestRunQualityReviewCycle_DriftDuringQuality(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		if callIdx == 1 {
+			// quality reviewer — requests changes
+			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil
+		}
+		// retry agent
+		return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil
+	}
+
+	GuardRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "git" && strings.Contains(joined, "diff --name-only") {
+			// Return a protected file to trigger drift detection.
+			return []byte("CLAUDE.md\n"), nil
+		}
+		if name == "gh" && strings.Contains(joined, "pr view") {
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	}
+
+	cfg := loopConfig()
+	sessionID := "sess-init"
+	fixCycles := 0
+	passed, err := runQualityReviewCycle(
+		context.Background(),
+		loopIssue(),
+		10,
+		"issue-5-test-issue",
+		"abc123",
+		cfg,
+		testPrompts(t),
+		nil,
+		testLogger(t),
+		nil,
+		&sessionID,
+		&fixCycles,
+	)
+
+	if passed {
+		t.Errorf("passed = true, want false")
+	}
+	if err == nil {
+		t.Errorf("err = nil, want drift error")
+	}
+	if !strings.Contains(err.Error(), "protected path drift") {
+		t.Errorf("err = %q, want to contain %q", err.Error(), "protected path drift")
+	}
+}

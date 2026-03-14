@@ -215,103 +215,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 	// Step 4: Quality review gate (if prompt is configured).
 	if prompts.QualityReviewer != "" {
-		qualityMaxAttempts := cfg.MaxRetries + 1
-		qualityPassed := false
-		for qAttempt := 0; qAttempt < qualityMaxAttempts; qAttempt++ {
-			if ctx.Err() != nil {
-				outcome.Status = StatusFailed
-				outcome.Err = ctx.Err()
-				return outcome
-			}
-
-			qResult, err := QualityReview(ctx, issue, prNum, cfg, prompts, authEnv, logger, qAttempt)
-			if err != nil {
-				outcome.Status = StatusFailed
-				outcome.Err = fmt.Errorf("quality reviewer agent: %w", err)
-				return outcome
-			}
-			// Quality reviewer is exempt from CheckReviewTestExecution.
-			qFlags := computeReviewFlags(qResult.AgentResult, cfg, false, false)
-			qRDFlags := logAndRecordFlags(qFlags, logger, issue.Number)
-			if hook != nil {
-				qStep := ResultToStep(qResult.AgentResult)
-				qStep.Flags = qRDFlags
-				if qAttempt == 0 {
-					if err := hook.WriteReviewResult(issue.Number, "quality", qStep); err != nil {
-						logger.Warn("failed to write quality review result", "error", err)
-					}
-				} else {
-					if err := hook.WriteRetryReviewResult(issue.Number, qAttempt-1, qStep); err != nil {
-						logger.Warn("failed to write retry review result", "error", err)
-					}
-				}
-			}
-
-			switch qResult.Verdict {
-			case "APPROVED":
-				qualityPassed = true
-			case "CHANGES_REQUESTED":
-				retriesLeft := qualityMaxAttempts - qAttempt - 1
-				if retriesLeft <= 0 {
-					break // exit loop, will label needs-human-review
-				}
-
-				logger.Info("quality review requested changes, retrying implementation",
-					"issue_number", issue.Number,
-					"attempt", qAttempt+1,
-					"retries_left", retriesLeft,
-				)
-
-				var qualityHandoff string
-				if shouldHandoff(qAttempt, cfg.MaxResumeRetries) {
-					qualityHandoff = assembleHandoffContext(cfg.Repo, prNum, logger)
-				}
-
-				retryResult, err := Retry(ctx, issue, prNum, "", "", qualityHandoff, cfg, prompts, authEnv, logger)
-				if err != nil {
-					outcome.Status = StatusFailed
-					outcome.Err = fmt.Errorf("retry agent (quality): %w", err)
-					return outcome
-				}
-				if retryResult.TimedOut {
-					outcome.Status = StatusFailed
-					outcome.Err = fmt.Errorf("retry agent (quality) timed out")
-					return outcome
-				}
-				if hook != nil {
-					if err := hook.WriteRetryResult(issue.Number, qAttempt, ResultToStep(retryResult)); err != nil {
-						logger.Warn("failed to write retry result", "error", err)
-					}
-				}
-
-				sessionID = retryResult.SessionID
-
-				if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-					outcome.Status = StatusFailed
-					outcome.Err = driftErr
-					return outcome
-				}
-
-				// Re-run verify after quality-gate retry so that changes introduced
-				// by the retry agent are caught before the next quality review cycle.
-				if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
-					outcome.Status = StatusFailed
-					outcome.Err = fmt.Errorf("verify after quality-gate retry: %w", verifyErr)
-					return outcome
-				}
-
-			default:
-				outcome.Status = StatusFailed
-				outcome.Err = fmt.Errorf("quality reviewer agent did not produce a verdict")
-				return outcome
-			}
-
-			if qualityPassed {
-				break
-			}
+		passed, err := runQualityReviewCycle(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles)
+		if err != nil {
+			outcome.Status = StatusFailed
+			outcome.Err = err
+			return outcome
 		}
-
-		if !qualityPassed {
+		if !passed {
+			qualityMaxAttempts := cfg.MaxRetries + 1
 			if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
 				logger.Warn("failed to label PR", "error", err)
 			}
@@ -921,6 +832,105 @@ func checkDriftAndClose(baseSHA string, cfg *config.Config, prNum int, logger *s
 // include full handoff context for the next run.
 func shouldHandoff(attempt int, maxResumeRetries int) bool {
 	return attempt >= maxResumeRetries
+}
+
+// runQualityReviewCycle runs the quality review loop for a single issue.
+// It calls QualityReview up to cfg.MaxRetries+1 times, invoking Retry and
+// runVerifyPhase on each CHANGES_REQUESTED verdict. Returns (true, nil) when
+// the quality reviewer approves, (false, nil) when all attempts are exhausted
+// without approval, and (false, err) on any hard failure (agent error, drift,
+// context cancellation). sessionID and fixCycles are updated in-place.
+func runQualityReviewCycle(
+	ctx context.Context,
+	issue github.Issue,
+	prNum int,
+	branch string,
+	baseSHA string,
+	cfg *config.Config,
+	prompts *Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	hook RunDataHook,
+	sessionID *string,
+	fixCycles *int,
+) (bool, error) {
+	qualityMaxAttempts := cfg.MaxRetries + 1
+	for qAttempt := 0; qAttempt < qualityMaxAttempts; qAttempt++ {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+
+		qResult, err := QualityReview(ctx, issue, prNum, cfg, prompts, authEnv, logger, qAttempt)
+		if err != nil {
+			return false, fmt.Errorf("quality reviewer agent: %w", err)
+		}
+		// Quality reviewer is exempt from CheckReviewTestExecution.
+		qFlags := computeReviewFlags(qResult.AgentResult, cfg, false, false)
+		qRDFlags := logAndRecordFlags(qFlags, logger, issue.Number)
+		if hook != nil {
+			qStep := ResultToStep(qResult.AgentResult)
+			qStep.Flags = qRDFlags
+			if qAttempt == 0 {
+				if err := hook.WriteReviewResult(issue.Number, "quality", qStep); err != nil {
+					logger.Warn("failed to write quality review result", "error", err)
+				}
+			} else {
+				if err := hook.WriteRetryReviewResult(issue.Number, qAttempt-1, qStep); err != nil {
+					logger.Warn("failed to write retry review result", "error", err)
+				}
+			}
+		}
+
+		switch qResult.Verdict {
+		case "APPROVED":
+			return true, nil
+		case "CHANGES_REQUESTED":
+			retriesLeft := qualityMaxAttempts - qAttempt - 1
+			if retriesLeft <= 0 {
+				return false, nil // exhausted — caller handles labeling
+			}
+
+			logger.Info("quality review requested changes, retrying implementation",
+				"issue_number", issue.Number,
+				"attempt", qAttempt+1,
+				"retries_left", retriesLeft,
+			)
+
+			var qualityHandoff string
+			if shouldHandoff(qAttempt, cfg.MaxResumeRetries) {
+				qualityHandoff = assembleHandoffContext(cfg.Repo, prNum, logger)
+			}
+
+			retryResult, err := Retry(ctx, issue, prNum, "", "", qualityHandoff, cfg, prompts, authEnv, logger)
+			if err != nil {
+				return false, fmt.Errorf("retry agent (quality): %w", err)
+			}
+			if retryResult.TimedOut {
+				return false, fmt.Errorf("retry agent (quality) timed out")
+			}
+			if hook != nil {
+				if err := hook.WriteRetryResult(issue.Number, qAttempt, ResultToStep(retryResult)); err != nil {
+					logger.Warn("failed to write retry result", "error", err)
+				}
+			}
+
+			*sessionID = retryResult.SessionID
+
+			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+				return false, driftErr
+			}
+
+			// Re-run verify after quality-gate retry so that changes introduced
+			// by the retry agent are caught before the next quality review cycle.
+			if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, sessionID, fixCycles); verifyErr != nil {
+				return false, fmt.Errorf("verify after quality-gate retry: %w", verifyErr)
+			}
+
+		default:
+			return false, fmt.Errorf("quality reviewer agent did not produce a verdict")
+		}
+	}
+	return false, nil
 }
 
 // topologicalSortModules returns module names sorted in dependency order
