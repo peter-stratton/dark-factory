@@ -17,6 +17,7 @@ import (
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/notify"
 	"github.com/phs/dark-factory/internal/orchestrator"
+	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/pypi"
 	"github.com/phs/dark-factory/internal/rundata"
@@ -168,6 +169,8 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			}
 		}()
 
+		reporter := progress.NewTextReporter(os.Stdout)
+
 		// Stats across all issues.
 		var implemented, readyToMerge, needsHumanReview, failed int
 
@@ -186,7 +189,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			if err != nil {
 				logger.Warn("failed to fetch issue, skipping", "issue_number", issueNumber, "error", err)
 				failed++
-				fmt.Printf("  #%d — failed to fetch: %s\n", issueNumber, err)
+				reporter.IssueCompleted(issueNumber, "", "failed", 0, 0, err.Error())
 				continue
 			}
 
@@ -212,23 +215,23 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			switch outcome.Status {
 			case agent.StatusImplemented:
 				implemented++
-				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "")
 				if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
 					logger.Warn("could not sync local repo after merge", "error", err)
 				}
 			case agent.StatusReadyToMerge:
 				readyToMerge++
-				fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "")
 			case agent.StatusNeedsHumanReview:
 				needsHumanReview++
-				fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
+				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "")
 			default:
 				failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
 				}
-				fmt.Printf("  #%d %s — failed: %s\n", issue.Number, issue.Title, errMsg)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg)
 			}
 
 			logger.Info("issue outcome",
@@ -274,9 +277,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		}
 
 		// Print totals.
-		fmt.Println()
-		fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed\n",
-			implemented, readyToMerge, needsHumanReview, failed)
+		reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed, 0)
 
 		// Finalize run data.
 		if writer != nil {
@@ -309,9 +310,11 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			}
 
 			text := punchlist.Generate(punchlistEntries)
-			fmt.Println()
-			if err := punchlist.Write(text, punchlistPath); err != nil {
-				logger.Warn("failed to write punchlist", "error", err)
+			reporter.PunchlistText(text)
+			if punchlistPath != "" {
+				if err := os.WriteFile(punchlistPath, []byte(text), 0o644); err != nil {
+					logger.Warn("failed to write punchlist", "error", err)
+				}
 			}
 		}
 
