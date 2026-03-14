@@ -10,6 +10,63 @@ import (
 	"testing"
 )
 
+func TestNewLoggerFileOnly_CreatesDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "logs")
+	_, err := NewLoggerFileOnly(dir)
+	if err != nil {
+		t.Fatalf("NewLoggerFileOnly() error = %v", err)
+	}
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Fatal("expected log directory to be created")
+	}
+}
+
+func TestNewLoggerFileOnly_CreatesDebugLog(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewLoggerFileOnly(dir)
+	if err != nil {
+		t.Fatalf("NewLoggerFileOnly() error = %v", err)
+	}
+
+	logger.Info("file-only test")
+
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
+	if err != nil {
+		t.Fatalf("reading debug.log: %v", err)
+	}
+	if !strings.Contains(string(data), "file-only test") {
+		t.Errorf("expected debug.log to contain 'file-only test', got: %s", data)
+	}
+}
+
+func TestNewLoggerFileOnly_NoStdout(t *testing.T) {
+	dir := t.TempDir()
+
+	// Capture stdout.
+	origStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = origStdout })
+
+	logger, err := NewLoggerFileOnly(dir)
+	if err != nil {
+		w.Close()
+		os.Stdout = origStdout
+		t.Fatalf("NewLoggerFileOnly() error = %v", err)
+	}
+
+	logger.Info("should not appear on stdout")
+	w.Close()
+
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if strings.Contains(output, "should not appear on stdout") {
+		t.Errorf("NewLoggerFileOnly wrote to stdout but should not: %s", output)
+	}
+}
+
 func TestNewLogger_CreatesDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "logs")
 	_, err := NewLogger(dir)

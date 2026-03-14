@@ -19,8 +19,8 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
-	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/notify"
+	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
@@ -35,7 +35,11 @@ import (
 // force bypasses an existing run lock (useful to clear stale locks left by
 // crashed instances). punchlistPath is the optional file path to write the
 // punchlist to (always printed to stdout as well).
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
+//
+// logFactory is called to create the run-directory logger once the RunDataWriter
+// has established its directory. Pass logging.NewLogger for text/pipe mode and
+// logging.NewLoggerFileOnly for TUI mode (where the TUI owns stdout).
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
 	// Preflight: fail fast if working tree is dirty (skip in dry-run mode).
 	if !dryRun {
 		if err := CheckWorkingTree(); err != nil {
@@ -95,7 +99,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
 		if writerErr != nil {
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
-		} else if runLogger, logErr := logging.NewLogger(writer.Dir()); logErr == nil {
+		} else if runLogger, logErr := logFactory(writer.Dir()); logErr == nil {
 			logger = runLogger
 		} else {
 			logger.Warn("failed to create run-dir logger, continuing with bootstrap logger", "error", logErr)
@@ -120,7 +124,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, cfg, logger, writer, force, punchlistPath, milestone, notifiers)
+	return processIssues(ctx, issues, closedSet, cfg, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
 }
 
 // categorizeIssues splits issues into processable and blocked based on the
@@ -206,7 +210,7 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // re-resolution after each merge. When an issue is successfully merged,
 // the closed set is refreshed and dependencies re-resolved so that newly
 // unblocked issues can be processed in the same run.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
 	// Initial categorization.
 	processable, blocked := categorizeIssues(allIssues, closedSet)
 
@@ -228,8 +232,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 	if len(processable) == 0 {
-		fmt.Println("All issues are blocked — nothing to process.")
-		printSummary(len(allIssues), len(blocked), 0)
+		reporter.AllBlocked(len(allIssues), len(blocked))
 		return nil
 	}
 
@@ -317,8 +320,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 		if len(batch) == 0 {
 			if wave == 1 {
-				fmt.Println("All issues are blocked — nothing to process.")
-				printSummary(len(allIssues), len(blocked), 0)
+				reporter.AllBlocked(len(allIssues), len(blocked))
 			}
 			break
 		}
@@ -328,7 +330,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				"wave", wave,
 				"newly_unblocked", len(batch),
 			)
-			fmt.Printf("\n--- Wave %d: %d newly unblocked issues ---\n", wave, len(batch))
+			reporter.WaveStarted(wave, len(batch))
 		}
 
 		// Lock this wave's issues.
@@ -380,7 +382,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			case agent.StatusImplemented:
 				stats.implemented++
 				implementedIssues = append(implementedIssues, issue)
-				fmt.Printf("  #%d %s — implemented (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "")
 				if err := PullAfterMerge(baseBranch, logger); err != nil {
 					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
 					stats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
@@ -389,17 +391,17 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				merged = true
 			case agent.StatusReadyToMerge:
 				stats.readyToMerge++
-				fmt.Printf("  #%d %s — ready-to-merge (PR #%d, %d retries)\n", issue.Number, issue.Title, outcome.PRNumber, outcome.Retries)
+				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "")
 			case agent.StatusNeedsHumanReview:
 				stats.needsHumanReview++
-				fmt.Printf("  #%d %s — needs human review (PR #%d)\n", issue.Number, issue.Title, outcome.PRNumber)
+				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "")
 			default:
 				stats.failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
 				}
-				fmt.Printf("  #%d %s — failed: %s\n", issue.Number, issue.Title, errMsg)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg)
 			}
 
 			logger.Info("issue outcome",
@@ -440,7 +442,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 					// Print this entry's punchlist to stdout immediately.
 					text := punchlist.Generate([]punchlist.Entry{entry})
 					if text != "" {
-						fmt.Print(text)
+						reporter.PunchlistText(text)
 					}
 					logger.Info("punchlist acceptance tests generated",
 						"issue_number", iss.Number,
@@ -472,9 +474,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 done:
 	stats.blocked = len(blocked)
-	fmt.Println()
-	fmt.Printf("Results: %d implemented, %d ready-to-merge, %d needs-human-review, %d failed, %d skipped (blocked)\n",
-		stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
+	reporter.RunFinished(stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
 
 	// Rollup PR: create (and optionally merge) a PR from the base branch back
 	// to the default branch when the run completed cleanly, used a non-default
@@ -486,7 +486,7 @@ done:
 		cfg.AutoMerge.Rollup != config.RollupNone &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
 		stats.implemented > 0 {
-		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger)
+		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter)
 		if err != nil {
 			logger.Warn("rollup PR handling failed", "error", err)
 			fmt.Printf("Rollup PR warning: %v\n", err)
@@ -612,7 +612,7 @@ var mergeRollupPRFn = github.MergeRollupPR
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
 // least one issue was implemented into the base branch during the run.
 // Returns the PR number, URL, and any error.
-func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger) (int, string, error) {
+func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter) (int, string, error) {
 	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
@@ -628,7 +628,6 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 	}
 
 	logger.Info("rollup PR upserted", "pr_number", prNum, "pr_url", prURL)
-	fmt.Printf("Rollup PR #%d upserted: %s\n", prNum, prURL)
 
 	if cfg.AutoMerge.Rollup == config.RollupAuto {
 		// Wait for CI checks before merging if configured.
@@ -654,10 +653,10 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 			return 0, "", fmt.Errorf("merging rollup PR: %w", err)
 		}
 		logger.Info("rollup PR merged", "pr_number", prNum)
-		fmt.Printf("Rollup PR #%d merged.\n", prNum)
+		reporter.RollupCreated(prNum, prURL, true)
 	} else {
 		logger.Info("rollup PR left open for human review", "pr_number", prNum, "pr_url", prURL)
-		fmt.Printf("Rollup PR #%d is open for review: %s\n", prNum, prURL)
+		reporter.RollupCreated(prNum, prURL, false)
 	}
 
 	return prNum, prURL, nil

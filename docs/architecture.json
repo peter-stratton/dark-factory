@@ -24,7 +24,7 @@
     {
       "name": "presentation",
       "description": "Web dashboard and UI for monitoring runs.",
-      "paths": ["internal/dashboard/"],
+      "paths": ["internal/dashboard/", "internal/tui/"],
       "may_depend_on": ["domain", "foundation"],
       "must_not_depend_on": ["cmd", "orchestration", "service", "infrastructure", "content"]
     },
@@ -45,7 +45,7 @@
     {
       "name": "foundation",
       "description": "Zero-dependency utilities importable by all layers. Configuration and logging.",
-      "paths": ["internal/config/", "internal/logging/", "internal/label/", "internal/mdutil/", "internal/exec/"],
+      "paths": ["internal/config/", "internal/logging/", "internal/label/", "internal/mdutil/", "internal/exec/", "internal/progress/"],
       "may_depend_on": [],
       "must_not_depend_on": ["cmd", "orchestration", "service", "domain", "infrastructure", "presentation", "content"]
     },

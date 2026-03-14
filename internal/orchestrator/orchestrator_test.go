@@ -16,6 +16,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/notify"
+	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/rundata"
 )
 
@@ -31,6 +32,71 @@ func (f *fakeNotifier) Send(_ context.Context, event notify.Event) error {
 	}
 	f.received = append(f.received, event)
 	return nil
+}
+
+// fakeReporter records all reporter calls for test assertions.
+type fakeReporter struct {
+	issueCompleted []fakeIssueCompleted
+	waveStarted    []fakeWaveStarted
+	runFinished    []fakeRunFinished
+	allBlocked     []fakeAllBlocked
+	rollupCreated  []fakeRollupCreated
+	punchlistTexts []string
+}
+
+type fakeIssueCompleted struct {
+	issueNumber int
+	title       string
+	status      string
+	prNumber    int
+	retries     int
+	errMsg      string
+}
+
+type fakeWaveStarted struct {
+	wave  int
+	count int
+}
+
+type fakeRunFinished struct {
+	implemented      int
+	readyToMerge     int
+	needsHumanReview int
+	failed           int
+	blocked          int
+}
+
+type fakeAllBlocked struct {
+	total   int
+	blocked int
+}
+
+type fakeRollupCreated struct {
+	prNumber int
+	prURL    string
+	merged   bool
+}
+
+func (r *fakeReporter) RunStarted(_, _, _, _, _, _ string, _ int) {}
+func (r *fakeReporter) IssueStarted(_ int, _ string)              {}
+func (r *fakeReporter) IssueStageChanged(_ int, _ string)         {}
+func (r *fakeReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string) {
+	r.issueCompleted = append(r.issueCompleted, fakeIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg})
+}
+func (r *fakeReporter) WaveStarted(wave, count int) {
+	r.waveStarted = append(r.waveStarted, fakeWaveStarted{wave, count})
+}
+func (r *fakeReporter) AllBlocked(total, blocked int) {
+	r.allBlocked = append(r.allBlocked, fakeAllBlocked{total, blocked})
+}
+func (r *fakeReporter) RollupCreated(prNumber int, prURL string, merged bool) {
+	r.rollupCreated = append(r.rollupCreated, fakeRollupCreated{prNumber, prURL, merged})
+}
+func (r *fakeReporter) RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int) {
+	r.runFinished = append(r.runFinished, fakeRunFinished{implemented, readyToMerge, needsHumanReview, failed, blocked})
+}
+func (r *fakeReporter) PunchlistText(text string) {
+	r.punchlistTexts = append(r.punchlistTexts, text)
 }
 
 // ghIssue mirrors the JSON shape for test fixtures.
@@ -127,7 +193,7 @@ func TestDryRun_ListsIssuesInOrder(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -153,7 +219,7 @@ func TestDryRun_BlockedIssuesShownSeparately(t *testing.T) {
 	setupFakeGH(t, openIssues, nil) // #99 not closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -179,7 +245,7 @@ func TestDryRun_SummaryCounts(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -203,7 +269,7 @@ func TestDryRun_LogFileCreated(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		if err := Run(context.Background(), testConfig(), logger, "Phase 1", 0, true, false, ""); err != nil {
+		if err := Run(context.Background(), testConfig(), logger, progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, ""); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
@@ -218,7 +284,7 @@ func TestEmptyMilestone(t *testing.T) {
 	setupFakeGH(t, []ghIssue{}, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -251,7 +317,7 @@ func TestAllBlocked(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, false, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -272,7 +338,7 @@ func TestDryRun_ClosedDepsUnblock(t *testing.T) {
 	setupFakeGH(t, openIssues, []int{3}) // #3 is closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -318,7 +384,7 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -343,7 +409,7 @@ func TestSingleIssueMode_FiltersCorrectly(t *testing.T) {
 	cfg := testConfig()
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), "Phase 1", 2, true, false, "")
+		err := Run(context.Background(), cfg, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 2, true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -367,7 +433,7 @@ func TestSingleIssueMode_ErrorWhenBlocked(t *testing.T) {
 	cfg := testConfig()
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), "Phase 1", 1, true, false, "")
+		err := Run(context.Background(), cfg, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 1, true, false, "")
 		if err == nil {
 			t.Fatal("expected error for blocked single issue")
 		}
@@ -386,7 +452,7 @@ func TestSingleIssueMode_ErrorWhenNotFound(t *testing.T) {
 	cfg := testConfig()
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), "Phase 1", 999, true, false, "")
+		err := Run(context.Background(), cfg, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 999, true, false, "")
 		if err == nil {
 			t.Fatal("expected error for missing single issue")
 		}
@@ -503,7 +569,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -550,7 +616,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "", nil)
+		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -599,7 +665,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -724,7 +790,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), writer, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -866,7 +932,7 @@ func TestRun_DirtyTreeBlocksRun(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, false, false, "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -892,7 +958,7 @@ func TestRun_DirtyTreeErrorListsFiles(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, false, false, "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -919,7 +985,7 @@ func TestRun_DryRunSkipsDirtyCheck(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
 		if err != nil {
 			t.Fatalf("dry-run should not fail on dirty tree: %v", err)
 		}
@@ -1103,7 +1169,7 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1183,7 +1249,7 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1240,7 +1306,7 @@ func TestProcessIssues_AbortNotificationFired(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1352,7 +1418,7 @@ func TestRollup_NoneDoesNothing(t *testing.T) {
 	cfg.AutoMerge.Rollup = "none"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1383,7 +1449,7 @@ func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 
 	output := captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1420,7 +1486,7 @@ func TestRollup_AutoCreateAndMerges(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	output := captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1454,7 +1520,7 @@ func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1482,7 +1548,7 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1511,7 +1577,7 @@ func TestRollup_SkipWhenBaseBranchEqualsCustomDefault(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1540,7 +1606,7 @@ func TestRollup_UsesCustomDefaultBranch(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1571,7 +1637,7 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1615,7 +1681,7 @@ func TestRollup_SkipWhenAborted(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1636,5 +1702,226 @@ func TestBuildRollupBody_ListsIssues(t *testing.T) {
 	}
 	if !strings.Contains(body, "#2 Fix bug B") {
 		t.Errorf("expected '#2 Fix bug B' in body, got:\n%s", body)
+	}
+}
+
+// TestReporter_IssueCompleted verifies that processIssues calls IssueCompleted
+// with correct parameters after processIssueFn returns an outcome.
+// PRNumber is 0 to avoid triggering the punchlist enrichment goroutine in tests.
+func TestReporter_IssueCompleted(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 42, Title: "add cost tracking"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			// Use PRNumber:0 to avoid triggering the punchlist goroutine.
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test error")}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.issueCompleted) != 1 {
+		t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
+	}
+	got := reporter.issueCompleted[0]
+	if got.issueNumber != 42 {
+		t.Errorf("IssueCompleted issueNumber = %d, want 42", got.issueNumber)
+	}
+	if got.title != "add cost tracking" {
+		t.Errorf("IssueCompleted title = %q, want %q", got.title, "add cost tracking")
+	}
+	if got.status != "failed" {
+		t.Errorf("IssueCompleted status = %q, want %q", got.status, "failed")
+	}
+	if got.errMsg != "test error" {
+		t.Errorf("IssueCompleted errMsg = %q, want %q", got.errMsg, "test error")
+	}
+}
+
+// TestReporter_WaveStarted verifies that a second dependency wave triggers WaveStarted.
+func TestReporter_WaveStarted(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second", Body: "**Blocked by**: #1"},
+	}
+
+	callCount := 0
+	setupProcessMocks(t, func() []int {
+		// After issue #1 is merged, return it as closed so #2 unblocks.
+		if callCount > 0 {
+			return []int{1}
+		}
+		return nil
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+		callCount++
+		// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
+	})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Wave 2 should have been signaled.
+	if len(reporter.waveStarted) != 1 {
+		t.Fatalf("expected 1 WaveStarted call, got %d: %v", len(reporter.waveStarted), reporter.waveStarted)
+	}
+	if reporter.waveStarted[0].wave != 2 {
+		t.Errorf("WaveStarted wave = %d, want 2", reporter.waveStarted[0].wave)
+	}
+	if reporter.waveStarted[0].count != 1 {
+		t.Errorf("WaveStarted count = %d, want 1", reporter.waveStarted[0].count)
+	}
+}
+
+// TestReporter_RunFinished verifies that RunFinished receives correct summary counts.
+func TestReporter_RunFinished(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "implemented"},
+		{Number: 2, Title: "failed"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			if issue.Number == 1 {
+				// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
+				return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 0}
+			}
+			return agent.IssueOutcome{IssueNumber: 2, Status: "failed", Err: fmt.Errorf("boom")}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.runFinished) != 1 {
+		t.Fatalf("expected 1 RunFinished call, got %d", len(reporter.runFinished))
+	}
+	rf := reporter.runFinished[0]
+	if rf.implemented != 1 {
+		t.Errorf("RunFinished implemented = %d, want 1", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("RunFinished failed = %d, want 1", rf.failed)
+	}
+}
+
+// TestReporter_DryRunDoesNotCallReporter verifies dry-run mode does not call any
+// reporter methods — it uses printDryRun directly.
+func TestReporter_DryRunDoesNotCallReporter(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "test issue", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+
+	if err := Run(context.Background(), cfg, testLogger(t), reporter, logging.NewLogger, "Phase 1", 0, true, false, ""); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if len(reporter.issueCompleted) != 0 {
+		t.Errorf("dry-run: expected no IssueCompleted calls, got %d", len(reporter.issueCompleted))
+	}
+	if len(reporter.runFinished) != 0 {
+		t.Errorf("dry-run: expected no RunFinished calls, got %d", len(reporter.runFinished))
+	}
+	if len(reporter.waveStarted) != 0 {
+		t.Errorf("dry-run: expected no WaveStarted calls, got %d", len(reporter.waveStarted))
+	}
+}
+
+// TestReporter_LoggerPreserved verifies that logger.Info is still called for issue
+// outcomes alongside reporter methods.
+func TestReporter_LoggerPreserved(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 5, Title: "test issue"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
+		})
+
+	// Use a recording logger to verify logger.Info("issue outcome", ...) is still called.
+	handler := &recordingHandler{}
+	logger := slog.New(handler)
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	if err := processIssues(context.Background(), allIssues, closedSet, cfg, logger, reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Reporter received IssueCompleted.
+	if len(reporter.issueCompleted) != 1 {
+		t.Fatalf("expected 1 IssueCompleted, got %d", len(reporter.issueCompleted))
+	}
+
+	// Logger also received the "issue outcome" log entry.
+	var found bool
+	for _, r := range handler.records {
+		if r.Message == "issue outcome" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected logger.Info('issue outcome', ...) to be called")
+	}
+}
+
+// TestReporter_AllBlockedCalled verifies that AllBlocked is called when all issues
+// are blocked.
+func TestReporter_AllBlockedCalled(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "blocked", Body: "**Blocked by**: #99"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{} // #99 not closed
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.allBlocked) != 1 {
+		t.Fatalf("expected 1 AllBlocked call, got %d", len(reporter.allBlocked))
+	}
+	if reporter.allBlocked[0].total != 1 {
+		t.Errorf("AllBlocked total = %d, want 1", reporter.allBlocked[0].total)
+	}
+	if reporter.allBlocked[0].blocked != 1 {
+		t.Errorf("AllBlocked blocked = %d, want 1", reporter.allBlocked[0].blocked)
 	}
 }

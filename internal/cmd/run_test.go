@@ -11,6 +11,53 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func TestNoTUIFlagRegistered(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cmd  *cobra.Command
+	}{
+		{"run", runCmd},
+		{"implement", implementCmd},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := tc.cmd.Flags().Lookup("no-tui")
+			if f == nil {
+				t.Fatalf("%s command missing --no-tui flag", tc.name)
+			}
+			if f.DefValue != "false" {
+				t.Errorf("no-tui default = %q, want %q", f.DefValue, "false")
+			}
+		})
+	}
+}
+
+// TestIsTerminalFnReplaceable verifies that isTerminalFn is a testability seam
+// that can be replaced to force text mode regardless of actual terminal state.
+func TestIsTerminalFnReplaceable(t *testing.T) {
+	orig := isTerminalFn
+	t.Cleanup(func() { isTerminalFn = orig })
+
+	// Force non-terminal → useTUI should be false even if no-tui is false.
+	isTerminalFn = func(_ int) bool { return false }
+	useTUI := !false && isTerminalFn(1)
+	if useTUI {
+		t.Error("useTUI = true, want false when isTerminalFn returns false")
+	}
+
+	// Force terminal → useTUI should be true when no-tui is false.
+	isTerminalFn = func(_ int) bool { return true }
+	useTUI = !false && isTerminalFn(1)
+	if !useTUI {
+		t.Error("useTUI = false, want true when isTerminalFn returns true and no-tui is false")
+	}
+
+	// Force terminal but no-tui=true → useTUI should be false.
+	useTUI = !true && isTerminalFn(1)
+	if useTUI {
+		t.Error("useTUI = true, want false when no-tui is set even if terminal is detected")
+	}
+}
+
 func TestNoSandboxFlagParsing(t *testing.T) {
 	// The --no-sandbox flag should be registered and default to false.
 	f := runCmd.Flags().Lookup("no-sandbox")
