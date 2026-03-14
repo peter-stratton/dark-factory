@@ -959,7 +959,7 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 		if err := os.Remove(repoDir); err == nil { //nolint:gosec // path components validated above
 			ownerDir := s.reader.RunDir(owner, "", "")
 			if entries, err := os.ReadDir(ownerDir); err == nil && len(entries) == 0 {
-				_ = os.Remove(ownerDir) // best-effort; ignore error
+				_ = os.Remove(ownerDir) //nolint:gosec // path components validated above
 			}
 		}
 	}
