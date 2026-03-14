@@ -1309,7 +1309,7 @@ func mockConfigDefaultBranch(t *testing.T, branch string) {
 	}
 }
 
-// setupRollupMocks adds stubs for createRollupPRFn and mergeRollupPRFn and
+// setupRollupMocks adds stubs for upsertRollupPRFn and mergeRollupPRFn and
 // returns pointers to slices that record each call for inspection.
 func setupRollupMocks(t *testing.T) (created *[]string, merged *[]int) {
 	t.Helper()
@@ -1317,9 +1317,9 @@ func setupRollupMocks(t *testing.T) (created *[]string, merged *[]int) {
 	var createdCalls []string
 	var mergedCalls []int
 
-	origCreate := createRollupPRFn
-	t.Cleanup(func() { createRollupPRFn = origCreate })
-	createRollupPRFn = func(repo, baseBranch, defaultBranch, title, body string) (int, string, error) {
+	origUpsert := upsertRollupPRFn
+	t.Cleanup(func() { upsertRollupPRFn = origUpsert })
+	upsertRollupPRFn = func(repo, baseBranch, defaultBranch, title, body string) (int, string, error) {
 		createdCalls = append(createdCalls, fmt.Sprintf("%s->%s", baseBranch, defaultBranch))
 		return 999, "https://github.com/owner/repo/pull/999", nil
 	}
