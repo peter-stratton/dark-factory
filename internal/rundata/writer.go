@@ -21,15 +21,16 @@ type AutoMerge struct {
 
 // RunMeta is the structure persisted to run.json.
 type RunMeta struct {
-	Repo         string      `json:"repo"`
-	Milestone    string      `json:"milestone"`
-	BaseBranch   string      `json:"base_branch,omitempty"`
-	AutoMerge    *AutoMerge  `json:"auto_merge,omitempty"`
-	IssueNumbers []int       `json:"issue_numbers"`
-	IssueDeps    []IssueDep  `json:"issue_deps,omitempty"`
-	StartedAt    time.Time   `json:"started_at"`
-	FinishedAt   *time.Time  `json:"finished_at,omitempty"`
-	Summary      *RunSummary `json:"summary,omitempty"`
+	Repo         string            `json:"repo"`
+	Milestone    string            `json:"milestone"`
+	BaseBranch   string            `json:"base_branch,omitempty"`
+	AutoMerge    *AutoMerge        `json:"auto_merge,omitempty"`
+	IssueNumbers []int             `json:"issue_numbers"`
+	IssueDeps    []IssueDep        `json:"issue_deps,omitempty"`
+	IssueTitles  map[string]string `json:"issue_titles,omitempty"`
+	StartedAt    time.Time         `json:"started_at"`
+	FinishedAt   *time.Time        `json:"finished_at,omitempty"`
+	Summary      *RunSummary       `json:"summary,omitempty"`
 }
 
 // IssueDep records the dependency info for a single issue.
@@ -239,6 +240,28 @@ func (w *Writer) WriteIssueDeps(deps []IssueDep) error {
 	meta.IssueDeps = deps
 	if err := writeJSON(path, meta); err != nil {
 		return fmt.Errorf("updating run.json with issue deps: %w", err)
+	}
+	return nil
+}
+
+// WriteIssueTitles updates run.json with the title map for all issues.
+// It reads the current run.json, sets IssueTitles, and writes it back.
+func (w *Writer) WriteIssueTitles(titles map[string]string) error {
+	path := filepath.Join(w.dir, "run.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading run.json: %w", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("parsing run.json: %w", err)
+	}
+
+	meta.IssueTitles = titles
+	if err := writeJSON(path, meta); err != nil {
+		return fmt.Errorf("updating run.json with issue titles: %w", err)
 	}
 	return nil
 }
