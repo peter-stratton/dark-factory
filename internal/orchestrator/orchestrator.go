@@ -600,9 +600,9 @@ var newRunDataWriterFn = func(repo, milestone string, issueNumbers []int, baseBr
 	return rundata.New(repo, milestone, issueNumbers, baseBranch, autoMerge)
 }
 
-// createRollupPRFn creates a rollup PR and returns its number and URL.
+// upsertRollupPRFn creates or updates the rollup PR and returns its number and URL.
 // Replaceable for testing.
-var createRollupPRFn = github.CreateRollupPR
+var upsertRollupPRFn = github.UpsertRollupPR
 
 // mergeRollupPRFn merges the rollup PR by number.
 // Replaceable for testing.
@@ -616,18 +616,18 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
-	logger.Info("creating rollup PR",
+	logger.Info("upserting rollup PR",
 		"base_branch", cfg.BaseBranch,
 		"default_branch", defaultBranch,
 		"rollup_mode", cfg.AutoMerge.Rollup,
 	)
 
-	prNum, prURL, err := createRollupPRFn(cfg.Repo, cfg.BaseBranch, defaultBranch, title, body)
+	prNum, prURL, err := upsertRollupPRFn(cfg.Repo, cfg.BaseBranch, defaultBranch, title, body)
 	if err != nil {
-		return 0, "", fmt.Errorf("creating rollup PR: %w", err)
+		return 0, "", fmt.Errorf("upserting rollup PR: %w", err)
 	}
 
-	logger.Info("rollup PR created", "pr_number", prNum, "pr_url", prURL)
+	logger.Info("rollup PR upserted", "pr_number", prNum, "pr_url", prURL)
 	fmt.Printf("Rollup PR #%d created: %s\n", prNum, prURL)
 
 	if cfg.AutoMerge.Rollup == config.RollupAuto {
