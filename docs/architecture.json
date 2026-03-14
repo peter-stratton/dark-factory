@@ -24,7 +24,7 @@
     {
       "name": "presentation",
       "description": "Web dashboard and UI for monitoring runs.",
-      "paths": ["internal/dashboard/"],
+      "paths": ["internal/dashboard/", "internal/tui/"],
       "may_depend_on": ["domain", "foundation"],
       "must_not_depend_on": ["cmd", "orchestration", "service", "infrastructure", "content"]
     },
