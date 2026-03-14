@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-Go CLI that orchestrates autonomous AI agents to implement, review, and merge
-GitHub issues without human intervention.
+Go CLI built for Claude Code that orchestrates autonomous AI agents to
+implement, review, and merge GitHub issues without human intervention.
 
 ## Where to look
 

@@ -7,8 +7,9 @@
                                                            |___/
 ```
 
-A Go CLI that orchestrates autonomous AI agents to implement GitHub issues,
-review their own work, and merge — without human intervention.
+A Go CLI built for [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+that orchestrates autonomous AI agents to implement GitHub issues, review their
+own work, and merge — without human intervention.
 
 ### Philosophy
 
@@ -48,13 +49,14 @@ go install github.com/peter-stratton/dark-factory/cmd/godark@latest
 
 ### Platform support
 
-Dark Factory is built around pluggable integrations for version control and AI
-providers. Current support:
+Dark Factory is built for Claude Code and GitHub. The architecture is designed
+around Claude Code's specific capabilities — session resumption, CLAUDE.md as a
+control surface, slash command skills, and sandboxed execution.
 
-| Layer | Supported | Planned |
-|-------|-----------|---------|
-| Version control | GitHub | GitLab, Bitbucket |
-| AI provider | Anthropic Claude (via Claude Code) | OpenAI, local models |
+| Layer | Supported |
+|-------|-----------|
+| AI agent | Claude Code (Anthropic) |
+| Version control | GitHub |
 
 ### Features
 
