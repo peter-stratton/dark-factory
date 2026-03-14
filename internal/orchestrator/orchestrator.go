@@ -628,7 +628,7 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 	}
 
 	logger.Info("rollup PR upserted", "pr_number", prNum, "pr_url", prURL)
-	fmt.Printf("Rollup PR #%d created: %s\n", prNum, prURL)
+	fmt.Printf("Rollup PR #%d upserted: %s\n", prNum, prURL)
 
 	if cfg.AutoMerge.Rollup == config.RollupAuto {
 		// Wait for CI checks before merging if configured.

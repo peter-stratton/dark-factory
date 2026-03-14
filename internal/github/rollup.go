@@ -122,8 +122,13 @@ func findOpenRollupPR(repo, head, base string) (num int, url string, found bool,
 }
 
 // issueLineRe matches a rollup body issue line such as "- #123 Some title".
-// The (?m) flag enables multiline mode so ^ matches the start of each line.
+// The (?m) flag enables multiline mode so ^ matches the start of each line
+// when the regex is applied to the full body string.
 var issueLineRe = regexp.MustCompile(`(?m)^- #(\d+)`)
+
+// issueLineRePerLine is a flag-free variant of issueLineRe for use when
+// matching against individual lines already split from a body string.
+var issueLineRePerLine = regexp.MustCompile(`^- #(\d+)`)
 
 // mergeRollupBodies appends to existingBody any issue lines from newBody whose
 // issue numbers are not already present in existingBody. Returns existingBody
@@ -133,7 +138,7 @@ func mergeRollupBodies(existingBody, newBody string) string {
 
 	var newLines []string
 	for _, line := range strings.Split(newBody, "\n") {
-		m := issueLineRe.FindStringSubmatch(line)
+		m := issueLineRePerLine.FindStringSubmatch(line)
 		if m == nil {
 			continue
 		}
