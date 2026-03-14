@@ -223,6 +223,7 @@
               <th>Awaiting</th>
               <th class="cell-num">Cost</th>
               <th>When</th>
+              <th class="cell-delete"></th>
             </tr>
           </thead>
           <tbody id="runs-tbody"
@@ -291,10 +292,22 @@
   </td>
   <td class="cell-num text-muted">—</td>
   <td class="text-secondary">{{.When}}</td>
+  <td class="cell-delete" onclick="event.stopPropagation()">
+    <button class="btn-delete"
+      hx-delete="{{.DeleteURL}}"
+      hx-confirm="Delete this run? This cannot be undone."
+      hx-target="closest tr"
+      hx-swap="outerHTML"
+      title="Delete run">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+        <path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.559a.75.75 0 1 0-1.492.141l.5 5.25a.75.75 0 1 0 1.492-.141l-.5-5.25Zm3.754.141a.75.75 0 0 0-1.5 0v5.25a.75.75 0 0 0 1.5 0V6.7Zm2.5-.141a.75.75 0 1 0-1.492-.141l-.5 5.25a.75.75 0 1 0 1.492.141l.5-5.25ZM6.75 1.5h2.5a.25.25 0 0 1 .25.25V3h-3V1.75a.25.25 0 0 1 .25-.25Z"/>
+      </svg>
+    </button>
+  </td>
 </tr>
 {{else}}
 <tr>
-  <td colspan="7" class="text-secondary" style="text-align: center; padding: 2rem;">
+  <td colspan="8" class="text-secondary" style="text-align: center; padding: 2rem;">
     No runs match the current filter.
   </td>
 </tr>
