@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -215,6 +216,14 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		issueDeps := buildIssueDepsForRundata(allIssues, closedSet)
 		if err := writer.WriteIssueDeps(issueDeps); err != nil {
 			logger.Warn("failed to write issue deps to run metadata", "error", err)
+		}
+
+		issueTitles := make(map[string]string, len(allIssues))
+		for _, iss := range allIssues {
+			issueTitles[strconv.Itoa(iss.Number)] = iss.Title
+		}
+		if err := writer.WriteIssueTitles(issueTitles); err != nil {
+			logger.Warn("failed to write issue titles to run metadata", "error", err)
 		}
 	}
 

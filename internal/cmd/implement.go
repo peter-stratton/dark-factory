@@ -103,6 +103,20 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
 		}
 
+		// Pre-fetch issue titles and write them to run.json so the dashboard can
+		// display titles for all issues before they finish processing.
+		if writer != nil {
+			issueTitles := make(map[string]string, len(issueNums))
+			for _, num := range issueNums {
+				if iss, err := github.FetchIssue(cfg.Repo, num); err == nil {
+					issueTitles[strconv.Itoa(num)] = iss.Title
+				}
+			}
+			if err := writer.WriteIssueTitles(issueTitles); err != nil {
+				logger.Warn("failed to write issue titles to run metadata", "error", err)
+			}
+		}
+
 		// Initialize notifiers from config. Construction failures are logged but
 		// never abort the run — notifications are best-effort.
 		notifiers, notifyErr := notify.NewFromConfig(cfg.Notify)

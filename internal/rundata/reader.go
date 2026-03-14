@@ -200,7 +200,21 @@ func (r *Reader) LoadRun(owner, repo, timestamp string) (*RunDetail, error) {
 	// directory yet (e.g., still running, no hook data written).
 	for _, num := range meta.IssueNumbers {
 		if !seen[num] {
-			detail.Issues = append(detail.Issues, IssueDetail{IssueNumber: num})
+			d := IssueDetail{IssueNumber: num}
+			if title, ok := meta.IssueTitles[strconv.Itoa(num)]; ok {
+				d.Outcome.Title = title
+			}
+			detail.Issues = append(detail.Issues, d)
+		}
+	}
+
+	// Fill in Outcome.Title from IssueTitles for issues whose outcome.json
+	// either does not exist or was written without a title.
+	for i := range detail.Issues {
+		if detail.Issues[i].Outcome.Title == "" {
+			if title, ok := meta.IssueTitles[strconv.Itoa(detail.Issues[i].IssueNumber)]; ok {
+				detail.Issues[i].Outcome.Title = title
+			}
 		}
 	}
 
