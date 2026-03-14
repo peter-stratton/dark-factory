@@ -36,3 +36,21 @@ type RunFinishedMsg struct {
 	Failed           int
 	Blocked          int
 }
+
+// RunStartedMsg is sent when a run begins, carrying header metadata.
+type RunStartedMsg struct {
+	Repo         string
+	Milestone    string
+	Timestamp    string
+	BaseBranch   string
+	MergeFeature string
+	MergeRollup  string
+	IssueCount   int
+}
+
+// RollupCreatedMsg is sent when a rollup PR is created and optionally merged.
+type RollupCreatedMsg struct {
+	PRNumber int
+	PRURL    string
+	Merged   bool
+}
