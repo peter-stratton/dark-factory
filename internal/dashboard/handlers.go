@@ -937,7 +937,7 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 
 	runDir := s.reader.RunDir(owner, repo, timestamp)
 
-	if _, err := os.Stat(runDir); err != nil {
+	if _, err := os.Stat(runDir); err != nil { //nolint:gosec // path components validated above
 		if errors.Is(err, os.ErrNotExist) {
 			http.NotFound(w, r)
 			return
@@ -947,7 +947,7 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.RemoveAll(runDir); err != nil {
+	if err := os.RemoveAll(runDir); err != nil { //nolint:gosec // path components validated above
 		s.cfg.Logger.Error("removing run dir", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -956,7 +956,7 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 	// Clean up empty parent directories (repo dir, then owner dir).
 	repoDir := s.reader.RunDir(owner, repo, "")
 	if entries, err := os.ReadDir(repoDir); err == nil && len(entries) == 0 {
-		if err := os.Remove(repoDir); err == nil {
+		if err := os.Remove(repoDir); err == nil { //nolint:gosec // path components validated above
 			ownerDir := s.reader.RunDir(owner, "", "")
 			if entries, err := os.ReadDir(ownerDir); err == nil && len(entries) == 0 {
 				_ = os.Remove(ownerDir) // best-effort; ignore error
