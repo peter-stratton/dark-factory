@@ -1061,3 +1061,116 @@ func TestLoadRun_MissingReconJSONNoError(t *testing.T) {
 		t.Errorf("Recon should be zero value for old run data, got: %+v", recon)
 	}
 }
+
+func TestLoadRunPopulatesTitleForPlaceholderIssues(t *testing.T) {
+	base := t.TempDir()
+	makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{10, 20},
+		StartedAt:    time.Now().UTC(),
+		IssueTitles: map[string]string{
+			"10": "Fix authentication",
+			"20": "Add search feature",
+		},
+	})
+
+	// No issues/ directory — simulates a run in progress before any hook data.
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 2 {
+		t.Fatalf("expected 2 placeholder issues, got %d", len(detail.Issues))
+	}
+
+	issueMap := map[int]IssueDetail{}
+	for _, issue := range detail.Issues {
+		issueMap[issue.IssueNumber] = issue
+	}
+
+	if issueMap[10].Outcome.Title != "Fix authentication" {
+		t.Errorf("issue #10 title: got %q, want %q", issueMap[10].Outcome.Title, "Fix authentication")
+	}
+	if issueMap[20].Outcome.Title != "Add search feature" {
+		t.Errorf("issue #20 title: got %q, want %q", issueMap[20].Outcome.Title, "Add search feature")
+	}
+}
+
+func TestLoadRunFallsBackToIssueTitlesWhenOutcomeTitleEmpty(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{42},
+		StartedAt:    time.Now().UTC(),
+		IssueTitles:  map[string]string{"42": "Title from run.json"},
+	})
+
+	// Write an outcome.json with no title.
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), Outcome{
+		IssueNumber: 42,
+		Status:      "implemented",
+		PRNumber:    99,
+		// Title deliberately left empty.
+	}); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+
+	if detail.Issues[0].Outcome.Title != "Title from run.json" {
+		t.Errorf("Outcome.Title: got %q, want %q", detail.Issues[0].Outcome.Title, "Title from run.json")
+	}
+}
+
+func TestLoadRunOutcomeTitleTakesPrecedenceOverIssueTitles(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{42},
+		StartedAt:    time.Now().UTC(),
+		IssueTitles:  map[string]string{"42": "Stale title from run.json"},
+	})
+
+	// Write an outcome.json with an explicit title.
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), Outcome{
+		IssueNumber: 42,
+		Title:       "Authoritative title from outcome",
+		Status:      "implemented",
+		PRNumber:    99,
+	}); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+
+	if detail.Issues[0].Outcome.Title != "Authoritative title from outcome" {
+		t.Errorf("Outcome.Title: got %q, want %q", detail.Issues[0].Outcome.Title, "Authoritative title from outcome")
+	}
+}

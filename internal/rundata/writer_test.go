@@ -804,6 +804,112 @@ func TestWriteIssueDepsPreservesExistingRunJSONFields(t *testing.T) {
 	}
 }
 
+func TestWriteIssueTitlesUpdatesRunJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{10, 20})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	titles := map[string]string{
+		"10": "Fix the login bug",
+		"20": "Add dark mode toggle",
+	}
+	if err := w.WriteIssueTitles(titles); err != nil {
+		t.Fatalf("WriteIssueTitles() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if len(meta.IssueTitles) != 2 {
+		t.Fatalf("IssueTitles: got %d entries, want 2", len(meta.IssueTitles))
+	}
+	if meta.IssueTitles["10"] != "Fix the login bug" {
+		t.Errorf("IssueTitles[10]: got %q, want %q", meta.IssueTitles["10"], "Fix the login bug")
+	}
+	if meta.IssueTitles["20"] != "Add dark mode toggle" {
+		t.Errorf("IssueTitles[20]: got %q, want %q", meta.IssueTitles["20"], "Add dark mode toggle")
+	}
+}
+
+func TestWriteIssueTitlesPreservesExistingRunJSONFields(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1, 2})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	titles := map[string]string{"1": "First issue", "2": "Second issue"}
+	if err := w.WriteIssueTitles(titles); err != nil {
+		t.Fatalf("WriteIssueTitles() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.Repo != "owner/repo" {
+		t.Errorf("Repo: got %q, want %q", meta.Repo, "owner/repo")
+	}
+	if meta.Milestone != "Phase 7" {
+		t.Errorf("Milestone: got %q, want %q", meta.Milestone, "Phase 7")
+	}
+	if len(meta.IssueNumbers) != 2 {
+		t.Errorf("IssueNumbers: got %v, want [1 2]", meta.IssueNumbers)
+	}
+}
+
+func TestIssueTitlesOmittedWhenNeverWritten(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	// Do not call WriteIssueTitles.
+	_ = w
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if _, ok := raw["issue_titles"]; ok {
+		t.Error("issue_titles key should be omitted from JSON when WriteIssueTitles was never called")
+	}
+}
+
+func TestIssueTitlesMissingInOldDataDeserializesCleanly(t *testing.T) {
+	// Simulate old run.json without issue_titles field.
+	oldJSON := []byte(`{"repo":"owner/repo","milestone":"Phase 7","issue_numbers":[1],"started_at":"2024-01-01T00:00:00Z"}`)
+
+	var meta RunMeta
+	if err := json.Unmarshal(oldJSON, &meta); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+
+	if meta.IssueTitles != nil {
+		t.Errorf("IssueTitles = %v, want nil for old data without issue_titles", meta.IssueTitles)
+	}
+}
+
 func TestPathTraversalRejected(t *testing.T) {
 	cases := []string{
 		"../evil/../../path",
