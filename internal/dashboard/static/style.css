@@ -1239,3 +1239,29 @@ a:hover {
 .markdown-body tbody tr:hover {
   background: var(--bg-secondary);
 }
+
+/* --- Delete run button --- */
+.cell-delete {
+  width: 32px;
+  padding: 0 var(--space-2);
+  text-align: center;
+}
+
+.btn-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background 0.15s ease;
+  line-height: 1;
+}
+
+.btn-delete:hover {
+  color: var(--status-danger);
+  background: var(--status-danger-muted);
+}

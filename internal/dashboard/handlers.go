@@ -46,6 +46,7 @@ type RunView struct {
 	When          string // human-readable relative time
 	StartedAt     time.Time
 	URL           string // link to run detail page, e.g. /runs/owner/repo/20260305-123456
+	DeleteURL     string // URL for the DELETE endpoint (same value as URL)
 	AwaitingCount int    // count of PRs awaiting human review (ready-to-merge)
 }
 
@@ -293,6 +294,7 @@ func metaToView(m rundata.RunMeta) RunView {
 		StatusLabel: "Running",
 		URL:         runDetailURL(m.Repo, m.StartedAt),
 	}
+	v.DeleteURL = v.URL
 	if m.FinishedAt != nil && m.Summary != nil {
 		v.Passed = m.Summary.Implemented
 		v.Failed = m.Summary.Failed
@@ -910,6 +912,59 @@ func buildOutcomeRows(report analysis.Report) []OutcomeRow {
 		return rows[i].Status < rows[j].Status
 	})
 	return rows
+}
+
+func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	repo := r.PathValue("repo")
+	timestamp := r.PathValue("timestamp")
+
+	// Validate path components (same guards as LoadRun in reader.go).
+	for _, part := range []string{owner, repo, timestamp} {
+		if part == "" {
+			http.Error(w, "invalid path component: must not be empty", http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(part, "..") {
+			http.Error(w, fmt.Sprintf("invalid path component: must not contain ..: %q", part), http.StatusBadRequest)
+			return
+		}
+		if strings.ContainsAny(part, `\/`) {
+			http.Error(w, fmt.Sprintf("invalid path component: must not contain path separators: %q", part), http.StatusBadRequest)
+			return
+		}
+	}
+
+	runDir := s.reader.RunDir(owner, repo, timestamp)
+
+	if _, err := os.Stat(runDir); err != nil { //nolint:gosec // path components validated above
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		s.cfg.Logger.Error("stat run dir", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.RemoveAll(runDir); err != nil { //nolint:gosec // path components validated above
+		s.cfg.Logger.Error("removing run dir", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Clean up empty parent directories (repo dir, then owner dir).
+	repoDir := s.reader.RunDir(owner, repo, "")
+	if entries, err := os.ReadDir(repoDir); err == nil && len(entries) == 0 {
+		if err := os.Remove(repoDir); err == nil { //nolint:gosec // path components validated above
+			ownerDir := s.reader.RunDir(owner, "", "")
+			if entries, err := os.ReadDir(ownerDir); err == nil && len(entries) == 0 {
+				_ = os.Remove(ownerDir) //nolint:gosec // path components validated above
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func humanizeAge(t time.Time) string {

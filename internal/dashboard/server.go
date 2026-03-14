@@ -121,6 +121,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /runs/{owner}/{repo}/{timestamp}/issues/{number}/review-chain", s.handleReviewChain)
 	s.mux.HandleFunc("GET /runs/{owner}/{repo}/{timestamp}/logs", s.handleRunLogs)
 	s.mux.HandleFunc("GET /runs/{owner}/{repo}/{timestamp}/logs/entries", s.handleRunLogsEntries)
+	s.mux.HandleFunc("DELETE /runs/{owner}/{repo}/{timestamp}", s.handleDeleteRun)
 	s.mux.Handle("GET /static/", http.FileServer(http.FS(content)))
 }
 
