@@ -8,10 +8,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 // stripANSI removes ANSI escape sequences from s so tests can compare plain text.
 func stripANSI(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return re.ReplaceAllString(s, "")
+	return ansiRe.ReplaceAllString(s, "")
 }
 
 // --- Compile-time interface check ---
@@ -22,7 +23,6 @@ var _ tea.Model = Model{}
 // --- Header tests ---
 
 func TestRenderHeaderFullMetadata(t *testing.T) {
-	t.Helper()
 	m := New(
 		"peter-stratton/dark-factory",
 		"Phase 20",
@@ -56,7 +56,6 @@ func TestRenderHeaderFullMetadata(t *testing.T) {
 }
 
 func TestRenderHeaderMinimal(t *testing.T) {
-	t.Helper()
 	m := New(
 		"peter-stratton/dark-factory",
 		"Phase 20",
@@ -85,7 +84,6 @@ func TestRenderHeaderMinimal(t *testing.T) {
 // --- Summary tests ---
 
 func TestRenderSummaryZeroState(t *testing.T) {
-	t.Helper()
 	m := Model{} // all counts and cost zero
 	got := stripANSI(renderSummary(m))
 
@@ -104,7 +102,6 @@ func TestRenderSummaryZeroState(t *testing.T) {
 }
 
 func TestRenderSummaryWithCounts(t *testing.T) {
-	t.Helper()
 	m := Model{
 		merged:    3,
 		inReview:  2,
@@ -130,7 +127,6 @@ func TestRenderSummaryWithCounts(t *testing.T) {
 // --- Model Update tests ---
 
 func TestModelUpdateWindowSize(t *testing.T) {
-	t.Helper()
 	m := Model{}
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 
@@ -154,7 +150,6 @@ func TestModelUpdateWindowSize(t *testing.T) {
 // --- Model View tests ---
 
 func TestModelViewContainsHeaderAndSummary(t *testing.T) {
-	t.Helper()
 	m := New(
 		"peter-stratton/dark-factory",
 		"Phase 20",
@@ -181,7 +176,6 @@ func TestModelViewContainsHeaderAndSummary(t *testing.T) {
 // --- New constructor tests ---
 
 func TestNewAutoMergePopulated(t *testing.T) {
-	t.Helper()
 	m := New("repo", "ms", "ts", "base", "feat-branch", "rollup-branch")
 	if m.autoMerge == nil {
 		t.Fatal("autoMerge should be non-nil when mergeFeature is set")
@@ -195,7 +189,6 @@ func TestNewAutoMergePopulated(t *testing.T) {
 }
 
 func TestNewAutoMergeNilWhenEmpty(t *testing.T) {
-	t.Helper()
 	m := New("repo", "ms", "ts", "", "", "")
 	if m.autoMerge != nil {
 		t.Errorf("autoMerge should be nil when both merge fields are empty, got %+v", m.autoMerge)

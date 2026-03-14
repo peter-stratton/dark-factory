@@ -18,13 +18,11 @@ type autoMerge struct {
 // Dynamic issue-table content is added in a subsequent issue (#443).
 type Model struct {
 	// Run metadata — populated via Update messages.
-	repo         string
-	milestone    string
-	timestamp    string
-	baseBranch   string
-	mergeFeature string
-	mergeRollup  string
-	autoMerge    *autoMerge
+	repo      string
+	milestone string
+	timestamp string
+	baseBranch string
+	autoMerge  *autoMerge
 
 	// Aggregate counts — updated as issues progress.
 	merged    int
@@ -72,12 +70,10 @@ func (m Model) View() string {
 // configured. baseBranch may be empty when using the repository default.
 func New(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string) Model {
 	m := Model{
-		repo:         repo,
-		milestone:    milestone,
-		timestamp:    timestamp,
-		baseBranch:   baseBranch,
-		mergeFeature: mergeFeature,
-		mergeRollup:  mergeRollup,
+		repo:       repo,
+		milestone:  milestone,
+		timestamp:  timestamp,
+		baseBranch: baseBranch,
 	}
 	if mergeFeature != "" || mergeRollup != "" {
 		m.autoMerge = &autoMerge{
