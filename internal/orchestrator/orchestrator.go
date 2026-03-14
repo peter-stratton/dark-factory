@@ -19,7 +19,6 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
-	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/notify"
 	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/punchlist"
@@ -36,7 +35,11 @@ import (
 // force bypasses an existing run lock (useful to clear stale locks left by
 // crashed instances). punchlistPath is the optional file path to write the
 // punchlist to (always printed to stdout as well).
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
+//
+// logFactory is called to create the run-directory logger once the RunDataWriter
+// has established its directory. Pass logging.NewLogger for text/pipe mode and
+// logging.NewLoggerFileOnly for TUI mode (where the TUI owns stdout).
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
 	// Preflight: fail fast if working tree is dirty (skip in dry-run mode).
 	if !dryRun {
 		if err := CheckWorkingTree(); err != nil {
@@ -96,7 +99,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		writer, writerErr = newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
 		if writerErr != nil {
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
-		} else if runLogger, logErr := logging.NewLogger(writer.Dir()); logErr == nil {
+		} else if runLogger, logErr := logFactory(writer.Dir()); logErr == nil {
 			logger = runLogger
 		} else {
 			logger.Warn("failed to create run-dir logger, continuing with bootstrap logger", "error", logErr)
