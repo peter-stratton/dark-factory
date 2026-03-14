@@ -139,6 +139,8 @@ what was built and how users experience it. These live in
 | 15 | *Deferred* — Server Mode & Centralized Operation |
 | 16 | [Public Release](docs/phase-overviews/phase-16-public-release.md) — ELv2 license, GoReleaser, Homebrew tap, release workflow, CONTRIBUTING.md |
 | 17 | [Configurable Base Branch](docs/phase-overviews/phase-17-configurable-base-branch.md) — base branch config, PR targeting, prompt safety, run data tracking |
+| 18 | [Adaptive Agent Loop](docs/phase-overviews/phase-18-adaptive-agent-loop.md) — recon agent, hybrid retry strategy, handoff context |
+| 19 | [Spring Cleaning](docs/phase-overviews/phase-19-spring-cleaning.md) — unified verdict parsing, typed constants, shared helpers, CLI consolidation |
 
 To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
 
