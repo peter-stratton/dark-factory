@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -106,10 +108,17 @@ func (m Model) View() string {
 	table := renderTable(m.issues, m.spinner, m.width)
 	summary := renderSummary(m)
 
-	if table == "" {
-		return header + "\n\n" + summary + "\n"
+	// Horizontal divider between content and summary bar.
+	divWidth := m.width
+	if divWidth <= 0 {
+		divWidth = 40
 	}
-	return header + "\n\n" + table + "\n\n" + summary + "\n"
+	divider := dividerStyle.Render(strings.Repeat("─", divWidth/2))
+
+	if table == "" {
+		return header + "\n\n" + divider + "\n\n" + summary + "\n"
+	}
+	return header + "\n\n" + table + "\n\n" + divider + "\n\n" + summary + "\n"
 }
 
 // New returns a Model pre-populated with run metadata.

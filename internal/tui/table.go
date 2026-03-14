@@ -70,18 +70,44 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 	}
 	title := rowTitleStyle.Render(truncate(row.title, titleWidth))
 
-	var stagePart string
-	if row.stage != "" {
-		stagePart = " " + rowStageStyle.Render(row.stage)
-	}
+	badge := badgeFor(row)
 
-	line := marker + " " + num + " " + title + stagePart
+	line := marker + " " + num + " " + title
+	if badge != "" {
+		line += "  " + badge
+	}
 
 	if row.errMsg != "" {
 		line += " " + rowErrStyle.Render(row.errMsg)
 	}
 
 	return line
+}
+
+// badgeFor returns a styled status badge for a row, or "" if the row is
+// still in-progress or queued without a terminal status.
+//
+// Badge mapping:
+//   - "implemented"/"merged"       → green  "MERGED"
+//   - "ready-to-merge"             → yellow "REVIEW"
+//   - "needs-human-review"         → yellow "REVIEW"
+//   - "failed"                     → red    "FAILED"
+//   - in-progress (stage set)      → muted  stage name (e.g. "implement")
+//   - queued (no status, no stage) → muted  "QUEUED"
+func badgeFor(row issueRow) string {
+	switch row.status {
+	case "implemented", "merged":
+		return badgeMergedStyle.Render("MERGED")
+	case "ready-to-merge", "needs-human-review":
+		return badgeReviewStyle.Render("REVIEW")
+	case "failed":
+		return badgeFailedStyle.Render("FAILED")
+	default:
+		if row.stage != "" {
+			return rowStageStyle.Render(row.stage)
+		}
+		return badgeQueuedStyle.Render("QUEUED")
+	}
 }
 
 // markerFor returns the styled status marker for a row.

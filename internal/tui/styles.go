@@ -61,4 +61,32 @@ var (
 	// summaryNeutralStyle styles counts with no special meaning (queued, cost).
 	summaryNeutralStyle = lipgloss.NewStyle().
 				Foreground(colorBright)
+
+	// Badge styles — background-colored tags shown after issue titles.
+	badgeMergedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#1A1A1A")).
+				Background(colorGreen).
+				Bold(true).
+				Padding(0, 1)
+
+	badgeReviewStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#1A1A1A")).
+				Background(colorYellow).
+				Bold(true).
+				Padding(0, 1)
+
+	badgeQueuedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#AAAAAA")).
+				Background(lipgloss.Color("#3A3A3A")).
+				Padding(0, 1)
+
+	badgeFailedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#1A1A1A")).
+				Background(colorRed).
+				Bold(true).
+				Padding(0, 1)
+
+	// dividerStyle styles the horizontal rule between table and summary.
+	dividerStyle = lipgloss.NewStyle().
+			Foreground(colorMuted)
 )
