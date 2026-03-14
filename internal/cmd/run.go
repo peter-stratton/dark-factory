@@ -10,6 +10,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
+	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/pypi"
 	"github.com/spf13/cobra"
 )
@@ -81,7 +82,8 @@ each unblocked issue through the implement → review → merge loop.`,
 		}
 
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
-		return orchestrator.Run(ctx, cfg, logger, milestone, issue, dryRun, force, punchlistPath)
+		reporter := progress.NewTextReporter(os.Stdout)
+		return orchestrator.Run(ctx, cfg, logger, reporter, milestone, issue, dryRun, force, punchlistPath)
 	},
 }
 
