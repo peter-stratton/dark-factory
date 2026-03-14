@@ -22,6 +22,25 @@ const (
 	ansiBold   = "\033[1m"
 )
 
+// NewLoggerFileOnly creates a logger that writes structured JSON to debug.log
+// in dir only. No text is written to stdout. Use in TUI mode where the TUI
+// owns the screen. The directory is created if it does not exist.
+func NewLoggerFileOnly(dir string) (*slog.Logger, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create log directory: %w", err)
+	}
+
+	path := filepath.Join(dir, "debug.log")
+
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, fmt.Errorf("create log file: %w", err)
+	}
+
+	jsonHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
+	return slog.New(jsonHandler), nil
+}
+
 // NewLogger creates a logger that writes structured JSON to debug.log in dir
 // and human-readable text to stdout. The directory is created if it does not exist.
 func NewLogger(dir string) (*slog.Logger, error) {

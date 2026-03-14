@@ -3,12 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
@@ -22,6 +24,7 @@ import (
 	"github.com/phs/dark-factory/internal/pypi"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
+	"github.com/phs/dark-factory/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +46,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		configPath, _ := cmd.Flags().GetString("config")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		force, _ := cmd.Flags().GetBool("force")
+		noTUI, _ := cmd.Flags().GetBool("no-tui")
 
 		flags := parseCLIFlags(cmd)
 		flags.Config = configPath
@@ -79,6 +83,16 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
 		}
 
+		// Determine whether to use TUI mode: interactive terminal and --no-tui not set.
+		useTUI := !noTUI && isTerminalFn(int(os.Stdout.Fd()))
+
+		// Select the appropriate logger factory. In TUI mode the TUI owns stdout,
+		// so the logger must write only to the JSON file.
+		logFactory := logging.NewLogger
+		if useTUI {
+			logFactory = logging.NewLoggerFileOnly
+		}
+
 		// Create RunDataWriter first to get the run directory for the log file.
 		var hook agent.RunDataHook
 		writer, writerErr := rundata.New(cfg.Repo, "", issueNums, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
@@ -95,7 +109,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			logDir = writer.Dir()
 		}
 
-		logger, err := logging.NewLogger(logDir)
+		logger, err := logFactory(logDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
@@ -169,157 +183,200 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			}
 		}()
 
-		reporter := progress.NewTextReporter(os.Stdout)
-
-		// Stats across all issues.
-		var implemented, readyToMerge, needsHumanReview, failed int
-
-		// Punchlist entries accumulated across all issues.
-		var punchlistEntries []punchlist.Entry
+		var reporter progress.ProgressReporter
+		var program *tea.Program
+		if useTUI {
+			model := tui.New(cfg.Repo, "", "", cfg.BaseBranch,
+				string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup))
+			program = tea.NewProgram(model, tea.WithAltScreen())
+			reporter = tui.NewTUIReporter(program)
+		} else {
+			reporter = progress.NewTextReporter(os.Stdout)
+		}
 
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
 
-		for _, issueNumber := range issueNums {
-			if ctx.Err() != nil {
-				logger.Warn("context cancelled, stopping", "error", ctx.Err())
-				break
-			}
-
-			issue, err := github.FetchIssue(cfg.Repo, issueNumber)
-			if err != nil {
-				logger.Warn("failed to fetch issue, skipping", "issue_number", issueNumber, "error", err)
-				failed++
-				reporter.IssueCompleted(issueNumber, "", "failed", 0, 0, err.Error())
-				continue
-			}
-
-			outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
-
-			// Write dialogue if we have a PR and a writer.
-			if writer != nil && outcome.PRNumber > 0 {
-				bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
-				if fetchErr != nil {
-					logger.Warn("failed to fetch PR comment bodies for dialogue",
-						"issue_number", issueNumber, "error", fetchErr)
-				} else {
-					dialogueEntries := orchestrator.BuildDialogueEntries(bodies)
-					if len(dialogueEntries) > 0 {
-						if err := writer.WriteDialogue(issueNumber, dialogueEntries); err != nil {
-							logger.Warn("failed to write dialogue",
-								"issue_number", issueNumber, "error", err)
-						}
-					}
-				}
-			}
-
-			switch outcome.Status {
-			case agent.StatusImplemented:
-				implemented++
-				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "")
-				if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
-					logger.Warn("could not sync local repo after merge", "error", err)
-				}
-			case agent.StatusReadyToMerge:
-				readyToMerge++
-				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "")
-			case agent.StatusNeedsHumanReview:
-				needsHumanReview++
-				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "")
-			default:
-				failed++
-				errMsg := ""
-				if outcome.Err != nil {
-					errMsg = outcome.Err.Error()
-				}
-				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg)
-			}
-
-			logger.Info("issue outcome",
-				"issue_number", outcome.IssueNumber,
-				"status", outcome.Status,
-				"pr_number", outcome.PRNumber,
-				"retries", outcome.Retries,
-				"error", outcome.Err,
-			)
-
-			// Fire implementation_complete notification for each processed issue.
-			notifyMsg := fmt.Sprintf("issue #%d: status=%s", issueNumber, outcome.Status)
-			if outcome.PRNumber > 0 {
-				notifyMsg += fmt.Sprintf(", PR #%d", outcome.PRNumber)
-			}
-			notify.Fire(ctx, notifiers, notify.Event{
-				Type:    "implementation_complete",
-				Repo:    cfg.Repo,
-				Message: notifyMsg,
-			}, logger)
-
-			if outcome.PRNumber > 0 {
-				files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
-				if err != nil {
-					logger.Warn("failed to fetch changed files for punchlist",
-						"pr_number", outcome.PRNumber, "error", err)
-				}
-				spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issueNumber)
-				if err != nil {
-					logger.Warn("failed to read scenario spec for punchlist",
-						"issue_number", issueNumber, "error", err)
-				}
-				punchlistEntries = append(punchlistEntries, punchlist.Entry{
-					IssueNumber:  issue.Number,
-					IssueTitle:   issue.Title,
-					IssueBody:    issue.Body,
-					PRNumber:     outcome.PRNumber,
-					Repo:         cfg.Repo,
-					ScenarioSpec: spec,
-					ChangedFiles: files,
-				})
-			}
+		// runLoop executes the issue processing loop and returns any error. It is
+		// run directly in text mode or in a goroutine in TUI mode.
+		runLoop := func() error {
+			return implementIssues(ctx, issueNums, cfg, prompts, authEnv, logger, hook, writer, notifiers, reporter, punchlistPath)
 		}
 
-		// Print totals.
-		reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed, 0)
-
-		// Finalize run data.
-		if writer != nil {
-			if err := writer.FinalizeRun(rundata.RunSummary{
-				Total:       implemented + readyToMerge + needsHumanReview + failed,
-				Implemented: implemented,
-				Failed:      failed,
-			}); err != nil {
-				logger.Warn("failed to finalize run data", "error", err)
-			}
+		if useTUI {
+			errCh := make(chan error, 1)
+			go func() {
+				err := runLoop()
+				errCh <- err
+				program.Send(tea.QuitMsg{})
+			}()
+			_, _ = program.Run()
+			return <-errCh
 		}
-
-		// Generate punchlist from all accumulated entries.
-		if len(punchlistEntries) > 0 {
-			agent.EnrichPunchlistEntries(ctx, punchlistEntries, prompts, cfg, authEnv, logger)
-
-			if writer != nil {
-				for _, e := range punchlistEntries {
-					plData := rundata.PunchlistData{
-						VerificationSteps: e.ExtractVerificationSteps(),
-						ScenarioCases:     e.ExtractScenarioCases(),
-						AcceptanceTests:   e.AcceptanceTests,
-						ChangedFiles:      e.ChangedFiles,
-					}
-					if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
-						logger.Warn("failed to write punchlist data",
-							"issue_number", e.IssueNumber, "error", err)
-					}
-				}
-			}
-
-			text := punchlist.Generate(punchlistEntries)
-			reporter.PunchlistText(text)
-			if punchlistPath != "" {
-				if err := os.WriteFile(punchlistPath, []byte(text), 0o644); err != nil {
-					logger.Warn("failed to write punchlist", "error", err)
-				}
-			}
-		}
-
-		return nil
+		return runLoop()
 	},
+}
+
+// implementIssues runs the implement → review → merge loop for each issue number.
+// reporter receives progress events; writer persists run data (may be nil).
+func implementIssues(
+	ctx context.Context,
+	issueNums []int,
+	cfg *config.Config,
+	prompts *agent.Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	hook agent.RunDataHook,
+	writer *rundata.Writer,
+	notifiers []notify.Notifier,
+	reporter progress.ProgressReporter,
+	punchlistPath string,
+) error {
+	// Stats across all issues.
+	var implemented, readyToMerge, needsHumanReview, failed int
+
+	// Punchlist entries accumulated across all issues.
+	var punchlistEntries []punchlist.Entry
+
+	for _, issueNumber := range issueNums {
+		if ctx.Err() != nil {
+			logger.Warn("context cancelled, stopping", "error", ctx.Err())
+			break
+		}
+
+		issue, err := github.FetchIssue(cfg.Repo, issueNumber)
+		if err != nil {
+			logger.Warn("failed to fetch issue, skipping", "issue_number", issueNumber, "error", err)
+			failed++
+			reporter.IssueCompleted(issueNumber, "", "failed", 0, 0, err.Error())
+			continue
+		}
+
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
+
+		// Write dialogue if we have a PR and a writer.
+		if writer != nil && outcome.PRNumber > 0 {
+			bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+			if fetchErr != nil {
+				logger.Warn("failed to fetch PR comment bodies for dialogue",
+					"issue_number", issueNumber, "error", fetchErr)
+			} else {
+				dialogueEntries := orchestrator.BuildDialogueEntries(bodies)
+				if len(dialogueEntries) > 0 {
+					if err := writer.WriteDialogue(issueNumber, dialogueEntries); err != nil {
+						logger.Warn("failed to write dialogue",
+							"issue_number", issueNumber, "error", err)
+					}
+				}
+			}
+		}
+
+		switch outcome.Status {
+		case agent.StatusImplemented:
+			implemented++
+			reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "")
+			if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
+				logger.Warn("could not sync local repo after merge", "error", err)
+			}
+		case agent.StatusReadyToMerge:
+			readyToMerge++
+			reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "")
+		case agent.StatusNeedsHumanReview:
+			needsHumanReview++
+			reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "")
+		default:
+			failed++
+			errMsg := ""
+			if outcome.Err != nil {
+				errMsg = outcome.Err.Error()
+			}
+			reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg)
+		}
+
+		logger.Info("issue outcome",
+			"issue_number", outcome.IssueNumber,
+			"status", outcome.Status,
+			"pr_number", outcome.PRNumber,
+			"retries", outcome.Retries,
+			"error", outcome.Err,
+		)
+
+		// Fire implementation_complete notification for each processed issue.
+		notifyMsg := fmt.Sprintf("issue #%d: status=%s", issueNumber, outcome.Status)
+		if outcome.PRNumber > 0 {
+			notifyMsg += fmt.Sprintf(", PR #%d", outcome.PRNumber)
+		}
+		notify.Fire(ctx, notifiers, notify.Event{
+			Type:    "implementation_complete",
+			Repo:    cfg.Repo,
+			Message: notifyMsg,
+		}, logger)
+
+		if outcome.PRNumber > 0 {
+			files, err := punchlist.FetchChangedFiles(cfg.Repo, outcome.PRNumber)
+			if err != nil {
+				logger.Warn("failed to fetch changed files for punchlist",
+					"pr_number", outcome.PRNumber, "error", err)
+			}
+			spec, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issueNumber)
+			if err != nil {
+				logger.Warn("failed to read scenario spec for punchlist",
+					"issue_number", issueNumber, "error", err)
+			}
+			punchlistEntries = append(punchlistEntries, punchlist.Entry{
+				IssueNumber:  issue.Number,
+				IssueTitle:   issue.Title,
+				IssueBody:    issue.Body,
+				PRNumber:     outcome.PRNumber,
+				Repo:         cfg.Repo,
+				ScenarioSpec: spec,
+				ChangedFiles: files,
+			})
+		}
+	}
+
+	// Print totals.
+	reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed, 0)
+
+	// Finalize run data.
+	if writer != nil {
+		if err := writer.FinalizeRun(rundata.RunSummary{
+			Total:       implemented + readyToMerge + needsHumanReview + failed,
+			Implemented: implemented,
+			Failed:      failed,
+		}); err != nil {
+			logger.Warn("failed to finalize run data", "error", err)
+		}
+	}
+
+	// Generate punchlist from all accumulated entries.
+	if len(punchlistEntries) > 0 {
+		agent.EnrichPunchlistEntries(ctx, punchlistEntries, prompts, cfg, authEnv, logger)
+
+		if writer != nil {
+			for _, e := range punchlistEntries {
+				plData := rundata.PunchlistData{
+					VerificationSteps: e.ExtractVerificationSteps(),
+					ScenarioCases:     e.ExtractScenarioCases(),
+					AcceptanceTests:   e.AcceptanceTests,
+					ChangedFiles:      e.ChangedFiles,
+				}
+				if err := writer.WritePunchlist(e.IssueNumber, plData); err != nil {
+					logger.Warn("failed to write punchlist data",
+						"issue_number", e.IssueNumber, "error", err)
+				}
+			}
+		}
+
+		text := punchlist.Generate(punchlistEntries)
+		reporter.PunchlistText(text)
+		if punchlistPath != "" {
+			if err := os.WriteFile(punchlistPath, []byte(text), 0o644); err != nil {
+				logger.Warn("failed to write punchlist", "error", err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // collectIssueNumbers merges positional args and the --issues flag value into
@@ -391,6 +448,7 @@ func init() {
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles")
 	f.Bool("dry-run", false, "Print issue details and exit")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
+	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
 	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
 	f.String("auto-merge-rollup", "none", "Rollup merge strategy after run: none (no rollup PR), manual (create PR but don't merge), auto (create and merge rollup PR)")
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
