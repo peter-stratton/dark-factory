@@ -263,7 +263,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				)
 
 				var qualityHandoff string
-				if qAttempt >= cfg.MaxResumeRetries {
+				if shouldHandoff(qAttempt, cfg.MaxResumeRetries) {
 					qualityHandoff = assembleHandoffContext(cfg.Repo, prNum, logger)
 				}
 
@@ -597,7 +597,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			)
 
 			var handoff string
-			if attempt >= cfg.MaxResumeRetries {
+			if shouldHandoff(attempt, cfg.MaxResumeRetries) {
 				handoff = assembleHandoffContext(cfg.Repo, prNum, logger)
 			}
 
@@ -914,6 +914,13 @@ func checkDriftAndClose(baseSHA string, cfg *config.Config, prNum int, logger *s
 		logger.Warn("failed to close PR", "error", closeErr)
 	}
 	return fmt.Errorf("protected path drift: %v", touched)
+}
+
+// shouldHandoff returns true when the current attempt count has reached or
+// exceeded the maximum number of resume retries, indicating the agent should
+// include full handoff context for the next run.
+func shouldHandoff(attempt int, maxResumeRetries int) bool {
+	return attempt >= maxResumeRetries
 }
 
 // topologicalSortModules returns module names sorted in dependency order

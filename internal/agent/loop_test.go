@@ -360,6 +360,27 @@ func TestProcessIssue_MergeOnApproval(t *testing.T) {
 	}
 }
 
+func TestShouldHandoff(t *testing.T) {
+	tests := []struct {
+		name             string
+		attempt          int
+		maxResumeRetries int
+		want             bool
+	}{
+		{"at threshold returns true", 2, 2, true},
+		{"below threshold returns false", 1, 2, false},
+		{"zero threshold returns true", 0, 0, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldHandoff(tc.attempt, tc.maxResumeRetries)
+			if got != tc.want {
+				t.Errorf("shouldHandoff(%d, %d) = %v, want %v", tc.attempt, tc.maxResumeRetries, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCheckDriftAndClose_NoDrift(t *testing.T) {
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return []byte("src/main.go\n"), nil
