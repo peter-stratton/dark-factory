@@ -30,6 +30,8 @@ type RetryStats struct {
 	AvgPerIssue    float64 `json:"avg_per_issue"`
 	MaxRetries     int     `json:"max_retries"`
 	ExhaustedCount int     `json:"exhausted_count"` // issues with status "needs-human-review"
+	RetriedCount   int     `json:"retried_count"`   // issues that had at least one retry
+	RecoveryRate   float64 `json:"recovery_rate"`   // fraction of retried issues that eventually succeeded
 }
 
 // CostStats holds aggregate cost statistics.
@@ -56,6 +58,7 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	var totalRetries int
 	var maxRetries int
 	var totalCost float64
+	var retriedSucceeded int
 
 	for _, run := range runs {
 		for _, issue := range run.Issues {
@@ -72,8 +75,15 @@ func Aggregate(runs []rundata.RunDetail) Report {
 			if retries > maxRetries {
 				maxRetries = retries
 			}
-			if issue.Outcome.Status == "needs-human-review" {
+			if issue.Outcome.Status == rundata.OutcomeStatusNeedsHumanReview {
 				report.RetryStats.ExhaustedCount++
+			}
+			if retries > 0 {
+				report.RetryStats.RetriedCount++
+				if issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
+					issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge {
+					retriedSucceeded++
+				}
 			}
 
 			// Collect flags from all step results for this issue.
@@ -113,6 +123,9 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	report.RetryStats.MaxRetries = maxRetries
 	if report.IssueCount > 0 {
 		report.RetryStats.AvgPerIssue = float64(totalRetries) / float64(report.IssueCount)
+	}
+	if report.RetryStats.RetriedCount > 0 {
+		report.RetryStats.RecoveryRate = float64(retriedSucceeded) / float64(report.RetryStats.RetriedCount)
 	}
 
 	// Populate cost stats.

@@ -228,6 +228,10 @@
         <td>Issues with exhausted retries</td>
         <td class="cell-num">{{.Report.RetryStats.ExhaustedCount}}</td>
       </tr>
+      <tr>
+        <td>Recovery rate (retried issues)</td>
+        <td class="cell-num">{{printf "%.1f" (mulf .Report.RetryStats.RecoveryRate 100.0)}}%</td>
+      </tr>
     </tbody>
   </table>
 </div>
