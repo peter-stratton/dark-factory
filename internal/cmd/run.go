@@ -109,7 +109,7 @@ each unblocked issue through the implement → review → merge loop.`,
 			go func() {
 				err := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
 				errCh <- err
-				program.Send(tea.QuitMsg{})
+				program.Send(tui.RunDoneMsg{})
 			}()
 
 			_, _ = program.Run()

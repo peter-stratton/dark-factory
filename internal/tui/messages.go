@@ -54,3 +54,7 @@ type RollupCreatedMsg struct {
 	PRURL    string
 	Merged   bool
 }
+
+// RunDoneMsg is sent when the orchestrator goroutine finishes. The TUI stays
+// on screen so the user can review results; pressing q/esc/ctrl+c exits.
+type RunDoneMsg struct{}

@@ -41,6 +41,9 @@ type Model struct {
 	// Spinner for in-progress rows.
 	spinner spinner.Model
 
+	// Run lifecycle.
+	done bool // true after the orchestrator finishes
+
 	// Terminal dimensions.
 	width  int
 	height int
@@ -59,6 +62,18 @@ func (m Model) Init() tea.Cmd {
 // and all progress message types.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if m.done {
+			switch msg.String() {
+			case "q", "esc", "ctrl+c":
+				return m, tea.Quit
+			}
+		}
+
+	case RunDoneMsg:
+		m.done = true
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -129,10 +144,15 @@ func (m Model) View() string {
 	}
 	divider := dividerStyle.Render(strings.Repeat("─", divWidth/2))
 
-	if table == "" {
-		return header + "\n\n" + divider + "\n\n" + summary + "\n"
+	var hint string
+	if m.done {
+		hint = "\n\n" + headerLabelStyle.Render("press q to exit")
 	}
-	return header + "\n\n" + table + "\n\n" + divider + "\n\n" + summary + "\n"
+
+	if table == "" {
+		return header + "\n\n" + divider + "\n\n" + summary + hint + "\n"
+	}
+	return header + "\n\n" + table + "\n\n" + divider + "\n\n" + summary + hint + "\n"
 }
 
 // New returns a Model pre-populated with run metadata.

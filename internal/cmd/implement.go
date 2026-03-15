@@ -208,7 +208,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			go func() {
 				err := runLoop()
 				errCh <- err
-				program.Send(tea.QuitMsg{})
+				program.Send(tui.RunDoneMsg{})
 			}()
 			_, _ = program.Run()
 			return <-errCh
