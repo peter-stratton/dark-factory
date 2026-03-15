@@ -133,7 +133,7 @@ func TestWriterInjection(t *testing.T) {
 func TestNoOpMethods(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTextReporter(&buf)
-	r.RunStarted("org/repo", "v1.0", "2026-03-14", "main", "true", "true", 10)
+	r.RunStarted("org/repo", "v1.0", "2026-03-14", "main", "true", "true", nil)
 	r.IssueStarted(1, "some issue")
 	r.IssueStageChanged(1, "implementing")
 	if buf.Len() != 0 {

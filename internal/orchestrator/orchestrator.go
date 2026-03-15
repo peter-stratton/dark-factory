@@ -125,8 +125,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 	if writer != nil {
 		runTimestamp = filepath.Base(writer.Dir())
 	}
+	issueSummaries := make([]progress.IssueSummary, len(issues))
+	for i, iss := range issues {
+		issueSummaries[i] = progress.IssueSummary{Number: iss.Number, Title: iss.Title}
+	}
 	reporter.RunStarted(cfg.Repo, milestone, runTimestamp, cfg.BaseBranch,
-		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), len(issues))
+		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), issueSummaries)
 
 	// Step 5: Print or process.
 	if dryRun {

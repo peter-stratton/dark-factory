@@ -37,7 +37,14 @@ type RunFinishedMsg struct {
 	Blocked          int
 }
 
-// RunStartedMsg is sent when a run begins, carrying header metadata.
+// RunStartedIssue holds a single issue's number and title for initial table population.
+type RunStartedIssue struct {
+	Number int
+	Title  string
+}
+
+// RunStartedMsg is sent when a run begins, carrying header metadata and the
+// full issue list so all rows appear as queued immediately.
 type RunStartedMsg struct {
 	Repo         string
 	Milestone    string
@@ -45,7 +52,7 @@ type RunStartedMsg struct {
 	BaseBranch   string
 	MergeFeature string
 	MergeRollup  string
-	IssueCount   int
+	Issues       []RunStartedIssue
 }
 
 // RollupCreatedMsg is sent when a rollup PR is created and optionally merged.

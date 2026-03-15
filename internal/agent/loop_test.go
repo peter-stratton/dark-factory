@@ -13,6 +13,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/quality"
 	"github.com/phs/dark-factory/internal/rundata"
@@ -4705,7 +4706,7 @@ func (r *mockReporter) IssueStageChanged(number int, stage string) {
 		stage  string
 	}{number, stage})
 }
-func (r *mockReporter) RunStarted(_, _, _, _, _, _ string, _ int) {}
+func (r *mockReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
 func (r *mockReporter) IssueStarted(_ int, _ string)              {}
 func (r *mockReporter) IssueCompleted(_ int, _ string, _ string, _, _ int, _ string) {
 }

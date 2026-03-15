@@ -1,9 +1,17 @@
 package progress
 
+// IssueSummary holds the number and title of an issue in the run. Used to
+// populate the TUI's issue table upfront so all issues appear as queued.
+type IssueSummary struct {
+	Number int
+	Title  string
+}
+
 // ProgressReporter receives progress events from the orchestrator.
 type ProgressReporter interface {
-	// RunStarted signals the beginning of a run with metadata.
-	RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string, issueCount int)
+	// RunStarted signals the beginning of a run with metadata and the full
+	// list of issues that will be processed.
+	RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string, issues []IssueSummary)
 	// IssueStarted signals that processing has begun for an issue.
 	IssueStarted(issueNumber int, title string)
 	// IssueStageChanged signals a stage transition for an in-progress issue.

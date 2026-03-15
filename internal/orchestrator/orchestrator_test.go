@@ -77,7 +77,7 @@ type fakeRollupCreated struct {
 	merged   bool
 }
 
-func (r *fakeReporter) RunStarted(_, _, _, _, _, _ string, _ int) {}
+func (r *fakeReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
 func (r *fakeReporter) IssueStarted(_ int, _ string)              {}
 func (r *fakeReporter) IssueStageChanged(_ int, _ string)         {}
 func (r *fakeReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string) {

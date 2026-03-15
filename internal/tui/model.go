@@ -87,11 +87,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.issueIndex == nil {
 			m.issueIndex = make(map[int]int)
 		}
-		m.issueIndex[msg.Number] = len(m.issues)
-		m.issues = append(m.issues, issueRow{
-			number: msg.Number,
-			title:  msg.Title,
-		})
+		// Only add if not already present (RunStartedMsg may have pre-populated).
+		if _, exists := m.issueIndex[msg.Number]; !exists {
+			m.issueIndex[msg.Number] = len(m.issues)
+			m.issues = append(m.issues, issueRow{
+				number: msg.Number,
+				title:  msg.Title,
+			})
+		}
+		// Decrement queued since this issue is now in progress.
+		if m.queued > 0 {
+			m.queued--
+		}
 
 	case IssueStageChangedMsg:
 		if idx, ok := m.issueIndex[msg.Number]; ok {
@@ -104,6 +111,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues[idx].prNumber = msg.PRNumber
 			m.issues[idx].retries = msg.Retries
 			m.issues[idx].errMsg = msg.ErrMsg
+			// Update summary counts incrementally.
+			switch msg.Status {
+			case "implemented":
+				m.merged++
+			case "ready-to-merge", "needs-human-review":
+				m.inReview++
+			case "failed":
+				m.failed++
+			}
 		}
 
 	case RunStartedMsg:
@@ -117,6 +133,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rollup:  msg.MergeRollup,
 			}
 		}
+		// Populate all issue rows as queued so the full list is visible immediately.
+		if m.issueIndex == nil {
+			m.issueIndex = make(map[int]int)
+		}
+		for _, iss := range msg.Issues {
+			if _, exists := m.issueIndex[iss.Number]; !exists {
+				m.issueIndex[iss.Number] = len(m.issues)
+				m.issues = append(m.issues, issueRow{
+					number: iss.Number,
+					title:  iss.Title,
+				})
+			}
+		}
+		m.queued = len(m.issues)
 
 	case WaveStartedMsg:
 		// Wave metadata is informational; no per-row state changes here.
