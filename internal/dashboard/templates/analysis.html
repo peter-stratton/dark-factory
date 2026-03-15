@@ -302,6 +302,43 @@
   {{end}}
 </div>
 
+<!-- Duration by Step -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Duration by Step</span>
+    <span class="text-muted">Total wall-clock time per step type</span>
+  </div>
+  {{if .DurationByStep}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Step</th>
+        <th class="cell-num">Total Duration</th>
+        <th>Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .DurationByStep}}
+      <tr>
+        <td>{{.Step}}</td>
+        <td class="cell-num">{{.Duration}}</td>
+        <td>
+          <div class="pass-fail-bar">
+            <span class="text-muted">{{printf "%.1f" .Percent}}%</span>
+            <div class="pass-fail-bar__bar">
+              <div class="progress-bar__segment progress-bar__segment--success" style="width: {{printf "%.1f" .Percent}}%;"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="text-muted" style="padding: 1rem;">No duration data recorded.</p>
+  {{end}}
+</div>
+
 {{if .RepoRows}}
 
 <!-- Success by Repo -->
