@@ -22,9 +22,10 @@ type RunFilter struct {
 // An empty filter returns all runs. A filter that matches nothing returns an empty slice.
 func QueryRuns(db *DB, filter RunFilter) ([]RunRecord, error) {
 	where, args := buildRunWhere(filter)
-	q := `SELECT id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
+	const runsBase = `SELECT id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
 	             started_at, finished_at, total, implemented, failed, abort_reason
-	      FROM runs` + where + ` ORDER BY started_at ASC`
+	      FROM runs`
+	q := runsBase + where + ` ORDER BY started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
 
 	rows, err := db.db.Query(q, args...)
 	if err != nil {
@@ -69,9 +70,10 @@ func QueryRuns(db *DB, filter RunFilter) ([]RunRecord, error) {
 // sorted by run started_at ascending. An empty filter returns all outcomes.
 func QueryIssueOutcomes(db *DB, filter RunFilter) ([]IssueOutcomeRecord, error) {
 	where, args := buildRunJoinWhere(filter)
-	q := `SELECT io.run_id, io.issue_number, io.title, io.status, io.pr_number, io.error
+	const issueOutcomesBase = `SELECT io.run_id, io.issue_number, io.title, io.status, io.pr_number, io.error
 	      FROM issue_outcomes io
-	      INNER JOIN runs r ON r.id = io.run_id` + where + ` ORDER BY r.started_at ASC`
+	      INNER JOIN runs r ON r.id = io.run_id`
+	q := issueOutcomesBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
 
 	rows, err := db.db.Query(q, args...)
 	if err != nil {
@@ -102,10 +104,11 @@ func QueryIssueOutcomes(db *DB, filter RunFilter) ([]IssueOutcomeRecord, error) 
 // sorted by run started_at ascending. An empty filter returns all step results.
 func QueryStepResults(db *DB, filter RunFilter) ([]StepResultRecord, error) {
 	where, args := buildRunJoinWhere(filter)
-	q := `SELECT sr.run_id, sr.issue_number, sr.step_name, sr.cost_usd, sr.duration_seconds,
+	const stepResultsBase = `SELECT sr.run_id, sr.issue_number, sr.step_name, sr.cost_usd, sr.duration_seconds,
 	             sr.flags, sr.started_at, sr.finished_at
 	      FROM step_results sr
-	      INNER JOIN runs r ON r.id = sr.run_id` + where + ` ORDER BY r.started_at ASC`
+	      INNER JOIN runs r ON r.id = sr.run_id`
+	q := stepResultsBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
 
 	rows, err := db.db.Query(q, args...)
 	if err != nil {
