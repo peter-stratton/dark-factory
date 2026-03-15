@@ -141,9 +141,9 @@ func RenderTerminal(rpt SprintReport) string {
 	}
 
 	// Header
-	sb.WriteString(fmt.Sprintf("Sprint Report  %s – %s\n", formatDate(rpt.Since), formatDate(rpt.Until)))
+	fmt.Fprintf(&sb, "Sprint Report  %s – %s\n", formatDate(rpt.Since), formatDate(rpt.Until))
 	if rpt.Repo != "" {
-		sb.WriteString(fmt.Sprintf("Repo: %s\n", rpt.Repo))
+		fmt.Fprintf(&sb, "Repo: %s\n", rpt.Repo)
 	}
 
 	// Summary table
@@ -197,7 +197,7 @@ func RenderMarkdown(rpt SprintReport) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Sprint Report\n\n")
-	sb.WriteString(fmt.Sprintf("**Period:** %s – %s\n\n", formatDate(rpt.Since), formatDate(rpt.Until)))
+	fmt.Fprintf(&sb, "**Period:** %s – %s\n\n", formatDate(rpt.Since), formatDate(rpt.Until))
 	if rpt.Repo != "" {
 		sb.WriteString(fmt.Sprintf("**Repo:** %s\n\n", rpt.Repo))
 	}
