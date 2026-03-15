@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/analysis"
 	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/phs/dark-factory/internal/stats"
 	"github.com/spf13/cobra"
 )
 
@@ -20,30 +24,51 @@ var newAnalyzeReader = func(logger *slog.Logger) (*rundata.Reader, error) {
 	return rundata.NewReader(logger)
 }
 
+// newAnalyzeDB is a testability seam: replaced in tests to inject a custom DB.
+var newAnalyzeDB = func() (*stats.DB, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("getting home dir: %w", err)
+	}
+	return stats.Open(filepath.Join(home, ".godark", "stats.db"))
+}
+
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
 	Short: "Analyze run data and print aggregate report",
-	Long: `Read run data from ~/.godark/runs/, apply filters, and print an
-aggregate report including outcome distribution, flag frequencies,
-retry statistics, cost statistics, and detected prompt gaps.`,
+	Long: `Read run data from the stats database (~/.godark/stats.db) by default,
+apply filters, and print an aggregate report including outcome distribution,
+flag frequencies, retry statistics, cost statistics, and detected prompt gaps.
+
+Use --legacy to fall back to scanning run directories (~/.godark/runs/) instead.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repo, _ := cmd.Flags().GetString("repo")
 		milestone, _ := cmd.Flags().GetString("milestone")
 		sinceStr, _ := cmd.Flags().GetString("since")
 		untilStr, _ := cmd.Flags().GetString("until")
 		jsonOut, _ := cmd.Flags().GetBool("json")
+		legacy, _ := cmd.Flags().GetBool("legacy")
 
 		since, until, err := parseDateRange(sinceStr, untilStr)
 		if err != nil {
 			return err
 		}
 
-		reader, err := newAnalyzeReader(nil)
-		if err != nil {
-			return fmt.Errorf("creating reader: %w", err)
+		if legacy {
+			reader, err := newAnalyzeReader(nil)
+			if err != nil {
+				return fmt.Errorf("creating reader: %w", err)
+			}
+			return runAnalyze(cmd.OutOrStdout(), reader, slog.Default(), repo, milestone, since, until, jsonOut)
 		}
 
-		return runAnalyze(cmd.OutOrStdout(), reader, slog.Default(), repo, milestone, since, until, jsonOut)
+		db, err := newAnalyzeDB()
+		if err != nil {
+			return fmt.Errorf("opening stats database: %w", err)
+		}
+		defer db.Close()
+
+		return runAnalyzeDB(cmd.OutOrStdout(), db, repo, milestone, since, until, jsonOut)
 	},
 }
 
@@ -54,10 +79,58 @@ func init() {
 	f.String("since", "", "Only include runs started at or after this date (RFC 3339 or YYYY-MM-DD)")
 	f.String("until", "", "Only include runs started at or before this date (RFC 3339 or YYYY-MM-DD)")
 	f.Bool("json", false, "Output as JSON instead of human-readable table")
+	f.Bool("legacy", false, "Fall back to filesystem scan (~/.godark/runs/) instead of the stats database")
 	rootCmd.AddCommand(analyzeCmd)
 }
 
-// runAnalyze is the core logic for the analyze command.
+// runAnalyzeDB is the DB-backed analysis path. It queries the stats database,
+// converts records to RunDetail, and writes the report to w.
+func runAnalyzeDB(w io.Writer, db *stats.DB, repo, milestone string, since, until *time.Time, jsonOut bool) error {
+	filter := stats.RunFilter{
+		Repo:      repo,
+		Milestone: milestone,
+	}
+	if since != nil {
+		filter.Since = *since
+	}
+	if until != nil {
+		filter.Until = *until
+	}
+
+	ctx := context.Background()
+
+	runs, err := stats.QueryRuns(ctx, db, filter)
+	if err != nil {
+		return fmt.Errorf("querying runs: %w", err)
+	}
+	if len(runs) == 0 {
+		fmt.Fprintln(w, "No runs found")
+		return nil
+	}
+
+	outcomes, err := stats.QueryIssueOutcomes(ctx, db, filter)
+	if err != nil {
+		return fmt.Errorf("querying issue outcomes: %w", err)
+	}
+
+	steps, err := stats.QueryStepResults(ctx, db, filter)
+	if err != nil {
+		return fmt.Errorf("querying step results: %w", err)
+	}
+
+	runDetails := stats.ToRunDetails(runs, outcomes, steps)
+
+	report := analysis.Aggregate(runDetails)
+	gaps := analysis.DetectGaps(runDetails)
+
+	if jsonOut {
+		return printAnalyzeJSON(w, report, gaps)
+	}
+	printAnalyzeReport(w, report, gaps)
+	return nil
+}
+
+// runAnalyze is the core logic for the analyze command (legacy filesystem path).
 // It reads runs from reader, applies filters, and writes the report to w.
 // If logger is nil, slog.Default() is used.
 func runAnalyze(w io.Writer, reader *rundata.Reader, logger *slog.Logger, repo, milestone string, since, until *time.Time, jsonOut bool) error {
