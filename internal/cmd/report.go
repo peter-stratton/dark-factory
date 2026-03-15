@@ -13,17 +13,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// openStatsDBAt checks that dbPath exists and opens it.
+// Extracted for testability so tests can exercise the real error message.
+func openStatsDBAt(dbPath string) (*stats.DB, error) {
+	if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("No stats database found. Run `godark run` or `godark implement` first.")
+	}
+	return stats.Open(dbPath)
+}
+
 // newReportDB is a testability seam: replaced in tests to inject a custom DB.
 var newReportDB = func() (*stats.DB, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting home dir: %w", err)
 	}
-	dbPath := filepath.Join(home, ".godark", "stats.db")
-	if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
-		return nil, fmt.Errorf("no stats database found; run `godark run` or `godark implement` first")
-	}
-	return stats.Open(dbPath)
+	return openStatsDBAt(filepath.Join(home, ".godark", "stats.db"))
 }
 
 var reportCmd = &cobra.Command{

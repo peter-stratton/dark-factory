@@ -83,11 +83,25 @@ func TestParseSinceDuration(t *testing.T) {
 	}
 }
 
-// TestReportMissingDatabase verifies the error message when stats.db does not exist.
+// TestOpenStatsDBAtMissing exercises the real production error message when the DB file is absent.
+func TestOpenStatsDBAtMissing(t *testing.T) {
+	_, err := openStatsDBAt("/tmp/this-path-does-not-exist-godark-stats-test.db")
+	if err == nil {
+		t.Fatal("expected error for missing database, got nil")
+	}
+	if !strings.Contains(err.Error(), "No stats database found") {
+		t.Errorf("error = %q, want to contain 'No stats database found'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "godark run") && !strings.Contains(err.Error(), "godark implement") {
+		t.Errorf("error = %q, want to mention 'godark run' or 'godark implement'", err.Error())
+	}
+}
+
+// TestReportMissingDatabase verifies the error propagates through RunE when stats.db does not exist.
 func TestReportMissingDatabase(t *testing.T) {
 	orig := newReportDB
 	newReportDB = func() (*stats.DB, error) {
-		return nil, fmt.Errorf("No stats database found. Run `godark run` or `godark implement` first.")
+		return openStatsDBAt("/tmp/this-path-does-not-exist-godark-stats-test.db")
 	}
 	defer func() { newReportDB = orig }()
 
