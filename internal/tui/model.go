@@ -42,7 +42,9 @@ type Model struct {
 	spinner spinner.Model
 
 	// Run lifecycle.
-	done bool // true after the orchestrator finishes
+	done       bool          // true after the orchestrator finishes
+	cancelling bool          // true after user requests cancellation
+	cancelFn   func()        // cancels the orchestrator context
 
 	// Terminal dimensions.
 	width  int
@@ -63,9 +65,20 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if m.done {
-			switch msg.String() {
-			case "q", "esc", "ctrl+c":
+		switch msg.String() {
+		case "ctrl+c":
+			if m.done {
+				return m, tea.Quit
+			}
+			// During an active run, cancel the orchestrator context and wait
+			// for RunDoneMsg before exiting.
+			if !m.cancelling && m.cancelFn != nil {
+				m.cancelling = true
+				m.cancelFn()
+			}
+			return m, nil
+		case "q", "esc":
+			if m.done {
 				return m, tea.Quit
 			}
 		}
@@ -177,6 +190,10 @@ func (m Model) View() string {
 	var hint string
 	if m.done {
 		hint = "\n\n" + headerLabelStyle.Render("press q to exit")
+	} else if m.cancelling {
+		hint = "\n\n" + summaryFailedStyle.Render("cancelling... waiting for current issue to finish")
+	} else {
+		hint = "\n\n" + headerLabelStyle.Render("press ctrl+c to cancel")
 	}
 
 	if table == "" {
@@ -187,9 +204,11 @@ func (m Model) View() string {
 
 // New returns a Model pre-populated with run metadata.
 //
+// cancelFn is called when the user presses ctrl+c during an active run to
+// cancel the orchestrator's context. It may be nil (cancellation disabled).
 // mergeFeature and mergeRollup may be empty strings when auto-merge is not
 // configured. baseBranch may be empty when using the repository default.
-func New(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string) Model {
+func New(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string, cancelFn func()) Model {
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
 
@@ -198,6 +217,7 @@ func New(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup strin
 		milestone:  milestone,
 		timestamp:  timestamp,
 		baseBranch: baseBranch,
+		cancelFn:   cancelFn,
 		spinner:    spin,
 	}
 	if mergeFeature != "" || mergeRollup != "" {

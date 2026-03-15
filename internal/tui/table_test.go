@@ -204,7 +204,7 @@ func TestRenderTableTitleTruncation(t *testing.T) {
 // --- Model Update message handler tests ---
 
 func TestModelIssueStartedMsg(t *testing.T) {
-	m := New("repo", "ms", "ts", "", "", "")
+	m := New("repo", "ms", "ts", "", "", "", nil)
 	next, _ := m.Update(IssueStartedMsg{Number: 42, Title: "fix the bug"})
 	updated := next.(Model)
 
@@ -223,7 +223,7 @@ func TestModelIssueStartedMsg(t *testing.T) {
 }
 
 func TestModelIssueStageChangedMsg(t *testing.T) {
-	m := New("repo", "ms", "ts", "", "", "")
+	m := New("repo", "ms", "ts", "", "", "", nil)
 
 	// First start an issue.
 	next, _ := m.Update(IssueStartedMsg{Number: 42, Title: "fix the bug"})
@@ -240,7 +240,7 @@ func TestModelIssueStageChangedMsg(t *testing.T) {
 }
 
 func TestModelIssueCompletedMsg(t *testing.T) {
-	m := New("repo", "ms", "ts", "", "", "")
+	m := New("repo", "ms", "ts", "", "", "", nil)
 
 	next, _ := m.Update(IssueStartedMsg{Number: 42, Title: "fix the bug"})
 	m = next.(Model)
@@ -267,7 +267,7 @@ func TestModelIssueCompletedMsg(t *testing.T) {
 
 func TestModelStageChangedUnknownIssue(t *testing.T) {
 	// Should not panic or add rows for unknown issue numbers.
-	m := New("repo", "ms", "ts", "", "", "")
+	m := New("repo", "ms", "ts", "", "", "", nil)
 	next, _ := m.Update(IssueStageChangedMsg{Number: 999, Stage: "verify"})
 	updated := next.(Model)
 	if len(updated.issues) != 0 {
@@ -276,7 +276,7 @@ func TestModelStageChangedUnknownIssue(t *testing.T) {
 }
 
 func TestModelMultipleIssues(t *testing.T) {
-	m := New("repo", "ms", "ts", "", "", "")
+	m := New("repo", "ms", "ts", "", "", "", nil)
 
 	next, _ := m.Update(IssueStartedMsg{Number: 10, Title: "issue ten"})
 	m = next.(Model)
@@ -297,7 +297,7 @@ func TestModelMultipleIssues(t *testing.T) {
 // --- Model View table integration ---
 
 func TestModelViewContainsTable(t *testing.T) {
-	m := New("repo", "ms", "ts", "", "", "")
+	m := New("repo", "ms", "ts", "", "", "", nil)
 	next, _ := m.Update(IssueStartedMsg{Number: 42, Title: "fix the bug"})
 	m = next.(Model)
 	m.width = 80
