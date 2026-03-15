@@ -785,11 +785,32 @@ type VerifyRow struct {
 
 // RepoRow is one row in the per-repo success rate table on the analysis page.
 type RepoRow struct {
-	Repo        string
-	Total       int
-	Implemented int
-	Failed      int
-	SuccessPct  float64 // success rate as a percentage (0–100)
+	Repo               string
+	Total              int
+	Implemented        int
+	Failed             int
+	SuccessPct         float64 // success rate as a percentage (0–100)
+	FirstPassRate      float64 // first-pass rate as a fraction (0–1)
+	AvgCostPerIssueUSD float64
+}
+
+// OverviewMetrics holds top-level aggregate metrics for the analysis page.
+type OverviewMetrics struct {
+	TotalRuns            int
+	TotalIssues          int
+	SuccessRate          float64 // fraction (0–1)
+	FirstPassRate        float64 // fraction (0–1)
+	TotalCostUSD         float64
+	AvgCostPerSuccessUSD float64
+	WastedCostUSD        float64
+	TimeoutRate          float64 // fraction (0–1)
+}
+
+// FailureReasonRow is one row in the failure reason breakdown table on the analysis page.
+type FailureReasonRow struct {
+	Reason  string
+	Count   int
+	Percent float64
 }
 
 // GapView is the view model for one prompt gap on the analysis page.
@@ -816,7 +837,10 @@ type AnalysisData struct {
 	Repos          []string
 	RepoFilter     string
 	HasData        bool
-	HasTrends      bool // true when Trends has at least 2 points
+	HasTrends      bool             // true when Trends has at least 2 points
+	Overview       OverviewMetrics
+	FailureReasons []FailureReasonRow // sorted by count desc
+	AvgTimeToMerge string            // human-readable duration, e.g. "7m30s"
 }
 
 func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
@@ -905,6 +929,8 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 	verifyRows := buildVerifyRows(report)
 	repoRows := buildRepoRows(report)
 	gaps := buildGapViews(rawGaps)
+	overview := buildOverviewMetrics(report)
+	failureReasons := buildFailureReasonRows(report)
 
 	return &AnalysisData{
 		Report:         report,
@@ -919,6 +945,9 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 		RepoFilter:     repoFilter,
 		HasData:        len(runs) > 0,
 		HasTrends:      len(trends) >= 2,
+		Overview:       overview,
+		FailureReasons: failureReasons,
+		AvgTimeToMerge: formatDuration(report.DurationStats.AvgTimeToMergeSeconds),
 	}, nil
 }
 
@@ -975,6 +1004,8 @@ func (s *Server) buildAnalysisDataFromFS(repoFilter string) (*AnalysisData, erro
 	verifyRows := buildVerifyRows(report)
 	repoRows := buildRepoRows(report)
 	gaps := buildGapViews(rawGaps)
+	overview := buildOverviewMetrics(report)
+	failureReasons := buildFailureReasonRows(report)
 
 	return &AnalysisData{
 		Report:         report,
@@ -989,6 +1020,9 @@ func (s *Server) buildAnalysisDataFromFS(repoFilter string) (*AnalysisData, erro
 		RepoFilter:     repoFilter,
 		HasData:        len(runs) > 0,
 		HasTrends:      len(trends) >= 2,
+		Overview:       overview,
+		FailureReasons: failureReasons,
+		AvgTimeToMerge: formatDuration(report.DurationStats.AvgTimeToMergeSeconds),
 	}, nil
 }
 
@@ -1132,15 +1166,59 @@ func buildRepoRows(report analysis.Report) []RepoRow {
 	rows := make([]RepoRow, 0, len(report.RepoStats))
 	for repo, rs := range report.RepoStats {
 		rows = append(rows, RepoRow{
-			Repo:        repo,
-			Total:       rs.Total,
-			Implemented: rs.Implemented,
-			Failed:      rs.Failed,
-			SuccessPct:  rs.SuccessRate * 100,
+			Repo:               repo,
+			Total:              rs.Total,
+			Implemented:        rs.Implemented,
+			Failed:             rs.Failed,
+			SuccessPct:         rs.SuccessRate * 100,
+			FirstPassRate:      rs.FirstPassRate,
+			AvgCostPerIssueUSD: rs.AvgCostPerIssueUSD,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		return rows[i].Repo < rows[j].Repo
+	})
+	return rows
+}
+
+// buildOverviewMetrics builds the top-level overview metrics from a Report.
+func buildOverviewMetrics(report analysis.Report) OverviewMetrics {
+	var successRate float64
+	if report.IssueCount > 0 {
+		successRate = float64(report.Outcomes["implemented"]) / float64(report.IssueCount)
+	}
+	return OverviewMetrics{
+		TotalRuns:            report.RunCount,
+		TotalIssues:          report.IssueCount,
+		SuccessRate:          successRate,
+		FirstPassRate:        report.FirstPassSuccessRate,
+		TotalCostUSD:         report.CostStats.TotalUSD,
+		AvgCostPerSuccessUSD: report.AvgCostPerSuccessUSD,
+		WastedCostUSD:        report.WastedCostUSD,
+		TimeoutRate:          report.TimeoutRate,
+	}
+}
+
+// buildFailureReasonRows converts the FailureReasons map in a Report to a
+// sorted slice with pre-computed percentages, ready for template rendering.
+func buildFailureReasonRows(report analysis.Report) []FailureReasonRow {
+	rows := make([]FailureReasonRow, 0, len(report.FailureReasons))
+	for reason, count := range report.FailureReasons {
+		var pct float64
+		if report.IssueCount > 0 {
+			pct = float64(count) / float64(report.IssueCount) * 100
+		}
+		rows = append(rows, FailureReasonRow{
+			Reason:  reason,
+			Count:   count,
+			Percent: pct,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Count != rows[j].Count {
+			return rows[i].Count > rows[j].Count
+		}
+		return rows[i].Reason > rows[j].Reason
 	})
 	return rows
 }
