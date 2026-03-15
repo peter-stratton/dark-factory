@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -20,14 +21,14 @@ type RunFilter struct {
 
 // QueryRuns returns all runs matching the filter, sorted by started_at ascending.
 // An empty filter returns all runs. A filter that matches nothing returns an empty slice.
-func QueryRuns(db *DB, filter RunFilter) ([]RunRecord, error) {
+func QueryRuns(ctx context.Context, db *DB, filter RunFilter) ([]RunRecord, error) {
 	where, args := buildRunWhere(filter)
 	const runsBase = `SELECT id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
 	             started_at, finished_at, total, implemented, failed, abort_reason
 	      FROM runs`
 	q := runsBase + where + ` ORDER BY started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
 
-	rows, err := db.db.Query(q, args...)
+	rows, err := db.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query runs: %w", err)
 	}
@@ -68,14 +69,14 @@ func QueryRuns(db *DB, filter RunFilter) ([]RunRecord, error) {
 
 // QueryIssueOutcomes returns all issue outcomes for runs matching the filter,
 // sorted by run started_at ascending. An empty filter returns all outcomes.
-func QueryIssueOutcomes(db *DB, filter RunFilter) ([]IssueOutcomeRecord, error) {
+func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueOutcomeRecord, error) {
 	where, args := buildRunJoinWhere(filter)
 	const issueOutcomesBase = `SELECT io.run_id, io.issue_number, io.title, io.status, io.pr_number, io.error
 	      FROM issue_outcomes io
 	      INNER JOIN runs r ON r.id = io.run_id`
 	q := issueOutcomesBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
 
-	rows, err := db.db.Query(q, args...)
+	rows, err := db.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query issue outcomes: %w", err)
 	}
@@ -102,7 +103,7 @@ func QueryIssueOutcomes(db *DB, filter RunFilter) ([]IssueOutcomeRecord, error) 
 
 // QueryStepResults returns all step results for runs matching the filter,
 // sorted by run started_at ascending. An empty filter returns all step results.
-func QueryStepResults(db *DB, filter RunFilter) ([]StepResultRecord, error) {
+func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResultRecord, error) {
 	where, args := buildRunJoinWhere(filter)
 	const stepResultsBase = `SELECT sr.run_id, sr.issue_number, sr.step_name, sr.cost_usd, sr.duration_seconds,
 	             sr.flags, sr.started_at, sr.finished_at
@@ -110,7 +111,7 @@ func QueryStepResults(db *DB, filter RunFilter) ([]StepResultRecord, error) {
 	      INNER JOIN runs r ON r.id = sr.run_id`
 	q := stepResultsBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
 
-	rows, err := db.db.Query(q, args...)
+	rows, err := db.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query step results: %w", err)
 	}

@@ -45,7 +45,7 @@ func TestQueryRuns_NoFilter(t *testing.T) {
 	writeRun(t, db, RunRecord{ID: "run-2", Repo: "org/repo-a", StartedAt: ts2})
 	writeRun(t, db, RunRecord{ID: "run-3", Repo: "org/repo-b", StartedAt: ts3})
 
-	got, err := QueryRuns(db, RunFilter{})
+	got, err := QueryRuns(context.Background(), db, RunFilter{})
 	if err != nil {
 		t.Fatalf("QueryRuns: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestQueryRuns_RepoFilter(t *testing.T) {
 	writeRun(t, db, RunRecord{ID: "run-2", Repo: "org/repo-a", StartedAt: ts2})
 	writeRun(t, db, RunRecord{ID: "run-3", Repo: "org/repo-b", StartedAt: ts3})
 
-	got, err := QueryRuns(db, RunFilter{Repo: "org/repo-a"})
+	got, err := QueryRuns(context.Background(), db, RunFilter{Repo: "org/repo-a"})
 	if err != nil {
 		t.Fatalf("QueryRuns: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestQueryRuns_MilestoneFilter(t *testing.T) {
 	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo", Milestone: "Phase 21", StartedAt: ts1})
 	writeRun(t, db, RunRecord{ID: "run-2", Repo: "org/repo", Milestone: "Phase 22", StartedAt: ts2})
 
-	got, err := QueryRuns(db, RunFilter{Milestone: "Phase 21"})
+	got, err := QueryRuns(context.Background(), db, RunFilter{Milestone: "Phase 21"})
 	if err != nil {
 		t.Fatalf("QueryRuns: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestQueryRuns_DateRange(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := QueryRuns(db, tc.filter)
+			got, err := QueryRuns(context.Background(), db, tc.filter)
 			if err != nil {
 				t.Fatalf("QueryRuns: %v", err)
 			}
@@ -168,7 +168,7 @@ func TestQueryRuns_EmptyResult(t *testing.T) {
 
 	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo-a", StartedAt: ts1})
 
-	got, err := QueryRuns(db, RunFilter{Repo: "org/nonexistent"})
+	got, err := QueryRuns(context.Background(), db, RunFilter{Repo: "org/nonexistent"})
 	if err != nil {
 		t.Fatalf("QueryRuns: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestQueryIssueOutcomes_Join(t *testing.T) {
 		writeOutcome(t, db, IssueOutcomeRecord{RunID: "run-b", IssueNumber: i, Status: "failed"})
 	}
 
-	got, err := QueryIssueOutcomes(db, RunFilter{Repo: "org/repo-a"})
+	got, err := QueryIssueOutcomes(context.Background(), db, RunFilter{Repo: "org/repo-a"})
 	if err != nil {
 		t.Fatalf("QueryIssueOutcomes: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestQueryIssueOutcomes_NoFilter(t *testing.T) {
 		writeOutcome(t, db, IssueOutcomeRecord{RunID: "run-b", IssueNumber: i})
 	}
 
-	got, err := QueryIssueOutcomes(db, RunFilter{})
+	got, err := QueryIssueOutcomes(context.Background(), db, RunFilter{})
 	if err != nil {
 		t.Fatalf("QueryIssueOutcomes: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestQueryIssueOutcomes_EmptyResult(t *testing.T) {
 	writeRun(t, db, RunRecord{ID: "run-a", Repo: "org/repo-a", StartedAt: ts1})
 	writeOutcome(t, db, IssueOutcomeRecord{RunID: "run-a", IssueNumber: 1})
 
-	got, err := QueryIssueOutcomes(db, RunFilter{Repo: "org/nonexistent"})
+	got, err := QueryIssueOutcomes(context.Background(), db, RunFilter{Repo: "org/nonexistent"})
 	if err != nil {
 		t.Fatalf("QueryIssueOutcomes: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestQueryStepResults_Join(t *testing.T) {
 		writeStep(t, db, StepResultRecord{RunID: "run-b", IssueNumber: 1, StepName: s})
 	}
 
-	got, err := QueryStepResults(db, RunFilter{Repo: "org/repo-a"})
+	got, err := QueryStepResults(context.Background(), db, RunFilter{Repo: "org/repo-a"})
 	if err != nil {
 		t.Fatalf("QueryStepResults: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestQueryStepResults_NoFilter(t *testing.T) {
 	writeStep(t, db, StepResultRecord{RunID: "run-a", IssueNumber: 1, StepName: "quality-review"})
 	writeStep(t, db, StepResultRecord{RunID: "run-b", IssueNumber: 1, StepName: "implement"})
 
-	got, err := QueryStepResults(db, RunFilter{})
+	got, err := QueryStepResults(context.Background(), db, RunFilter{})
 	if err != nil {
 		t.Fatalf("QueryStepResults: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestQueryStepResults_EmptyResult(t *testing.T) {
 	writeRun(t, db, RunRecord{ID: "run-a", Repo: "org/repo-a", StartedAt: ts1})
 	writeStep(t, db, StepResultRecord{RunID: "run-a", IssueNumber: 1, StepName: "implement"})
 
-	got, err := QueryStepResults(db, RunFilter{Repo: "org/nonexistent"})
+	got, err := QueryStepResults(context.Background(), db, RunFilter{Repo: "org/nonexistent"})
 	if err != nil {
 		t.Fatalf("QueryStepResults: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestQueryStepResults_FlagsRoundTrip(t *testing.T) {
 		Flags:       []string{"low_cost", "no_diff_read"},
 	})
 
-	got, err := QueryStepResults(db, RunFilter{})
+	got, err := QueryStepResults(context.Background(), db, RunFilter{})
 	if err != nil {
 		t.Fatalf("QueryStepResults: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestQueryRuns_FieldsRoundTrip(t *testing.T) {
 	}
 	writeRun(t, db, want)
 
-	got, err := QueryRuns(db, RunFilter{})
+	got, err := QueryRuns(context.Background(), db, RunFilter{})
 	if err != nil {
 		t.Fatalf("QueryRuns: %v", err)
 	}
