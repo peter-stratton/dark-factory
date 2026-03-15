@@ -199,7 +199,7 @@ func RenderMarkdown(rpt SprintReport) string {
 	sb.WriteString("## Sprint Report\n\n")
 	fmt.Fprintf(&sb, "**Period:** %s – %s\n\n", formatDate(rpt.Since), formatDate(rpt.Until))
 	if rpt.Repo != "" {
-		sb.WriteString(fmt.Sprintf("**Repo:** %s\n\n", rpt.Repo))
+		fmt.Fprintf(&sb, "**Repo:** %s\n\n", rpt.Repo)
 	}
 
 	if rpt.TotalRuns == 0 {
@@ -208,8 +208,8 @@ func RenderMarkdown(rpt SprintReport) string {
 	}
 
 	sb.WriteString("## Summary\n\n")
-	sb.WriteString(fmt.Sprintf("- **Runs:** %d\n", rpt.TotalRuns))
-	sb.WriteString(fmt.Sprintf("- **Issues processed:** %d\n", rpt.IssuesProcessed))
+	fmt.Fprintf(&sb, "- **Runs:** %d\n", rpt.TotalRuns)
+	fmt.Fprintf(&sb, "- **Issues processed:** %d\n", rpt.IssuesProcessed)
 	sb.WriteString(fmt.Sprintf("- **Implemented:** %d\n", rpt.IssuesImplemented))
 	sb.WriteString(fmt.Sprintf("- **Failed:** %d\n", rpt.IssuesFailed))
 	sb.WriteString(fmt.Sprintf("- **Success rate:** **%.1f%%**\n", rpt.SuccessRate*100))
