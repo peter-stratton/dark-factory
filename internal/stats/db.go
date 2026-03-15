@@ -21,7 +21,7 @@ func Open(path string) (*DB, error) {
 	}
 
 	if err := migrate(sqlDB); err != nil {
-		sqlDB.Close()
+		_ = sqlDB.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 
