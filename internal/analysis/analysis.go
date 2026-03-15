@@ -99,24 +99,7 @@ func Aggregate(runs []rundata.RunDetail) Report {
 			}
 
 			// Cost statistics from all step results.
-			totalCost += issue.Recon.CostUSD
-			totalCost += issue.SpecGenerator.CostUSD
-			totalCost += issue.Implement.CostUSD
-			totalCost += issue.QualityReview.CostUSD
-			totalCost += issue.FunctionalReview.CostUSD
-			accumulateStepCost(report.CostStats.CostByStep, "recon", issue.Recon.CostUSD)
-			accumulateStepCost(report.CostStats.CostByStep, "spec-generator", issue.SpecGenerator.CostUSD)
-			accumulateStepCost(report.CostStats.CostByStep, "implement", issue.Implement.CostUSD)
-			accumulateStepCost(report.CostStats.CostByStep, "quality-review", issue.QualityReview.CostUSD)
-			accumulateStepCost(report.CostStats.CostByStep, "functional-review", issue.FunctionalReview.CostUSD)
-			for _, retry := range issue.Retries {
-				totalCost += retry.Retry.CostUSD
-				totalCost += retry.QualityReview.CostUSD
-				totalCost += retry.FunctionalReview.CostUSD
-				accumulateStepCost(report.CostStats.CostByStep, "retries", retry.Retry.CostUSD)
-				accumulateStepCost(report.CostStats.CostByStep, "retries", retry.QualityReview.CostUSD)
-				accumulateStepCost(report.CostStats.CostByStep, "retries", retry.FunctionalReview.CostUSD)
-			}
+			totalCost += accumulateIssueCosts(report.CostStats.CostByStep, issue)
 
 			// Verify step failure counts by check name.
 			for _, vr := range issue.VerifyResults {
@@ -188,4 +171,23 @@ func accumulateStepCost(costByStep map[string]float64, step string, cost float64
 	if cost > 0 {
 		costByStep[step] += cost
 	}
+}
+
+// accumulateIssueCosts records per-step costs for a single issue into costByStep
+// and returns the total cost across all steps including retries.
+func accumulateIssueCosts(costByStep map[string]float64, issue rundata.IssueDetail) float64 {
+	total := issue.Recon.CostUSD + issue.SpecGenerator.CostUSD +
+		issue.Implement.CostUSD + issue.QualityReview.CostUSD + issue.FunctionalReview.CostUSD
+	accumulateStepCost(costByStep, "recon", issue.Recon.CostUSD)
+	accumulateStepCost(costByStep, "spec-generator", issue.SpecGenerator.CostUSD)
+	accumulateStepCost(costByStep, "implement", issue.Implement.CostUSD)
+	accumulateStepCost(costByStep, "quality-review", issue.QualityReview.CostUSD)
+	accumulateStepCost(costByStep, "functional-review", issue.FunctionalReview.CostUSD)
+	for _, retry := range issue.Retries {
+		total += retry.Retry.CostUSD + retry.QualityReview.CostUSD + retry.FunctionalReview.CostUSD
+		accumulateStepCost(costByStep, "retries", retry.Retry.CostUSD)
+		accumulateStepCost(costByStep, "retries", retry.QualityReview.CostUSD)
+		accumulateStepCost(costByStep, "retries", retry.FunctionalReview.CostUSD)
+	}
+	return total
 }
