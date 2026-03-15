@@ -525,6 +525,61 @@ func TestAggregateCostByStepMultipleSteps(t *testing.T) {
 	}
 }
 
+func TestAggregateDurationStats(t *testing.T) {
+	// Two issues with known durations across two runs.
+	// Issue 1: implement 300s, review 120s
+	// Issue 2: implement 600s, review 0s (missing)
+	// Total implement: 900s, total review: 120s, issue count: 2
+	// AvgImplementSeconds = 450.0, AvgReviewSeconds = 60.0
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{DurationSeconds: 300.0},
+					QualityReview: rundata.StepResult{DurationSeconds: 120.0},
+				},
+			},
+		},
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement: rundata.StepResult{DurationSeconds: 600.0},
+					// QualityReview has no duration — defaults to 0.0
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.DurationStats.AvgImplementSeconds, 450.0, 0.001) {
+		t.Errorf("DurationStats.AvgImplementSeconds = %f, want 450.0", got.DurationStats.AvgImplementSeconds)
+	}
+	if !nearlyEqual(got.DurationStats.AvgReviewSeconds, 60.0, 0.001) {
+		t.Errorf("DurationStats.AvgReviewSeconds = %f, want 60.0", got.DurationStats.AvgReviewSeconds)
+	}
+}
+
+func TestAggregateDurationStatsNoData(t *testing.T) {
+	// No duration data — both averages are 0.0, not NaN.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{}, // no step data
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.DurationStats.AvgImplementSeconds != 0.0 {
+		t.Errorf("DurationStats.AvgImplementSeconds = %f, want 0.0", got.DurationStats.AvgImplementSeconds)
+	}
+	if got.DurationStats.AvgReviewSeconds != 0.0 {
+		t.Errorf("DurationStats.AvgReviewSeconds = %f, want 0.0", got.DurationStats.AvgReviewSeconds)
+	}
+}
+
 func TestAggregateCostByStepRecon(t *testing.T) {
 	// Recon cost should be tracked and included in total.
 	runs := []rundata.RunDetail{

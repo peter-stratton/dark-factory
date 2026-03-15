@@ -378,6 +378,15 @@
   <div style="position:relative;height:300px;"><canvas id="chart-cost"></canvas></div>
 </div>
 
+<!-- Duration Trends Chart -->
+<div class="card animate-in animate-in-3">
+  <div class="card__header">
+    <span class="card__title">Duration Trends Over Time</span>
+    <span class="text-muted">Average implement and review step duration per run (seconds)</span>
+  </div>
+  <div style="position:relative;height:300px;"><canvas id="chart-duration"></canvas></div>
+</div>
+
 <script>
 (function initCharts() {
   if (typeof Chart === 'undefined') {
@@ -456,6 +465,77 @@
   makeChart('chart-cost', 'Avg Cost / Issue (USD)',
     function(p) { return +p.avg_cost_per_issue_usd.toFixed(4); }, '#60a5fa',
     { ticks: { color: '#94a3b8', callback: function(v) { return '$' + v; } } });
+
+  // Duration chart: two datasets (implement + review) on one canvas.
+  (function() {
+    var canvas = document.getElementById('chart-duration');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Implement',
+            data: points.map(function(p) { return +(p.avg_implement_duration || 0).toFixed(1); }),
+            borderColor: '#a78bfa',
+            backgroundColor: '#a78bfa20',
+            fill: true,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: '#a78bfa',
+            borderWidth: 2,
+            tension: 0.3
+          },
+          {
+            label: 'Review',
+            data: points.map(function(p) { return +(p.avg_review_duration || 0).toFixed(1); }),
+            borderColor: '#fb7185',
+            backgroundColor: '#fb718520',
+            fill: true,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: '#fb7185',
+            borderWidth: 2,
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: '#e2e8f0' } },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#e2e8f0',
+            padding: 10,
+            callbacks: {
+              title: function(items) {
+                var p = points[items[0].dataIndex];
+                return (p.repo || '') + (p.milestone ? ' \u2014 ' + p.milestone : '');
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#94a3b8', maxRotation: 45, maxTicksLimit: 10, font: { size: 11 } },
+            grid: { color: '#1e293b' }
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#94a3b8', callback: function(v) { return v + 's'; } },
+            grid: { color: '#1e293b' }
+          }
+        }
+      }
+    });
+  })();
 })();
 </script>
 

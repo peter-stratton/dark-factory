@@ -342,6 +342,11 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 		_ = tw.Flush()
 	}
 
+	// Duration stats.
+	fmt.Fprintf(w, "\nDuration Stats\n")
+	fmt.Fprintf(w, "  Avg implement duration: %s\n", formatDuration(report.DurationStats.AvgImplementSeconds))
+	fmt.Fprintf(w, "  Avg review duration:    %s\n", formatDuration(report.DurationStats.AvgReviewSeconds))
+
 	// Prompt gaps.
 	fmt.Fprintf(w, "\nPrompt Gaps\n")
 	if len(gaps) == 0 {
@@ -353,4 +358,16 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 			fmt.Fprintf(w, "    fail rate without: %.1f%% (%d samples)\n", g.FailRateWithout*100, g.SamplesWithout)
 		}
 	}
+}
+
+// formatDuration formats a duration in seconds as a human-readable string (e.g. "5m00s").
+func formatDuration(seconds float64) string {
+	total := int(seconds)
+	h := total / 3600
+	m := (total % 3600) / 60
+	s := total % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dm%02ds", h, m, s)
+	}
+	return fmt.Sprintf("%dm%02ds", m, s)
 }

@@ -44,6 +44,28 @@ func writeRunDir(t *testing.T, base, owner, repo string, meta rundata.RunMeta, o
 	}
 }
 
+// issueWithSteps bundles an issue outcome with its step result files.
+type issueWithSteps struct {
+	Outcome       rundata.Outcome
+	Implement     rundata.StepResult
+	QualityReview rundata.StepResult
+}
+
+// writeRunDirWithSteps creates a run directory with run.json, per-issue outcome files,
+// and per-issue step result files (implement.json, quality-review.json).
+func writeRunDirWithSteps(t *testing.T, base, owner, repo string, meta rundata.RunMeta, issues []issueWithSteps) {
+	t.Helper()
+	timestamp := meta.StartedAt.UTC().Format("20060102-150405")
+	runDir := filepath.Join(base, owner, repo, timestamp)
+	writeJSONFile(t, filepath.Join(runDir, "run.json"), meta)
+	for _, iss := range issues {
+		issueDir := filepath.Join(runDir, "issues", fmt.Sprintf("%d", iss.Outcome.IssueNumber))
+		writeJSONFile(t, filepath.Join(issueDir, "outcome.json"), iss.Outcome)
+		writeJSONFile(t, filepath.Join(issueDir, "implement.json"), iss.Implement)
+		writeJSONFile(t, filepath.Join(issueDir, "quality-review.json"), iss.QualityReview)
+	}
+}
+
 // analyzeWithReader calls runAnalyze with a reader rooted at base and returns stdout.
 func analyzeWithReader(t *testing.T, base, repo, milestone, sinceStr, untilStr string, jsonOut bool) (string, error) {
 	t.Helper()
@@ -153,6 +175,7 @@ func TestAnalyzeFullReport(t *testing.T) {
 		"Flag Frequencies",
 		"Retry Stats",
 		"Cost Stats",
+		"Duration Stats",
 		"Prompt Gaps",
 	} {
 		if !strings.Contains(out, want) {
@@ -628,5 +651,87 @@ func TestAnalyzeDB_CostFromSteps(t *testing.T) {
 
 	if result.Report.CostStats.TotalUSD != 0.42 {
 		t.Errorf("TotalUSD = %v, want 0.42", result.Report.CostStats.TotalUSD)
+	}
+}
+
+// TestAnalyzeDurationOutput: Duration Stats section appears in CLI output with correct format.
+func TestAnalyzeDurationOutput(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	meta := rundata.RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 1",
+		IssueNumbers: []int{1},
+		StartedAt:    ts,
+	}
+	writeRunDirWithSteps(t, base, "owner", "repo", meta, []issueWithSteps{
+		{
+			Outcome:       rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+			Implement:     rundata.StepResult{DurationSeconds: 300.0},
+			QualityReview: rundata.StepResult{DurationSeconds: 120.0},
+		},
+	})
+
+	out, err := analyzeWithReader(t, base, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "Duration Stats") {
+		t.Errorf("output missing 'Duration Stats' section\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "Avg implement duration: 5m00s") {
+		t.Errorf("output missing 'Avg implement duration: 5m00s'\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "Avg review duration:    2m00s") {
+		t.Errorf("output missing 'Avg review duration:    2m00s'\nfull output:\n%s", out)
+	}
+}
+
+// TestAnalyzeDB_DurationFromSteps: step duration records flow through to report.
+func TestAnalyzeDB_DurationFromSteps(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	if err := stats.WriteRun(ctx, db, stats.RunRecord{
+		ID: "run-1", Repo: "org/repo", Milestone: "m1", StartedAt: ts,
+	}); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	if err := stats.WriteIssueOutcome(ctx, db, stats.IssueOutcomeRecord{
+		RunID: "run-1", IssueNumber: 1, Status: "implemented",
+	}); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+	if err := stats.WriteStepResult(ctx, db, stats.StepResultRecord{
+		RunID: "run-1", IssueNumber: 1, StepName: "implement", DurationSeconds: 300.0,
+	}); err != nil {
+		t.Fatalf("WriteStepResult (implement): %v", err)
+	}
+	if err := stats.WriteStepResult(ctx, db, stats.StepResultRecord{
+		RunID: "run-1", IssueNumber: 1, StepName: "quality-review", DurationSeconds: 120.0,
+	}); err != nil {
+		t.Fatalf("WriteStepResult (quality-review): %v", err)
+	}
+
+	out, err := analyzeWithDB(t, db, "", "", "", "", true)
+	if err != nil {
+		t.Fatalf("analyzeWithDB: %v", err)
+	}
+
+	var result struct {
+		Report analysis.Report `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput:\n%s", err, out)
+	}
+
+	if result.Report.DurationStats.AvgImplementSeconds != 300.0 {
+		t.Errorf("DurationStats.AvgImplementSeconds = %v, want 300.0", result.Report.DurationStats.AvgImplementSeconds)
+	}
+	if result.Report.DurationStats.AvgReviewSeconds != 120.0 {
+		t.Errorf("DurationStats.AvgReviewSeconds = %v, want 120.0", result.Report.DurationStats.AvgReviewSeconds)
 	}
 }
