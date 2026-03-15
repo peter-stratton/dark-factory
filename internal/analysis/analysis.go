@@ -8,23 +8,31 @@ import (
 
 // Report holds aggregate statistics computed across multiple runs.
 type Report struct {
-	RunCount        int                    `json:"run_count"`
-	IssueCount      int                    `json:"issue_count"`
-	Outcomes        map[string]int         `json:"outcomes"`
-	FlagFrequencies []FlagFrequency        `json:"flag_frequencies"`
-	RetryStats      RetryStats             `json:"retry_stats"`
-	VerifyStats     map[string]int         `json:"verify_stats"`
-	CostStats       CostStats              `json:"cost_stats"`
-	DurationStats   DurationStats          `json:"duration_stats"`
-	RepoStats       map[string]RepoSummary `json:"repo_stats"`
+	RunCount             int                    `json:"run_count"`
+	IssueCount           int                    `json:"issue_count"`
+	Outcomes             map[string]int         `json:"outcomes"`
+	FlagFrequencies      []FlagFrequency        `json:"flag_frequencies"`
+	RetryStats           RetryStats             `json:"retry_stats"`
+	VerifyStats          map[string]int         `json:"verify_stats"`
+	CostStats            CostStats              `json:"cost_stats"`
+	DurationStats        DurationStats          `json:"duration_stats"`
+	RepoStats            map[string]RepoSummary `json:"repo_stats"`
+	FirstPassCount       int                    `json:"first_pass_count"`
+	FirstPassSuccessRate float64                `json:"first_pass_success_rate"`
+	WastedCostUSD        float64                `json:"wasted_cost_usd"`
+	AvgCostPerSuccessUSD float64                `json:"avg_cost_per_success_usd"`
 }
 
 // RepoSummary holds per-repository outcome statistics.
 type RepoSummary struct {
-	Total       int     `json:"total"`
-	Implemented int     `json:"implemented"`
-	Failed      int     `json:"failed"`
-	SuccessRate float64 `json:"success_rate"`
+	Total              int     `json:"total"`
+	Implemented        int     `json:"implemented"`
+	Failed             int     `json:"failed"`
+	SuccessRate        float64 `json:"success_rate"`
+	FirstPassCount     int     `json:"first_pass_count"`
+	FirstPassRate      float64 `json:"first_pass_rate"`
+	TotalCostUSD       float64 `json:"total_cost_usd"`
+	AvgCostPerIssueUSD float64 `json:"avg_cost_per_issue_usd"`
 }
 
 // DurationStats holds aggregate step duration statistics.
@@ -68,6 +76,8 @@ type issueAcc struct {
 	totalCost              float64
 	totalImplementDuration float64
 	totalReviewDuration    float64
+	firstPassCount         int
+	wastedCost             float64
 }
 
 // add incorporates a single issue's data into the accumulator and the report.
@@ -77,8 +87,6 @@ func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
 	if issue.Outcome.Status != "" {
 		report.Outcomes[issue.Outcome.Status]++
 	}
-
-	accumulateRepoStat(report.RepoStats, repo, issue.Outcome.Status)
 
 	retries := len(issue.Retries)
 	a.totalRetries += retries
@@ -105,7 +113,26 @@ func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
 		collectFlags(a.flagCounts, retry.FunctionalReview.Flags)
 	}
 
-	a.totalCost += accumulateIssueCosts(report.CostStats.CostByStep, issue)
+	// Compute cost before accumulateRepoStat so the per-issue cost is available.
+	issueCost := accumulateIssueCosts(report.CostStats.CostByStep, issue)
+	a.totalCost += issueCost
+
+	// First-pass: succeeded on the initial attempt (no retries).
+	isFirstPass := retries == 0 &&
+		(issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
+			issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge)
+	if isFirstPass {
+		a.firstPassCount++
+	}
+
+	// Wasted cost: issues that ultimately failed or exhausted retries.
+	if issue.Outcome.Status == rundata.OutcomeStatusFailed ||
+		issue.Outcome.Status == rundata.OutcomeStatusNeedsHumanReview {
+		a.wastedCost += issueCost
+	}
+
+	accumulateRepoStat(report.RepoStats, repo, issue.Outcome.Status, isFirstPass, issueCost)
+
 	accumulateIssueDurations(report.DurationStats.DurationByStep, issue)
 	a.totalImplementDuration += issue.Implement.DurationSeconds
 	a.totalReviewDuration += issue.QualityReview.DurationSeconds
@@ -120,7 +147,7 @@ func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
 }
 
 // accumulateRepoStat updates per-repository counters for a single issue outcome.
-func accumulateRepoStat(repoStats map[string]RepoSummary, repo, status string) {
+func accumulateRepoStat(repoStats map[string]RepoSummary, repo, status string, isFirstPass bool, cost float64) {
 	if repo == "" {
 		return
 	}
@@ -132,6 +159,10 @@ func accumulateRepoStat(repoStats map[string]RepoSummary, repo, status string) {
 	case rundata.OutcomeStatusFailed, rundata.OutcomeStatusNeedsHumanReview:
 		rs.Failed++
 	}
+	if isFirstPass {
+		rs.FirstPassCount++
+	}
+	rs.TotalCostUSD += cost
 	repoStats[repo] = rs
 }
 
@@ -182,10 +213,22 @@ func Aggregate(runs []rundata.RunDetail) Report {
 		report.DurationStats.AvgReviewSeconds = acc.totalReviewDuration / float64(report.IssueCount)
 	}
 
-	// Compute per-repo success rates.
+	// Populate first-pass and wasted-cost stats.
+	report.FirstPassCount = acc.firstPassCount
+	if report.IssueCount > 0 {
+		report.FirstPassSuccessRate = float64(acc.firstPassCount) / float64(report.IssueCount)
+	}
+	report.WastedCostUSD = acc.wastedCost
+	if implementedCount := report.Outcomes["implemented"]; implementedCount > 0 {
+		report.AvgCostPerSuccessUSD = acc.totalCost / float64(implementedCount)
+	}
+
+	// Compute per-repo rates.
 	for repo, rs := range report.RepoStats {
 		if rs.Total > 0 {
 			rs.SuccessRate = float64(rs.Implemented) / float64(rs.Total)
+			rs.FirstPassRate = float64(rs.FirstPassCount) / float64(rs.Total)
+			rs.AvgCostPerIssueUSD = rs.TotalCostUSD / float64(rs.Total)
 		}
 		report.RepoStats[repo] = rs
 	}

@@ -814,6 +814,248 @@ func TestAggregateDurationByStepWithRetries(t *testing.T) {
 	}
 }
 
+func TestAggregateFirstPassAllFirstPass(t *testing.T) {
+	// 5 issues, 0 retries each, all implemented — FirstPassSuccessRate=1.0, FirstPassCount=5.
+	issues := make([]rundata.IssueDetail, 5)
+	for i := range issues {
+		issues[i] = rundata.IssueDetail{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}}
+	}
+	runs := []rundata.RunDetail{{Issues: issues}}
+
+	got := Aggregate(runs)
+
+	if got.FirstPassCount != 5 {
+		t.Errorf("FirstPassCount = %d, want 5", got.FirstPassCount)
+	}
+	if !nearlyEqual(got.FirstPassSuccessRate, 1.0, 0.001) {
+		t.Errorf("FirstPassSuccessRate = %f, want 1.0", got.FirstPassSuccessRate)
+	}
+}
+
+func TestAggregateFirstPassMixed(t *testing.T) {
+	// 3 issues succeed first-pass, 2 retry and succeed — FirstPassSuccessRate=0.6.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.FirstPassCount != 3 {
+		t.Errorf("FirstPassCount = %d, want 3", got.FirstPassCount)
+	}
+	if !nearlyEqual(got.FirstPassSuccessRate, 0.6, 0.001) {
+		t.Errorf("FirstPassSuccessRate = %f, want 0.6", got.FirstPassSuccessRate)
+	}
+}
+
+func TestAggregateWastedCost(t *testing.T) {
+	// 2 failed issues with $1.50 total cost — WastedCostUSD=1.50.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Implement: rundata.StepResult{CostUSD: 1.00},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Implement: rundata.StepResult{CostUSD: 0.50},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.WastedCostUSD, 1.50, 0.0001) {
+		t.Errorf("WastedCostUSD = %f, want 1.50", got.WastedCostUSD)
+	}
+}
+
+func TestAggregateAvgCostPerSuccessNoSuccesses(t *testing.T) {
+	// All issues fail — AvgCostPerSuccessUSD=0.0 (no division by zero).
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Implement: rundata.StepResult{CostUSD: 2.00},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusNeedsHumanReview},
+					Implement: rundata.StepResult{CostUSD: 1.00},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.AvgCostPerSuccessUSD != 0.0 {
+		t.Errorf("AvgCostPerSuccessUSD = %f, want 0.0", got.AvgCostPerSuccessUSD)
+	}
+}
+
+func TestAggregateRepoFirstPassRate(t *testing.T) {
+	// repo-a: 3 first-pass out of 4, repo-b: 1 first-pass out of 3.
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{Repo: "owner/repo-a"},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+		{
+			RunMeta: rundata.RunMeta{Repo: "owner/repo-b"},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	repoA := got.RepoStats["owner/repo-a"]
+	if repoA.FirstPassCount != 3 {
+		t.Errorf("repo-a FirstPassCount = %d, want 3", repoA.FirstPassCount)
+	}
+	if !nearlyEqual(repoA.FirstPassRate, 3.0/4.0, 0.001) {
+		t.Errorf("repo-a FirstPassRate = %f, want 0.75", repoA.FirstPassRate)
+	}
+
+	repoB := got.RepoStats["owner/repo-b"]
+	if repoB.FirstPassCount != 1 {
+		t.Errorf("repo-b FirstPassCount = %d, want 1", repoB.FirstPassCount)
+	}
+	if !nearlyEqual(repoB.FirstPassRate, 1.0/3.0, 0.001) {
+		t.Errorf("repo-b FirstPassRate = %f, want ~0.333", repoB.FirstPassRate)
+	}
+}
+
+func TestAggregateAvgCostPerSuccessUSD(t *testing.T) {
+	// 2 implemented issues at $2.00 each, 1 failed at $1.00 — AvgCostPerSuccessUSD = 5.0/2 = 2.5.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{CostUSD: 2.00},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{CostUSD: 2.00},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Implement: rundata.StepResult{CostUSD: 1.00},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	// total cost = 5.0, implemented count = 2 → AvgCostPerSuccessUSD = 2.5
+	if !nearlyEqual(got.AvgCostPerSuccessUSD, 2.5, 0.0001) {
+		t.Errorf("AvgCostPerSuccessUSD = %f, want 2.5", got.AvgCostPerSuccessUSD)
+	}
+}
+
+func TestAggregateRepoAvgCostPerIssueUSD(t *testing.T) {
+	// Verify per-repo AvgCostPerIssueUSD is computed correctly.
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{Repo: "owner/repo"},
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{CostUSD: 1.00},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{CostUSD: 3.00},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	rs := got.RepoStats["owner/repo"]
+	if !nearlyEqual(rs.TotalCostUSD, 4.00, 0.0001) {
+		t.Errorf("RepoStats TotalCostUSD = %f, want 4.00", rs.TotalCostUSD)
+	}
+	if !nearlyEqual(rs.AvgCostPerIssueUSD, 2.00, 0.0001) {
+		t.Errorf("RepoStats AvgCostPerIssueUSD = %f, want 2.00", rs.AvgCostPerIssueUSD)
+	}
+}
+
+func TestAggregateFirstPassReadyToMergeCountsAsSuccess(t *testing.T) {
+	// ready-to-merge with no retries should count as first-pass.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusReadyToMerge}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.FirstPassCount != 2 {
+		t.Errorf("FirstPassCount = %d, want 2 (both implemented and ready-to-merge count)", got.FirstPassCount)
+	}
+}
+
+func TestAggregateWastedCostNeedsHumanReview(t *testing.T) {
+	// needs-human-review issues also contribute to wasted cost.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusNeedsHumanReview},
+					Implement: rundata.StepResult{CostUSD: 0.75},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.WastedCostUSD, 0.75, 0.0001) {
+		t.Errorf("WastedCostUSD = %f, want 0.75", got.WastedCostUSD)
+	}
+}
+
 func TestAggregateDurationByStepRecon(t *testing.T) {
 	// Recon and spec-generator durations should be tracked.
 	runs := []rundata.RunDetail{
