@@ -18,8 +18,9 @@ type TrendPoint struct {
 	AvgRetries           float64   `json:"avg_retries"`
 	TotalCostUSD         float64   `json:"total_cost_usd"`
 	AvgCostPerIssueUSD   float64   `json:"avg_cost_per_issue_usd"`
-	AvgImplementDuration float64   `json:"avg_implement_duration"` // seconds
-	AvgReviewDuration    float64   `json:"avg_review_duration"`    // seconds
+	AvgImplementDuration   float64   `json:"avg_implement_duration"`    // seconds
+	AvgReviewDuration      float64   `json:"avg_review_duration"`       // seconds
+	FirstPassSuccessRate   float64   `json:"first_pass_success_rate"`   // 0.0–1.0
 }
 
 // ComputeTrends returns one TrendPoint per run, sorted chronologically
@@ -36,14 +37,20 @@ func ComputeTrends(runs []rundata.RunDetail) []TrendPoint {
 		}
 
 		issueCount := len(run.Issues)
-		var implemented, totalRetries int
+		var implemented, totalRetries, firstPassCount int
 		var totalCost, totalImplementDuration, totalReviewDuration float64
 
 		for _, issue := range run.Issues {
 			if issue.Outcome.Status == "implemented" {
 				implemented++
 			}
-			totalRetries += len(issue.Retries)
+			retries := len(issue.Retries)
+			totalRetries += retries
+			if retries == 0 &&
+				(issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
+					issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge) {
+				firstPassCount++
+			}
 
 			totalCost += issue.SpecGenerator.CostUSD
 			totalCost += issue.Implement.CostUSD
@@ -59,13 +66,14 @@ func ComputeTrends(runs []rundata.RunDetail) []TrendPoint {
 			totalReviewDuration += issue.QualityReview.DurationSeconds
 		}
 
-		var successRate, avgRetries, avgCostPerIssue, avgImplementDuration, avgReviewDuration float64
+		var successRate, avgRetries, avgCostPerIssue, avgImplementDuration, avgReviewDuration, firstPassSuccessRate float64
 		if issueCount > 0 {
 			successRate = float64(implemented) / float64(issueCount)
 			avgRetries = float64(totalRetries) / float64(issueCount)
 			avgCostPerIssue = totalCost / float64(issueCount)
 			avgImplementDuration = totalImplementDuration / float64(issueCount)
 			avgReviewDuration = totalReviewDuration / float64(issueCount)
+			firstPassSuccessRate = float64(firstPassCount) / float64(issueCount)
 		}
 
 		points = append(points, TrendPoint{
@@ -79,6 +87,7 @@ func ComputeTrends(runs []rundata.RunDetail) []TrendPoint {
 			AvgCostPerIssueUSD:   avgCostPerIssue,
 			AvgImplementDuration: avgImplementDuration,
 			AvgReviewDuration:    avgReviewDuration,
+			FirstPassSuccessRate: firstPassSuccessRate,
 		})
 	}
 
