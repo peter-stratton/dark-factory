@@ -2,14 +2,29 @@ package stats
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 )
 
+// execContext is satisfied by both *sql.DB and *sql.Tx.
+type execContext interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // WriteRun inserts or replaces a row in the runs table.
 // If a row with the same id already exists it is replaced (idempotent).
 func WriteRun(ctx context.Context, db *DB, run RunRecord) error {
-	_, err := db.db.ExecContext(ctx,
+	return doWriteRun(ctx, db.db, run)
+}
+
+// WriteRunTx inserts or replaces a row in the runs table within a transaction.
+func WriteRunTx(ctx context.Context, tx *sql.Tx, run RunRecord) error {
+	return doWriteRun(ctx, tx, run)
+}
+
+func doWriteRun(ctx context.Context, ex execContext, run RunRecord) error {
+	_, err := ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO runs
 			(id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
 			 started_at, finished_at, total, implemented, failed, abort_reason)
@@ -36,7 +51,16 @@ func WriteRun(ctx context.Context, db *DB, run RunRecord) error {
 // WriteIssueOutcome inserts or replaces a row in the issue_outcomes table.
 // If a row with the same (run_id, issue_number) already exists it is replaced.
 func WriteIssueOutcome(ctx context.Context, db *DB, outcome IssueOutcomeRecord) error {
-	_, err := db.db.ExecContext(ctx,
+	return doWriteIssueOutcome(ctx, db.db, outcome)
+}
+
+// WriteIssueOutcomeTx inserts or replaces a row in the issue_outcomes table within a transaction.
+func WriteIssueOutcomeTx(ctx context.Context, tx *sql.Tx, outcome IssueOutcomeRecord) error {
+	return doWriteIssueOutcome(ctx, tx, outcome)
+}
+
+func doWriteIssueOutcome(ctx context.Context, ex execContext, outcome IssueOutcomeRecord) error {
+	_, err := ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO issue_outcomes
 			(run_id, issue_number, title, status, pr_number, error)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
@@ -57,6 +81,15 @@ func WriteIssueOutcome(ctx context.Context, db *DB, outcome IssueOutcomeRecord) 
 // If a row with the same (run_id, issue_number, step_name) already exists it is replaced.
 // Flags is serialized to a JSON array string for storage.
 func WriteStepResult(ctx context.Context, db *DB, step StepResultRecord) error {
+	return doWriteStepResult(ctx, db.db, step)
+}
+
+// WriteStepResultTx inserts or replaces a row in the step_results table within a transaction.
+func WriteStepResultTx(ctx context.Context, tx *sql.Tx, step StepResultRecord) error {
+	return doWriteStepResult(ctx, tx, step)
+}
+
+func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecord) error {
 	flags := step.Flags
 	if flags == nil {
 		flags = []string{}
@@ -66,7 +99,7 @@ func WriteStepResult(ctx context.Context, db *DB, step StepResultRecord) error {
 		return fmt.Errorf("marshal flags: %w", err)
 	}
 
-	_, err = db.db.ExecContext(ctx,
+	_, err = ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO step_results
 			(run_id, issue_number, step_name, cost_usd, duration_seconds, flags,
 			 started_at, finished_at)

@@ -101,8 +101,17 @@ func WriteRunStats(ctx context.Context, db *stats.DB, cfg *config.Config, writer
 		Failed:           summary.Failed,
 		AbortReason:      summary.AbortReason,
 	}
-	if err := stats.WriteRun(ctx, db, runRec); err != nil {
+
+	tx, err := db.BeginTx(ctx)
+	if err != nil {
+		logger.Warn("stats: failed to begin transaction", "error", err)
+		return
+	}
+
+	if err := stats.WriteRunTx(ctx, tx, runRec); err != nil {
 		logger.Warn("stats: failed to write run record", "error", err)
+		_ = tx.Rollback()
+		return
 	}
 
 	for _, issue := range detail.Issues {
@@ -117,17 +126,25 @@ func WriteRunStats(ctx context.Context, db *stats.DB, cfg *config.Config, writer
 			PRNumber:    issue.Outcome.PRNumber,
 			Error:       issue.Outcome.Error,
 		}
-		if err := stats.WriteIssueOutcome(ctx, db, outcomeRec); err != nil {
+		if err := stats.WriteIssueOutcomeTx(ctx, tx, outcomeRec); err != nil {
 			logger.Warn("stats: failed to write issue outcome",
 				"issue_number", issue.IssueNumber, "error", err)
+			_ = tx.Rollback()
+			return
 		}
 
 		for _, stepRec := range buildStepRecords(timestamp, issue) {
-			if err := stats.WriteStepResult(ctx, db, stepRec); err != nil {
+			if err := stats.WriteStepResultTx(ctx, tx, stepRec); err != nil {
 				logger.Warn("stats: failed to write step result",
 					"issue_number", issue.IssueNumber, "step", stepRec.StepName, "error", err)
+				_ = tx.Rollback()
+				return
 			}
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Warn("stats: failed to commit transaction", "error", err)
 	}
 }
 

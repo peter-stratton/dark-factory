@@ -200,37 +200,15 @@ func TestWriteRunStats_EndToEnd(t *testing.T) {
 		CostUSD:         0.05,
 	})
 
-	// Create a real writer using NewWithBase so Dir() returns the correct path.
-	writer, err := rundata.NewWithBase(baseDir, "org/myrepo", "v1.0", []int{42}, "main", rundata.AutoMerge{})
-	if err != nil {
-		t.Fatalf("NewWithBase: %v", err)
-	}
-	// Override the timestamp directory to the fixed one we created above.
-	// Since NewWithBase creates a new timestamped dir, we need to redirect the
-	// reader to our pre-built directory. We do this via the testability seam.
-	_ = writer // writer.Dir() points to the real new dir; we use the seam below
-
-	// Inject a reader seam pointing at our base dir.
+	// Inject a reader seam pointing at our base dir — overridden below once fixedBaseDir is known.
 	origFn := writeRunStatsNewReaderFn
-	writeRunStatsNewReaderFn = func(logger *slog.Logger) (*rundata.Reader, error) {
-		return rundata.NewReaderWithBase(baseDir, logger), nil
-	}
 	defer func() { writeRunStatsNewReaderFn = origFn }()
 
-	// Create a fake writer wrapper to control which Dir() is returned.
-	fakeWriter, err := rundata.NewWithBase(filepath.Join(baseDir, "fake"), "org/myrepo", "v1.0", []int{42}, "main", rundata.AutoMerge{})
-	if err != nil {
-		t.Fatalf("NewWithBase for fake writer: %v", err)
-	}
-	// We can't set the dir directly; use a different approach:
-	// Write a temporary dir symlink or just use WriteRunStats with a known path.
-	// Instead, we create a minimal writer in a temp path that has our timestamp in its Dir().
 	fixedBaseDir := t.TempDir()
 	fixedWriter, err := rundata.NewWithBase(fixedBaseDir, "org/myrepo", "v1.0", []int{42}, "main", rundata.AutoMerge{})
 	if err != nil {
 		t.Fatalf("NewWithBase fixed: %v", err)
 	}
-	_ = fakeWriter
 
 	// Override reader to use our pre-built data dir, mapped by the writer's actual timestamp.
 	// We'll rename the writer's dir to match our expected timestamp.
