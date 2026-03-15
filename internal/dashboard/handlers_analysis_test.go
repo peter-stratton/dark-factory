@@ -171,22 +171,22 @@ func TestServer_Analysis_GapsSection(t *testing.T) {
 	finishedAt := now
 
 	// Create enough issues to trigger gap detection (need >= 3 on each side).
-	// Issues WITH quality review that fail, and issues WITHOUT that pass.
+	// Issues WITH no_diff_read flag that fail, and issues WITHOUT that pass.
 	var issues []rundata.IssueDetail
 	for i := 1; i <= 4; i++ {
-		// With quality review (failing).
+		// With no_diff_read flag (failing).
 		issues = append(issues, rundata.IssueDetail{
 			IssueNumber: i,
 			Outcome:     rundata.Outcome{IssueNumber: i, Status: "failed"},
-			Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
-			QualityReview: rundata.StepResult{
-				Output:          "flagged",
-				DurationSeconds: 5,
+			Implement: rundata.StepResult{
+				Output:          "done",
+				DurationSeconds: 10,
+				Flags:           []rundata.Flag{{Code: "no_diff_read", Message: "no diff read"}},
 			},
 		})
 	}
 	for i := 5; i <= 8; i++ {
-		// Without quality review (passing).
+		// Without flag (passing).
 		issues = append(issues, rundata.IssueDetail{
 			IssueNumber: i,
 			Outcome:     rundata.Outcome{IssueNumber: i, Status: "implemented"},
@@ -219,13 +219,17 @@ func TestServer_Analysis_GapsSection(t *testing.T) {
 	}
 	body := rr.Body.String()
 
-	// The gap finding text should appear.
-	if !strings.Contains(body, "quality reviewer") {
-		t.Errorf("body missing prompt gap finding 'quality reviewer'; got: %q", truncate(body, 600))
+	// The gap finding text (flag code) should appear.
+	if !strings.Contains(body, "no_diff_read") {
+		t.Errorf("body missing prompt gap finding 'no_diff_read'; got: %q", truncate(body, 600))
 	}
 	// The Prompt Gaps card heading should be present.
 	if !strings.Contains(body, "Prompt Gaps") {
 		t.Errorf("body missing 'Prompt Gaps' section heading")
+	}
+	// Old quality reviewer finding should not appear.
+	if strings.Contains(body, "quality reviewer") {
+		t.Errorf("body should not contain old 'quality reviewer' gap finding")
 	}
 }
 
