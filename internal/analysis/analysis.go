@@ -145,13 +145,7 @@ func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
 	a.totalImplementDuration += issue.Implement.DurationSeconds
 	a.totalReviewDuration += issue.QualityReview.DurationSeconds
 
-	for _, vr := range issue.VerifyResults {
-		for _, check := range vr.Checks {
-			if !check.Passed {
-				report.VerifyStats[check.Name]++
-			}
-		}
-	}
+	accumulateVerifyStats(report.VerifyStats, issue.VerifyResults)
 
 	// Accumulate timeout counters across all step results for this issue.
 	allSteps := issueStepResults(issue)
@@ -306,6 +300,17 @@ func buildFlagFrequencies(flagCounts map[string]int, issueCount int) []FlagFrequ
 func collectFlags(flagCounts map[string]int, flags []rundata.Flag) {
 	for _, f := range flags {
 		flagCounts[f.Code]++
+	}
+}
+
+// accumulateVerifyStats increments the failure count for each failed verify check.
+func accumulateVerifyStats(verifyStats map[string]int, verifyResults []rundata.VerifyStepResult) {
+	for _, vr := range verifyResults {
+		for _, check := range vr.Checks {
+			if !check.Passed {
+				verifyStats[check.Name]++
+			}
+		}
 	}
 }
 
