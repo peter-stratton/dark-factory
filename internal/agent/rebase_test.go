@@ -364,7 +364,7 @@ func TestProcessIssue_PreMergeRebase_LabelsNeedsHumanReview(t *testing.T) {
 	cfg := loopConfig()
 	cfg.MaxRebaseAttempts = 1
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "needs-human-review" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)

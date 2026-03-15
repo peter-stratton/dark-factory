@@ -348,7 +348,7 @@ func TestProcessIssue_WaitForChecks_AllPass(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -386,7 +386,7 @@ func TestProcessIssue_WaitForChecks_Nil(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -431,7 +431,7 @@ func TestProcessIssue_WaitForChecks_Timeout(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "failed" {
 		t.Errorf("Status = %q, want %q", outcome.Status, "failed")
@@ -493,7 +493,7 @@ func TestProcessIssue_WaitForChecks_FixSucceeds(t *testing.T) {
 	prompts := testPrompts(t)
 	prompts.VerifyFix = "Fix CI: {{.VerifyErrors}}"
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
@@ -547,7 +547,7 @@ func TestProcessIssue_WaitForChecks_FixExhausted(t *testing.T) {
 	prompts := testPrompts(t)
 	prompts.VerifyFix = "Fix CI: {{.VerifyErrors}}"
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "needs-human-review" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)
@@ -598,7 +598,7 @@ func TestProcessIssue_WaitForChecks_NoVerifyFix(t *testing.T) {
 	// No VerifyFix prompt configured.
 	prompts := testPrompts(t)
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, prompts, nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "needs-human-review" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)

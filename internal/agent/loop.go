@@ -14,6 +14,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/label"
+	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/quality"
 	"github.com/phs/dark-factory/internal/rundata"
 )
@@ -41,7 +42,7 @@ type IssueOutcome struct {
 // implement → find PR → guard rails → review/retry loop → merge or label.
 // hook is optional; if non-nil, it is called after each agent step to record
 // run data. Hook errors are logged as warnings and do not abort processing.
-func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook) IssueOutcome {
+func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook, reporter progress.ProgressReporter) IssueOutcome {
 	outcome := IssueOutcome{IssueNumber: issue.Number}
 
 	// Write outcome data on every return path.

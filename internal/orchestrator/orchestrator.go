@@ -370,7 +370,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 			seen[issue.Number] = true
 			reporter.IssueStarted(issue.Number, issue.Title)
-			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook)
+			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
 
 			// Write dialogue after processing if we have a PR and a writer.
 			if writer != nil && outcome.PRNumber > 0 {
