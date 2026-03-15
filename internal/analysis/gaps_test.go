@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"math"
-	"strings"
 	"testing"
 
 	"github.com/phs/dark-factory/internal/rundata"
@@ -113,107 +112,6 @@ func TestDetectGapsQualityReviewGapRemoved(t *testing.T) {
 	}
 }
 
-func TestDetectGapsScenarioSpecGap(t *testing.T) {
-	// 10 issues with spec gen: 1 failed (10%), 9 implemented.
-	// 10 issues without spec gen: 5 failed (50%), 5 implemented.
-	var issues []rundata.IssueDetail
-
-	for i := 0; i < 10; i++ {
-		status := "implemented"
-		if i == 0 {
-			status = "failed"
-		}
-		issues = append(issues, rundata.IssueDetail{
-			SpecGenerator: rundata.StepResult{Output: "spec generated"},
-			Outcome:       rundata.Outcome{Status: status},
-		})
-	}
-
-	for i := 0; i < 10; i++ {
-		status := "implemented"
-		if i < 5 {
-			status = "failed"
-		}
-		issues = append(issues, rundata.IssueDetail{
-			Outcome: rundata.Outcome{Status: status},
-		})
-	}
-
-	runs := []rundata.RunDetail{{Issues: issues}}
-	got := DetectGaps(runs)
-
-	var specGap *PromptGap
-	for i := range got {
-		if got[i].Finding == "scenario specs" {
-			specGap = &got[i]
-			break
-		}
-	}
-
-	if specGap == nil {
-		t.Fatal("expected scenario specs finding, got none")
-	}
-	if !nearlyEqual(specGap.FailRateWith, 0.1, 0.001) {
-		t.Errorf("FailRateWith = %f, want 0.1", specGap.FailRateWith)
-	}
-	if !nearlyEqual(specGap.FailRateWithout, 0.5, 0.001) {
-		t.Errorf("FailRateWithout = %f, want 0.5", specGap.FailRateWithout)
-	}
-	if specGap.SamplesWith != 10 {
-		t.Errorf("SamplesWith = %d, want 10", specGap.SamplesWith)
-	}
-	if specGap.SamplesWithout != 10 {
-		t.Errorf("SamplesWithout = %d, want 10", specGap.SamplesWithout)
-	}
-}
-
-func TestDetectGapsExhaustedRetries(t *testing.T) {
-	// 2 issues with needs-human-review — finding lists both.
-	runs := []rundata.RunDetail{
-		{
-			Issues: []rundata.IssueDetail{
-				{
-					IssueNumber: 10,
-					Outcome:     rundata.Outcome{Status: "needs-human-review", Title: "Issue Alpha"},
-				},
-				{
-					IssueNumber: 20,
-					Outcome:     rundata.Outcome{Status: "needs-human-review", Title: "Issue Beta"},
-				},
-			},
-		},
-	}
-
-	got := DetectGaps(runs)
-
-	var exGap *PromptGap
-	for i := range got {
-		if strings.HasPrefix(got[i].Finding, "exhausted retries:") {
-			exGap = &got[i]
-			break
-		}
-	}
-
-	if exGap == nil {
-		t.Fatal("expected exhausted retries finding, got none")
-	}
-	if !strings.Contains(exGap.Finding, "#10") {
-		t.Errorf("finding %q should contain #10", exGap.Finding)
-	}
-	if !strings.Contains(exGap.Finding, "#20") {
-		t.Errorf("finding %q should contain #20", exGap.Finding)
-	}
-	if !strings.Contains(exGap.Finding, "Issue Alpha") {
-		t.Errorf("finding %q should contain 'Issue Alpha'", exGap.Finding)
-	}
-	if !strings.Contains(exGap.Finding, "Issue Beta") {
-		t.Errorf("finding %q should contain 'Issue Beta'", exGap.Finding)
-	}
-	if exGap.SamplesWith != 2 {
-		t.Errorf("SamplesWith = %d, want 2", exGap.SamplesWith)
-	}
-}
-
 func TestDetectGapsInsufficientSamples(t *testing.T) {
 	// 2 issues with low_cost flag (below minimum of 3), 5 without.
 	// The flag finding should be excluded.
@@ -245,8 +143,6 @@ func TestDetectGapsInsufficientSamples(t *testing.T) {
 
 func TestDetectGapsNoGaps(t *testing.T) {
 	// No quality flags across any issues — no flag gaps.
-	// No issues have spec gen — no "with" group for comparison.
-	// No exhausted retries.
 	// Result should be nil.
 	var issues []rundata.IssueDetail
 

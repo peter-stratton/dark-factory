@@ -1,10 +1,8 @@
 package analysis
 
 import (
-	"fmt"
 	"math"
 	"sort"
-	"strings"
 
 	"github.com/phs/dark-factory/internal/rundata"
 )
@@ -53,40 +51,6 @@ func DetectGaps(runs []rundata.RunDetail) []PromptGap {
 			gap.WithoutLabel = "without flag"
 			gaps = append(gaps, *gap)
 		}
-	}
-
-	// Scenario specs present vs absent.
-	if gap := gapByCondition(allIssues, "scenario specs", func(issue rundata.IssueDetail) bool {
-		return isStepRecorded(issue.SpecGenerator)
-	}); gap != nil {
-		gap.WithLabel = "with spec"
-		gap.WithoutLabel = "without spec"
-		gaps = append(gaps, *gap)
-	}
-
-	// Exhausted retries — list issue numbers and titles as a separate finding.
-	var exhausted, notExhausted []rundata.IssueDetail
-	for _, issue := range allIssues {
-		if issue.Outcome.Status == "needs-human-review" {
-			exhausted = append(exhausted, issue)
-		} else {
-			notExhausted = append(notExhausted, issue)
-		}
-	}
-	if len(exhausted) > 0 {
-		parts := make([]string, 0, len(exhausted))
-		for _, issue := range exhausted {
-			parts = append(parts, fmt.Sprintf("#%d %q", issue.IssueNumber, issue.Outcome.Title))
-		}
-		gaps = append(gaps, PromptGap{
-			Finding:         "exhausted retries: " + strings.Join(parts, ", "),
-			FailRateWith:    issueFailureRate(exhausted),
-			FailRateWithout: issueFailureRate(notExhausted),
-			SamplesWith:     len(exhausted),
-			SamplesWithout:  len(notExhausted),
-			WithLabel:       "exhausted",
-			WithoutLabel:    "not exhausted",
-		})
 	}
 
 	if len(gaps) == 0 {
@@ -144,11 +108,6 @@ func issueFailureRate(issues []rundata.IssueDetail) float64 {
 		}
 	}
 	return float64(count) / float64(len(issues))
-}
-
-// isStepRecorded reports whether a StepResult contains any recorded data.
-func isStepRecorded(step rundata.StepResult) bool {
-	return step.StartedAt != nil || step.Output != ""
 }
 
 // issueHasFlag reports whether any step in the issue carries a flag with the given code.
