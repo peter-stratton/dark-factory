@@ -302,6 +302,84 @@
   {{end}}
 </div>
 
+{{if .RepoRows}}
+
+<!-- Success by Repo -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Success by Repo</span>
+    <span class="text-muted">Per-repository outcome breakdown</span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Repository</th>
+        <th class="cell-num">Total</th>
+        <th class="cell-num">Implemented</th>
+        <th class="cell-num">Failed</th>
+        <th>Success Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .RepoRows}}
+      <tr>
+        <td>{{.Repo}}</td>
+        <td class="cell-num">{{.Total}}</td>
+        <td class="cell-num">{{.Implemented}}</td>
+        <td class="cell-num">{{.Failed}}</td>
+        <td>
+          <div class="pass-fail-bar">
+            <span class="text-muted">{{printf "%.1f" .SuccessPct}}%</span>
+            <div class="pass-fail-bar__bar">
+              <div class="progress-bar__segment progress-bar__segment--success" style="width: {{printf "%.1f" .SuccessPct}}%;"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+{{end}}
+
+{{if .VerifyRows}}
+
+<!-- Verify Check Failures -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Verify Check Failures</span>
+    <span class="text-muted">Check failure counts across all issues</span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Check</th>
+        <th class="cell-num">Failures</th>
+        <th>Failure Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .VerifyRows}}
+      <tr>
+        <td><code>{{.Name}}</code></td>
+        <td class="cell-num">{{.Count}}</td>
+        <td>
+          <div class="pass-fail-bar">
+            <span class="text-muted">{{printf "%.1f" .FailurePct}}%</span>
+            <div class="pass-fail-bar__bar">
+              <div class="progress-bar__segment progress-bar__segment--danger" style="width: {{printf "%.1f" .FailurePct}}%;"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+{{end}}
+
 {{if .Gaps}}
 
 <!-- Prompt Gaps -->

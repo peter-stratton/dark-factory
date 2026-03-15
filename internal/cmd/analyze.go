@@ -309,54 +309,108 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "  Per issue:      $%.2f\n", report.CostStats.AvgPerIssueUSD)
 	fmt.Fprintf(w, "  Per run:        $%.2f\n", report.CostStats.AvgPerRunUSD)
 
-	// Cost by step table.
-	fmt.Fprintf(w, "\nCost by Step\n")
-	if len(report.CostStats.CostByStep) == 0 {
-		fmt.Fprintf(w, "  (no cost data)\n")
-	} else {
-		type stepCost struct {
-			name string
-			cost float64
-		}
-		steps := make([]stepCost, 0, len(report.CostStats.CostByStep))
-		for name, cost := range report.CostStats.CostByStep {
-			if cost > 0 {
-				steps = append(steps, stepCost{name, cost})
-			}
-		}
-		sort.Slice(steps, func(i, j int) bool {
-			if steps[i].cost != steps[j].cost {
-				return steps[i].cost > steps[j].cost
-			}
-			return steps[i].name < steps[j].name
-		})
-		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(tw, "  Step\tTotal Cost\tPercent\n")
-		for _, s := range steps {
-			var pct float64
-			if report.CostStats.TotalUSD > 0 {
-				pct = s.cost / report.CostStats.TotalUSD * 100
-			}
-			fmt.Fprintf(tw, "  %s\t$%.4f\t%.1f%%\n", s.name, s.cost, pct)
-		}
-		_ = tw.Flush()
-	}
+	printCostByStep(w, report)
 
 	// Duration stats.
 	fmt.Fprintf(w, "\nDuration Stats\n")
 	fmt.Fprintf(w, "  Avg implement duration: %s\n", formatDuration(report.DurationStats.AvgImplementSeconds))
 	fmt.Fprintf(w, "  Avg review duration:    %s\n", formatDuration(report.DurationStats.AvgReviewSeconds))
 
-	// Prompt gaps.
+	printRepoStats(w, report)
+	printVerifyStats(w, report)
+	printPromptGaps(w, gaps)
+}
+
+// printCostByStep writes the "Cost by Step" section to w.
+func printCostByStep(w io.Writer, report analysis.Report) {
+	fmt.Fprintf(w, "\nCost by Step\n")
+	if len(report.CostStats.CostByStep) == 0 {
+		fmt.Fprintf(w, "  (no cost data)\n")
+		return
+	}
+	type stepCost struct {
+		name string
+		cost float64
+	}
+	steps := make([]stepCost, 0, len(report.CostStats.CostByStep))
+	for name, cost := range report.CostStats.CostByStep {
+		if cost > 0 {
+			steps = append(steps, stepCost{name, cost})
+		}
+	}
+	sort.Slice(steps, func(i, j int) bool {
+		if steps[i].cost != steps[j].cost {
+			return steps[i].cost > steps[j].cost
+		}
+		return steps[i].name < steps[j].name
+	})
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Step\tTotal Cost\tPercent\n")
+	for _, s := range steps {
+		var pct float64
+		if report.CostStats.TotalUSD > 0 {
+			pct = s.cost / report.CostStats.TotalUSD * 100
+		}
+		fmt.Fprintf(tw, "  %s\t$%.4f\t%.1f%%\n", s.name, s.cost, pct)
+	}
+	_ = tw.Flush()
+}
+
+// printRepoStats writes the "Success by Repo" section to w.
+func printRepoStats(w io.Writer, report analysis.Report) {
+	if len(report.RepoStats) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nSuccess by Repo\n")
+	repoNames := make([]string, 0, len(report.RepoStats))
+	for repo := range report.RepoStats {
+		repoNames = append(repoNames, repo)
+	}
+	sort.Strings(repoNames)
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Repo\tTotal\tImplemented\tFailed\tSuccess Rate\n")
+	for _, repo := range repoNames {
+		rs := report.RepoStats[repo]
+		fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\t%.1f%%\n", repo, rs.Total, rs.Implemented, rs.Failed, rs.SuccessRate*100)
+	}
+	_ = tw.Flush()
+}
+
+// printVerifyStats writes the "Verify Check Failures" section to w.
+func printVerifyStats(w io.Writer, report analysis.Report) {
+	if len(report.VerifyStats) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nVerify Check Failures\n")
+	checkNames := make([]string, 0, len(report.VerifyStats))
+	for check := range report.VerifyStats {
+		checkNames = append(checkNames, check)
+	}
+	sort.Strings(checkNames)
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Check\tFailures\tFailure Rate\n")
+	for _, check := range checkNames {
+		count := report.VerifyStats[check]
+		var pct float64
+		if report.IssueCount > 0 {
+			pct = float64(count) / float64(report.IssueCount) * 100
+		}
+		fmt.Fprintf(tw, "  %s\t%d\t%.1f%%\n", check, count, pct)
+	}
+	_ = tw.Flush()
+}
+
+// printPromptGaps writes the "Prompt Gaps" section to w.
+func printPromptGaps(w io.Writer, gaps []analysis.PromptGap) {
 	fmt.Fprintf(w, "\nPrompt Gaps\n")
 	if len(gaps) == 0 {
 		fmt.Fprintf(w, "  (none detected)\n")
-	} else {
-		for _, g := range gaps {
-			fmt.Fprintf(w, "  %s\n", g.Finding)
-			fmt.Fprintf(w, "    fail rate with: %.1f%% (%d samples)\n", g.FailRateWith*100, g.SamplesWith)
-			fmt.Fprintf(w, "    fail rate without: %.1f%% (%d samples)\n", g.FailRateWithout*100, g.SamplesWithout)
-		}
+		return
+	}
+	for _, g := range gaps {
+		fmt.Fprintf(w, "  %s\n", g.Finding)
+		fmt.Fprintf(w, "    fail rate with: %.1f%% (%d samples)\n", g.FailRateWith*100, g.SamplesWith)
+		fmt.Fprintf(w, "    fail rate without: %.1f%% (%d samples)\n", g.FailRateWithout*100, g.SamplesWithout)
 	}
 }
 
