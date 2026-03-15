@@ -26,11 +26,13 @@ const defaultWatchPollInterval = 60 * time.Second
 
 var watchCmd = &cobra.Command{
 	Use:   "watch",
-	Short: "Poll for PRs awaiting human review and detect CHANGES_REQUESTED reviews",
+	Short: "Poll for PRs awaiting human review and handle CHANGES_REQUESTED or APPROVED reviews",
 	Long: `Polls GitHub for pull requests labeled godark:awaiting-human-review and
-detects when a human submits a CHANGES_REQUESTED review. When detected, the
+detects when a human submits a review. When CHANGES_REQUESTED is detected, the
 implementer agent is invoked to address the feedback using session resumption.
 After the fix is pushed, the PR is re-labeled godark:awaiting-human-review.
+When APPROVED is detected, the PR is merged (squash + delete branch) and the
+linked issue is closed.
 
 Runs as a long-lived foreground process. Press Ctrl+C to stop.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -107,9 +109,10 @@ func runWatch(ctx context.Context, cfg *config.Config, prompts *agent.Prompts, a
 }
 
 // pollOnce fetches PRs labeled godark:awaiting-human-review, inspects their
-// reviews for CHANGES_REQUESTED, and invokes the implementer agent for any
-// new findings. Processed review IDs are recorded in the processed map to
-// avoid repeat actions.
+// reviews, and acts on new findings: CHANGES_REQUESTED invokes the implementer
+// agent to address feedback; APPROVED merges the PR and closes the linked
+// issue. Processed review IDs are recorded in the processed map to avoid
+// repeat actions.
 func pollOnce(ctx context.Context, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, processed map[int]bool, logger *slog.Logger) error {
 	prs, err := github.ListPRsWithLabel(cfg.Repo, label.AwaitingHumanReview)
 	if err != nil {
@@ -171,6 +174,7 @@ func pollOnce(ctx context.Context, cfg *config.Config, prompts *agent.Prompts, a
 
 				processed[review.ID] = true
 				handleApproved(cfg, pr, review, logger)
+				break // PR is now merged; no further review processing for this PR
 			}
 		}
 	}
