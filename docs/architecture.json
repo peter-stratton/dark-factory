@@ -31,7 +31,7 @@
     {
       "name": "domain",
       "description": "Pure business logic, models, and rules. No external service dependencies.",
-      "paths": ["internal/analysis/", "internal/detect/", "internal/dialogue/", "internal/doctor/", "internal/patterns/", "internal/punchlist/", "internal/quality/", "internal/rundata/"],
+      "paths": ["internal/analysis/", "internal/detect/", "internal/dialogue/", "internal/doctor/", "internal/patterns/", "internal/punchlist/", "internal/quality/", "internal/rundata/", "internal/stats/"],
       "may_depend_on": ["foundation", "content"],
       "must_not_depend_on": ["cmd", "orchestration", "service", "infrastructure", "presentation"]
     },
