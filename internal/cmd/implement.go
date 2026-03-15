@@ -257,7 +257,7 @@ func implementIssues(
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
 		writeIssueDialogue(writer, cfg.Repo, issueNumber, outcome, logger)
 
 		di, drtm, dnhr, df := applyOutcomeStats(outcome, issue, cfg, reporter, logger)
