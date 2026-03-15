@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"sort"
+	"time"
 
 	"github.com/phs/dark-factory/internal/rundata"
 )
@@ -21,6 +22,8 @@ type Report struct {
 	FirstPassSuccessRate float64                `json:"first_pass_success_rate"`
 	WastedCostUSD        float64                `json:"wasted_cost_usd"`
 	AvgCostPerSuccessUSD float64                `json:"avg_cost_per_success_usd"`
+	FailureReasons       map[string]int         `json:"failure_reasons"`
+	TimeoutRate          float64                `json:"timeout_rate"`
 }
 
 // RepoSummary holds per-repository outcome statistics.
@@ -37,9 +40,10 @@ type RepoSummary struct {
 
 // DurationStats holds aggregate step duration statistics.
 type DurationStats struct {
-	AvgImplementSeconds float64            `json:"avg_implement_seconds"` // average across all issues
-	AvgReviewSeconds    float64            `json:"avg_review_seconds"`    // average across all issues
-	DurationByStep      map[string]float64 `json:"duration_by_step"`      // step name to total seconds
+	AvgImplementSeconds    float64            `json:"avg_implement_seconds"`     // average across all issues
+	AvgReviewSeconds       float64            `json:"avg_review_seconds"`        // average across all issues
+	DurationByStep         map[string]float64 `json:"duration_by_step"`          // step name to total seconds
+	AvgTimeToMergeSeconds  float64            `json:"avg_time_to_merge_seconds"` // end-to-end for implemented issues
 }
 
 // FlagFrequency records how often a quality flag code appears across all issues.
@@ -78,6 +82,10 @@ type issueAcc struct {
 	totalReviewDuration    float64
 	firstPassCount         int
 	wastedCost             float64
+	timedOutSteps          int
+	totalSteps             int
+	totalTimeToMerge       float64
+	implementedCount       int
 }
 
 // add incorporates a single issue's data into the accumulator and the report.
@@ -137,11 +145,26 @@ func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
 	a.totalImplementDuration += issue.Implement.DurationSeconds
 	a.totalReviewDuration += issue.QualityReview.DurationSeconds
 
-	for _, vr := range issue.VerifyResults {
-		for _, check := range vr.Checks {
-			if !check.Passed {
-				report.VerifyStats[check.Name]++
-			}
+	accumulateVerifyStats(report.VerifyStats, issue.VerifyResults)
+
+	// Accumulate timeout counters across all step results for this issue.
+	allSteps := issueStepResults(issue)
+	a.totalSteps += len(allSteps)
+	for _, s := range allSteps {
+		if s.TimedOut {
+			a.timedOutSteps++
+		}
+	}
+
+	// Categorize failed issues into mutually exclusive failure reason buckets.
+	categorizeFailureReason(report.FailureReasons, issue, allSteps)
+
+	// Time-to-merge: accumulate for implemented/ready-to-merge issues.
+	if issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
+		issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge {
+		if d := issueElapsedSeconds(allSteps); d > 0 {
+			a.totalTimeToMerge += d
+			a.implementedCount++
 		}
 	}
 }
@@ -174,10 +197,11 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	}
 
 	report := Report{
-		RunCount:    len(runs),
-		Outcomes:    make(map[string]int),
-		VerifyStats: make(map[string]int),
-		RepoStats:   make(map[string]RepoSummary),
+		RunCount:       len(runs),
+		Outcomes:       make(map[string]int),
+		VerifyStats:    make(map[string]int),
+		RepoStats:      make(map[string]RepoSummary),
+		FailureReasons: make(map[string]int),
 	}
 	report.CostStats.CostByStep = make(map[string]float64)
 	report.DurationStats.DurationByStep = make(map[string]float64)
@@ -233,6 +257,16 @@ func Aggregate(runs []rundata.RunDetail) Report {
 		report.RepoStats[repo] = rs
 	}
 
+	// Populate timeout rate.
+	if acc.totalSteps > 0 {
+		report.TimeoutRate = float64(acc.timedOutSteps) / float64(acc.totalSteps)
+	}
+
+	// Populate average time-to-merge.
+	if acc.implementedCount > 0 {
+		report.DurationStats.AvgTimeToMergeSeconds = acc.totalTimeToMerge / float64(acc.implementedCount)
+	}
+
 	// Build flag frequencies sorted by count descending, then code ascending for stability.
 	report.FlagFrequencies = buildFlagFrequencies(acc.flagCounts, report.IssueCount)
 
@@ -269,6 +303,17 @@ func collectFlags(flagCounts map[string]int, flags []rundata.Flag) {
 	}
 }
 
+// accumulateVerifyStats increments the failure count for each failed verify check.
+func accumulateVerifyStats(verifyStats map[string]int, verifyResults []rundata.VerifyStepResult) {
+	for _, vr := range verifyResults {
+		for _, check := range vr.Checks {
+			if !check.Passed {
+				verifyStats[check.Name]++
+			}
+		}
+	}
+}
+
 // accumulateStepCost adds cost to the named step's entry in costByStep.
 // Zero cost values are ignored so the map only contains steps that incurred cost.
 func accumulateStepCost(costByStep map[string]float64, step string, cost float64) {
@@ -298,6 +343,75 @@ func accumulateIssueDurations(durationByStep map[string]float64, issue rundata.I
 		accumulateStepDuration(durationByStep, "retries", retry.QualityReview.DurationSeconds)
 		accumulateStepDuration(durationByStep, "retries", retry.FunctionalReview.DurationSeconds)
 	}
+}
+
+// issueStepResults returns all StepResult values for an issue in a flat slice.
+// This includes the main steps plus all retry steps.
+func issueStepResults(issue rundata.IssueDetail) []rundata.StepResult {
+	steps := []rundata.StepResult{
+		issue.Recon,
+		issue.SpecGenerator,
+		issue.Implement,
+		issue.QualityReview,
+		issue.FunctionalReview,
+	}
+	for _, retry := range issue.Retries {
+		steps = append(steps, retry.Retry, retry.QualityReview, retry.FunctionalReview)
+	}
+	return steps
+}
+
+// categorizeFailureReason assigns the issue's failure reason to one of four
+// mutually exclusive buckets: "exhaustion", "verify", "timeout", or "error".
+// Only failed and needs-human-review issues are categorized.
+func categorizeFailureReason(failureReasons map[string]int, issue rundata.IssueDetail, allSteps []rundata.StepResult) {
+	switch issue.Outcome.Status {
+	case rundata.OutcomeStatusNeedsHumanReview:
+		failureReasons["exhaustion"]++
+	case rundata.OutcomeStatusFailed:
+		// Check verify failure: last verify step has AllPassed == false.
+		if len(issue.VerifyResults) > 0 {
+			last := issue.VerifyResults[len(issue.VerifyResults)-1]
+			if !last.AllPassed {
+				failureReasons["verify"]++
+				return
+			}
+		}
+		// Check timeout: any step timed out.
+		for _, s := range allSteps {
+			if s.TimedOut {
+				failureReasons["timeout"]++
+				return
+			}
+		}
+		// Fallback.
+		failureReasons["error"]++
+	}
+}
+
+// issueElapsedSeconds returns the wall-clock duration of an issue in seconds
+// by finding the earliest StartedAt and latest FinishedAt across all step results.
+// Returns 0 if no timing data is available.
+func issueElapsedSeconds(allSteps []rundata.StepResult) float64 {
+	var earliest, latest *time.Time
+	for _, s := range allSteps {
+		if s.StartedAt != nil {
+			if earliest == nil || s.StartedAt.Before(*earliest) {
+				t := *s.StartedAt
+				earliest = &t
+			}
+		}
+		if s.FinishedAt != nil {
+			if latest == nil || s.FinishedAt.After(*latest) {
+				t := *s.FinishedAt
+				latest = &t
+			}
+		}
+	}
+	if earliest == nil || latest == nil {
+		return 0
+	}
+	return latest.Sub(*earliest).Seconds()
 }
 
 // accumulateIssueCosts records per-step costs for a single issue into costByStep

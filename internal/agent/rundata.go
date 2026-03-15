@@ -10,6 +10,7 @@ import (
 func ResultToStep(r *Result) rundata.StepResult {
 	step := rundata.StepResult{
 		Output:    r.ResultText,
+		TimedOut:  r.TimedOut,
 		CostUSD:   r.CostUSD,
 		ToolTrace: r.ToolTrace,
 		SessionID: r.SessionID,

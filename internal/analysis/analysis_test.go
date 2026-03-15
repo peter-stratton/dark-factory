@@ -3,6 +3,7 @@ package analysis
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/phs/dark-factory/internal/rundata"
 )
@@ -1080,5 +1081,301 @@ func TestAggregateDurationByStepRecon(t *testing.T) {
 	}
 	if !nearlyEqual(got.DurationStats.DurationByStep["implement"], 300.0, 0.0001) {
 		t.Errorf("DurationByStep[implement] = %f, want 300.0", got.DurationStats.DurationByStep["implement"])
+	}
+}
+
+// --- Phase 22 / Issue #490: failure reason breakdown and timeout rate ---
+
+func TestAggregateFailureReasonVerify(t *testing.T) {
+	// Issue fails with a verify step where AllPassed == false.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					VerifyResults: []rundata.VerifyStepResult{
+						{Attempt: 0, AllPassed: false},
+					},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.FailureReasons["verify"] != 1 {
+		t.Errorf("FailureReasons[verify] = %d, want 1", got.FailureReasons["verify"])
+	}
+	if len(got.FailureReasons) != 1 {
+		t.Errorf("len(FailureReasons) = %d, want 1", len(got.FailureReasons))
+	}
+}
+
+func TestAggregateFailureReasonExhaustion(t *testing.T) {
+	// Issue with status needs-human-review counts as exhaustion.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusNeedsHumanReview},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.FailureReasons["exhaustion"] != 1 {
+		t.Errorf("FailureReasons[exhaustion] = %d, want 1", got.FailureReasons["exhaustion"])
+	}
+}
+
+func TestAggregateFailureReasonTimeout(t *testing.T) {
+	// Issue fails and a step has TimedOut == true.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Implement: rundata.StepResult{TimedOut: true},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.FailureReasons["timeout"] != 1 {
+		t.Errorf("FailureReasons[timeout] = %d, want 1", got.FailureReasons["timeout"])
+	}
+}
+
+func TestAggregateFailureReasonError(t *testing.T) {
+	// Issue fails with no verify failure, no exhaustion, no timeout — counts as error.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.FailureReasons["error"] != 1 {
+		t.Errorf("FailureReasons[error] = %d, want 1", got.FailureReasons["error"])
+	}
+}
+
+func TestAggregateFailureReasonsMutuallyExclusive(t *testing.T) {
+	// 4 failed issues, one of each type — each bucket should be 1, total 4.
+	base := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				// verify failure
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					VerifyResults: []rundata.VerifyStepResult{
+						{Attempt: 0, AllPassed: false},
+					},
+				},
+				// exhaustion
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusNeedsHumanReview},
+				},
+				// timeout
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Implement: rundata.StepResult{TimedOut: true, StartedAt: &base},
+				},
+				// error fallback
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if len(got.FailureReasons) != 4 {
+		t.Errorf("len(FailureReasons) = %d, want 4", len(got.FailureReasons))
+	}
+	total := 0
+	for _, v := range got.FailureReasons {
+		total += v
+	}
+	if total != 4 {
+		t.Errorf("sum of FailureReasons = %d, want 4", total)
+	}
+	for _, key := range []string{"verify", "exhaustion", "timeout", "error"} {
+		if got.FailureReasons[key] != 1 {
+			t.Errorf("FailureReasons[%s] = %d, want 1", key, got.FailureReasons[key])
+		}
+	}
+}
+
+func TestAggregateFailureReasonsNoFailures(t *testing.T) {
+	// All issues succeed — FailureReasons should be an empty (non-nil) map.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusReadyToMerge}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.FailureReasons == nil {
+		t.Error("FailureReasons is nil, want empty map")
+	}
+	if len(got.FailureReasons) != 0 {
+		t.Errorf("FailureReasons = %v, want empty map", got.FailureReasons)
+	}
+}
+
+func TestAggregateTimeoutRate(t *testing.T) {
+	// 20 total steps across all issues; 2 have TimedOut == true → rate 0.10.
+	// Each issue has 5 steps (recon, spec-generator, implement, quality-review, functional-review).
+	// 4 issues = 20 steps; set TimedOut on 2 implement steps.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Implement: rundata.StepResult{TimedOut: true}},
+				{Implement: rundata.StepResult{TimedOut: true}},
+				{},
+				{},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	// 4 issues × 5 steps = 20 total; 2 timed out.
+	if !nearlyEqual(got.TimeoutRate, 0.10, 0.001) {
+		t.Errorf("TimeoutRate = %f, want 0.10", got.TimeoutRate)
+	}
+}
+
+func TestAggregateTimeoutRateZero(t *testing.T) {
+	// 15 steps, none timed out — TimeoutRate is 0.0.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{},
+				{},
+				{},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.TimeoutRate != 0.0 {
+		t.Errorf("TimeoutRate = %f, want 0.0", got.TimeoutRate)
+	}
+}
+
+func TestAggregateAvgTimeToMerge(t *testing.T) {
+	// 3 implemented issues with durations 300s, 600s, 900s → avg 600.0.
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	mkTimes := func(durationSecs float64) (start, finish *time.Time) {
+		s := base
+		f := base.Add(time.Duration(durationSecs) * time.Second)
+		return &s, &f
+	}
+
+	s1, f1 := mkTimes(300)
+	s2, f2 := mkTimes(600)
+	s3, f3 := mkTimes(900)
+
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{StartedAt: s1, FinishedAt: f1},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{StartedAt: s2, FinishedAt: f2},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{StartedAt: s3, FinishedAt: f3},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.DurationStats.AvgTimeToMergeSeconds, 600.0, 0.001) {
+		t.Errorf("AvgTimeToMergeSeconds = %f, want 600.0", got.DurationStats.AvgTimeToMergeSeconds)
+	}
+}
+
+func TestAggregateAvgTimeToMergeExcludesFailed(t *testing.T) {
+	// 2 implemented issues (300s, 600s) and 1 failed issue (1200s) — avg = 450.0.
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	mkTimes := func(durationSecs float64) (start, finish *time.Time) {
+		s := base
+		f := base.Add(time.Duration(durationSecs) * time.Second)
+		return &s, &f
+	}
+
+	s1, f1 := mkTimes(300)
+	s2, f2 := mkTimes(600)
+	s3, f3 := mkTimes(1200)
+
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{StartedAt: s1, FinishedAt: f1},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Implement: rundata.StepResult{StartedAt: s2, FinishedAt: f2},
+				},
+				{
+					Outcome:   rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Implement: rundata.StepResult{StartedAt: s3, FinishedAt: f3},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.DurationStats.AvgTimeToMergeSeconds, 450.0, 0.001) {
+		t.Errorf("AvgTimeToMergeSeconds = %f, want 450.0", got.DurationStats.AvgTimeToMergeSeconds)
+	}
+}
+
+func TestAggregateAvgTimeToMergeZeroWhenNoImplemented(t *testing.T) {
+	// All issues fail — AvgTimeToMergeSeconds is 0.0.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.DurationStats.AvgTimeToMergeSeconds != 0.0 {
+		t.Errorf("AvgTimeToMergeSeconds = %f, want 0.0", got.DurationStats.AvgTimeToMergeSeconds)
 	}
 }
