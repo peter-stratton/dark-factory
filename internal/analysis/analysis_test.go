@@ -435,3 +435,115 @@ func TestAggregateFlagFrequenciesSortStability(t *testing.T) {
 		t.Errorf("FlagFrequencies[1].Code = %q, want %q", got.FlagFrequencies[1].Code, "zebra")
 	}
 }
+
+func TestAggregateCostByStepZeroCost(t *testing.T) {
+	// Zero cost: no cost data — CostByStep should be an empty (non-nil) map.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.CostStats.CostByStep == nil {
+		t.Error("CostStats.CostByStep is nil, want empty map")
+	}
+	if len(got.CostStats.CostByStep) != 0 {
+		t.Errorf("CostStats.CostByStep = %v, want empty map", got.CostStats.CostByStep)
+	}
+}
+
+func TestAggregateCostByStepSingleStep(t *testing.T) {
+	// Only implement steps present — implement should be 100%.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Implement: rundata.StepResult{CostUSD: 3.0}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.CostStats.CostByStep["implement"], 3.0, 0.0001) {
+		t.Errorf("CostByStep[implement] = %f, want 3.0", got.CostStats.CostByStep["implement"])
+	}
+	// Other steps should not appear.
+	if v, ok := got.CostStats.CostByStep["quality-review"]; ok && v != 0 {
+		t.Errorf("CostByStep[quality-review] = %f, want 0 or absent", v)
+	}
+	// Total should equal sum of all CostByStep values.
+	if !nearlyEqual(got.CostStats.TotalUSD, 3.0, 0.0001) {
+		t.Errorf("TotalUSD = %f, want 3.0", got.CostStats.TotalUSD)
+	}
+}
+
+func TestAggregateCostByStepMultipleSteps(t *testing.T) {
+	// Implement $3.00, quality-review $1.00, retry $0.50 — percentages 66.7%, 22.2%, 11.1%.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{CostUSD: 3.0},
+					QualityReview: rundata.StepResult{CostUSD: 1.0},
+					Retries: []rundata.RetryDetail{
+						{
+							Retry: rundata.StepResult{CostUSD: 0.50},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	total := got.CostStats.TotalUSD
+	if !nearlyEqual(total, 4.5, 0.0001) {
+		t.Errorf("TotalUSD = %f, want 4.5", total)
+	}
+	if !nearlyEqual(got.CostStats.CostByStep["implement"], 3.0, 0.0001) {
+		t.Errorf("CostByStep[implement] = %f, want 3.0", got.CostStats.CostByStep["implement"])
+	}
+	if !nearlyEqual(got.CostStats.CostByStep["quality-review"], 1.0, 0.0001) {
+		t.Errorf("CostByStep[quality-review] = %f, want 1.0", got.CostStats.CostByStep["quality-review"])
+	}
+	if !nearlyEqual(got.CostStats.CostByStep["retries"], 0.50, 0.0001) {
+		t.Errorf("CostByStep[retries] = %f, want 0.50", got.CostStats.CostByStep["retries"])
+	}
+
+	// Percentages should sum to ~100%.
+	var sumPct float64
+	for _, cost := range got.CostStats.CostByStep {
+		sumPct += cost / total * 100
+	}
+	if !nearlyEqual(sumPct, 100.0, 0.1) {
+		t.Errorf("sum of percentages = %f, want ~100", sumPct)
+	}
+}
+
+func TestAggregateCostByStepRecon(t *testing.T) {
+	// Recon cost should be tracked and included in total.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Recon:     rundata.StepResult{CostUSD: 0.25},
+					Implement: rundata.StepResult{CostUSD: 1.0},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.CostStats.CostByStep["recon"], 0.25, 0.0001) {
+		t.Errorf("CostByStep[recon] = %f, want 0.25", got.CostStats.CostByStep["recon"])
+	}
+	if !nearlyEqual(got.CostStats.TotalUSD, 1.25, 0.0001) {
+		t.Errorf("TotalUSD = %f, want 1.25 (recon included)", got.CostStats.TotalUSD)
+	}
+}

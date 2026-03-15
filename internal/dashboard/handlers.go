@@ -761,6 +761,13 @@ type OutcomeRow struct {
 	Percent float64
 }
 
+// CostByStepRow is one row in the cost-by-step breakdown table on the analysis page.
+type CostByStepRow struct {
+	Step    string
+	CostUSD float64
+	Percent float64
+}
+
 // GapView is the view model for one prompt gap on the analysis page.
 type GapView struct {
 	Finding        string
@@ -772,11 +779,12 @@ type GapView struct {
 
 // AnalysisData is the data passed to the analysis template.
 type AnalysisData struct {
-	Report     analysis.Report
-	Gaps       []GapView
-	Outcomes   []OutcomeRow // sorted by count desc
-	Trends     []analysis.TrendPoint
-	Repos      []string
+	Report      analysis.Report
+	Gaps        []GapView
+	Outcomes    []OutcomeRow    // sorted by count desc
+	CostByStep  []CostByStepRow // sorted by cost desc
+	Trends      []analysis.TrendPoint
+	Repos       []string
 	RepoFilter string
 	HasData    bool
 	HasTrends  bool // true when Trends has at least 2 points
@@ -863,12 +871,14 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 	rawGaps := analysis.DetectGaps(runs)
 	trends := analysis.ComputeTrends(runs)
 	outcomes := buildOutcomeRows(report)
+	costByStep := buildCostByStepRows(report)
 	gaps := buildGapViews(rawGaps)
 
 	return &AnalysisData{
 		Report:     report,
 		Gaps:       gaps,
 		Outcomes:   outcomes,
+		CostByStep: costByStep,
 		Trends:     trends,
 		Repos:      repos,
 		RepoFilter: repoFilter,
@@ -925,12 +935,14 @@ func (s *Server) buildAnalysisDataFromFS(repoFilter string) (*AnalysisData, erro
 	rawGaps := analysis.DetectGaps(runs)
 	trends := analysis.ComputeTrends(runs)
 	outcomes := buildOutcomeRows(report)
+	costByStep := buildCostByStepRows(report)
 	gaps := buildGapViews(rawGaps)
 
 	return &AnalysisData{
 		Report:     report,
 		Gaps:       gaps,
 		Outcomes:   outcomes,
+		CostByStep: costByStep,
 		Trends:     trends,
 		Repos:      repos,
 		RepoFilter: repoFilter,
@@ -974,6 +986,33 @@ func buildOutcomeRows(report analysis.Report) []OutcomeRow {
 			return rows[i].Count > rows[j].Count
 		}
 		return rows[i].Status < rows[j].Status
+	})
+	return rows
+}
+
+// buildCostByStepRows converts the CostByStep map in a Report to a sorted slice with
+// pre-computed percentages, ready for template rendering.
+func buildCostByStepRows(report analysis.Report) []CostByStepRow {
+	rows := make([]CostByStepRow, 0, len(report.CostStats.CostByStep))
+	for step, cost := range report.CostStats.CostByStep {
+		if cost <= 0 {
+			continue
+		}
+		var pct float64
+		if report.CostStats.TotalUSD > 0 {
+			pct = cost / report.CostStats.TotalUSD * 100
+		}
+		rows = append(rows, CostByStepRow{
+			Step:    step,
+			CostUSD: cost,
+			Percent: pct,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].CostUSD != rows[j].CostUSD {
+			return rows[i].CostUSD > rows[j].CostUSD
+		}
+		return rows[i].Step < rows[j].Step
 	})
 	return rows
 }

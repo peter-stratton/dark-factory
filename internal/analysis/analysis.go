@@ -36,9 +36,10 @@ type RetryStats struct {
 
 // CostStats holds aggregate cost statistics.
 type CostStats struct {
-	TotalUSD       float64 `json:"total_usd"`
-	AvgPerIssueUSD float64 `json:"avg_per_issue_usd"`
-	AvgPerRunUSD   float64 `json:"avg_per_run_usd"`
+	TotalUSD       float64            `json:"total_usd"`
+	AvgPerIssueUSD float64            `json:"avg_per_issue_usd"`
+	AvgPerRunUSD   float64            `json:"avg_per_run_usd"`
+	CostByStep     map[string]float64 `json:"cost_by_step"`
 }
 
 // Aggregate computes statistics across the provided runs.
@@ -53,6 +54,7 @@ func Aggregate(runs []rundata.RunDetail) Report {
 		Outcomes:    make(map[string]int),
 		VerifyStats: make(map[string]int),
 	}
+	report.CostStats.CostByStep = make(map[string]float64)
 
 	flagCounts := make(map[string]int)
 	var totalRetries int
@@ -97,14 +99,23 @@ func Aggregate(runs []rundata.RunDetail) Report {
 			}
 
 			// Cost statistics from all step results.
+			totalCost += issue.Recon.CostUSD
 			totalCost += issue.SpecGenerator.CostUSD
 			totalCost += issue.Implement.CostUSD
 			totalCost += issue.QualityReview.CostUSD
 			totalCost += issue.FunctionalReview.CostUSD
+			accumulateStepCost(report.CostStats.CostByStep, "recon", issue.Recon.CostUSD)
+			accumulateStepCost(report.CostStats.CostByStep, "spec-generator", issue.SpecGenerator.CostUSD)
+			accumulateStepCost(report.CostStats.CostByStep, "implement", issue.Implement.CostUSD)
+			accumulateStepCost(report.CostStats.CostByStep, "quality-review", issue.QualityReview.CostUSD)
+			accumulateStepCost(report.CostStats.CostByStep, "functional-review", issue.FunctionalReview.CostUSD)
 			for _, retry := range issue.Retries {
 				totalCost += retry.Retry.CostUSD
 				totalCost += retry.QualityReview.CostUSD
 				totalCost += retry.FunctionalReview.CostUSD
+				accumulateStepCost(report.CostStats.CostByStep, "retries", retry.Retry.CostUSD)
+				accumulateStepCost(report.CostStats.CostByStep, "retries", retry.QualityReview.CostUSD)
+				accumulateStepCost(report.CostStats.CostByStep, "retries", retry.FunctionalReview.CostUSD)
 			}
 
 			// Verify step failure counts by check name.
@@ -168,5 +179,13 @@ func buildFlagFrequencies(flagCounts map[string]int, issueCount int) []FlagFrequ
 func collectFlags(flagCounts map[string]int, flags []rundata.Flag) {
 	for _, f := range flags {
 		flagCounts[f.Code]++
+	}
+}
+
+// accumulateStepCost adds cost to the named step's entry in costByStep.
+// Zero cost values are ignored so the map only contains steps that incurred cost.
+func accumulateStepCost(costByStep map[string]float64, step string, cost float64) {
+	if cost > 0 {
+		costByStep[step] += cost
 	}
 }
