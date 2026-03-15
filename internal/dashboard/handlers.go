@@ -784,7 +784,7 @@ type AnalysisData struct {
 
 func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
 	repo := r.URL.Query().Get("repo")
-	data, err := s.buildAnalysisData(repo)
+	data, err := s.buildAnalysisData(r.Context(), repo)
 	if err != nil {
 		s.cfg.Logger.Error("building analysis data", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -802,7 +802,7 @@ func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAnalysisStats(w http.ResponseWriter, r *http.Request) {
 	repo := r.URL.Query().Get("repo")
-	data, err := s.buildAnalysisData(repo)
+	data, err := s.buildAnalysisData(r.Context(), repo)
 	if err != nil {
 		s.cfg.Logger.Error("building analysis stats", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -817,18 +817,16 @@ func (s *Server) handleAnalysisStats(w http.ResponseWriter, r *http.Request) {
 	s.writePartial(w, r, &buf)
 }
 
-func (s *Server) buildAnalysisData(repoFilter string) (*AnalysisData, error) {
+func (s *Server) buildAnalysisData(ctx context.Context, repoFilter string) (*AnalysisData, error) {
 	if s.statsDB != nil {
-		return s.buildAnalysisDataFromDB(repoFilter)
+		return s.buildAnalysisDataFromDB(ctx, repoFilter)
 	}
 	return s.buildAnalysisDataFromFS(repoFilter)
 }
 
 // buildAnalysisDataFromDB queries the SQLite stats database for run details
 // and passes them to the analysis functions.
-func (s *Server) buildAnalysisDataFromDB(repoFilter string) (*AnalysisData, error) {
-	ctx := context.Background()
-
+func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string) (*AnalysisData, error) {
 	// Build repo list for the filter dropdown from all runs in the DB.
 	allRuns, err := stats.QueryRuns(ctx, s.statsDB, stats.RunFilter{})
 	if err != nil {
