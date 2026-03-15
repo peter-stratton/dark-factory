@@ -129,6 +129,34 @@
 
 {{else}}
 
+<!-- Overview Metrics -->
+<div class="stats-row animate-in animate-in-1">
+  <div class="stat-block">
+    <div class="stat-block__label">Total Runs</div>
+    <div class="stat-block__value">{{.Overview.TotalRuns}}</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-block__label">Total Issues</div>
+    <div class="stat-block__value">{{.Overview.TotalIssues}}</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-block__label">Success Rate</div>
+    <div class="stat-block__value stat-block__value--success">{{printf "%.0f" (mulf .Overview.SuccessRate 100.0)}}%</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-block__label">First-Pass Rate</div>
+    <div class="stat-block__value stat-block__value--success">{{printf "%.0f" (mulf .Overview.FirstPassRate 100.0)}}%</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-block__label">Total Cost</div>
+    <div class="stat-block__value">{{if gt .Overview.TotalCostUSD 0.0}}${{printf "%.4f" .Overview.TotalCostUSD}}{{else}}—{{end}}</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-block__label">Avg Cost / Success</div>
+    <div class="stat-block__value">{{if gt .Overview.AvgCostPerSuccessUSD 0.0}}${{printf "%.4f" .Overview.AvgCostPerSuccessUSD}}{{else}}—{{end}}</div>
+  </div>
+</div>
+
 <!-- Outcome Distribution -->
 <div class="card animate-in animate-in-1">
   <div class="card__header">
@@ -225,15 +253,48 @@
         <td class="cell-num">{{.Report.RetryStats.MaxRetries}}</td>
       </tr>
       <tr>
-        <td>Issues with exhausted retries</td>
-        <td class="cell-num">{{.Report.RetryStats.ExhaustedCount}}</td>
-      </tr>
-      <tr>
         <td>Recovery rate (retried issues)</td>
         <td class="cell-num">{{printf "%.1f" (mulf .Report.RetryStats.RecoveryRate 100.0)}}%</td>
       </tr>
     </tbody>
   </table>
+</div>
+
+<!-- Failure Reason Breakdown -->
+<div class="card animate-in animate-in-2">
+  <div class="card__header">
+    <span class="card__title">Failure Reason Breakdown</span>
+    <span class="text-muted">Categorized causes of failed issues</span>
+  </div>
+  {{if .FailureReasons}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Reason</th>
+        <th class="cell-num">Count</th>
+        <th>% of Issues</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .FailureReasons}}
+      <tr>
+        <td>{{.Reason}}</td>
+        <td class="cell-num">{{.Count}}</td>
+        <td>
+          <div class="pass-fail-bar">
+            <span class="text-muted">{{printf "%.1f" .Percent}}%</span>
+            <div class="pass-fail-bar__bar">
+              <div class="progress-bar__segment progress-bar__segment--danger" style="width: {{printf "%.1f" .Percent}}%;"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="text-muted" style="padding: 1rem;">No failure data recorded.</p>
+  {{end}}
 </div>
 
 <!-- Cost Stats -->
@@ -260,6 +321,18 @@
       <tr>
         <td>Average cost per run</td>
         <td class="cell-num">{{printf "$%.4f" .Report.CostStats.AvgPerRunUSD}}</td>
+      </tr>
+      <tr>
+        <td>Wasted cost (failed issues)</td>
+        <td class="cell-num">{{printf "$%.4f" .Overview.WastedCostUSD}}</td>
+      </tr>
+      <tr>
+        <td>Timeout rate</td>
+        <td class="cell-num">{{printf "%.1f" (mulf .Overview.TimeoutRate 100.0)}}%</td>
+      </tr>
+      <tr>
+        <td>Avg time to merge</td>
+        <td class="cell-num">{{if .AvgTimeToMerge}}{{.AvgTimeToMerge}}{{else}}—{{end}}</td>
       </tr>
     </tbody>
   </table>
@@ -355,6 +428,8 @@
         <th class="cell-num">Implemented</th>
         <th class="cell-num">Failed</th>
         <th>Success Rate</th>
+        <th>First-Pass Rate</th>
+        <th class="cell-num">Avg Cost</th>
       </tr>
     </thead>
     <tbody>
@@ -372,6 +447,15 @@
             </div>
           </div>
         </td>
+        <td>
+          <div class="pass-fail-bar">
+            <span class="text-muted">{{printf "%.1f" (mulf .FirstPassRate 100.0)}}%</span>
+            <div class="pass-fail-bar__bar">
+              <div class="progress-bar__segment progress-bar__segment--success" style="width: {{printf "%.1f" (mulf .FirstPassRate 100.0)}}%;"></div>
+            </div>
+          </div>
+        </td>
+        <td class="cell-num">{{if gt .AvgCostPerIssueUSD 0.0}}${{printf "%.4f" .AvgCostPerIssueUSD}}{{else}}—{{end}}</td>
       </tr>
       {{end}}
     </tbody>
@@ -572,9 +656,78 @@
     });
   }
 
-  makeChart('chart-success-rate', 'Success Rate',
-    function(p) { return +(p.success_rate * 100).toFixed(1); }, '#4ade80',
-    { max: 100, ticks: { color: '#94a3b8', callback: function(v) { return v + '%'; }, stepSize: 25 } });
+  // Success rate chart: two datasets — overall and first-pass.
+  (function() {
+    var canvas = document.getElementById('chart-success-rate');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Success Rate',
+            data: points.map(function(p) { return +(p.success_rate * 100).toFixed(1); }),
+            borderColor: '#4ade80',
+            backgroundColor: '#4ade8020',
+            fill: true,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: '#4ade80',
+            borderWidth: 2,
+            tension: 0.3
+          },
+          {
+            label: 'First-Pass Rate',
+            data: points.map(function(p) { return +((p.first_pass_success_rate || 0) * 100).toFixed(1); }),
+            borderColor: '#60a5fa',
+            backgroundColor: '#60a5fa20',
+            fill: true,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: '#60a5fa',
+            borderWidth: 2,
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: '#e2e8f0' } },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#e2e8f0',
+            padding: 10,
+            callbacks: {
+              title: function(items) {
+                var p = points[items[0].dataIndex];
+                return (p.repo || '') + (p.milestone ? ' \u2014 ' + p.milestone : '');
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#94a3b8', maxRotation: 45, maxTicksLimit: 10, font: { size: 11 } },
+            grid: { color: '#1e293b' }
+          },
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: { color: '#94a3b8', callback: function(v) { return v + '%'; }, stepSize: 25 },
+            grid: { color: '#1e293b' }
+          }
+        }
+      }
+    });
+  })();
+
   makeChart('chart-avg-retries', 'Avg Retries',
     function(p) { return +p.avg_retries.toFixed(2); }, '#f59e0b');
   makeChart('chart-cost', 'Avg Cost / Issue (USD)',
