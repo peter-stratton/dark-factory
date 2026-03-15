@@ -88,7 +88,7 @@ presentation.
 ### infrastructure
 
 **Paths:** `internal/github/`, `internal/lock/`, `internal/sandbox/`,
-`internal/pypi/`, `internal/agent/runner/`
+`internal/pypi/`, `internal/agent/runner/`, `internal/stats/`
 
 **Purpose:** External service clients and process management. GitHub API
 integration, distributed locking, sandbox execution, and package index access.
