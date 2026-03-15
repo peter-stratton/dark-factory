@@ -66,6 +66,7 @@ type Flag struct {
 type StepResult struct {
 	Output          string     `json:"output,omitempty"`
 	Error           string     `json:"error,omitempty"`
+	TimedOut        bool       `json:"timed_out,omitempty"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 	DurationSeconds float64    `json:"duration_seconds,omitempty"`
