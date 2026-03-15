@@ -142,6 +142,7 @@ what was built and how users experience it. These live in
 | 18 | [Adaptive Agent Loop](docs/phase-overviews/phase-18-adaptive-agent-loop.md) — recon agent, hybrid retry strategy, handoff context |
 | 19 | [Spring Cleaning](docs/phase-overviews/phase-19-spring-cleaning.md) — unified verdict parsing, typed constants, shared helpers, CLI consolidation |
 | 20 | [Terminal UI](docs/phase-overviews/phase-20-terminal-ui.md) — Bubble Tea TUI, progress reporter, adaptive colors, hybrid output mode |
+| 21 | [Analytics Persistence](docs/phase-overviews/phase-21-analytics-persistence.md) — SQLite stats store, retry recovery rate, cost/duration breakdown, repo stats, flag-based prompt gaps |
 
 To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
 
