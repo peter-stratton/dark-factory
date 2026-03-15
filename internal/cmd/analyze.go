@@ -309,6 +309,39 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "  Per issue:      $%.2f\n", report.CostStats.AvgPerIssueUSD)
 	fmt.Fprintf(w, "  Per run:        $%.2f\n", report.CostStats.AvgPerRunUSD)
 
+	// Cost by step table.
+	fmt.Fprintf(w, "\nCost by Step\n")
+	if len(report.CostStats.CostByStep) == 0 {
+		fmt.Fprintf(w, "  (no cost data)\n")
+	} else {
+		type stepCost struct {
+			name string
+			cost float64
+		}
+		steps := make([]stepCost, 0, len(report.CostStats.CostByStep))
+		for name, cost := range report.CostStats.CostByStep {
+			if cost > 0 {
+				steps = append(steps, stepCost{name, cost})
+			}
+		}
+		sort.Slice(steps, func(i, j int) bool {
+			if steps[i].cost != steps[j].cost {
+				return steps[i].cost > steps[j].cost
+			}
+			return steps[i].name < steps[j].name
+		})
+		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(tw, "  Step\tTotal Cost\tPercent\n")
+		for _, s := range steps {
+			var pct float64
+			if report.CostStats.TotalUSD > 0 {
+				pct = s.cost / report.CostStats.TotalUSD * 100
+			}
+			fmt.Fprintf(tw, "  %s\t$%.4f\t%.1f%%\n", s.name, s.cost, pct)
+		}
+		_ = tw.Flush()
+	}
+
 	// Prompt gaps.
 	fmt.Fprintf(w, "\nPrompt Gaps\n")
 	if len(gaps) == 0 {
