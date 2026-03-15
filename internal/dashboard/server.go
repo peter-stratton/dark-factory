@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/phs/dark-factory/internal/stats"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 )
@@ -30,14 +31,17 @@ type Config struct {
 
 // Server is the dashboard HTTP server.
 type Server struct {
-	cfg    Config
-	reader *rundata.Reader
-	mux    *http.ServeMux
-	tmpl   *template.Template
+	cfg     Config
+	reader  *rundata.Reader
+	statsDB *stats.DB
+	mux     *http.ServeMux
+	tmpl    *template.Template
 }
 
 // New creates a new Server. Returns an error if templates fail to parse.
-func New(cfg Config, reader *rundata.Reader) (*Server, error) {
+// statsDB may be nil; when nil the analysis page reads from the filesystem
+// reader instead of the database.
+func New(cfg Config, reader *rundata.Reader, statsDB *stats.DB) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -63,10 +67,11 @@ func New(cfg Config, reader *rundata.Reader) (*Server, error) {
 		return nil, fmt.Errorf("parsing templates: %w", err)
 	}
 	s := &Server{
-		cfg:    cfg,
-		reader: reader,
-		mux:    http.NewServeMux(),
-		tmpl:   tmpl,
+		cfg:     cfg,
+		reader:  reader,
+		statsDB: statsDB,
+		mux:     http.NewServeMux(),
+		tmpl:    tmpl,
 	}
 	s.routes()
 	return s, nil

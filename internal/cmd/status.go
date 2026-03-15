@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/phs/dark-factory/internal/dashboard"
 	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/phs/dark-factory/internal/stats"
 	"github.com/spf13/cobra"
 )
 
@@ -32,10 +35,26 @@ Press Ctrl-C to stop the server.`,
 			return fmt.Errorf("initializing run reader: %w", err)
 		}
 
+		// Open the stats database for the analysis page. Errors are non-fatal:
+		// the dashboard falls back to filesystem data when statsDB is nil.
+		var statsDB *stats.DB
+		if home, err := os.UserHomeDir(); err == nil {
+			statsPath := filepath.Join(home, ".godark", "stats.db")
+			db, err := stats.Open(statsPath)
+			if err != nil {
+				logger.Warn("stats database unavailable, analysis reads from filesystem", "error", err)
+			} else {
+				statsDB = db
+				defer db.Close()
+			}
+		} else {
+			logger.Warn("could not determine home directory, stats database unavailable", "error", err)
+		}
+
 		srv, err := dashboard.New(dashboard.Config{
 			Port:   port,
 			Logger: logger,
-		}, reader)
+		}, reader, statsDB)
 		if err != nil {
 			return fmt.Errorf("creating dashboard server: %w", err)
 		}
