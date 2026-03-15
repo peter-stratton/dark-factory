@@ -68,7 +68,7 @@ Use --legacy to fall back to scanning run directories (~/.godark/runs/) instead.
 		}
 		defer db.Close()
 
-		return runAnalyzeDB(cmd.OutOrStdout(), db, slog.Default(), repo, milestone, since, until, jsonOut)
+		return runAnalyzeDB(cmd.OutOrStdout(), db, repo, milestone, since, until, jsonOut)
 	},
 }
 
@@ -85,11 +85,7 @@ func init() {
 
 // runAnalyzeDB is the DB-backed analysis path. It queries the stats database,
 // converts records to RunDetail, and writes the report to w.
-func runAnalyzeDB(w io.Writer, db *stats.DB, logger *slog.Logger, repo, milestone string, since, until *time.Time, jsonOut bool) error {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
+func runAnalyzeDB(w io.Writer, db *stats.DB, repo, milestone string, since, until *time.Time, jsonOut bool) error {
 	filter := stats.RunFilter{
 		Repo:      repo,
 		Milestone: milestone,
