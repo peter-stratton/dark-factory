@@ -136,25 +136,32 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	report.CostStats.AvgPerRunUSD = totalCost / float64(report.RunCount)
 
 	// Build flag frequencies sorted by count descending, then code ascending for stability.
+	report.FlagFrequencies = buildFlagFrequencies(flagCounts, report.IssueCount)
+
+	return report
+}
+
+// buildFlagFrequencies converts raw flag counts into a sorted FlagFrequency slice.
+func buildFlagFrequencies(flagCounts map[string]int, issueCount int) []FlagFrequency {
+	var freqs []FlagFrequency
 	for code, count := range flagCounts {
 		var pct float64
-		if report.IssueCount > 0 {
-			pct = float64(count) / float64(report.IssueCount) * 100
+		if issueCount > 0 {
+			pct = float64(count) / float64(issueCount) * 100
 		}
-		report.FlagFrequencies = append(report.FlagFrequencies, FlagFrequency{
+		freqs = append(freqs, FlagFrequency{
 			Code:    code,
 			Count:   count,
 			Percent: pct,
 		})
 	}
-	sort.Slice(report.FlagFrequencies, func(i, j int) bool {
-		if report.FlagFrequencies[i].Count != report.FlagFrequencies[j].Count {
-			return report.FlagFrequencies[i].Count > report.FlagFrequencies[j].Count
+	sort.Slice(freqs, func(i, j int) bool {
+		if freqs[i].Count != freqs[j].Count {
+			return freqs[i].Count > freqs[j].Count
 		}
-		return report.FlagFrequencies[i].Code < report.FlagFrequencies[j].Code
+		return freqs[i].Code < freqs[j].Code
 	})
-
-	return report
+	return freqs
 }
 
 // collectFlags increments the count for each flag code in flagCounts.
