@@ -970,6 +970,11 @@ contexts.
 - Watch command overhaul — dedicated milestone to validate `godark watch`
   end-to-end, add TUI and dashboard views for the polling loop, and ensure
   feature parity with the run command's monitoring experience
+- Daemon-mode run — `godark run --watch` flag that keeps the run alive after
+  its first pass; polls for human merges on `awaiting-human-review` PRs, then
+  re-resolves dependencies and processes newly unblocked issues automatically,
+  eliminating the need to re-run `godark run` after human approvals unblock
+  a dependency chain
 - Linter config generation from `architecture.json` (per-language)
 - Multi-cluster deployment and geographic distribution
 - Cost allocation and chargeback per team/repo
