@@ -689,6 +689,175 @@ func TestAnalyzeDurationOutput(t *testing.T) {
 	}
 }
 
+// TestAnalyzeOverviewSection: output contains Overview section with first-pass success rate line.
+func TestAnalyzeOverviewSection(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	meta := rundata.RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 1",
+		IssueNumbers: []int{1, 2},
+		StartedAt:    ts,
+	}
+	writeRunDir(t, base, "owner", "repo", meta, []rundata.Outcome{
+		{IssueNumber: 1, Status: "implemented"},
+		{IssueNumber: 2, Status: "failed"},
+	})
+
+	out, err := analyzeWithReader(t, base, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, want := range []string{
+		"Overview",
+		"First-pass success rate:",
+		"Avg cost per success:",
+		"Wasted cost:",
+		"Timeout rate:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+// TestAnalyzeFailureReasonsSection: output contains failure reasons table with non-zero rows.
+func TestAnalyzeFailureReasonsSection(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	meta := rundata.RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 1",
+		IssueNumbers: []int{1, 2, 3},
+		StartedAt:    ts,
+	}
+	writeRunDir(t, base, "owner", "repo", meta, []rundata.Outcome{
+		{IssueNumber: 1, Status: "implemented"},
+		{IssueNumber: 2, Status: "failed"},
+		{IssueNumber: 3, Status: "needs-human-review"},
+	})
+
+	out, err := analyzeWithReader(t, base, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "Failure Reasons") {
+		t.Errorf("output missing 'Failure Reasons' section\nfull output:\n%s", out)
+	}
+	// "exhaustion" bucket should appear (needs-human-review issue).
+	if !strings.Contains(out, "exhaustion") {
+		t.Errorf("output missing 'exhaustion' row in Failure Reasons\nfull output:\n%s", out)
+	}
+	// "Exhausted:" line should no longer appear in Retry Stats.
+	if strings.Contains(out, "Exhausted:") {
+		t.Errorf("output must not contain removed 'Exhausted:' line in Retry Stats\nfull output:\n%s", out)
+	}
+}
+
+// TestAnalyzeTimeToMergeInDuration: Avg time to merge appears in Duration Stats section.
+func TestAnalyzeTimeToMergeInDuration(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	meta := rundata.RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 1",
+		IssueNumbers: []int{1},
+		StartedAt:    ts,
+	}
+	writeRunDirWithSteps(t, base, "owner", "repo", meta, []issueWithSteps{
+		{
+			Outcome:       rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+			Implement:     rundata.StepResult{DurationSeconds: 300.0},
+			QualityReview: rundata.StepResult{DurationSeconds: 120.0},
+		},
+	})
+
+	out, err := analyzeWithReader(t, base, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "Avg time to merge:") {
+		t.Errorf("output missing 'Avg time to merge:' in Duration Stats\nfull output:\n%s", out)
+	}
+}
+
+// TestAnalyzeRepoTableEnriched: per-repo table includes First-pass and Avg cost columns.
+func TestAnalyzeRepoTableEnriched(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	meta := rundata.RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 1",
+		IssueNumbers: []int{1, 2},
+		StartedAt:    ts,
+	}
+	writeRunDir(t, base, "owner", "repo", meta, []rundata.Outcome{
+		{IssueNumber: 1, Status: "implemented"},
+		{IssueNumber: 2, Status: "implemented"},
+	})
+
+	out, err := analyzeWithReader(t, base, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "First-pass") {
+		t.Errorf("repo table missing 'First-pass' column\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "Avg cost") {
+		t.Errorf("repo table missing 'Avg cost' column\nfull output:\n%s", out)
+	}
+}
+
+// TestAnalyzeJSONIncludesNewFields: --json output deserializes with new Report fields.
+func TestAnalyzeJSONIncludesNewFields(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	meta := rundata.RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 1",
+		IssueNumbers: []int{1, 2},
+		StartedAt:    ts,
+	}
+	writeRunDir(t, base, "owner", "repo", meta, []rundata.Outcome{
+		{IssueNumber: 1, Status: "implemented"},
+		{IssueNumber: 2, Status: "failed"},
+	})
+
+	out, err := analyzeWithReader(t, base, "", "", "", "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result struct {
+		Report analysis.Report `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\noutput:\n%s", err, out)
+	}
+
+	// first_pass_success_rate should be 0.5 (1 out of 2 issues, no retries, implemented)
+	if result.Report.FirstPassSuccessRate != 0.5 {
+		t.Errorf("FirstPassSuccessRate = %v, want 0.5", result.Report.FirstPassSuccessRate)
+	}
+	// wasted_cost_usd should be 0 (no cost data in test, but field must be present)
+	if result.Report.WastedCostUSD < 0 {
+		t.Errorf("WastedCostUSD = %v, want >= 0", result.Report.WastedCostUSD)
+	}
+	// failure_reasons must be non-nil map
+	if result.Report.FailureReasons == nil {
+		t.Errorf("FailureReasons is nil, want non-nil map")
+	}
+}
+
 // TestAnalyzeDB_DurationFromSteps: step duration records flow through to report.
 func TestAnalyzeDB_DurationFromSteps(t *testing.T) {
 	db := openTestDB(t)
