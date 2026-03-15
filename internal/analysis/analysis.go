@@ -8,14 +8,23 @@ import (
 
 // Report holds aggregate statistics computed across multiple runs.
 type Report struct {
-	RunCount        int             `json:"run_count"`
-	IssueCount      int             `json:"issue_count"`
-	Outcomes        map[string]int  `json:"outcomes"`
-	FlagFrequencies []FlagFrequency `json:"flag_frequencies"`
-	RetryStats      RetryStats      `json:"retry_stats"`
-	VerifyStats     map[string]int  `json:"verify_stats"`
-	CostStats       CostStats       `json:"cost_stats"`
-	DurationStats   DurationStats   `json:"duration_stats"`
+	RunCount        int                    `json:"run_count"`
+	IssueCount      int                    `json:"issue_count"`
+	Outcomes        map[string]int         `json:"outcomes"`
+	FlagFrequencies []FlagFrequency        `json:"flag_frequencies"`
+	RetryStats      RetryStats             `json:"retry_stats"`
+	VerifyStats     map[string]int         `json:"verify_stats"`
+	CostStats       CostStats              `json:"cost_stats"`
+	DurationStats   DurationStats          `json:"duration_stats"`
+	RepoStats       map[string]RepoSummary `json:"repo_stats"`
+}
+
+// RepoSummary holds per-repository outcome statistics.
+type RepoSummary struct {
+	Total       int     `json:"total"`
+	Implemented int     `json:"implemented"`
+	Failed      int     `json:"failed"`
+	SuccessRate float64 `json:"success_rate"`
 }
 
 // DurationStats holds aggregate step duration statistics.
@@ -49,6 +58,81 @@ type CostStats struct {
 	CostByStep     map[string]float64 `json:"cost_by_step"`
 }
 
+// issueAcc holds mutable per-issue counters accumulated during Aggregate.
+type issueAcc struct {
+	flagCounts             map[string]int
+	totalRetries           int
+	maxRetries             int
+	retriedSucceeded       int
+	totalCost              float64
+	totalImplementDuration float64
+	totalReviewDuration    float64
+}
+
+// add incorporates a single issue's data into the accumulator and the report.
+func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
+	report.IssueCount++
+
+	if issue.Outcome.Status != "" {
+		report.Outcomes[issue.Outcome.Status]++
+	}
+
+	accumulateRepoStat(report.RepoStats, repo, issue.Outcome.Status)
+
+	retries := len(issue.Retries)
+	a.totalRetries += retries
+	if retries > a.maxRetries {
+		a.maxRetries = retries
+	}
+	if issue.Outcome.Status == rundata.OutcomeStatusNeedsHumanReview {
+		report.RetryStats.ExhaustedCount++
+	}
+	if retries > 0 {
+		report.RetryStats.RetriedCount++
+		if issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
+			issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge {
+			a.retriedSucceeded++
+		}
+	}
+
+	collectFlags(a.flagCounts, issue.Implement.Flags)
+	collectFlags(a.flagCounts, issue.QualityReview.Flags)
+	collectFlags(a.flagCounts, issue.FunctionalReview.Flags)
+	for _, retry := range issue.Retries {
+		collectFlags(a.flagCounts, retry.Retry.Flags)
+		collectFlags(a.flagCounts, retry.QualityReview.Flags)
+		collectFlags(a.flagCounts, retry.FunctionalReview.Flags)
+	}
+
+	a.totalCost += accumulateIssueCosts(report.CostStats.CostByStep, issue)
+	a.totalImplementDuration += issue.Implement.DurationSeconds
+	a.totalReviewDuration += issue.QualityReview.DurationSeconds
+
+	for _, vr := range issue.VerifyResults {
+		for _, check := range vr.Checks {
+			if !check.Passed {
+				report.VerifyStats[check.Name]++
+			}
+		}
+	}
+}
+
+// accumulateRepoStat updates per-repository counters for a single issue outcome.
+func accumulateRepoStat(repoStats map[string]RepoSummary, repo, status string) {
+	if repo == "" {
+		return
+	}
+	rs := repoStats[repo]
+	rs.Total++
+	switch status {
+	case rundata.OutcomeStatusImplemented, rundata.OutcomeStatusReadyToMerge:
+		rs.Implemented++
+	case rundata.OutcomeStatusFailed, rundata.OutcomeStatusNeedsHumanReview:
+		rs.Failed++
+	}
+	repoStats[repo] = rs
+}
+
 // Aggregate computes statistics across the provided runs.
 // Returns a zero Report if runs is empty.
 func Aggregate(runs []rundata.RunDetail) Report {
@@ -60,95 +144,51 @@ func Aggregate(runs []rundata.RunDetail) Report {
 		RunCount:    len(runs),
 		Outcomes:    make(map[string]int),
 		VerifyStats: make(map[string]int),
+		RepoStats:   make(map[string]RepoSummary),
 	}
 	report.CostStats.CostByStep = make(map[string]float64)
 
-	flagCounts := make(map[string]int)
-	var totalRetries int
-	var maxRetries int
-	var totalCost float64
-	var retriedSucceeded int
-	var totalImplementDuration, totalReviewDuration float64
+	acc := issueAcc{flagCounts: make(map[string]int)}
 
 	for _, run := range runs {
 		for _, issue := range run.Issues {
-			report.IssueCount++
-
-			// Outcome distribution.
-			if issue.Outcome.Status != "" {
-				report.Outcomes[issue.Outcome.Status]++
-			}
-
-			// Retry statistics.
-			retries := len(issue.Retries)
-			totalRetries += retries
-			if retries > maxRetries {
-				maxRetries = retries
-			}
-			if issue.Outcome.Status == rundata.OutcomeStatusNeedsHumanReview {
-				report.RetryStats.ExhaustedCount++
-			}
-			if retries > 0 {
-				report.RetryStats.RetriedCount++
-				if issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
-					issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge {
-					retriedSucceeded++
-				}
-			}
-
-			// Collect flags from all step results for this issue.
-			collectFlags(flagCounts, issue.Implement.Flags)
-			collectFlags(flagCounts, issue.QualityReview.Flags)
-			collectFlags(flagCounts, issue.FunctionalReview.Flags)
-			for _, retry := range issue.Retries {
-				collectFlags(flagCounts, retry.Retry.Flags)
-				collectFlags(flagCounts, retry.QualityReview.Flags)
-				collectFlags(flagCounts, retry.FunctionalReview.Flags)
-			}
-
-			// Cost statistics from all step results.
-			totalCost += accumulateIssueCosts(report.CostStats.CostByStep, issue)
-
-			// Duration statistics from implement and quality-review steps.
-			totalImplementDuration += issue.Implement.DurationSeconds
-			totalReviewDuration += issue.QualityReview.DurationSeconds
-
-			// Verify step failure counts by check name.
-			for _, vr := range issue.VerifyResults {
-				for _, check := range vr.Checks {
-					if !check.Passed {
-						report.VerifyStats[check.Name]++
-					}
-				}
-			}
+			acc.add(&report, run.Repo, issue)
 		}
 	}
 
 	// Populate retry stats.
-	report.RetryStats.TotalRetries = totalRetries
-	report.RetryStats.MaxRetries = maxRetries
+	report.RetryStats.TotalRetries = acc.totalRetries
+	report.RetryStats.MaxRetries = acc.maxRetries
 	if report.IssueCount > 0 {
-		report.RetryStats.AvgPerIssue = float64(totalRetries) / float64(report.IssueCount)
+		report.RetryStats.AvgPerIssue = float64(acc.totalRetries) / float64(report.IssueCount)
 	}
 	if report.RetryStats.RetriedCount > 0 {
-		report.RetryStats.RecoveryRate = float64(retriedSucceeded) / float64(report.RetryStats.RetriedCount)
+		report.RetryStats.RecoveryRate = float64(acc.retriedSucceeded) / float64(report.RetryStats.RetriedCount)
 	}
 
 	// Populate cost stats.
-	report.CostStats.TotalUSD = totalCost
+	report.CostStats.TotalUSD = acc.totalCost
 	if report.IssueCount > 0 {
-		report.CostStats.AvgPerIssueUSD = totalCost / float64(report.IssueCount)
+		report.CostStats.AvgPerIssueUSD = acc.totalCost / float64(report.IssueCount)
 	}
-	report.CostStats.AvgPerRunUSD = totalCost / float64(report.RunCount)
+	report.CostStats.AvgPerRunUSD = acc.totalCost / float64(report.RunCount)
 
 	// Populate duration stats.
 	if report.IssueCount > 0 {
-		report.DurationStats.AvgImplementSeconds = totalImplementDuration / float64(report.IssueCount)
-		report.DurationStats.AvgReviewSeconds = totalReviewDuration / float64(report.IssueCount)
+		report.DurationStats.AvgImplementSeconds = acc.totalImplementDuration / float64(report.IssueCount)
+		report.DurationStats.AvgReviewSeconds = acc.totalReviewDuration / float64(report.IssueCount)
+	}
+
+	// Compute per-repo success rates.
+	for repo, rs := range report.RepoStats {
+		if rs.Total > 0 {
+			rs.SuccessRate = float64(rs.Implemented) / float64(rs.Total)
+		}
+		report.RepoStats[repo] = rs
 	}
 
 	// Build flag frequencies sorted by count descending, then code ascending for stability.
-	report.FlagFrequencies = buildFlagFrequencies(flagCounts, report.IssueCount)
+	report.FlagFrequencies = buildFlagFrequencies(acc.flagCounts, report.IssueCount)
 
 	return report
 }
