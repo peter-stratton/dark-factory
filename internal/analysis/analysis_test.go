@@ -15,7 +15,7 @@ func nearlyEqual(a, b, epsilon float64) bool {
 func TestAggregateNilRuns(t *testing.T) {
 	got := Aggregate(nil)
 	if got.RunCount != 0 || got.IssueCount != 0 || got.Outcomes != nil ||
-		got.FlagFrequencies != nil || got.VerifyStats != nil {
+		got.FlagFrequencies != nil || got.VerifyStats != nil || got.RepoStats != nil {
 		t.Errorf("Aggregate(nil) = %+v, want zero Report", got)
 	}
 }
@@ -23,7 +23,7 @@ func TestAggregateNilRuns(t *testing.T) {
 func TestAggregateEmptyRuns(t *testing.T) {
 	got := Aggregate([]rundata.RunDetail{})
 	if got.RunCount != 0 || got.IssueCount != 0 || got.Outcomes != nil ||
-		got.FlagFrequencies != nil || got.VerifyStats != nil {
+		got.FlagFrequencies != nil || got.VerifyStats != nil || got.RepoStats != nil {
 		t.Errorf("Aggregate([]) = %+v, want zero Report", got)
 	}
 }
@@ -600,5 +600,100 @@ func TestAggregateCostByStepRecon(t *testing.T) {
 	}
 	if !nearlyEqual(got.CostStats.TotalUSD, 1.25, 0.0001) {
 		t.Errorf("TotalUSD = %f, want 1.25 (recon included)", got.CostStats.TotalUSD)
+	}
+}
+
+func TestAggregateRepoStatsSingle(t *testing.T) {
+	// One repo with 8 implemented, 2 failed — success rate 80%.
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{Repo: "owner/repo"},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if len(got.RepoStats) != 1 {
+		t.Fatalf("len(RepoStats) = %d, want 1", len(got.RepoStats))
+	}
+	rs := got.RepoStats["owner/repo"]
+	if rs.Total != 10 {
+		t.Errorf("RepoStats[owner/repo].Total = %d, want 10", rs.Total)
+	}
+	if rs.Implemented != 8 {
+		t.Errorf("RepoStats[owner/repo].Implemented = %d, want 8", rs.Implemented)
+	}
+	if rs.Failed != 2 {
+		t.Errorf("RepoStats[owner/repo].Failed = %d, want 2", rs.Failed)
+	}
+	if !nearlyEqual(rs.SuccessRate, 0.80, 0.001) {
+		t.Errorf("RepoStats[owner/repo].SuccessRate = %f, want 0.80", rs.SuccessRate)
+	}
+}
+
+func TestAggregateRepoStatsMultiple(t *testing.T) {
+	// Two repos with different success rates shown separately.
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{Repo: "owner/alpha"},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed}},
+			},
+		},
+		{
+			RunMeta: rundata.RunMeta{Repo: "owner/beta"},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusNeedsHumanReview}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if len(got.RepoStats) != 2 {
+		t.Fatalf("len(RepoStats) = %d, want 2", len(got.RepoStats))
+	}
+
+	alpha := got.RepoStats["owner/alpha"]
+	if alpha.Total != 3 {
+		t.Errorf("alpha.Total = %d, want 3", alpha.Total)
+	}
+	if alpha.Implemented != 2 {
+		t.Errorf("alpha.Implemented = %d, want 2", alpha.Implemented)
+	}
+	if alpha.Failed != 1 {
+		t.Errorf("alpha.Failed = %d, want 1", alpha.Failed)
+	}
+	if !nearlyEqual(alpha.SuccessRate, 2.0/3.0, 0.001) {
+		t.Errorf("alpha.SuccessRate = %f, want ~0.667", alpha.SuccessRate)
+	}
+
+	beta := got.RepoStats["owner/beta"]
+	if beta.Total != 2 {
+		t.Errorf("beta.Total = %d, want 2", beta.Total)
+	}
+	if beta.Implemented != 1 {
+		t.Errorf("beta.Implemented = %d, want 1", beta.Implemented)
+	}
+	if beta.Failed != 1 {
+		t.Errorf("beta.Failed = %d, want 1", beta.Failed)
+	}
+	if !nearlyEqual(beta.SuccessRate, 0.5, 0.001) {
+		t.Errorf("beta.SuccessRate = %f, want 0.5", beta.SuccessRate)
 	}
 }

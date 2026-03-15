@@ -768,6 +768,22 @@ type CostByStepRow struct {
 	Percent float64
 }
 
+// VerifyRow is one row in the verify check failures table on the analysis page.
+type VerifyRow struct {
+	Name       string
+	Count      int
+	FailurePct float64 // failure count as a percentage of total issues
+}
+
+// RepoRow is one row in the per-repo success rate table on the analysis page.
+type RepoRow struct {
+	Repo        string
+	Total       int
+	Implemented int
+	Failed      int
+	SuccessPct  float64 // success rate as a percentage (0–100)
+}
+
 // GapView is the view model for one prompt gap on the analysis page.
 type GapView struct {
 	Finding        string
@@ -783,11 +799,13 @@ type AnalysisData struct {
 	Gaps        []GapView
 	Outcomes    []OutcomeRow    // sorted by count desc
 	CostByStep  []CostByStepRow // sorted by cost desc
+	VerifyRows  []VerifyRow     // sorted by count desc, then name asc
+	RepoRows    []RepoRow       // sorted by repo name asc
 	Trends      []analysis.TrendPoint
 	Repos       []string
-	RepoFilter string
-	HasData    bool
-	HasTrends  bool // true when Trends has at least 2 points
+	RepoFilter  string
+	HasData     bool
+	HasTrends   bool // true when Trends has at least 2 points
 }
 
 func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
@@ -872,6 +890,8 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 	trends := analysis.ComputeTrends(runs)
 	outcomes := buildOutcomeRows(report)
 	costByStep := buildCostByStepRows(report)
+	verifyRows := buildVerifyRows(report)
+	repoRows := buildRepoRows(report)
 	gaps := buildGapViews(rawGaps)
 
 	return &AnalysisData{
@@ -879,6 +899,8 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 		Gaps:       gaps,
 		Outcomes:   outcomes,
 		CostByStep: costByStep,
+		VerifyRows: verifyRows,
+		RepoRows:   repoRows,
 		Trends:     trends,
 		Repos:      repos,
 		RepoFilter: repoFilter,
@@ -936,6 +958,8 @@ func (s *Server) buildAnalysisDataFromFS(repoFilter string) (*AnalysisData, erro
 	trends := analysis.ComputeTrends(runs)
 	outcomes := buildOutcomeRows(report)
 	costByStep := buildCostByStepRows(report)
+	verifyRows := buildVerifyRows(report)
+	repoRows := buildRepoRows(report)
 	gaps := buildGapViews(rawGaps)
 
 	return &AnalysisData{
@@ -943,6 +967,8 @@ func (s *Server) buildAnalysisDataFromFS(repoFilter string) (*AnalysisData, erro
 		Gaps:       gaps,
 		Outcomes:   outcomes,
 		CostByStep: costByStep,
+		VerifyRows: verifyRows,
+		RepoRows:   repoRows,
 		Trends:     trends,
 		Repos:      repos,
 		RepoFilter: repoFilter,
@@ -1013,6 +1039,49 @@ func buildCostByStepRows(report analysis.Report) []CostByStepRow {
 			return rows[i].CostUSD > rows[j].CostUSD
 		}
 		return rows[i].Step < rows[j].Step
+	})
+	return rows
+}
+
+// buildVerifyRows converts the VerifyStats map in a Report to a sorted slice with
+// pre-computed failure percentages, ready for template rendering.
+func buildVerifyRows(report analysis.Report) []VerifyRow {
+	rows := make([]VerifyRow, 0, len(report.VerifyStats))
+	for name, count := range report.VerifyStats {
+		var pct float64
+		if report.IssueCount > 0 {
+			pct = float64(count) / float64(report.IssueCount) * 100
+		}
+		rows = append(rows, VerifyRow{
+			Name:       name,
+			Count:      count,
+			FailurePct: pct,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Count != rows[j].Count {
+			return rows[i].Count > rows[j].Count
+		}
+		return rows[i].Name < rows[j].Name
+	})
+	return rows
+}
+
+// buildRepoRows converts the RepoStats map in a Report to a sorted slice with
+// pre-computed success percentages, ready for template rendering.
+func buildRepoRows(report analysis.Report) []RepoRow {
+	rows := make([]RepoRow, 0, len(report.RepoStats))
+	for repo, rs := range report.RepoStats {
+		rows = append(rows, RepoRow{
+			Repo:        repo,
+			Total:       rs.Total,
+			Implemented: rs.Implemented,
+			Failed:      rs.Failed,
+			SuccessPct:  rs.SuccessRate * 100,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].Repo < rows[j].Repo
 	})
 	return rows
 }

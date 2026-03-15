@@ -8,14 +8,23 @@ import (
 
 // Report holds aggregate statistics computed across multiple runs.
 type Report struct {
-	RunCount        int             `json:"run_count"`
-	IssueCount      int             `json:"issue_count"`
-	Outcomes        map[string]int  `json:"outcomes"`
-	FlagFrequencies []FlagFrequency `json:"flag_frequencies"`
-	RetryStats      RetryStats      `json:"retry_stats"`
-	VerifyStats     map[string]int  `json:"verify_stats"`
-	CostStats       CostStats       `json:"cost_stats"`
-	DurationStats   DurationStats   `json:"duration_stats"`
+	RunCount        int                    `json:"run_count"`
+	IssueCount      int                    `json:"issue_count"`
+	Outcomes        map[string]int         `json:"outcomes"`
+	FlagFrequencies []FlagFrequency        `json:"flag_frequencies"`
+	RetryStats      RetryStats             `json:"retry_stats"`
+	VerifyStats     map[string]int         `json:"verify_stats"`
+	CostStats       CostStats              `json:"cost_stats"`
+	DurationStats   DurationStats          `json:"duration_stats"`
+	RepoStats       map[string]RepoSummary `json:"repo_stats"`
+}
+
+// RepoSummary holds per-repository outcome statistics.
+type RepoSummary struct {
+	Total       int     `json:"total"`
+	Implemented int     `json:"implemented"`
+	Failed      int     `json:"failed"`
+	SuccessRate float64 `json:"success_rate"`
 }
 
 // DurationStats holds aggregate step duration statistics.
@@ -60,6 +69,7 @@ func Aggregate(runs []rundata.RunDetail) Report {
 		RunCount:    len(runs),
 		Outcomes:    make(map[string]int),
 		VerifyStats: make(map[string]int),
+		RepoStats:   make(map[string]RepoSummary),
 	}
 	report.CostStats.CostByStep = make(map[string]float64)
 
@@ -77,6 +87,20 @@ func Aggregate(runs []rundata.RunDetail) Report {
 			// Outcome distribution.
 			if issue.Outcome.Status != "" {
 				report.Outcomes[issue.Outcome.Status]++
+			}
+
+			// Per-repo statistics.
+			if run.Repo != "" {
+				rs := report.RepoStats[run.Repo]
+				rs.Total++
+				if issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
+					issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge {
+					rs.Implemented++
+				} else if issue.Outcome.Status == rundata.OutcomeStatusFailed ||
+					issue.Outcome.Status == rundata.OutcomeStatusNeedsHumanReview {
+					rs.Failed++
+				}
+				report.RepoStats[run.Repo] = rs
 			}
 
 			// Retry statistics.
@@ -145,6 +169,14 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	if report.IssueCount > 0 {
 		report.DurationStats.AvgImplementSeconds = totalImplementDuration / float64(report.IssueCount)
 		report.DurationStats.AvgReviewSeconds = totalReviewDuration / float64(report.IssueCount)
+	}
+
+	// Compute per-repo success rates.
+	for repo, rs := range report.RepoStats {
+		if rs.Total > 0 {
+			rs.SuccessRate = float64(rs.Implemented) / float64(rs.Total)
+		}
+		report.RepoStats[repo] = rs
 	}
 
 	// Build flag frequencies sorted by count descending, then code ascending for stability.

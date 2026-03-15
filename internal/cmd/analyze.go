@@ -347,6 +347,44 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "  Avg implement duration: %s\n", formatDuration(report.DurationStats.AvgImplementSeconds))
 	fmt.Fprintf(w, "  Avg review duration:    %s\n", formatDuration(report.DurationStats.AvgReviewSeconds))
 
+	// Success by repo table.
+	if len(report.RepoStats) > 0 {
+		fmt.Fprintf(w, "\nSuccess by Repo\n")
+		repoNames := make([]string, 0, len(report.RepoStats))
+		for repo := range report.RepoStats {
+			repoNames = append(repoNames, repo)
+		}
+		sort.Strings(repoNames)
+		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(tw, "  Repo\tTotal\tImplemented\tFailed\tSuccess Rate\n")
+		for _, repo := range repoNames {
+			rs := report.RepoStats[repo]
+			fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\t%.1f%%\n", repo, rs.Total, rs.Implemented, rs.Failed, rs.SuccessRate*100)
+		}
+		_ = tw.Flush()
+	}
+
+	// Verify check failures table.
+	if len(report.VerifyStats) > 0 {
+		fmt.Fprintf(w, "\nVerify Check Failures\n")
+		checkNames := make([]string, 0, len(report.VerifyStats))
+		for check := range report.VerifyStats {
+			checkNames = append(checkNames, check)
+		}
+		sort.Strings(checkNames)
+		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(tw, "  Check\tFailures\tFailure Rate\n")
+		for _, check := range checkNames {
+			count := report.VerifyStats[check]
+			var pct float64
+			if report.IssueCount > 0 {
+				pct = float64(count) / float64(report.IssueCount) * 100
+			}
+			fmt.Fprintf(tw, "  %s\t%d\t%.1f%%\n", check, count, pct)
+		}
+		_ = tw.Flush()
+	}
+
 	// Prompt gaps.
 	fmt.Fprintf(w, "\nPrompt Gaps\n")
 	if len(gaps) == 0 {
