@@ -170,6 +170,136 @@ func TestComputeTrendsAllUnfinishedReturnsNil(t *testing.T) {
 	}
 }
 
+func TestComputeTrendsDurationSingleRun(t *testing.T) {
+	// One run with implement at 300s, review at 120s — trend point shows 300.0 and 120.0.
+	finishedAt := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{FinishedAt: &finishedAt},
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{DurationSeconds: 300.0},
+					QualityReview: rundata.StepResult{DurationSeconds: 120.0},
+				},
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 1 {
+		t.Fatalf("len(ComputeTrends) = %d, want 1", len(got))
+	}
+	if !nearlyEqual(got[0].AvgImplementDuration, 300.0, 0.001) {
+		t.Errorf("AvgImplementDuration = %f, want 300.0", got[0].AvgImplementDuration)
+	}
+	if !nearlyEqual(got[0].AvgReviewDuration, 120.0, 0.001) {
+		t.Errorf("AvgReviewDuration = %f, want 120.0", got[0].AvgReviewDuration)
+	}
+}
+
+func TestComputeTrendsDurationMultipleRuns(t *testing.T) {
+	// Two runs with different durations — trends show values per run in chronological order.
+	t1 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{StartedAt: t2, FinishedAt: ptr(t2)},
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{DurationSeconds: 600.0},
+					QualityReview: rundata.StepResult{DurationSeconds: 240.0},
+				},
+			},
+		},
+		{
+			RunMeta: rundata.RunMeta{StartedAt: t1, FinishedAt: ptr(t1)},
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{DurationSeconds: 300.0},
+					QualityReview: rundata.StepResult{DurationSeconds: 120.0},
+				},
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 2 {
+		t.Fatalf("len(ComputeTrends) = %d, want 2", len(got))
+	}
+	// Sorted chronologically: t1 first.
+	if !nearlyEqual(got[0].AvgImplementDuration, 300.0, 0.001) {
+		t.Errorf("got[0].AvgImplementDuration = %f, want 300.0", got[0].AvgImplementDuration)
+	}
+	if !nearlyEqual(got[0].AvgReviewDuration, 120.0, 0.001) {
+		t.Errorf("got[0].AvgReviewDuration = %f, want 120.0", got[0].AvgReviewDuration)
+	}
+	if !nearlyEqual(got[1].AvgImplementDuration, 600.0, 0.001) {
+		t.Errorf("got[1].AvgImplementDuration = %f, want 600.0", got[1].AvgImplementDuration)
+	}
+	if !nearlyEqual(got[1].AvgReviewDuration, 240.0, 0.001) {
+		t.Errorf("got[1].AvgReviewDuration = %f, want 240.0", got[1].AvgReviewDuration)
+	}
+}
+
+func TestComputeTrendsDurationNoStepData(t *testing.T) {
+	// Missing duration data produces 0.0 (not NaN or error).
+	finishedAt := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{FinishedAt: &finishedAt},
+			Issues: []rundata.IssueDetail{
+				{}, // no step data — DurationSeconds defaults to 0.0
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 1 {
+		t.Fatalf("len(ComputeTrends) = %d, want 1", len(got))
+	}
+	if got[0].AvgImplementDuration != 0.0 {
+		t.Errorf("AvgImplementDuration = %f, want 0.0", got[0].AvgImplementDuration)
+	}
+	if got[0].AvgReviewDuration != 0.0 {
+		t.Errorf("AvgReviewDuration = %f, want 0.0", got[0].AvgReviewDuration)
+	}
+}
+
+func TestComputeTrendsDurationMultipleIssuesAverage(t *testing.T) {
+	// Two issues with different durations — result is the average.
+	finishedAt := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{FinishedAt: &finishedAt},
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{DurationSeconds: 200.0},
+					QualityReview: rundata.StepResult{DurationSeconds: 80.0},
+				},
+				{
+					Implement:     rundata.StepResult{DurationSeconds: 400.0},
+					QualityReview: rundata.StepResult{DurationSeconds: 160.0},
+				},
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 1 {
+		t.Fatalf("len(ComputeTrends) = %d, want 1", len(got))
+	}
+	if !nearlyEqual(got[0].AvgImplementDuration, 300.0, 0.001) {
+		t.Errorf("AvgImplementDuration = %f, want 300.0 (average of 200 and 400)", got[0].AvgImplementDuration)
+	}
+	if !nearlyEqual(got[0].AvgReviewDuration, 120.0, 0.001) {
+		t.Errorf("AvgReviewDuration = %f, want 120.0 (average of 80 and 160)", got[0].AvgReviewDuration)
+	}
+}
+
 func TestComputeTrendsMetaFields(t *testing.T) {
 	finishedAt := time.Now()
 	ts := time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC)

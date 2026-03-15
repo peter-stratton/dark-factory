@@ -15,6 +15,13 @@ type Report struct {
 	RetryStats      RetryStats      `json:"retry_stats"`
 	VerifyStats     map[string]int  `json:"verify_stats"`
 	CostStats       CostStats       `json:"cost_stats"`
+	DurationStats   DurationStats   `json:"duration_stats"`
+}
+
+// DurationStats holds aggregate step duration statistics.
+type DurationStats struct {
+	AvgImplementSeconds float64 `json:"avg_implement_seconds"` // average across all issues
+	AvgReviewSeconds    float64 `json:"avg_review_seconds"`    // average across all issues
 }
 
 // FlagFrequency records how often a quality flag code appears across all issues.
@@ -61,6 +68,7 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	var maxRetries int
 	var totalCost float64
 	var retriedSucceeded int
+	var totalImplementDuration, totalReviewDuration float64
 
 	for _, run := range runs {
 		for _, issue := range run.Issues {
@@ -101,6 +109,10 @@ func Aggregate(runs []rundata.RunDetail) Report {
 			// Cost statistics from all step results.
 			totalCost += accumulateIssueCosts(report.CostStats.CostByStep, issue)
 
+			// Duration statistics from implement and quality-review steps.
+			totalImplementDuration += issue.Implement.DurationSeconds
+			totalReviewDuration += issue.QualityReview.DurationSeconds
+
 			// Verify step failure counts by check name.
 			for _, vr := range issue.VerifyResults {
 				for _, check := range vr.Checks {
@@ -128,6 +140,12 @@ func Aggregate(runs []rundata.RunDetail) Report {
 		report.CostStats.AvgPerIssueUSD = totalCost / float64(report.IssueCount)
 	}
 	report.CostStats.AvgPerRunUSD = totalCost / float64(report.RunCount)
+
+	// Populate duration stats.
+	if report.IssueCount > 0 {
+		report.DurationStats.AvgImplementSeconds = totalImplementDuration / float64(report.IssueCount)
+		report.DurationStats.AvgReviewSeconds = totalReviewDuration / float64(report.IssueCount)
+	}
 
 	// Build flag frequencies sorted by count descending, then code ascending for stability.
 	report.FlagFrequencies = buildFlagFrequencies(flagCounts, report.IssueCount)
