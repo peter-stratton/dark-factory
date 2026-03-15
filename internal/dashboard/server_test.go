@@ -39,7 +39,7 @@ func newServer(t *testing.T, tmpDir string) *dashboard.Server {
 	if err != nil {
 		t.Fatalf("creating reader: %v", err)
 	}
-	srv, err := dashboard.New(dashboard.Config{Port: 8374, Logger: slog.Default()}, reader)
+	srv, err := dashboard.New(dashboard.Config{Port: 8374, Logger: slog.Default()}, reader, nil)
 	if err != nil {
 		t.Fatalf("creating server: %v", err)
 	}

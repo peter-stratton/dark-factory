@@ -74,7 +74,7 @@ display but does not orchestrate workflows or call external services directly.
 
 **Paths:** `internal/analysis/`, `internal/detect/`, `internal/dialogue/`,
 `internal/doctor/`, `internal/patterns/`, `internal/punchlist/`,
-`internal/quality/`, `internal/rundata/`
+`internal/quality/`, `internal/rundata/`, `internal/stats/`
 
 **Purpose:** Pure business logic, data models, and validation rules. These
 packages define the core concepts of the system without depending on external
@@ -88,7 +88,7 @@ presentation.
 ### infrastructure
 
 **Paths:** `internal/github/`, `internal/lock/`, `internal/sandbox/`,
-`internal/pypi/`, `internal/agent/runner/`, `internal/stats/`
+`internal/pypi/`, `internal/agent/runner/`
 
 **Purpose:** External service clients and process management. GitHub API
 integration, distributed locking, sandbox execution, and package index access.
