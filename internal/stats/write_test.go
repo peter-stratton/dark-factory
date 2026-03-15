@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestWriteRun_ReadBack(t *testing.T) {
 		AbortReason:      "",
 	}
 
-	if err := WriteRun(db, run); err != nil {
+	if err := WriteRun(context.Background(), db, run); err != nil {
 		t.Fatalf("WriteRun: %v", err)
 	}
 
@@ -105,7 +106,7 @@ func TestWriteIssueOutcome_ReadBack(t *testing.T) {
 		Error:       "",
 	}
 
-	if err := WriteIssueOutcome(db, outcome); err != nil {
+	if err := WriteIssueOutcome(context.Background(), db, outcome); err != nil {
 		t.Fatalf("WriteIssueOutcome: %v", err)
 	}
 
@@ -155,7 +156,7 @@ func TestWriteStepResult_WithFlags(t *testing.T) {
 		FinishedAt:      finished,
 	}
 
-	if err := WriteStepResult(db, step); err != nil {
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
 		t.Fatalf("WriteStepResult: %v", err)
 	}
 
@@ -209,12 +210,12 @@ func TestWriteRun_Idempotent(t *testing.T) {
 		Repo:        "org/repo",
 		Implemented: 3,
 	}
-	if err := WriteRun(db, run); err != nil {
+	if err := WriteRun(context.Background(), db, run); err != nil {
 		t.Fatalf("first WriteRun: %v", err)
 	}
 
 	run.Implemented = 5
-	if err := WriteRun(db, run); err != nil {
+	if err := WriteRun(context.Background(), db, run); err != nil {
 		t.Fatalf("second WriteRun: %v", err)
 	}
 
@@ -243,12 +244,12 @@ func TestWriteIssueOutcome_Idempotent(t *testing.T) {
 		IssueNumber: 42,
 		Status:      "failed",
 	}
-	if err := WriteIssueOutcome(db, outcome); err != nil {
+	if err := WriteIssueOutcome(context.Background(), db, outcome); err != nil {
 		t.Fatalf("first WriteIssueOutcome: %v", err)
 	}
 
 	outcome.Status = "implemented"
-	if err := WriteIssueOutcome(db, outcome); err != nil {
+	if err := WriteIssueOutcome(context.Background(), db, outcome); err != nil {
 		t.Fatalf("second WriteIssueOutcome: %v", err)
 	}
 
@@ -285,7 +286,7 @@ func TestWriteIssueOutcome_MultipleIssuesPerRun(t *testing.T) {
 		{RunID: runID, IssueNumber: 3, Status: "implemented"},
 	}
 	for _, o := range issues {
-		if err := WriteIssueOutcome(db, o); err != nil {
+		if err := WriteIssueOutcome(context.Background(), db, o); err != nil {
 			t.Fatalf("WriteIssueOutcome issue %d: %v", o.IssueNumber, err)
 		}
 	}
@@ -321,7 +322,7 @@ func TestWriteStepResult_MultipleStepsPerIssue(t *testing.T) {
 		{RunID: runID, IssueNumber: 10, StepName: "retry-1"},
 	}
 	for _, s := range steps {
-		if err := WriteStepResult(db, s); err != nil {
+		if err := WriteStepResult(context.Background(), db, s); err != nil {
 			t.Fatalf("WriteStepResult %q: %v", s.StepName, err)
 		}
 	}
@@ -358,7 +359,7 @@ func TestWriteStepResult_EmptyFlags(t *testing.T) {
 		StepName:    "implement",
 		Flags:       nil,
 	}
-	if err := WriteStepResult(db, step); err != nil {
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
 		t.Fatalf("WriteStepResult with nil flags: %v", err)
 	}
 

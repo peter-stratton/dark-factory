@@ -1,14 +1,15 @@
 package stats
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 )
 
 // WriteRun inserts or replaces a row in the runs table.
 // If a row with the same id already exists it is replaced (idempotent).
-func WriteRun(db *DB, run RunRecord) error {
-	_, err := db.db.Exec(
+func WriteRun(ctx context.Context, db *DB, run RunRecord) error {
+	_, err := db.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO runs
 			(id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
 			 started_at, finished_at, total, implemented, failed, abort_reason)
@@ -34,8 +35,8 @@ func WriteRun(db *DB, run RunRecord) error {
 
 // WriteIssueOutcome inserts or replaces a row in the issue_outcomes table.
 // If a row with the same (run_id, issue_number) already exists it is replaced.
-func WriteIssueOutcome(db *DB, outcome IssueOutcomeRecord) error {
-	_, err := db.db.Exec(
+func WriteIssueOutcome(ctx context.Context, db *DB, outcome IssueOutcomeRecord) error {
+	_, err := db.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO issue_outcomes
 			(run_id, issue_number, title, status, pr_number, error)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
@@ -55,7 +56,7 @@ func WriteIssueOutcome(db *DB, outcome IssueOutcomeRecord) error {
 // WriteStepResult inserts or replaces a row in the step_results table.
 // If a row with the same (run_id, issue_number, step_name) already exists it is replaced.
 // Flags is serialized to a JSON array string for storage.
-func WriteStepResult(db *DB, step StepResultRecord) error {
+func WriteStepResult(ctx context.Context, db *DB, step StepResultRecord) error {
 	flags := step.Flags
 	if flags == nil {
 		flags = []string{}
@@ -65,7 +66,7 @@ func WriteStepResult(db *DB, step StepResultRecord) error {
 		return fmt.Errorf("marshal flags: %w", err)
 	}
 
-	_, err = db.db.Exec(
+	_, err = db.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO step_results
 			(run_id, issue_number, step_name, cost_usd, duration_seconds, flags,
 			 started_at, finished_at)
