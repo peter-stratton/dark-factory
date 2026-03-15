@@ -91,12 +91,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues[idx].errMsg = msg.ErrMsg
 		}
 
+	case RunStartedMsg:
+		m.repo = msg.Repo
+		m.milestone = msg.Milestone
+		m.timestamp = msg.Timestamp
+		m.baseBranch = msg.BaseBranch
+		if msg.MergeFeature != "" || msg.MergeRollup != "" {
+			m.autoMerge = &autoMerge{
+				feature: msg.MergeFeature,
+				rollup:  msg.MergeRollup,
+			}
+		}
+
 	case WaveStartedMsg:
 		// Wave metadata is informational; no per-row state changes here.
 
 	case RunFinishedMsg:
-		// Final counts could update summary bar fields if needed; currently
-		// the summary bar is maintained via individual issue events.
+		m.merged = msg.Implemented
+		m.inReview = msg.ReadyToMerge + msg.NeedsHumanReview
+		m.failed = msg.Failed
+		m.queued = msg.Blocked
 	}
 
 	return m, nil

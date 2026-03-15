@@ -7,14 +7,18 @@ import "github.com/charmbracelet/lipgloss"
 //   - green for success/merged
 //   - yellow for in-review/ready-to-merge
 //   - red for failures
-const (
-	colorMuted   = lipgloss.Color("#626262")
-	colorBright  = lipgloss.Color("#FFFDF5")
-	colorGreen   = lipgloss.Color("#04B575")
-	colorYellow  = lipgloss.Color("#F9E04B")
-	colorRed     = lipgloss.Color("#FF5F87")
-	colorLogoFg  = lipgloss.Color("#FFFDF5")
-	colorLogoBg  = lipgloss.Color("#5C5C5C")
+//
+// AdaptiveColor picks the right value depending on the terminal's background
+// color (light vs dark). The Light value is used on light backgrounds, Dark
+// on dark backgrounds.
+var (
+	colorMuted  = lipgloss.AdaptiveColor{Light: "#626262", Dark: "#626262"}
+	colorBright = lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#FFFDF5"}
+	colorGreen  = lipgloss.AdaptiveColor{Light: "#067D52", Dark: "#04B575"}
+	colorYellow = lipgloss.AdaptiveColor{Light: "#B8860B", Dark: "#F9E04B"}
+	colorRed    = lipgloss.AdaptiveColor{Light: "#CC3355", Dark: "#FF5F87"}
+	colorLogoFg = lipgloss.AdaptiveColor{Light: "#FFFDF5", Dark: "#FFFDF5"}
+	colorLogoBg = lipgloss.AdaptiveColor{Light: "#3A3A3A", Dark: "#5C5C5C"}
 )
 
 var (
@@ -64,24 +68,24 @@ var (
 
 	// Badge styles — background-colored tags shown after issue titles.
 	badgeMergedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#1A1A1A")).
+				Foreground(lipgloss.AdaptiveColor{Light: "#FFFDF5", Dark: "#1A1A1A"}).
 				Background(colorGreen).
 				Bold(true).
 				Padding(0, 1)
 
 	badgeReviewStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#1A1A1A")).
+				Foreground(lipgloss.AdaptiveColor{Light: "#FFFDF5", Dark: "#1A1A1A"}).
 				Background(colorYellow).
 				Bold(true).
 				Padding(0, 1)
 
 	badgeQueuedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#AAAAAA")).
-				Background(lipgloss.Color("#3A3A3A")).
+				Foreground(lipgloss.AdaptiveColor{Light: "#626262", Dark: "#AAAAAA"}).
+				Background(lipgloss.AdaptiveColor{Light: "#D0D0D0", Dark: "#3A3A3A"}).
 				Padding(0, 1)
 
 	badgeFailedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#1A1A1A")).
+				Foreground(lipgloss.AdaptiveColor{Light: "#FFFDF5", Dark: "#1A1A1A"}).
 				Background(colorRed).
 				Bold(true).
 				Padding(0, 1)

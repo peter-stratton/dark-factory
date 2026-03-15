@@ -45,9 +45,12 @@ func renderHeaderLine1(m Model) string {
 func renderHeaderLine2(m Model) string {
 	styledSep := headerSepStyle.Render(sep)
 
-	parts := []string{
-		headerValueStyle.Render(m.milestone),
-		headerValueStyle.Render(m.timestamp),
+	var parts []string
+	if m.milestone != "" {
+		parts = append(parts, headerValueStyle.Render(m.milestone))
+	}
+	if m.timestamp != "" {
+		parts = append(parts, headerValueStyle.Render(m.timestamp))
 	}
 
 	if m.baseBranch != "" {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -234,6 +235,13 @@ func implementIssues(
 	var implemented, readyToMerge, needsHumanReview, failed int
 	var punchlistEntries []punchlist.Entry
 
+	var runTimestamp string
+	if writer != nil {
+		runTimestamp = filepath.Base(writer.Dir())
+	}
+	reporter.RunStarted(cfg.Repo, "", runTimestamp, cfg.BaseBranch,
+		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), len(issueNums))
+
 	for _, issueNumber := range issueNums {
 		if ctx.Err() != nil {
 			logger.Warn("context cancelled, stopping", "error", ctx.Err())
@@ -248,6 +256,7 @@ func implementIssues(
 			continue
 		}
 
+		reporter.IssueStarted(issue.Number, issue.Title)
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook)
 		writeIssueDialogue(writer, cfg.Repo, issueNumber, outcome, logger)
 

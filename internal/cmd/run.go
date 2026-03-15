@@ -98,6 +98,8 @@ each unblocked issue through the implement → review → merge loop.`,
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
 
 		if useTUI {
+			// Metadata fields (milestone, timestamp, etc.) are populated later
+			// via RunStartedMsg once the orchestrator creates the run directory.
 			model := tui.New(cfg.Repo, milestone, "", cfg.BaseBranch,
 				string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup))
 			program := tea.NewProgram(model, tea.WithAltScreen())

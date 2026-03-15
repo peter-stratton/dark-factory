@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,6 +118,15 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		"blocked", len(blocked),
 		"processable", len(processable),
 	)
+
+	// Notify the reporter that the run has started. The timestamp comes from
+	// the run data directory name (e.g. "20260314-142305"); empty if no writer.
+	var runTimestamp string
+	if writer != nil {
+		runTimestamp = filepath.Base(writer.Dir())
+	}
+	reporter.RunStarted(cfg.Repo, milestone, runTimestamp, cfg.BaseBranch,
+		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), len(issues))
 
 	// Step 5: Print or process.
 	if dryRun {
@@ -359,6 +369,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 
 			seen[issue.Number] = true
+			reporter.IssueStarted(issue.Number, issue.Title)
 			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook)
 
 			// Write dialogue after processing if we have a PR and a writer.
