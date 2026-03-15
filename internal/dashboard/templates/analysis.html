@@ -403,12 +403,12 @@
           </thead>
           <tbody>
             <tr>
-              <td>With flag</td>
+              <td>{{.WithLabel}}</td>
               <td class="cell-num">{{printf "%.1f" .FailPctWith}}%</td>
               <td class="cell-num">{{.SamplesWith}}</td>
             </tr>
             <tr>
-              <td>Without flag</td>
+              <td>{{.WithoutLabel}}</td>
               <td class="cell-num">{{printf "%.1f" .FailPctWithout}}%</td>
               <td class="cell-num">{{.SamplesWithout}}</td>
             </tr>

@@ -409,8 +409,8 @@ func printPromptGaps(w io.Writer, gaps []analysis.PromptGap) {
 	}
 	for _, g := range gaps {
 		fmt.Fprintf(w, "  %s\n", g.Finding)
-		fmt.Fprintf(w, "    fail rate with flag: %.1f%% (%d samples)\n", g.FailRateWith*100, g.SamplesWith)
-		fmt.Fprintf(w, "    fail rate without flag: %.1f%% (%d samples)\n", g.FailRateWithout*100, g.SamplesWithout)
+		fmt.Fprintf(w, "    fail rate %s: %.1f%% (%d samples)\n", g.WithLabel, g.FailRateWith*100, g.SamplesWith)
+		fmt.Fprintf(w, "    fail rate %s: %.1f%% (%d samples)\n", g.WithoutLabel, g.FailRateWithout*100, g.SamplesWithout)
 	}
 }
 

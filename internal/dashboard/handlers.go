@@ -791,6 +791,8 @@ type GapView struct {
 	FailPctWithout float64
 	SamplesWith    int
 	SamplesWithout int
+	WithLabel      string
+	WithoutLabel   string
 }
 
 // AnalysisData is the data passed to the analysis template.
@@ -987,6 +989,8 @@ func buildGapViews(gaps []analysis.PromptGap) []GapView {
 			FailPctWithout: g.FailRateWithout * 100,
 			SamplesWith:    g.SamplesWith,
 			SamplesWithout: g.SamplesWithout,
+			WithLabel:      g.WithLabel,
+			WithoutLabel:   g.WithoutLabel,
 		})
 	}
 	return views

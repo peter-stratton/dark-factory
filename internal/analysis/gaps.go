@@ -17,6 +17,8 @@ type PromptGap struct {
 	FailRateWithout float64 `json:"fail_rate_without"`
 	SamplesWith     int     `json:"samples_with"`
 	SamplesWithout  int     `json:"samples_without"`
+	WithLabel       string  `json:"with_label"`
+	WithoutLabel    string  `json:"without_label"`
 }
 
 const minGapSamples = 3
@@ -44,10 +46,11 @@ func DetectGaps(runs []rundata.RunDetail) []PromptGap {
 	// Flag-based correlation: for each unique flag code, compare failure rate
 	// of issues that have the flag vs issues that don't.
 	for _, code := range collectUniqueFlagCodes(allIssues) {
-		flagCode := code // capture loop variable
-		if gap := gapByCondition(allIssues, flagCode, func(issue rundata.IssueDetail) bool {
-			return issueHasFlag(issue, flagCode)
+		if gap := gapByCondition(allIssues, code, func(issue rundata.IssueDetail) bool {
+			return issueHasFlag(issue, code)
 		}); gap != nil {
+			gap.WithLabel = "with flag"
+			gap.WithoutLabel = "without flag"
 			gaps = append(gaps, *gap)
 		}
 	}
@@ -56,6 +59,8 @@ func DetectGaps(runs []rundata.RunDetail) []PromptGap {
 	if gap := gapByCondition(allIssues, "scenario specs", func(issue rundata.IssueDetail) bool {
 		return isStepRecorded(issue.SpecGenerator)
 	}); gap != nil {
+		gap.WithLabel = "with spec"
+		gap.WithoutLabel = "without spec"
 		gaps = append(gaps, *gap)
 	}
 
@@ -79,6 +84,8 @@ func DetectGaps(runs []rundata.RunDetail) []PromptGap {
 			FailRateWithout: issueFailureRate(notExhausted),
 			SamplesWith:     len(exhausted),
 			SamplesWithout:  len(notExhausted),
+			WithLabel:       "exhausted",
+			WithoutLabel:    "not exhausted",
 		})
 	}
 
