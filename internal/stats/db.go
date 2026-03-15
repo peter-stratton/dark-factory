@@ -19,6 +19,7 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
+	sqlDB.SetMaxOpenConns(1)
 
 	if err := migrate(sqlDB); err != nil {
 		_ = sqlDB.Close()

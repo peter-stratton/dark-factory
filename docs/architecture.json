@@ -31,14 +31,14 @@
     {
       "name": "domain",
       "description": "Pure business logic, models, and rules. No external service dependencies.",
-      "paths": ["internal/analysis/", "internal/detect/", "internal/dialogue/", "internal/doctor/", "internal/patterns/", "internal/punchlist/", "internal/quality/", "internal/rundata/", "internal/stats/"],
+      "paths": ["internal/analysis/", "internal/detect/", "internal/dialogue/", "internal/doctor/", "internal/patterns/", "internal/punchlist/", "internal/quality/", "internal/rundata/"],
       "may_depend_on": ["foundation", "content"],
       "must_not_depend_on": ["cmd", "orchestration", "service", "infrastructure", "presentation"]
     },
     {
       "name": "infrastructure",
       "description": "External service clients and process management. GitHub API, locking, sandbox execution.",
-      "paths": ["internal/github/", "internal/lock/", "internal/sandbox/", "internal/pypi/", "internal/agent/runner/", "internal/notify/"],
+      "paths": ["internal/github/", "internal/lock/", "internal/sandbox/", "internal/pypi/", "internal/agent/runner/", "internal/notify/", "internal/stats/"],
       "may_depend_on": ["foundation"],
       "must_not_depend_on": ["cmd", "orchestration", "service", "domain", "presentation", "content"]
     },

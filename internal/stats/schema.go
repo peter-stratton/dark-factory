@@ -45,11 +45,17 @@ func migrate(db *sql.DB) error {
 		)`,
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration transaction: %w", err)
+	}
+
 	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := tx.Exec(stmt); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("execute migration: %w", err)
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
