@@ -697,3 +697,146 @@ func TestAggregateRepoStatsMultiple(t *testing.T) {
 		t.Errorf("beta.SuccessRate = %f, want 0.5", beta.SuccessRate)
 	}
 }
+
+func TestAggregateDurationByStepZeroDuration(t *testing.T) {
+	// No duration data — DurationByStep should be an empty (non-nil) map.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.DurationStats.DurationByStep == nil {
+		t.Error("DurationStats.DurationByStep is nil, want empty map")
+	}
+	if len(got.DurationStats.DurationByStep) != 0 {
+		t.Errorf("DurationStats.DurationByStep = %v, want empty map", got.DurationStats.DurationByStep)
+	}
+}
+
+func TestAggregateDurationByStepSingleStep(t *testing.T) {
+	// Only implement steps present — implement should be 100%.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Implement: rundata.StepResult{DurationSeconds: 420.0}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.DurationStats.DurationByStep["implement"], 420.0, 0.0001) {
+		t.Errorf("DurationByStep[implement] = %f, want 420.0", got.DurationStats.DurationByStep["implement"])
+	}
+	// Other steps should not appear.
+	if v, ok := got.DurationStats.DurationByStep["quality-review"]; ok && v != 0 {
+		t.Errorf("DurationByStep[quality-review] = %f, want 0 or absent", v)
+	}
+	// With one step, that step is 100% of total.
+	var total float64
+	for _, secs := range got.DurationStats.DurationByStep {
+		total += secs
+	}
+	if !nearlyEqual(total, 420.0, 0.0001) {
+		t.Errorf("total DurationByStep = %f, want 420.0", total)
+	}
+}
+
+func TestAggregateDurationByStepMultipleSteps(t *testing.T) {
+	// Implement 420s, quality-review 180s — percentages ~70%, ~30%.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{DurationSeconds: 420.0},
+					QualityReview: rundata.StepResult{DurationSeconds: 180.0},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.DurationStats.DurationByStep["implement"], 420.0, 0.0001) {
+		t.Errorf("DurationByStep[implement] = %f, want 420.0", got.DurationStats.DurationByStep["implement"])
+	}
+	if !nearlyEqual(got.DurationStats.DurationByStep["quality-review"], 180.0, 0.0001) {
+		t.Errorf("DurationByStep[quality-review] = %f, want 180.0", got.DurationStats.DurationByStep["quality-review"])
+	}
+
+	// Percentages should sum to ~100%.
+	var total float64
+	for _, secs := range got.DurationStats.DurationByStep {
+		total += secs
+	}
+	if !nearlyEqual(total, 600.0, 0.0001) {
+		t.Errorf("total DurationByStep = %f, want 600.0", total)
+	}
+	var sumPct float64
+	for _, secs := range got.DurationStats.DurationByStep {
+		sumPct += secs / total * 100
+	}
+	if !nearlyEqual(sumPct, 100.0, 0.1) {
+		t.Errorf("sum of percentages = %f, want ~100", sumPct)
+	}
+}
+
+func TestAggregateDurationByStepWithRetries(t *testing.T) {
+	// Retry durations should accumulate under the "retries" key.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement: rundata.StepResult{DurationSeconds: 300.0},
+					Retries: []rundata.RetryDetail{
+						{
+							Retry:         rundata.StepResult{DurationSeconds: 60.0},
+							QualityReview: rundata.StepResult{DurationSeconds: 30.0},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.DurationStats.DurationByStep["implement"], 300.0, 0.0001) {
+		t.Errorf("DurationByStep[implement] = %f, want 300.0", got.DurationStats.DurationByStep["implement"])
+	}
+	if !nearlyEqual(got.DurationStats.DurationByStep["retries"], 90.0, 0.0001) {
+		t.Errorf("DurationByStep[retries] = %f, want 90.0 (retry 60s + qr 30s)", got.DurationStats.DurationByStep["retries"])
+	}
+}
+
+func TestAggregateDurationByStepRecon(t *testing.T) {
+	// Recon and spec-generator durations should be tracked.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Recon:         rundata.StepResult{DurationSeconds: 20.0},
+					SpecGenerator: rundata.StepResult{DurationSeconds: 10.0},
+					Implement:     rundata.StepResult{DurationSeconds: 300.0},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if !nearlyEqual(got.DurationStats.DurationByStep["recon"], 20.0, 0.0001) {
+		t.Errorf("DurationByStep[recon] = %f, want 20.0", got.DurationStats.DurationByStep["recon"])
+	}
+	if !nearlyEqual(got.DurationStats.DurationByStep["spec-generator"], 10.0, 0.0001) {
+		t.Errorf("DurationByStep[spec-generator] = %f, want 10.0", got.DurationStats.DurationByStep["spec-generator"])
+	}
+	if !nearlyEqual(got.DurationStats.DurationByStep["implement"], 300.0, 0.0001) {
+		t.Errorf("DurationByStep[implement] = %f, want 300.0", got.DurationStats.DurationByStep["implement"])
+	}
+}

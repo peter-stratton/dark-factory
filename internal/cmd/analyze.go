@@ -316,6 +316,7 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "  Avg implement duration: %s\n", formatDuration(report.DurationStats.AvgImplementSeconds))
 	fmt.Fprintf(w, "  Avg review duration:    %s\n", formatDuration(report.DurationStats.AvgReviewSeconds))
 
+	printDurationByStep(w, report)
 	printRepoStats(w, report)
 	printVerifyStats(w, report)
 	printPromptGaps(w, gaps)
@@ -352,6 +353,43 @@ func printCostByStep(w io.Writer, report analysis.Report) {
 			pct = s.cost / report.CostStats.TotalUSD * 100
 		}
 		fmt.Fprintf(tw, "  %s\t$%.4f\t%.1f%%\n", s.name, s.cost, pct)
+	}
+	_ = tw.Flush()
+}
+
+// printDurationByStep writes the "Duration by Step" section to w.
+func printDurationByStep(w io.Writer, report analysis.Report) {
+	fmt.Fprintf(w, "\nDuration by Step\n")
+	if len(report.DurationStats.DurationByStep) == 0 {
+		fmt.Fprintf(w, "  (no duration data)\n")
+		return
+	}
+	type stepDuration struct {
+		name    string
+		seconds float64
+	}
+	steps := make([]stepDuration, 0, len(report.DurationStats.DurationByStep))
+	var total float64
+	for name, secs := range report.DurationStats.DurationByStep {
+		if secs > 0 {
+			steps = append(steps, stepDuration{name, secs})
+			total += secs
+		}
+	}
+	sort.Slice(steps, func(i, j int) bool {
+		if steps[i].seconds != steps[j].seconds {
+			return steps[i].seconds > steps[j].seconds
+		}
+		return steps[i].name < steps[j].name
+	})
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Step\tTotal Duration\tPercent\n")
+	for _, s := range steps {
+		var pct float64
+		if total > 0 {
+			pct = s.seconds / total * 100
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%.1f%%\n", s.name, formatDuration(s.seconds), pct)
 	}
 	_ = tw.Flush()
 }

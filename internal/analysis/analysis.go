@@ -29,8 +29,9 @@ type RepoSummary struct {
 
 // DurationStats holds aggregate step duration statistics.
 type DurationStats struct {
-	AvgImplementSeconds float64 `json:"avg_implement_seconds"` // average across all issues
-	AvgReviewSeconds    float64 `json:"avg_review_seconds"`    // average across all issues
+	AvgImplementSeconds float64            `json:"avg_implement_seconds"` // average across all issues
+	AvgReviewSeconds    float64            `json:"avg_review_seconds"`    // average across all issues
+	DurationByStep      map[string]float64 `json:"duration_by_step"`      // step name to total seconds
 }
 
 // FlagFrequency records how often a quality flag code appears across all issues.
@@ -105,6 +106,7 @@ func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
 	}
 
 	a.totalCost += accumulateIssueCosts(report.CostStats.CostByStep, issue)
+	accumulateIssueDurations(report.DurationStats.DurationByStep, issue)
 	a.totalImplementDuration += issue.Implement.DurationSeconds
 	a.totalReviewDuration += issue.QualityReview.DurationSeconds
 
@@ -147,6 +149,7 @@ func Aggregate(runs []rundata.RunDetail) Report {
 		RepoStats:   make(map[string]RepoSummary),
 	}
 	report.CostStats.CostByStep = make(map[string]float64)
+	report.DurationStats.DurationByStep = make(map[string]float64)
 
 	acc := issueAcc{flagCounts: make(map[string]int)}
 
@@ -228,6 +231,29 @@ func collectFlags(flagCounts map[string]int, flags []rundata.Flag) {
 func accumulateStepCost(costByStep map[string]float64, step string, cost float64) {
 	if cost > 0 {
 		costByStep[step] += cost
+	}
+}
+
+// accumulateStepDuration adds duration to the named step's entry in durationByStep.
+// Zero duration values are ignored so the map only contains steps that ran.
+func accumulateStepDuration(durationByStep map[string]float64, step string, duration float64) {
+	if duration > 0 {
+		durationByStep[step] += duration
+	}
+}
+
+// accumulateIssueDurations records per-step durations for a single issue into durationByStep.
+// Note: VerifyStepResult does not have a DurationSeconds field so verify duration is not tracked.
+func accumulateIssueDurations(durationByStep map[string]float64, issue rundata.IssueDetail) {
+	accumulateStepDuration(durationByStep, "recon", issue.Recon.DurationSeconds)
+	accumulateStepDuration(durationByStep, "spec-generator", issue.SpecGenerator.DurationSeconds)
+	accumulateStepDuration(durationByStep, "implement", issue.Implement.DurationSeconds)
+	accumulateStepDuration(durationByStep, "quality-review", issue.QualityReview.DurationSeconds)
+	accumulateStepDuration(durationByStep, "functional-review", issue.FunctionalReview.DurationSeconds)
+	for _, retry := range issue.Retries {
+		accumulateStepDuration(durationByStep, "retries", retry.Retry.DurationSeconds)
+		accumulateStepDuration(durationByStep, "retries", retry.QualityReview.DurationSeconds)
+		accumulateStepDuration(durationByStep, "retries", retry.FunctionalReview.DurationSeconds)
 	}
 }
 

@@ -768,6 +768,14 @@ type CostByStepRow struct {
 	Percent float64
 }
 
+// DurationByStepRow is one row in the duration-by-step breakdown table on the analysis page.
+type DurationByStepRow struct {
+	Step     string
+	Seconds  float64
+	Duration string // pre-formatted, e.g. "7m00s"
+	Percent  float64
+}
+
 // VerifyRow is one row in the verify check failures table on the analysis page.
 type VerifyRow struct {
 	Name       string
@@ -797,17 +805,18 @@ type GapView struct {
 
 // AnalysisData is the data passed to the analysis template.
 type AnalysisData struct {
-	Report      analysis.Report
-	Gaps        []GapView
-	Outcomes    []OutcomeRow    // sorted by count desc
-	CostByStep  []CostByStepRow // sorted by cost desc
-	VerifyRows  []VerifyRow     // sorted by count desc, then name asc
-	RepoRows    []RepoRow       // sorted by repo name asc
-	Trends      []analysis.TrendPoint
-	Repos       []string
-	RepoFilter  string
-	HasData     bool
-	HasTrends   bool // true when Trends has at least 2 points
+	Report         analysis.Report
+	Gaps           []GapView
+	Outcomes       []OutcomeRow         // sorted by count desc
+	CostByStep     []CostByStepRow      // sorted by cost desc
+	DurationByStep []DurationByStepRow  // sorted by duration desc
+	VerifyRows     []VerifyRow          // sorted by count desc, then name asc
+	RepoRows       []RepoRow            // sorted by repo name asc
+	Trends         []analysis.TrendPoint
+	Repos          []string
+	RepoFilter     string
+	HasData        bool
+	HasTrends      bool // true when Trends has at least 2 points
 }
 
 func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
@@ -892,22 +901,24 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 	trends := analysis.ComputeTrends(runs)
 	outcomes := buildOutcomeRows(report)
 	costByStep := buildCostByStepRows(report)
+	durationByStep := buildDurationByStepRows(report)
 	verifyRows := buildVerifyRows(report)
 	repoRows := buildRepoRows(report)
 	gaps := buildGapViews(rawGaps)
 
 	return &AnalysisData{
-		Report:     report,
-		Gaps:       gaps,
-		Outcomes:   outcomes,
-		CostByStep: costByStep,
-		VerifyRows: verifyRows,
-		RepoRows:   repoRows,
-		Trends:     trends,
-		Repos:      repos,
-		RepoFilter: repoFilter,
-		HasData:    len(runs) > 0,
-		HasTrends:  len(trends) >= 2,
+		Report:         report,
+		Gaps:           gaps,
+		Outcomes:       outcomes,
+		CostByStep:     costByStep,
+		DurationByStep: durationByStep,
+		VerifyRows:     verifyRows,
+		RepoRows:       repoRows,
+		Trends:         trends,
+		Repos:          repos,
+		RepoFilter:     repoFilter,
+		HasData:        len(runs) > 0,
+		HasTrends:      len(trends) >= 2,
 	}, nil
 }
 
@@ -960,22 +971,24 @@ func (s *Server) buildAnalysisDataFromFS(repoFilter string) (*AnalysisData, erro
 	trends := analysis.ComputeTrends(runs)
 	outcomes := buildOutcomeRows(report)
 	costByStep := buildCostByStepRows(report)
+	durationByStep := buildDurationByStepRows(report)
 	verifyRows := buildVerifyRows(report)
 	repoRows := buildRepoRows(report)
 	gaps := buildGapViews(rawGaps)
 
 	return &AnalysisData{
-		Report:     report,
-		Gaps:       gaps,
-		Outcomes:   outcomes,
-		CostByStep: costByStep,
-		VerifyRows: verifyRows,
-		RepoRows:   repoRows,
-		Trends:     trends,
-		Repos:      repos,
-		RepoFilter: repoFilter,
-		HasData:    len(runs) > 0,
-		HasTrends:  len(trends) >= 2,
+		Report:         report,
+		Gaps:           gaps,
+		Outcomes:       outcomes,
+		CostByStep:     costByStep,
+		DurationByStep: durationByStep,
+		VerifyRows:     verifyRows,
+		RepoRows:       repoRows,
+		Trends:         trends,
+		Repos:          repos,
+		RepoFilter:     repoFilter,
+		HasData:        len(runs) > 0,
+		HasTrends:      len(trends) >= 2,
 	}, nil
 }
 
@@ -1041,6 +1054,48 @@ func buildCostByStepRows(report analysis.Report) []CostByStepRow {
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].CostUSD != rows[j].CostUSD {
 			return rows[i].CostUSD > rows[j].CostUSD
+		}
+		return rows[i].Step < rows[j].Step
+	})
+	return rows
+}
+
+// buildDurationByStepRows converts the DurationByStep map in a Report to a sorted slice with
+// pre-computed percentages and pre-formatted duration strings, ready for template rendering.
+func buildDurationByStepRows(report analysis.Report) []DurationByStepRow {
+	rows := make([]DurationByStepRow, 0, len(report.DurationStats.DurationByStep))
+	var total float64
+	for _, secs := range report.DurationStats.DurationByStep {
+		total += secs
+	}
+	for step, secs := range report.DurationStats.DurationByStep {
+		if secs <= 0 {
+			continue
+		}
+		var pct float64
+		if total > 0 {
+			pct = secs / total * 100
+		}
+		dur := time.Duration(secs * float64(time.Second))
+		h := int(dur.Hours())
+		m := int(dur.Minutes()) % 60
+		s := int(dur.Seconds()) % 60
+		var formatted string
+		if h > 0 {
+			formatted = fmt.Sprintf("%dh%02dm%02ds", h, m, s)
+		} else {
+			formatted = fmt.Sprintf("%dm%02ds", m, s)
+		}
+		rows = append(rows, DurationByStepRow{
+			Step:     step,
+			Seconds:  secs,
+			Duration: formatted,
+			Percent:  pct,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Seconds != rows[j].Seconds {
+			return rows[i].Seconds > rows[j].Seconds
 		}
 		return rows[i].Step < rows[j].Step
 	})
