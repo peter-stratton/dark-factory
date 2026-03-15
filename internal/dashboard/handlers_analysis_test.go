@@ -510,3 +510,271 @@ func TestServer_Analysis_NavLinkPresent(t *testing.T) {
 		t.Errorf("index page missing navigation link to /analysis; got: %q", truncate(body, 400))
 	}
 }
+
+func TestServer_Analysis_OverviewMetricsCard(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	finishedAt := now
+
+	issues := []rundata.IssueDetail{
+		{
+			IssueNumber: 1,
+			Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+			Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
+		},
+		{
+			IssueNumber: 2,
+			Outcome:     rundata.Outcome{IssueNumber: 2, Status: "failed"},
+			Implement:   rundata.StepResult{Output: "err", DurationSeconds: 5},
+		},
+	}
+
+	buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1, 2},
+		StartedAt:    now,
+		FinishedAt:   &finishedAt,
+		Summary:      &rundata.RunSummary{Total: 2, Implemented: 1, Failed: 1},
+	}, issues)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	// Overview card should contain stat-block elements.
+	if !strings.Contains(body, "Total Runs") {
+		t.Errorf("body missing 'Total Runs' overview tile; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "Total Issues") {
+		t.Errorf("body missing 'Total Issues' overview tile")
+	}
+	if !strings.Contains(body, "Success Rate") {
+		t.Errorf("body missing 'Success Rate' overview tile")
+	}
+	if !strings.Contains(body, "First-Pass Rate") {
+		t.Errorf("body missing 'First-Pass Rate' overview tile")
+	}
+	if !strings.Contains(body, "Total Cost") {
+		t.Errorf("body missing 'Total Cost' overview tile")
+	}
+	if !strings.Contains(body, "Avg Cost / Success") {
+		t.Errorf("body missing 'Avg Cost / Success' overview tile")
+	}
+}
+
+func TestServer_Analysis_FailureReasonsCard(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	finishedAt := now
+
+	// One failed issue to trigger failure reason categorization.
+	issues := []rundata.IssueDetail{
+		{
+			IssueNumber: 1,
+			Outcome:     rundata.Outcome{IssueNumber: 1, Status: "failed"},
+			Implement:   rundata.StepResult{Output: "err", DurationSeconds: 5},
+		},
+	}
+
+	buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+		FinishedAt:   &finishedAt,
+		Summary:      &rundata.RunSummary{Total: 1, Failed: 1},
+	}, issues)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	// Failure Reason Breakdown card should be present.
+	if !strings.Contains(body, "Failure Reason Breakdown") {
+		t.Errorf("body missing 'Failure Reason Breakdown' card; got: %q", truncate(body, 600))
+	}
+}
+
+func TestServer_Analysis_RepoTableFirstPassAndCostColumns(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	finishedAt := now
+
+	issues := []rundata.IssueDetail{
+		{
+			IssueNumber: 1,
+			Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+			Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10, CostUSD: 0.05},
+		},
+	}
+
+	buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+		FinishedAt:   &finishedAt,
+		Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
+	}, issues)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	// Repo table should have first-pass rate and avg cost column headers.
+	if !strings.Contains(body, "First-Pass Rate") {
+		t.Errorf("repo table missing 'First-Pass Rate' column header; got: %q", truncate(body, 600))
+	}
+	if !strings.Contains(body, "Avg Cost") {
+		t.Errorf("repo table missing 'Avg Cost' column header; got: %q", truncate(body, 600))
+	}
+}
+
+func TestServer_Analysis_CostCardWastedCostAndTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	finishedAt := now
+
+	issues := []rundata.IssueDetail{
+		{
+			IssueNumber: 1,
+			Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+			Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
+		},
+	}
+
+	buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+		FinishedAt:   &finishedAt,
+		Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
+	}, issues)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	if !strings.Contains(body, "Wasted cost") {
+		t.Errorf("cost card missing 'Wasted cost' row; got: %q", truncate(body, 600))
+	}
+	if !strings.Contains(body, "Timeout rate") {
+		t.Errorf("cost card missing 'Timeout rate' row; got: %q", truncate(body, 600))
+	}
+	if !strings.Contains(body, "Avg time to merge") {
+		t.Errorf("cost card missing 'Avg time to merge' row; got: %q", truncate(body, 600))
+	}
+}
+
+func TestServer_Analysis_TrendDataHasFirstPassField(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+
+	// Build 2 finished runs so trend JSON is embedded.
+	for i := 0; i < 2; i++ {
+		ts := now.Add(time.Duration(-i) * time.Hour).Format("20060102-150405")
+		fa := now.Add(time.Duration(-i) * time.Hour)
+		issues := []rundata.IssueDetail{
+			{
+				IssueNumber: 1,
+				Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+				Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
+			},
+		}
+		buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+			Repo:         "acme/proj",
+			Milestone:    "v1.0",
+			IssueNumbers: []int{1},
+			StartedAt:    now.Add(time.Duration(-i) * time.Hour),
+			FinishedAt:   &fa,
+			Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
+		}, issues)
+	}
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+	// Trend data JSON should include first_pass_success_rate field.
+	if !strings.Contains(body, "first_pass_success_rate") {
+		t.Errorf("trend data JSON missing 'first_pass_success_rate' field; got: %q", truncate(body, 800))
+	}
+	// Success rate chart should have two datasets (legend enabled).
+	if !strings.Contains(body, "First-Pass Rate") {
+		t.Errorf("success rate chart missing 'First-Pass Rate' dataset label; got: %q", truncate(body, 800))
+	}
+}
+
+func TestServer_Analysis_EmptyStateHasNoExhaustedRetriesRow(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	finishedAt := now
+
+	issues := []rundata.IssueDetail{
+		{
+			IssueNumber: 1,
+			Outcome:     rundata.Outcome{IssueNumber: 1, Status: "implemented"},
+			Implement:   rundata.StepResult{Output: "done", DurationSeconds: 10},
+		},
+	}
+
+	buildAnalysisRun(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+		FinishedAt:   &finishedAt,
+		Summary:      &rundata.RunSummary{Total: 1, Implemented: 1},
+	}, issues)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/analysis", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	// The exhausted retries row should no longer be present in the retry stats card.
+	if strings.Contains(body, "Issues with exhausted retries") {
+		t.Errorf("retry stats card should not contain 'Issues with exhausted retries' row; found in: %q", truncate(body, 600))
+	}
+}
