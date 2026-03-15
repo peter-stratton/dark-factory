@@ -47,6 +47,7 @@ func New(cfg Config, reader *rundata.Reader, statsDB *stats.DB) (*Server, error)
 	}
 	md := goldmark.New(goldmark.WithExtensions(extension.Table))
 	funcMap := template.FuncMap{
+		"mulf": func(a, b float64) float64 { return a * b },
 		"renderMarkdown": func(s string) template.HTML {
 			var buf bytes.Buffer
 			if err := md.Convert([]byte(s), &buf); err != nil {

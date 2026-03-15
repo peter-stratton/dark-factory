@@ -306,6 +306,113 @@ func TestAggregateSingleRunSingleIssue(t *testing.T) {
 	}
 }
 
+func TestAggregateRecoveryRateNoRetries(t *testing.T) {
+	// All issues succeed on first attempt — no retries.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented}},
+				{Outcome: rundata.Outcome{Status: rundata.OutcomeStatusReadyToMerge}},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.RetryStats.RetriedCount != 0 {
+		t.Errorf("RetryStats.RetriedCount = %d, want 0", got.RetryStats.RetriedCount)
+	}
+	if got.RetryStats.RecoveryRate != 0.0 {
+		t.Errorf("RetryStats.RecoveryRate = %f, want 0.0", got.RetryStats.RecoveryRate)
+	}
+}
+
+func TestAggregateRecoveryRateAllSucceed(t *testing.T) {
+	// 3 issues all retry and all eventually succeed.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusReadyToMerge},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.RetryStats.RetriedCount != 3 {
+		t.Errorf("RetryStats.RetriedCount = %d, want 3", got.RetryStats.RetriedCount)
+	}
+	if !nearlyEqual(got.RetryStats.RecoveryRate, 1.0, 0.001) {
+		t.Errorf("RetryStats.RecoveryRate = %f, want 1.0", got.RetryStats.RecoveryRate)
+	}
+}
+
+func TestAggregateRecoveryRateMixed(t *testing.T) {
+	// 2 retried issues succeed, 1 exhausts — RecoveryRate ~0.667.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusImplemented},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusReadyToMerge},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusNeedsHumanReview},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.RetryStats.RetriedCount != 3 {
+		t.Errorf("RetryStats.RetriedCount = %d, want 3", got.RetryStats.RetriedCount)
+	}
+	if !nearlyEqual(got.RetryStats.RecoveryRate, 2.0/3.0, 0.001) {
+		t.Errorf("RetryStats.RecoveryRate = %f, want ~0.667", got.RetryStats.RecoveryRate)
+	}
+}
+
+func TestAggregateRecoveryRateFailedStatus(t *testing.T) {
+	// Retried issue with "failed" status is not a success.
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Outcome: rundata.Outcome{Status: rundata.OutcomeStatusFailed},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.RetryStats.RetriedCount != 1 {
+		t.Errorf("RetryStats.RetriedCount = %d, want 1", got.RetryStats.RetriedCount)
+	}
+	if got.RetryStats.RecoveryRate != 0.0 {
+		t.Errorf("RetryStats.RecoveryRate = %f, want 0.0", got.RetryStats.RecoveryRate)
+	}
+}
+
 func TestAggregateFlagFrequenciesSortStability(t *testing.T) {
 	// Two flags with same count should be sorted alphabetically.
 	runs := []rundata.RunDetail{

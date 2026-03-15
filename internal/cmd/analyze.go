@@ -301,6 +301,7 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "  Avg per issue:  %.2f\n", report.RetryStats.AvgPerIssue)
 	fmt.Fprintf(w, "  Max retries:    %d\n", report.RetryStats.MaxRetries)
 	fmt.Fprintf(w, "  Exhausted:      %d\n", report.RetryStats.ExhaustedCount)
+	fmt.Fprintf(w, "  Recovery rate:  %.1f%%\n", report.RetryStats.RecoveryRate*100)
 
 	// Cost stats.
 	fmt.Fprintf(w, "\nCost Stats\n")
