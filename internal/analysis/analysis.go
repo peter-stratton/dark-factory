@@ -30,6 +30,8 @@ type RetryStats struct {
 	AvgPerIssue    float64 `json:"avg_per_issue"`
 	MaxRetries     int     `json:"max_retries"`
 	ExhaustedCount int     `json:"exhausted_count"` // issues with status "needs-human-review"
+	RetriedCount   int     `json:"retried_count"`   // issues that had at least one retry
+	RecoveryRate   float64 `json:"recovery_rate"`   // fraction of retried issues that eventually succeeded
 }
 
 // CostStats holds aggregate cost statistics.
@@ -56,6 +58,7 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	var totalRetries int
 	var maxRetries int
 	var totalCost float64
+	var retriedSucceeded int
 
 	for _, run := range runs {
 		for _, issue := range run.Issues {
@@ -72,8 +75,15 @@ func Aggregate(runs []rundata.RunDetail) Report {
 			if retries > maxRetries {
 				maxRetries = retries
 			}
-			if issue.Outcome.Status == "needs-human-review" {
+			if issue.Outcome.Status == rundata.OutcomeStatusNeedsHumanReview {
 				report.RetryStats.ExhaustedCount++
+			}
+			if retries > 0 {
+				report.RetryStats.RetriedCount++
+				if issue.Outcome.Status == rundata.OutcomeStatusImplemented ||
+					issue.Outcome.Status == rundata.OutcomeStatusReadyToMerge {
+					retriedSucceeded++
+				}
 			}
 
 			// Collect flags from all step results for this issue.
@@ -114,6 +124,9 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	if report.IssueCount > 0 {
 		report.RetryStats.AvgPerIssue = float64(totalRetries) / float64(report.IssueCount)
 	}
+	if report.RetryStats.RetriedCount > 0 {
+		report.RetryStats.RecoveryRate = float64(retriedSucceeded) / float64(report.RetryStats.RetriedCount)
+	}
 
 	// Populate cost stats.
 	report.CostStats.TotalUSD = totalCost
@@ -123,25 +136,32 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	report.CostStats.AvgPerRunUSD = totalCost / float64(report.RunCount)
 
 	// Build flag frequencies sorted by count descending, then code ascending for stability.
+	report.FlagFrequencies = buildFlagFrequencies(flagCounts, report.IssueCount)
+
+	return report
+}
+
+// buildFlagFrequencies converts raw flag counts into a sorted FlagFrequency slice.
+func buildFlagFrequencies(flagCounts map[string]int, issueCount int) []FlagFrequency {
+	var freqs []FlagFrequency
 	for code, count := range flagCounts {
 		var pct float64
-		if report.IssueCount > 0 {
-			pct = float64(count) / float64(report.IssueCount) * 100
+		if issueCount > 0 {
+			pct = float64(count) / float64(issueCount) * 100
 		}
-		report.FlagFrequencies = append(report.FlagFrequencies, FlagFrequency{
+		freqs = append(freqs, FlagFrequency{
 			Code:    code,
 			Count:   count,
 			Percent: pct,
 		})
 	}
-	sort.Slice(report.FlagFrequencies, func(i, j int) bool {
-		if report.FlagFrequencies[i].Count != report.FlagFrequencies[j].Count {
-			return report.FlagFrequencies[i].Count > report.FlagFrequencies[j].Count
+	sort.Slice(freqs, func(i, j int) bool {
+		if freqs[i].Count != freqs[j].Count {
+			return freqs[i].Count > freqs[j].Count
 		}
-		return report.FlagFrequencies[i].Code < report.FlagFrequencies[j].Code
+		return freqs[i].Code < freqs[j].Code
 	})
-
-	return report
+	return freqs
 }
 
 // collectFlags increments the count for each flag code in flagCounts.
