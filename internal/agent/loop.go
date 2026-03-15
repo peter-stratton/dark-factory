@@ -119,6 +119,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	// Optional recon step: gather context before implementation.
 	reconBrief := ""
 	if prompts.Recon != "" {
+		if reporter != nil {
+			reporter.IssueStageChanged(issue.Number, "recon")
+		}
 		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
 		var reconWriteHook func(rundata.StepResult) error
 		if hook != nil {
@@ -129,6 +132,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		reconBrief = handleNonBlockingResult(reconResult, reconErr, "recon agent", logger, reconWriteHook)
 	}
 
+	if reporter != nil {
+		reporter.IssueStageChanged(issue.Number, "implement")
+	}
 	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger, reconBrief)
 	if err != nil {
 		outcome.Status = StatusFailed
@@ -208,6 +214,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	fixCycles := 0
 
 	// Step 3.5: Verify. Runs between guard rails and quality review.
+	if reporter != nil {
+		reporter.IssueStageChanged(issue.Number, "verify")
+	}
 	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = verifyErr
@@ -216,7 +225,10 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 
 	// Step 4: Quality review gate (if prompt is configured).
 	if prompts.QualityReviewer != "" {
-		passed, err := runQualityReviewCycle(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles)
+		if reporter != nil {
+			reporter.IssueStageChanged(issue.Number, "review")
+		}
+		passed, err := runQualityReviewCycle(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, reporter)
 		if err != nil {
 			outcome.Status = StatusFailed
 			outcome.Err = err
@@ -239,8 +251,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	}
 
 	// Step 5: Review/retry loop.
+	if reporter != nil {
+		reporter.IssueStageChanged(issue.Number, "review")
+	}
 	outcome.Status, _, outcome.Retries, outcome.Err = runFunctionalReviewCycle(
-		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec,
+		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter,
 	)
 	return outcome
 }
@@ -531,6 +546,7 @@ func runQualityReviewCycle(
 	hook RunDataHook,
 	sessionID *string,
 	fixCycles *int,
+	reporter progress.ProgressReporter,
 ) (bool, error) {
 	qualityMaxAttempts := cfg.MaxRetries + 1
 	for qAttempt := 0; qAttempt < qualityMaxAttempts; qAttempt++ {
@@ -579,6 +595,9 @@ func runQualityReviewCycle(
 				qualityHandoff = assembleHandoffContext(cfg.Repo, prNum, logger)
 			}
 
+			if reporter != nil {
+				reporter.IssueStageChanged(issue.Number, "implement")
+			}
 			retryResult, err := Retry(ctx, issue, prNum, "", "", qualityHandoff, cfg, prompts, authEnv, logger)
 			if err != nil {
 				return false, fmt.Errorf("retry agent (quality): %w", err)
@@ -631,6 +650,7 @@ func runFunctionalReviewCycle(
 	sessionID *string,
 	fixCycles *int,
 	hasSpec bool,
+	reporter progress.ProgressReporter,
 ) (status OutcomeStatus, prMerged bool, retries int, err error) {
 	if hook != nil {
 		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "in_review"}); err != nil {
@@ -887,6 +907,9 @@ func runFunctionalReviewCycle(
 				handoff = assembleHandoffContext(cfg.Repo, prNum, logger)
 			}
 
+			if reporter != nil {
+				reporter.IssueStageChanged(issue.Number, "implement")
+			}
 			retryResult, err := Retry(ctx, issue, prNum, *sessionID, "", handoff, cfg, prompts, authEnv, logger)
 			if err != nil {
 				return StatusFailed, false, 0, fmt.Errorf("retry agent: %w", err)
