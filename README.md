@@ -141,6 +141,7 @@ what was built and how users experience it. These live in
 | 17 | [Configurable Base Branch](docs/phase-overviews/phase-17-configurable-base-branch.md) — base branch config, PR targeting, prompt safety, run data tracking |
 | 18 | [Adaptive Agent Loop](docs/phase-overviews/phase-18-adaptive-agent-loop.md) — recon agent, hybrid retry strategy, handoff context |
 | 19 | [Spring Cleaning](docs/phase-overviews/phase-19-spring-cleaning.md) — unified verdict parsing, typed constants, shared helpers, CLI consolidation |
+| 20 | [Terminal UI](docs/phase-overviews/phase-20-terminal-ui.md) — Bubble Tea TUI, progress reporter, adaptive colors, hybrid output mode |
 
 To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
 
