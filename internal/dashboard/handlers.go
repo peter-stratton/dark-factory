@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/analysis"
 	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/phs/dark-factory/internal/stats"
 )
 
 // writePartial renders a partial HTML fragment with ETag support. If the
@@ -816,6 +818,70 @@ func (s *Server) handleAnalysisStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) buildAnalysisData(repoFilter string) (*AnalysisData, error) {
+	if s.statsDB != nil {
+		return s.buildAnalysisDataFromDB(repoFilter)
+	}
+	return s.buildAnalysisDataFromFS(repoFilter)
+}
+
+// buildAnalysisDataFromDB queries the SQLite stats database for run details
+// and passes them to the analysis functions.
+func (s *Server) buildAnalysisDataFromDB(repoFilter string) (*AnalysisData, error) {
+	ctx := context.Background()
+
+	// Build repo list for the filter dropdown from all runs in the DB.
+	allRuns, err := stats.QueryRuns(ctx, s.statsDB, stats.RunFilter{})
+	if err != nil {
+		return nil, fmt.Errorf("querying repos from stats db: %w", err)
+	}
+	repoSet := make(map[string]struct{})
+	for _, r := range allRuns {
+		repoSet[r.Repo] = struct{}{}
+	}
+	repos := make([]string, 0, len(repoSet))
+	for repo := range repoSet {
+		repos = append(repos, repo)
+	}
+	sort.Strings(repos)
+
+	// Query runs, outcomes, and steps filtered by repo.
+	filter := stats.RunFilter{Repo: repoFilter}
+	runRecords, err := stats.QueryRuns(ctx, s.statsDB, filter)
+	if err != nil {
+		return nil, fmt.Errorf("querying runs from stats db: %w", err)
+	}
+	outcomeRecords, err := stats.QueryIssueOutcomes(ctx, s.statsDB, filter)
+	if err != nil {
+		return nil, fmt.Errorf("querying issue outcomes from stats db: %w", err)
+	}
+	stepRecords, err := stats.QueryStepResults(ctx, s.statsDB, filter)
+	if err != nil {
+		return nil, fmt.Errorf("querying step results from stats db: %w", err)
+	}
+
+	runs := stats.ToRunDetails(runRecords, outcomeRecords, stepRecords)
+
+	report := analysis.Aggregate(runs)
+	rawGaps := analysis.DetectGaps(runs)
+	trends := analysis.ComputeTrends(runs)
+	outcomes := buildOutcomeRows(report)
+	gaps := buildGapViews(rawGaps)
+
+	return &AnalysisData{
+		Report:     report,
+		Gaps:       gaps,
+		Outcomes:   outcomes,
+		Trends:     trends,
+		Repos:      repos,
+		RepoFilter: repoFilter,
+		HasData:    len(runs) > 0,
+		HasTrends:  len(trends) >= 2,
+	}, nil
+}
+
+// buildAnalysisDataFromFS reads run details from the filesystem reader and
+// passes them to the analysis functions. Used when no stats DB is available.
+func (s *Server) buildAnalysisDataFromFS(repoFilter string) (*AnalysisData, error) {
 	allMetas, err := s.reader.ListRuns()
 	if err != nil {
 		return nil, err
