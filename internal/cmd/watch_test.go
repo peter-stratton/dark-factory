@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -38,6 +39,7 @@ func stubWatchSeams(t *testing.T) {
 	origNewWriter := watchNewWriterFn
 	origFetchComments := watchFetchReviewCommentsFn
 	origFetchIssue := watchFetchIssueFn
+	origMergePR := watchMergePRFn
 
 	watchRetryFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
 		return &agent.Result{SessionID: "sess-stub"}, nil
@@ -50,6 +52,7 @@ func stubWatchSeams(t *testing.T) {
 	watchFetchIssueFn = func(_ string, _ int) (github.Issue, error) {
 		return github.Issue{Number: 42, Title: "test issue"}, nil
 	}
+	watchMergePRFn = func(_ string, _ int) error { return nil }
 
 	t.Cleanup(func() {
 		watchRetryFn = origRetry
@@ -57,6 +60,7 @@ func stubWatchSeams(t *testing.T) {
 		watchNewWriterFn = origNewWriter
 		watchFetchReviewCommentsFn = origFetchComments
 		watchFetchIssueFn = origFetchIssue
+		watchMergePRFn = origMergePR
 	})
 }
 
@@ -231,12 +235,17 @@ func TestPollOnce_DuplicateSkipped(t *testing.T) {
 	}
 }
 
-// TestPollOnce_NonChangesRequestedSkipped verifies that APPROVED reviews do not
-// trigger label swapping.
-func TestPollOnce_NonChangesRequestedSkipped(t *testing.T) {
+// TestPollOnce_CommentedSkipped verifies that COMMENTED reviews do not trigger
+// any label swapping or merge attempts.
+func TestPollOnce_CommentedSkipped(t *testing.T) {
 	stubWatchSeams(t)
 
 	var addLabelCalled bool
+	mergeCalled := false
+	watchMergePRFn = func(_ string, _ int) error {
+		mergeCalled = true
+		return nil
+	}
 
 	orig := github.CommandRunner
 	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
@@ -247,7 +256,7 @@ func TestPollOnce_NonChangesRequestedSkipped(t *testing.T) {
 		case args[0] == "pr" && args[1] == "list":
 			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
 		case args[0] == "api":
-			return []byte(`[{"id":200,"state":"APPROVED","body":"LGTM","user":{"login":"bob"}}]`), nil
+			return []byte(`[{"id":300,"state":"COMMENTED","body":"nit","user":{"login":"carol"}}]`), nil
 		case args[0] == "issue" && args[1] == "edit":
 			for _, a := range args {
 				if a == "--add-label" {
@@ -266,10 +275,197 @@ func TestPollOnce_NonChangesRequestedSkipped(t *testing.T) {
 	}
 
 	if addLabelCalled {
-		t.Error("expected no label update for APPROVED review")
+		t.Error("expected no label update for COMMENTED review")
 	}
-	if processed[200] {
-		t.Error("expected APPROVED review not to be recorded in processed set")
+	if mergeCalled {
+		t.Error("expected no merge for COMMENTED review")
+	}
+	if processed[300] {
+		t.Error("expected COMMENTED review not to be recorded in processed set")
+	}
+}
+
+// TestPollOnce_ApprovedPRMerged verifies that an APPROVED review triggers a
+// merge and label removal.
+func TestPollOnce_ApprovedPRMerged(t *testing.T) {
+	stubWatchSeams(t)
+
+	var mergedPR int
+	var removeLabelCalled bool
+
+	watchMergePRFn = func(_ string, prNum int) error {
+		mergedPR = prNum
+		return nil
+	}
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) < 2 {
+			return []byte(`{}`), nil
+		}
+		switch {
+		case args[0] == "pr" && args[1] == "list":
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		case args[0] == "api":
+			return []byte(`[{"id":200,"state":"APPROVED","body":"LGTM","user":{"login":"bob"}}]`), nil
+		case args[0] == "issue" && args[1] == "edit":
+			for _, a := range args {
+				if a == "--remove-label" {
+					removeLabelCalled = true
+				}
+			}
+			return []byte(`{}`), nil
+		case args[0] == "issue" && args[1] == "close":
+			return []byte(`{}`), nil
+		}
+		return []byte(`{}`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	processed := make(map[int]bool)
+	if err := pollOnce(context.Background(), testWatchCfg(), nil, nil, processed, slog.Default()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mergedPR != 5 {
+		t.Errorf("expected PR 5 to be merged, got %d", mergedPR)
+	}
+	if !removeLabelCalled {
+		t.Error("expected remove-label to be called after merge")
+	}
+	if !processed[200] {
+		t.Error("expected review ID 200 to be marked as processed")
+	}
+}
+
+// TestPollOnce_ApprovedDuplicateSkipped verifies that an already-processed
+// APPROVED review does not trigger a second merge attempt.
+func TestPollOnce_ApprovedDuplicateSkipped(t *testing.T) {
+	stubWatchSeams(t)
+
+	mergeCalled := false
+	watchMergePRFn = func(_ string, _ int) error {
+		mergeCalled = true
+		return nil
+	}
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) < 2 {
+			return []byte(`{}`), nil
+		}
+		switch {
+		case args[0] == "pr" && args[1] == "list":
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		case args[0] == "api":
+			return []byte(`[{"id":200,"state":"APPROVED","body":"LGTM","user":{"login":"bob"}}]`), nil
+		}
+		return []byte(`{}`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	// Pre-mark review 200 as already processed.
+	processed := map[int]bool{200: true}
+	if err := pollOnce(context.Background(), testWatchCfg(), nil, nil, processed, slog.Default()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mergeCalled {
+		t.Error("expected no merge for already-processed APPROVED review")
+	}
+}
+
+// TestPollOnce_MixedReviewsMergesOnApproved verifies that when a PR has both
+// COMMENTED and APPROVED reviews, only the APPROVED one triggers a merge.
+func TestPollOnce_MixedReviewsMergesOnApproved(t *testing.T) {
+	stubWatchSeams(t)
+
+	var mergedPR int
+
+	watchMergePRFn = func(_ string, prNum int) error {
+		mergedPR = prNum
+		return nil
+	}
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) < 2 {
+			return []byte(`{}`), nil
+		}
+		switch {
+		case args[0] == "pr" && args[1] == "list":
+			return []byte(`[{"number":7,"headRefName":"99-mixed-reviews"}]`), nil
+		case args[0] == "api":
+			return []byte(`[{"id":300,"state":"COMMENTED","body":"nit","user":{"login":"carol"}},{"id":400,"state":"APPROVED","body":"LGTM","user":{"login":"bob"}}]`), nil
+		case args[0] == "issue" && (args[1] == "close" || args[1] == "edit"):
+			return []byte(`{}`), nil
+		}
+		return []byte(`{}`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	processed := make(map[int]bool)
+	if err := pollOnce(context.Background(), testWatchCfg(), nil, nil, processed, slog.Default()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mergedPR != 7 {
+		t.Errorf("expected PR 7 to be merged via APPROVED review, got mergedPR=%d", mergedPR)
+	}
+	if processed[300] {
+		t.Error("expected COMMENTED review ID 300 not to be recorded")
+	}
+	if !processed[400] {
+		t.Error("expected APPROVED review ID 400 to be recorded in processed set")
+	}
+}
+
+// TestPollOnce_MergeFailureLogged verifies that a merge failure is logged and
+// the label remains (label-remove is NOT called when merge fails).
+func TestPollOnce_MergeFailureLogged(t *testing.T) {
+	stubWatchSeams(t)
+
+	watchMergePRFn = func(_ string, _ int) error {
+		return fmt.Errorf("merge conflict")
+	}
+
+	var removeLabelCalled bool
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) < 2 {
+			return []byte(`{}`), nil
+		}
+		switch {
+		case args[0] == "pr" && args[1] == "list":
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		case args[0] == "api":
+			return []byte(`[{"id":200,"state":"APPROVED","body":"LGTM","user":{"login":"bob"}}]`), nil
+		case args[0] == "issue" && args[1] == "edit":
+			for _, a := range args {
+				if a == "--remove-label" {
+					removeLabelCalled = true
+				}
+			}
+			return []byte(`{}`), nil
+		}
+		return []byte(`{}`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	processed := make(map[int]bool)
+	// pollOnce itself should not return an error — merge errors are logged only.
+	if err := pollOnce(context.Background(), testWatchCfg(), nil, nil, processed, slog.Default()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if removeLabelCalled {
+		t.Error("expected label NOT to be removed when merge fails")
+	}
+	// The review is still marked processed to prevent infinite retry loops on a
+	// broken PR — the processed flag was set before handleApproved was called.
+	if !processed[200] {
+		t.Error("expected review ID 200 to be marked processed even on merge failure")
 	}
 }
 

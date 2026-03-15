@@ -130,36 +130,48 @@ func pollOnce(ctx context.Context, cfg *config.Config, prompts *agent.Prompts, a
 		}
 
 		for _, review := range reviews {
-			if review.State != "CHANGES_REQUESTED" {
-				continue
-			}
-			if processed[review.ID] {
-				continue
-			}
+			if review.State == "CHANGES_REQUESTED" {
+				if processed[review.ID] {
+					continue
+				}
 
-			logger.Info("CHANGES_REQUESTED review detected",
-				"pr", pr.Number,
-				"review_id", review.ID,
-				"author", review.Author,
-			)
+				logger.Info("CHANGES_REQUESTED review detected",
+					"pr", pr.Number,
+					"review_id", review.ID,
+					"author", review.Author,
+				)
 
-			if err := github.AddIssueLabel(cfg.Repo, pr.Number, label.FixingReviewFeedback); err != nil {
-				logger.Error("adding label", "pr", pr.Number, "label", label.FixingReviewFeedback, "err", err)
-				continue
+				if err := github.AddIssueLabel(cfg.Repo, pr.Number, label.FixingReviewFeedback); err != nil {
+					logger.Error("adding label", "pr", pr.Number, "label", label.FixingReviewFeedback, "err", err)
+					continue
+				}
+				if err := github.RemoveIssueLabel(cfg.Repo, pr.Number, label.AwaitingHumanReview); err != nil {
+					logger.Error("removing label", "pr", pr.Number, "label", label.AwaitingHumanReview, "err", err)
+					continue
+				}
+
+				processed[review.ID] = true
+				logger.Info("labels updated",
+					"pr", pr.Number,
+					"added", label.FixingReviewFeedback,
+					"removed", label.AwaitingHumanReview,
+				)
+
+				handleChangesRequested(ctx, cfg, prompts, authEnv, pr, review, logger)
+			} else if review.State == "APPROVED" {
+				if processed[review.ID] {
+					continue
+				}
+
+				logger.Info("APPROVED review detected",
+					"pr", pr.Number,
+					"review_id", review.ID,
+					"author", review.Author,
+				)
+
+				processed[review.ID] = true
+				handleApproved(cfg, pr, review, logger)
 			}
-			if err := github.RemoveIssueLabel(cfg.Repo, pr.Number, label.AwaitingHumanReview); err != nil {
-				logger.Error("removing label", "pr", pr.Number, "label", label.AwaitingHumanReview, "err", err)
-				continue
-			}
-
-			processed[review.ID] = true
-			logger.Info("labels updated",
-				"pr", pr.Number,
-				"added", label.FixingReviewFeedback,
-				"removed", label.AwaitingHumanReview,
-			)
-
-			handleChangesRequested(ctx, cfg, prompts, authEnv, pr, review, logger)
 		}
 	}
 
@@ -258,6 +270,63 @@ func handleChangesRequested(ctx context.Context, cfg *config.Config, prompts *ag
 	)
 }
 
+// handleApproved merges the PR (squash + delete branch), closes the linked
+// issue, removes the godark:awaiting-human-review label, and writes run data.
+// On merge failure the error is logged and the label is left in place for
+// manual intervention.
+func handleApproved(cfg *config.Config, pr github.PRInfo, review github.PRReview, logger *slog.Logger) {
+	issueNum := issueNumberFromBranch(pr.HeadRefName)
+	if issueNum == 0 {
+		logger.Warn("cannot extract issue number from branch, skipping merge",
+			"pr", pr.Number, "branch", pr.HeadRefName)
+		return
+	}
+
+	if err := watchMergePRFn(cfg.Repo, pr.Number); err != nil {
+		logger.Error("merging approved PR", "pr", pr.Number, "err", err)
+		return
+	}
+
+	logger.Info("PR merged", "pr", pr.Number, "issue_number", issueNum)
+
+	if err := github.CloseIssue(cfg.Repo, issueNum); err != nil {
+		logger.Warn("failed to close issue after merge", "issue", issueNum, "err", err)
+	}
+
+	if err := github.RemoveIssueLabel(cfg.Repo, pr.Number, label.AwaitingHumanReview); err != nil {
+		logger.Warn("failed to remove label after merge", "pr", pr.Number, "label", label.AwaitingHumanReview, "err", err)
+	}
+
+	issue, err := watchFetchIssueFn(cfg.Repo, issueNum)
+	if err != nil {
+		logger.Warn("fetching issue for run data", "issue_number", issueNum, "err", err)
+	}
+
+	writer, writerErr := watchNewWriterFn(cfg.Repo, "", []int{issueNum}, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
+	if writerErr != nil {
+		logger.Warn("failed to create run data writer", "err", writerErr)
+	}
+	if writer != nil {
+		if err := writer.WriteOutcome(rundata.Outcome{
+			IssueNumber: issueNum,
+			Title:       issue.Title,
+			Status:      "implemented",
+			PRNumber:    pr.Number,
+		}); err != nil {
+			logger.Warn("failed to write outcome", "err", err)
+		}
+		if err := writer.FinalizeRun(rundata.RunSummary{Total: 1, Implemented: 1}); err != nil {
+			logger.Warn("failed to finalize run", "err", err)
+		}
+	}
+
+	logger.Info("approved PR merged and issue closed",
+		"pr", pr.Number,
+		"issue_number", issueNum,
+		"reviewer", review.Author,
+	)
+}
+
 // buildFeedback concatenates the review body and any inline review comments
 // into a single feedback string. Network errors fetching inline comments are
 // logged and non-fatal.
@@ -326,6 +395,8 @@ var watchNewWriterFn = rundata.New
 var watchFetchReviewCommentsFn = github.FetchReviewComments
 
 var watchFetchIssueFn = github.FetchIssue
+
+var watchMergePRFn = github.MergeFeaturePR
 
 func init() {
 	f := watchCmd.Flags()
