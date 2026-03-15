@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/phs/dark-factory/internal/report"
 	"github.com/phs/dark-factory/internal/stats"
 	"github.com/spf13/cobra"
 )
@@ -17,7 +18,7 @@ import (
 // Extracted for testability so tests can exercise the real error message.
 func openStatsDBAt(dbPath string) (*stats.DB, error) {
 	if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
-		return nil, fmt.Errorf("no stats database found; run `godark run` or `godark implement` first")
+		return nil, fmt.Errorf("No stats database found; run `godark run` or `godark implement` first")
 	}
 	return stats.Open(dbPath)
 }
@@ -115,12 +116,25 @@ func runReport(w io.Writer, db *stats.DB, repo string, since, until time.Time, f
 		return fmt.Errorf("querying step results: %w", err)
 	}
 
-	return renderReport(w, format, runs, outcomes, steps)
+	return renderReport(w, format, repo, since, until, runs, outcomes, steps)
 }
 
-// renderReport is a stub renderer. Actual rendering is implemented in a later issue.
-func renderReport(_ io.Writer, _ string, _ []stats.RunRecord, _ []stats.IssueOutcomeRecord, _ []stats.StepResultRecord) error {
-	return nil
+// renderReport generates and writes a sprint report in the requested format.
+func renderReport(w io.Writer, format, repo string, since, until time.Time, runs []stats.RunRecord, outcomes []stats.IssueOutcomeRecord, steps []stats.StepResultRecord) error {
+	rpt := report.Generate(runs, outcomes, steps, since, until, repo)
+
+	var rendered string
+	switch format {
+	case "markdown":
+		rendered = report.RenderMarkdown(rpt)
+	case "html":
+		rendered = report.RenderHTML(rpt)
+	default:
+		rendered = report.RenderTerminal(rpt)
+	}
+
+	_, err := fmt.Fprint(w, rendered)
+	return err
 }
 
 // parseSinceDuration parses a duration string with "d" (days) or "w" (weeks) suffix.
