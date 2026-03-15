@@ -4511,6 +4511,7 @@ func TestRunQualityReviewCycle_ApprovedFirstTry(t *testing.T) {
 		nil,
 		&sessionID,
 		&fixCycles,
+		nil,
 	)
 
 	if !passed {
@@ -4562,6 +4563,7 @@ func TestRunQualityReviewCycle_ApprovedAfterRetry(t *testing.T) {
 		nil,
 		&sessionID,
 		&fixCycles,
+		nil,
 	)
 
 	if !passed {
@@ -4611,6 +4613,7 @@ func TestRunQualityReviewCycle_ExhaustsRetries(t *testing.T) {
 		nil,
 		&sessionID,
 		&fixCycles,
+		nil,
 	)
 
 	if passed {
@@ -4673,6 +4676,7 @@ func TestRunQualityReviewCycle_DriftDuringQuality(t *testing.T) {
 		nil,
 		&sessionID,
 		&fixCycles,
+		nil,
 	)
 
 	if passed {
@@ -4683,5 +4687,151 @@ func TestRunQualityReviewCycle_DriftDuringQuality(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "protected path drift") {
 		t.Errorf("err = %q, want to contain %q", err.Error(), "protected path drift")
+	}
+}
+
+// mockReporter records IssueStageChanged calls for assertion in stage-emission tests.
+// All other ProgressReporter methods are no-ops.
+type mockReporter struct {
+	stageChanges []struct {
+		number int
+		stage  string
+	}
+}
+
+func (r *mockReporter) IssueStageChanged(number int, stage string) {
+	r.stageChanges = append(r.stageChanges, struct {
+		number int
+		stage  string
+	}{number, stage})
+}
+func (r *mockReporter) RunStarted(_, _, _, _, _, _ string, _ int) {}
+func (r *mockReporter) IssueStarted(_ int, _ string)              {}
+func (r *mockReporter) IssueCompleted(_ int, _ string, _ string, _, _ int, _ string) {
+}
+func (r *mockReporter) WaveStarted(_, _ int)              {}
+func (r *mockReporter) AllBlocked(_, _ int)               {}
+func (r *mockReporter) RollupCreated(_ int, _ string, _ bool) {}
+func (r *mockReporter) RunFinished(_, _, _, _, _ int)     {}
+func (r *mockReporter) PunchlistText(_ string)            {}
+
+func (r *mockReporter) hasStageChange(number int, stage string) bool {
+	for _, sc := range r.stageChanges {
+		if sc.number == number && sc.stage == stage {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *mockReporter) countStageChanges(stage string) int {
+	count := 0
+	for _, sc := range r.stageChanges {
+		if sc.stage == stage {
+			count++
+		}
+	}
+	return count
+}
+
+func TestProcessIssue_ImplementStageEmitted(t *testing.T) {
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	reporter := &mockReporter{}
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, reporter)
+
+	if !reporter.hasStageChange(loopIssue().Number, "implement") {
+		t.Errorf("IssueStageChanged(%d, %q) was not called", loopIssue().Number, "implement")
+	}
+}
+
+func TestProcessIssue_VerifyStageEmitted(t *testing.T) {
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	reporter := &mockReporter{}
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, reporter)
+
+	if !reporter.hasStageChange(loopIssue().Number, "verify") {
+		t.Errorf("IssueStageChanged(%d, %q) was not called", loopIssue().Number, "verify")
+	}
+}
+
+func TestProcessIssue_ReviewStageEmitted(t *testing.T) {
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	reporter := &mockReporter{}
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, reporter)
+
+	if !reporter.hasStageChange(loopIssue().Number, "review") {
+		t.Errorf("IssueStageChanged(%d, %q) was not called", loopIssue().Number, "review")
+	}
+}
+
+func TestProcessIssue_ReconStageEmitted(t *testing.T) {
+	setupLoopTest(t, []string{
+		"recon output",
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	prompts := testPrompts(t)
+	prompts.Recon = "recon prompt"
+
+	reporter := &mockReporter{}
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), prompts, nil, testLogger(t), nil, reporter)
+
+	if !reporter.hasStageChange(loopIssue().Number, "recon") {
+		t.Errorf("IssueStageChanged(%d, %q) was not called when recon is configured", loopIssue().Number, "recon")
+	}
+}
+
+func TestProcessIssue_NilReporterSafe(t *testing.T) {
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	// Should not panic with nil reporter.
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, nil)
+	if outcome.Status != StatusImplemented {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, StatusImplemented, outcome.Err)
+	}
+}
+
+func TestProcessIssue_RetryReentersImplementStage(t *testing.T) {
+	// Agent outputs: implementer, quality(APPROVED), reviewer(CHANGES), retry, reviewer(APPROVED)
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=CHANGES_REQUESTED",
+		"retry output",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	reporter := &mockReporter{}
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, reporter)
+
+	if outcome.Status != StatusImplemented {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, StatusImplemented, outcome.Err)
+	}
+
+	// "implement" should be emitted at least twice: once for initial implement, once for retry.
+	count := reporter.countStageChanges("implement")
+	if count < 2 {
+		t.Errorf("IssueStageChanged(_, %q) called %d time(s), want at least 2 (initial + retry)", "implement", count)
 	}
 }
