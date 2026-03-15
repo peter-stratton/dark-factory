@@ -1925,3 +1925,159 @@ func TestReporter_AllBlockedCalled(t *testing.T) {
 		t.Errorf("AllBlocked blocked = %d, want 1", reporter.allBlocked[0].blocked)
 	}
 }
+
+// setupRollupVerifyMock replaces runRollupVerifyFn with fn and restores it
+// at the end of the test.
+func setupRollupVerifyMock(t *testing.T, fn func(ctx context.Context, prNum int, branch string, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, writeResult func(rundata.VerifyStepResult) error) (bool, error)) {
+	t.Helper()
+	orig := runRollupVerifyFn
+	t.Cleanup(func() { runRollupVerifyFn = orig })
+	runRollupVerifyFn = fn
+}
+
+// setupHandleRollupPRMocks installs the upsert and merge mocks used by
+// tests that call handleRollupPR directly (bypassing processIssues).
+func setupHandleRollupPRMocks(t *testing.T) (merged *[]int) {
+	t.Helper()
+	var mergedCalls []int
+
+	origUpsert := upsertRollupPRFn
+	t.Cleanup(func() { upsertRollupPRFn = origUpsert })
+	upsertRollupPRFn = func(_, _, _, _, _ string) (int, string, error) {
+		return 999, "https://github.com/owner/repo/pull/999", nil
+	}
+
+	origMerge := mergeRollupPRFn
+	t.Cleanup(func() { mergeRollupPRFn = origMerge })
+	mergeRollupPRFn = func(_ string, prNum int) error {
+		mergedCalls = append(mergedCalls, prNum)
+		return nil
+	}
+
+	return &mergedCalls
+}
+
+func TestRollupVerify_PassesOnFirstAttempt(t *testing.T) {
+	merged := setupHandleRollupPRMocks(t)
+
+	var verifyCalls int
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+		verifyCalls++
+		return true, nil
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "auto"
+	reporter := &fakeReporter{}
+
+	prNum, prURL, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	if err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+	if prNum != 999 {
+		t.Errorf("pr number = %d, want 999", prNum)
+	}
+	if prURL == "" {
+		t.Error("pr url should not be empty")
+	}
+	if verifyCalls != 1 {
+		t.Errorf("expected 1 verify call, got %d", verifyCalls)
+	}
+	if len(*merged) != 1 || (*merged)[0] != 999 {
+		t.Errorf("rollup: verify pass should proceed to merge, got merges: %v", *merged)
+	}
+	if len(reporter.rollupCreated) != 1 || !reporter.rollupCreated[0].merged {
+		t.Errorf("expected RollupCreated with merged=true, got: %v", reporter.rollupCreated)
+	}
+}
+
+func TestRollupVerify_ExhaustsRetries_LeavesPROpen(t *testing.T) {
+	merged := setupHandleRollupPRMocks(t)
+
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+		return false, nil // exhausted retries — verify never passes
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "auto"
+	reporter := &fakeReporter{}
+
+	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	if err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+	if prNum != 999 {
+		t.Errorf("pr number = %d, want 999", prNum)
+	}
+	if len(*merged) != 0 {
+		t.Errorf("rollup: exhausted verify retries must not merge, got merges: %v", *merged)
+	}
+	// PR should be reported as created but not merged (merged=false).
+	if len(reporter.rollupCreated) != 1 {
+		t.Fatalf("expected 1 RollupCreated call, got %d", len(reporter.rollupCreated))
+	}
+	if reporter.rollupCreated[0].merged {
+		t.Errorf("rollup: PR should be left open when verify fails, but merged=true")
+	}
+}
+
+func TestRollupVerify_WriteResultCalledWhenWriterPresent(t *testing.T) {
+	setupHandleRollupPRMocks(t)
+
+	var capturedWriteResult func(rundata.VerifyStepResult) error
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, writeResult func(rundata.VerifyStepResult) error) (bool, error) {
+		capturedWriteResult = writeResult
+		if writeResult != nil {
+			_ = writeResult(rundata.VerifyStepResult{Attempt: 0, AllPassed: true})
+		}
+		return true, nil
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "auto"
+	reporter := &fakeReporter{}
+
+	tmpDir := t.TempDir()
+	writer, err := rundata.NewWithBase(tmpDir, "owner/repo", "m1", []int{1}, "", rundata.AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	if _, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, writer, &agent.Prompts{}, nil); err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+
+	if capturedWriteResult == nil {
+		t.Error("expected writeResult callback to be non-nil when writer is present")
+	}
+
+	// Verify the file was actually written to the rollup directory.
+	runDir := writer.Dir()
+	verifyFile := filepath.Join(runDir, "rollup", "verify-0.json")
+	if _, err := os.Stat(verifyFile); err != nil {
+		t.Errorf("expected rollup verify file at %s: %v", verifyFile, err)
+	}
+}
+
+func TestRollupVerify_ManualMode_VerifyFailsLeavesOpen(t *testing.T) {
+	merged := setupHandleRollupPRMocks(t)
+
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+		return false, nil
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "manual"
+	reporter := &fakeReporter{}
+
+	if _, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil); err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+
+	if len(*merged) != 0 {
+		t.Errorf("manual rollup: should never merge, got merges: %v", *merged)
+	}
+	if len(reporter.rollupCreated) != 1 || reporter.rollupCreated[0].merged {
+		t.Errorf("manual rollup: PR should be left open, got rollupCreated: %v", reporter.rollupCreated)
+	}
+}

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
@@ -126,4 +128,106 @@ func formatVerifyErrors(result VerifyResult) string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// failedCheckNames extracts the names of failed checks from a VerifyResult.
+func failedCheckNames(vr VerifyResult) []string {
+	var names []string
+	for _, cr := range vr.Checks {
+		if !cr.Passed {
+			names = append(names, cr.Name)
+		}
+	}
+	return names
+}
+
+// RunRollupVerify runs the verify pipeline on the rollup branch and invokes
+// the implementer agent on failure (same fix cycle as per-issue verify).
+// writeResult, if non-nil, is called after each verify attempt to persist
+// the result; errors are logged as warnings and do not abort the cycle.
+// Returns (true, nil) when verify passes; (false, nil) when all fix attempts
+// are exhausted (caller should leave the PR open); non-nil error for
+// unexpected failures (agent crashes, context cancellation, etc.).
+func RunRollupVerify(
+	ctx context.Context,
+	prNum int,
+	branch string,
+	cfg *config.Config,
+	prompts *Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	writeResult func(rundata.VerifyStepResult) error,
+) (bool, error) {
+	verifyChecks := buildVerifyChecks(cfg)
+	if len(verifyChecks) == 0 {
+		return true, nil
+	}
+
+	var verifyRunner CommandRunner
+	if cfg.NoSandbox {
+		verifyRunner = newHostRunner()
+	} else {
+		verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
+	}
+
+	logger.Info("running rollup verify step", "check_count", len(verifyChecks))
+	verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
+	if writeResult != nil {
+		if err := writeResult(verifyToRundata(verifyResult, 0, false)); err != nil {
+			logger.Warn("failed to write rollup verify result", "error", err)
+		}
+	}
+
+	if verifyResult.AllPassed {
+		logger.Info("rollup verify passed")
+		return true, nil
+	}
+
+	if prompts.VerifyFix == "" || cfg.Verify.MaxFixAttempts == 0 {
+		logger.Warn("rollup verify failed (no fix configured)", "failed_checks", failedCheckNames(verifyResult))
+		return false, nil
+	}
+
+	// Synthetic issue for VerifyFix prompt rendering — rollup has no real issue number.
+	rollupIssue := github.Issue{Title: "rollup PR"}
+	var sessionID string
+
+	for fixAttempt := 0; fixAttempt < cfg.Verify.MaxFixAttempts; fixAttempt++ {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+
+		verifyErrors := formatVerifyErrors(verifyResult)
+		logger.Info("running rollup verify-fix attempt",
+			"attempt", fixAttempt+1,
+			"max_attempts", cfg.Verify.MaxFixAttempts,
+		)
+
+		fixResult, err := VerifyFix(ctx, rollupIssue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
+		if err != nil {
+			return false, fmt.Errorf("rollup verify-fix agent: %w", err)
+		}
+		if fixResult.TimedOut {
+			return false, fmt.Errorf("rollup verify-fix agent timed out")
+		}
+		sessionID = fixResult.SessionID
+
+		verifyResult = RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
+		if writeResult != nil {
+			if err := writeResult(verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
+				logger.Warn("failed to write rollup verify result", "error", err)
+			}
+		}
+
+		if verifyResult.AllPassed {
+			logger.Info("rollup verify passed after fix", "attempt", fixAttempt+1)
+			return true, nil
+		}
+	}
+
+	logger.Warn("rollup verify failed after all fix attempts",
+		"max_attempts", cfg.Verify.MaxFixAttempts,
+		"failed_checks", failedCheckNames(verifyResult),
+	)
+	return false, nil
 }

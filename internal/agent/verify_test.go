@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
@@ -560,5 +561,117 @@ func TestSandboxCommandRunner_CheckFailsWhenExitNonZero(t *testing.T) {
 	}
 	if len(result.Checks) != 1 || result.Checks[0].ExitCode != 1 {
 		t.Errorf("unexpected check result: %+v", result.Checks)
+	}
+}
+
+// TestRunRollupVerify_NoChecks verifies that RunRollupVerify returns true
+// immediately when no verify commands are configured.
+func TestRunRollupVerify_NoChecks(t *testing.T) {
+	cfg := &config.Config{} // no build/lint/test commands
+	passed, err := RunRollupVerify(context.Background(), 999, "feature-branch", cfg, &Prompts{}, nil, slog.Default(), nil)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if !passed {
+		t.Error("expected passed=true when no checks configured")
+	}
+}
+
+// TestRunRollupVerify_AllPass verifies that RunRollupVerify returns true
+// when all checks pass on the first attempt.
+func TestRunRollupVerify_AllPass(t *testing.T) {
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stdout: "ok", ExitCode: 0}, nil
+	}
+
+	cfg := &config.Config{
+		BuildCommand: "go build ./...",
+		Docker:       config.Docker{Image: "test:latest"},
+	}
+
+	var writtenResults []rundata.VerifyStepResult
+	writeResult := func(step rundata.VerifyStepResult) error {
+		writtenResults = append(writtenResults, step)
+		return nil
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if !passed {
+		t.Error("expected passed=true when all checks pass")
+	}
+	if len(writtenResults) != 1 {
+		t.Fatalf("expected 1 written result, got %d", len(writtenResults))
+	}
+	if !writtenResults[0].AllPassed {
+		t.Error("expected written result AllPassed=true")
+	}
+	if writtenResults[0].Attempt != 0 {
+		t.Errorf("expected attempt=0, got %d", writtenResults[0].Attempt)
+	}
+}
+
+// TestRunRollupVerify_FailNoFixConfigured verifies that RunRollupVerify
+// returns (false, nil) when verify fails and no VerifyFix prompt is configured.
+func TestRunRollupVerify_FailNoFixConfigured(t *testing.T) {
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stderr: "build error", ExitCode: 1}, nil
+	}
+
+	cfg := &config.Config{
+		BuildCommand: "go build ./...",
+		Docker:       config.Docker{Image: "test:latest"},
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{VerifyFix: ""}, nil, slog.Default(), nil)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if passed {
+		t.Error("expected passed=false when verify fails and no fix configured")
+	}
+}
+
+// TestRunRollupVerify_WriteResultCalledOnFailure verifies that writeResult
+// is called even on verify failure.
+func TestRunRollupVerify_WriteResultCalledOnFailure(t *testing.T) {
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stderr: "lint error", ExitCode: 1}, nil
+	}
+
+	cfg := &config.Config{
+		LintCommand: "golint ./...",
+		Docker:      config.Docker{Image: "test:latest"},
+	}
+
+	var writtenResults []rundata.VerifyStepResult
+	writeResult := func(step rundata.VerifyStepResult) error {
+		writtenResults = append(writtenResults, step)
+		return nil
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if passed {
+		t.Error("expected passed=false")
+	}
+	if len(writtenResults) != 1 {
+		t.Fatalf("expected 1 written result, got %d", len(writtenResults))
+	}
+	if writtenResults[0].AllPassed {
+		t.Error("expected written result AllPassed=false")
+	}
+	if writtenResults[0].FixAttempted {
+		t.Error("expected FixAttempted=false for initial attempt")
 	}
 }
