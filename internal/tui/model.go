@@ -183,6 +183,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleIssueStarted adds a new issue row or skips if already pre-populated.
+// Sets the stage to "starting" so the row shows a spinner immediately,
+// keeping the visual state in sync with the queued count.
 func (m *Model) handleIssueStarted(msg IssueStartedMsg) {
 	if m.issueIndex == nil {
 		m.issueIndex = make(map[int]int)
@@ -193,6 +195,9 @@ func (m *Model) handleIssueStarted(msg IssueStartedMsg) {
 			number: msg.Number,
 			title:  msg.Title,
 		})
+	}
+	if idx, ok := m.issueIndex[msg.Number]; ok {
+		m.issues[idx].stage = "starting"
 	}
 	if m.queued > 0 {
 		m.queued--

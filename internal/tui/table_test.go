@@ -148,9 +148,9 @@ func TestRenderTableInProgressRowShowsStage(t *testing.T) {
 	spin := newTestSpinner()
 	got := stripANSI(renderTable(rows, spin, 80))
 
-	// In-progress: should contain the stage label.
-	if !strings.Contains(got, "implement") {
-		t.Errorf("renderTable in-progress: stage label not found in %q", got)
+	// In-progress: should contain the uppercased stage label in a badge.
+	if !strings.Contains(got, "IMPLEMENT") {
+		t.Errorf("renderTable in-progress: stage badge not found in %q", got)
 	}
 	// Should not show queued marker.
 	if strings.Contains(got, markerQueued) {

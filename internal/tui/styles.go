@@ -79,6 +79,11 @@ var (
 				Bold(true).
 				Padding(0, 1)
 
+	badgeInProgressStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#1A5276", Dark: "#85C1E9"}).
+				Background(lipgloss.AdaptiveColor{Light: "#D4E6F1", Dark: "#1A3650"}).
+				Padding(0, 1)
+
 	badgeQueuedStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#626262", Dark: "#AAAAAA"}).
 				Background(lipgloss.AdaptiveColor{Light: "#D0D0D0", Dark: "#3A3A3A"}).

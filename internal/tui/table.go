@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
@@ -33,9 +34,8 @@ var (
 	markerReviewStyle    = lipgloss.NewStyle().Foreground(colorYellow)
 	markerFailedStyle    = lipgloss.NewStyle().Foreground(colorRed)
 	rowNumberStyle       = lipgloss.NewStyle().Foreground(colorMuted)
-	rowTitleStyle        = lipgloss.NewStyle().Foreground(colorBright)
-	rowStageStyle        = lipgloss.NewStyle().Foreground(colorMuted)
-	rowErrStyle          = lipgloss.NewStyle().Foreground(colorRed)
+	rowTitleStyle = lipgloss.NewStyle().Foreground(colorBright)
+	rowErrStyle   = lipgloss.NewStyle().Foreground(colorRed)
 )
 
 // renderTable composes all issue rows into a single styled string.
@@ -104,7 +104,7 @@ func badgeFor(row issueRow) string {
 		return badgeFailedStyle.Render("FAILED")
 	default:
 		if row.stage != "" {
-			return rowStageStyle.Render(row.stage)
+			return badgeInProgressStyle.Render(strings.ToUpper(row.stage))
 		}
 		return badgeQueuedStyle.Render("QUEUED")
 	}
