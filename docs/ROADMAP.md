@@ -1016,6 +1016,12 @@ and success rate by repo.
 - Watch command overhaul — dedicated milestone to validate `godark watch`
   end-to-end, add TUI and dashboard views for the polling loop, and ensure
   feature parity with the run command's monitoring experience
+- Sprint summary reports — `godark report --since 2w` (or date range) generates
+  a manager-friendly summary of what was accomplished: issues closed, PRs merged,
+  cost breakdown, success rate, milestones progressed, and notable failures.
+  Output as markdown, HTML, or terminal. Designed for engineering managers who
+  need sprint-level visibility without digging into the dashboard. Pairs well
+  with Phase 21 SQLite persistence as the data source
 - Daemon-mode run — `godark run --watch` flag that keeps the run alive after
   its first pass; polls for human merges on `awaiting-human-review` PRs, then
   re-resolves dependencies and processes newly unblocked issues automatically,
@@ -1034,6 +1040,19 @@ and success rate by repo.
   the sandbox container without requiring `no_sandbox: true`
 - Landing page and docs site
 - Demo / example repo that people can point godark at to try it out
+- GitLab support — godark currently assumes GitHub for everything: issue
+  fetching, PR creation, review detection, label management, merge operations,
+  and the `gh` CLI. Adding GitLab would require abstracting the VCS provider
+  behind an interface (`internal/vcs/` or similar), implementing a GitLab
+  client (likely using `glab` CLI or the GitLab API directly), and updating
+  prompt templates that reference `gh` commands. Config would add a `provider:`
+  field (`github` default, `gitlab` opt-in). Scope is significant — touches
+  infrastructure, orchestration, and prompt layers — but the architecture
+  already isolates GitHub calls in `internal/github/`
+- Expanded distribution — add Windows builds, remove Linux arm64 ignore,
+  add Scoop (Windows package manager), publish Docker images to GHCR, and
+  optionally add AUR/Snap/DEB/RPM for broader Linux reach. All supported
+  natively by GoReleaser except Winget (manual PR to winget-pkgs repo)
 - Homebrew core inclusion (`brew install godark` without tap prefix)
 - README badges — license, latest release, CI build status, test coverage, Go Report Card
 - Quality review ROI evaluation — instrument overlap between quality reviewer
