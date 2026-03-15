@@ -120,15 +120,15 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
 		}
 
-		// Pre-fetch issue titles and write them to run.json so the dashboard can
-		// display titles for all issues before they finish processing.
-		if writer != nil {
-			issueTitles := make(map[string]string, len(issueNums))
-			for _, num := range issueNums {
-				if iss, err := github.FetchIssue(cfg.Repo, num); err == nil {
-					issueTitles[strconv.Itoa(num)] = iss.Title
-				}
+		// Pre-fetch issue titles so the TUI can display all issues upfront and
+		// the dashboard can show titles before issues finish processing.
+		issueTitles := make(map[string]string, len(issueNums))
+		for _, num := range issueNums {
+			if iss, err := github.FetchIssue(cfg.Repo, num); err == nil {
+				issueTitles[strconv.Itoa(num)] = iss.Title
 			}
+		}
+		if writer != nil {
 			if err := writer.WriteIssueTitles(issueTitles); err != nil {
 				logger.Warn("failed to write issue titles to run metadata", "error", err)
 			}
@@ -187,9 +187,11 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 
 		var reporter progress.ProgressReporter
 		var program *tea.Program
+		var cancelRun context.CancelFunc
 		if useTUI {
+			ctx, cancelRun = context.WithCancel(ctx)
 			model := tui.New(cfg.Repo, "", "", cfg.BaseBranch,
-				string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup))
+				string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), cancelRun)
 			program = tea.NewProgram(model, tea.WithAltScreen())
 			reporter = tui.NewTUIReporter(program)
 		} else {
@@ -201,7 +203,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		// runLoop executes the issue processing loop and returns any error. It is
 		// run directly in text mode or in a goroutine in TUI mode.
 		runLoop := func() error {
-			return implementIssues(ctx, issueNums, cfg, prompts, authEnv, logger, hook, writer, notifiers, reporter, punchlistPath)
+			return implementIssues(ctx, issueNums, cfg, prompts, authEnv, logger, hook, writer, notifiers, reporter, punchlistPath, issueTitles)
 		}
 
 		if useTUI {
@@ -232,6 +234,7 @@ func implementIssues(
 	notifiers []notify.Notifier,
 	reporter progress.ProgressReporter,
 	punchlistPath string,
+	issueTitles map[string]string,
 ) error {
 	// Open stats DB early; nil on failure (errors logged, never fatal).
 	statsDB := orchestrator.OpenStatsDB(logger)
@@ -250,8 +253,15 @@ func implementIssues(
 	if writer != nil {
 		runTimestamp = filepath.Base(writer.Dir())
 	}
+	summaries := make([]progress.IssueSummary, len(issueNums))
+	for i, num := range issueNums {
+		summaries[i] = progress.IssueSummary{
+			Number: num,
+			Title:  issueTitles[strconv.Itoa(num)],
+		}
+	}
 	reporter.RunStarted(cfg.Repo, "", runTimestamp, cfg.BaseBranch,
-		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), len(issueNums))
+		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), summaries)
 
 	for _, issueNumber := range issueNums {
 		if ctx.Err() != nil {

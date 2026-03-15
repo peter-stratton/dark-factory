@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/phs/dark-factory/internal/progress"
 )
 
 // mockSender records every message passed to Send so tests can assert on them.
@@ -157,7 +158,11 @@ func TestAllBlockedSendsRunFinishedMsg(t *testing.T) {
 
 func TestRunStartedSendsMessage(t *testing.T) {
 	r, s := newTestReporter()
-	r.RunStarted("owner/repo", "v1.0", "2026-03-14T10:00:00Z", "main", "feat", "rollup", 5)
+	issues := []progress.IssueSummary{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+	}
+	r.RunStarted("owner/repo", "v1.0", "2026-03-14T10:00:00Z", "main", "feat", "rollup", issues)
 
 	if len(s.msgs) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(s.msgs))
@@ -172,8 +177,8 @@ func TestRunStartedSendsMessage(t *testing.T) {
 	if msg.Milestone != "v1.0" {
 		t.Errorf("Milestone: got %q, want %q", msg.Milestone, "v1.0")
 	}
-	if msg.IssueCount != 5 {
-		t.Errorf("IssueCount: got %d, want 5", msg.IssueCount)
+	if len(msg.Issues) != 2 {
+		t.Errorf("Issues: got %d, want 2", len(msg.Issues))
 	}
 	if msg.MergeFeature != "feat" {
 		t.Errorf("MergeFeature: got %q, want %q", msg.MergeFeature, "feat")

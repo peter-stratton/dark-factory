@@ -98,10 +98,15 @@ each unblocked issue through the implement → review → merge loop.`,
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
 
 		if useTUI {
+			// Wrap the signal context with a cancel we can hand to the TUI
+			// so ctrl+c in the TUI cancels the orchestrator gracefully.
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
 			// Metadata fields (milestone, timestamp, etc.) are populated later
 			// via RunStartedMsg once the orchestrator creates the run directory.
 			model := tui.New(cfg.Repo, milestone, "", cfg.BaseBranch,
-				string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup))
+				string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), cancel)
 			program := tea.NewProgram(model, tea.WithAltScreen())
 			reporter := tui.NewTUIReporter(program)
 

@@ -30,6 +30,7 @@ func TestRenderHeaderFullMetadata(t *testing.T) {
 		"main",
 		"feature/phase-20",
 		"rollup/phase-20",
+		nil,
 	)
 	got := stripANSI(renderHeader(m))
 
@@ -63,6 +64,7 @@ func TestRenderHeaderMinimal(t *testing.T) {
 		"", // no base branch
 		"", // no auto-merge
 		"",
+		nil,
 	)
 	got := stripANSI(renderHeader(m))
 
@@ -157,6 +159,7 @@ func TestModelViewContainsHeaderAndSummary(t *testing.T) {
 		"",
 		"",
 		"",
+		nil,
 	)
 	got := stripANSI(m.View())
 
@@ -176,7 +179,7 @@ func TestModelViewContainsHeaderAndSummary(t *testing.T) {
 // --- New constructor tests ---
 
 func TestNewAutoMergePopulated(t *testing.T) {
-	m := New("repo", "ms", "ts", "base", "feat-branch", "rollup-branch")
+	m := New("repo", "ms", "ts", "base", "feat-branch", "rollup-branch", nil)
 	if m.autoMerge == nil {
 		t.Fatal("autoMerge should be non-nil when mergeFeature is set")
 	}
@@ -189,7 +192,7 @@ func TestNewAutoMergePopulated(t *testing.T) {
 }
 
 func TestNewAutoMergeNilWhenEmpty(t *testing.T) {
-	m := New("repo", "ms", "ts", "", "", "")
+	m := New("repo", "ms", "ts", "", "", "", nil)
 	if m.autoMerge != nil {
 		t.Errorf("autoMerge should be nil when both merge fields are empty, got %+v", m.autoMerge)
 	}
