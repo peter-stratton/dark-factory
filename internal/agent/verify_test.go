@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 )
 
@@ -418,6 +420,7 @@ func stubSandboxRunContainer(t *testing.T, fn func(ctx context.Context, opts san
 	sandboxRunContainer = fn
 }
 
+
 func TestSandboxCommandRunner_UsesCorrectImage(t *testing.T) {
 	var capturedOpts sandbox.RunOpts
 	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
@@ -560,5 +563,236 @@ func TestSandboxCommandRunner_CheckFailsWhenExitNonZero(t *testing.T) {
 	}
 	if len(result.Checks) != 1 || result.Checks[0].ExitCode != 1 {
 		t.Errorf("unexpected check result: %+v", result.Checks)
+	}
+}
+
+// TestRunRollupVerify_NoChecks verifies that RunRollupVerify returns true
+// immediately when no verify commands are configured.
+func TestRunRollupVerify_NoChecks(t *testing.T) {
+	cfg := &config.Config{} // no build/lint/test commands
+	passed, err := RunRollupVerify(context.Background(), 999, "feature-branch", cfg, &Prompts{}, nil, slog.Default(), nil)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if !passed {
+		t.Error("expected passed=true when no checks configured")
+	}
+}
+
+// TestRunRollupVerify_AllPass verifies that RunRollupVerify returns true
+// when all checks pass on the first attempt.
+func TestRunRollupVerify_AllPass(t *testing.T) {
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stdout: "ok", ExitCode: 0}, nil
+	}
+
+	cfg := &config.Config{
+		BuildCommand: "go build ./...",
+		Docker:       config.Docker{Image: "test:latest"},
+	}
+
+	var writtenResults []rundata.VerifyStepResult
+	writeResult := func(step rundata.VerifyStepResult) error {
+		writtenResults = append(writtenResults, step)
+		return nil
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if !passed {
+		t.Error("expected passed=true when all checks pass")
+	}
+	if len(writtenResults) != 1 {
+		t.Fatalf("expected 1 written result, got %d", len(writtenResults))
+	}
+	if !writtenResults[0].AllPassed {
+		t.Error("expected written result AllPassed=true")
+	}
+	if writtenResults[0].Attempt != 0 {
+		t.Errorf("expected attempt=0, got %d", writtenResults[0].Attempt)
+	}
+}
+
+// TestRunRollupVerify_FailNoFixConfigured verifies that RunRollupVerify
+// returns (false, nil) when verify fails and no VerifyFix prompt is configured.
+func TestRunRollupVerify_FailNoFixConfigured(t *testing.T) {
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stderr: "build error", ExitCode: 1}, nil
+	}
+
+	cfg := &config.Config{
+		BuildCommand: "go build ./...",
+		Docker:       config.Docker{Image: "test:latest"},
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{VerifyFix: ""}, nil, slog.Default(), nil)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if passed {
+		t.Error("expected passed=false when verify fails and no fix configured")
+	}
+}
+
+// TestRunRollupVerify_WriteResultCalledOnFailure verifies that writeResult
+// is called even on verify failure.
+func TestRunRollupVerify_WriteResultCalledOnFailure(t *testing.T) {
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stderr: "lint error", ExitCode: 1}, nil
+	}
+
+	cfg := &config.Config{
+		LintCommand: "golint ./...",
+		Docker:      config.Docker{Image: "test:latest"},
+	}
+
+	var writtenResults []rundata.VerifyStepResult
+	writeResult := func(step rundata.VerifyStepResult) error {
+		writtenResults = append(writtenResults, step)
+		return nil
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if passed {
+		t.Error("expected passed=false")
+	}
+	if len(writtenResults) != 1 {
+		t.Fatalf("expected 1 written result, got %d", len(writtenResults))
+	}
+	if writtenResults[0].AllPassed {
+		t.Error("expected written result AllPassed=false")
+	}
+	if writtenResults[0].FixAttempted {
+		t.Error("expected FixAttempted=false for initial attempt")
+	}
+}
+
+// TestRunRollupVerify_FailsThenFixed verifies that RunRollupVerify returns
+// (true, nil) when verify fails on the first attempt but passes after one fix.
+func TestRunRollupVerify_FailsThenFixed(t *testing.T) {
+	callCount := 0
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		callCount++
+		if callCount == 1 {
+			// Initial verify: lint fails.
+			return &sandbox.RunResult{Stderr: "lint error", ExitCode: 1}, nil
+		}
+		// Re-verify after fix: passes.
+		return &sandbox.RunResult{Stdout: "ok", ExitCode: 0}, nil
+	}
+
+	origFixFn := verifyFixFn
+	t.Cleanup(func() { verifyFixFn = origFixFn })
+	verifyFixFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ *config.Config, _ *Prompts, _ map[string]string, _ *slog.Logger) (*Result, error) {
+		return &Result{TimedOut: false, SessionID: "sess1"}, nil
+	}
+
+	cfg := &config.Config{
+		LintCommand: "golint ./...",
+		Docker:      config.Docker{Image: "test:latest"},
+		Verify:      config.Verify{MaxFixAttempts: 1},
+	}
+
+	var writtenResults []rundata.VerifyStepResult
+	writeResult := func(step rundata.VerifyStepResult) error {
+		writtenResults = append(writtenResults, step)
+		return nil
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "rollup-branch", cfg, &Prompts{VerifyFix: "fix prompt"}, nil, slog.Default(), writeResult)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if !passed {
+		t.Error("expected passed=true when verify fails then fix succeeds")
+	}
+	// writeResult called twice: initial failure and post-fix success.
+	if len(writtenResults) != 2 {
+		t.Fatalf("expected 2 written results, got %d", len(writtenResults))
+	}
+	if writtenResults[0].AllPassed {
+		t.Error("expected first written result AllPassed=false (initial failure)")
+	}
+	if writtenResults[0].FixAttempted {
+		t.Error("expected first written result FixAttempted=false (initial attempt)")
+	}
+	if !writtenResults[1].AllPassed {
+		t.Error("expected second written result AllPassed=true (after fix)")
+	}
+	if !writtenResults[1].FixAttempted {
+		t.Error("expected second written result FixAttempted=true")
+	}
+}
+
+// TestRunRollupVerify_ExhaustsRetries verifies that RunRollupVerify returns
+// (false, nil) and leaves writeResult calls for each attempt when fix attempts
+// are exhausted without verify passing.
+func TestRunRollupVerify_ExhaustsRetries(t *testing.T) {
+	origRunner := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origRunner })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		// Always fails.
+		return &sandbox.RunResult{Stderr: "lint error", ExitCode: 1}, nil
+	}
+
+	origFixFn := verifyFixFn
+	t.Cleanup(func() { verifyFixFn = origFixFn })
+	verifyFixFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ *config.Config, _ *Prompts, _ map[string]string, _ *slog.Logger) (*Result, error) {
+		return &Result{TimedOut: false}, nil
+	}
+
+	const maxAttempts = 2
+	cfg := &config.Config{
+		LintCommand: "golint ./...",
+		Docker:      config.Docker{Image: "test:latest"},
+		Verify:      config.Verify{MaxFixAttempts: maxAttempts},
+	}
+
+	var writtenResults []rundata.VerifyStepResult
+	writeResult := func(step rundata.VerifyStepResult) error {
+		writtenResults = append(writtenResults, step)
+		return nil
+	}
+
+	passed, err := RunRollupVerify(context.Background(), 999, "rollup-branch", cfg, &Prompts{VerifyFix: "fix prompt"}, nil, slog.Default(), writeResult)
+	if err != nil {
+		t.Fatalf("RunRollupVerify() error = %v", err)
+	}
+	if passed {
+		t.Error("expected passed=false when all fix attempts exhausted")
+	}
+	// writeResult called 1 (initial) + maxAttempts (one per fix cycle) times.
+	wantWritten := 1 + maxAttempts
+	if len(writtenResults) != wantWritten {
+		t.Fatalf("expected %d written results, got %d", wantWritten, len(writtenResults))
+	}
+	// First result: initial attempt, no fix.
+	if writtenResults[0].AllPassed {
+		t.Error("expected writtenResults[0].AllPassed=false")
+	}
+	if writtenResults[0].FixAttempted {
+		t.Error("expected writtenResults[0].FixAttempted=false")
+	}
+	// Subsequent results: fix attempts, all failing.
+	for i := 1; i <= maxAttempts; i++ {
+		if writtenResults[i].AllPassed {
+			t.Errorf("expected writtenResults[%d].AllPassed=false", i)
+		}
+		if !writtenResults[i].FixAttempted {
+			t.Errorf("expected writtenResults[%d].FixAttempted=true", i)
+		}
 	}
 }

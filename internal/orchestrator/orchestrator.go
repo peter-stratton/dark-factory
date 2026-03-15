@@ -511,7 +511,7 @@ done:
 		cfg.AutoMerge.Rollup != config.RollupNone &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
 		runStats.implemented > 0 {
-		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter)
+		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
 		if err != nil {
 			logger.Warn("rollup PR handling failed", "error", err)
 			fmt.Printf("Rollup PR warning: %v\n", err)
@@ -634,11 +634,15 @@ var upsertRollupPRFn = github.UpsertRollupPR
 // Replaceable for testing.
 var mergeRollupPRFn = github.MergeRollupPR
 
+// runRollupVerifyFn runs the verify pipeline on the rollup branch.
+// Replaceable for testing.
+var runRollupVerifyFn = agent.RunRollupVerify
+
 // handleRollupPR creates (and optionally merges) a PR from cfg.BaseBranch
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
 // least one issue was implemented into the base branch during the run.
 // Returns the PR number, URL, and any error.
-func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter) (int, string, error) {
+func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
 	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
@@ -654,6 +658,22 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 	}
 
 	logger.Info("rollup PR upserted", "pr_number", prNum, "pr_url", prURL)
+
+	// Run the verify pipeline on the rollup branch before merge or human review.
+	var writeResult func(rundata.VerifyStepResult) error
+	if writer != nil {
+		writeResult = writer.WriteRollupVerifyResult
+	}
+	verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult)
+	if err != nil {
+		return 0, "", fmt.Errorf("rollup verify: %w", err)
+	}
+	if !verifyPassed {
+		logger.Warn("rollup verify failed after all fix attempts — leaving PR open for human intervention",
+			"pr_number", prNum, "pr_url", prURL)
+		reporter.RollupCreated(prNum, prURL, false)
+		return prNum, prURL, nil
+	}
 
 	if cfg.AutoMerge.Rollup == config.RollupAuto {
 		// Wait for CI checks before merging if configured.

@@ -1090,3 +1090,52 @@ func TestBaseBranchMissingInOldDataDeserializesCleanly(t *testing.T) {
 		t.Errorf("Repo = %q, want %q", meta.Repo, "owner/repo")
 	}
 }
+
+func TestWriteRollupVerifyResult(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := VerifyStepResult{
+		Attempt:   0,
+		AllPassed: true,
+		Checks: []CheckResult{
+			{Name: "build", Passed: true, ExitCode: 0},
+		},
+	}
+	if err := w.WriteRollupVerifyResult(step); err != nil {
+		t.Fatalf("WriteRollupVerifyResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "rollup", "verify-0.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected file at %s, got: %v", path, err)
+	}
+}
+
+func TestWriteRollupVerifyResultMultipleAttempts(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step0 := VerifyStepResult{Attempt: 0, AllPassed: false, FixAttempted: false}
+	if err := w.WriteRollupVerifyResult(step0); err != nil {
+		t.Fatalf("WriteRollupVerifyResult(attempt=0) error: %v", err)
+	}
+
+	step1 := VerifyStepResult{Attempt: 1, AllPassed: true, FixAttempted: true}
+	if err := w.WriteRollupVerifyResult(step1); err != nil {
+		t.Fatalf("WriteRollupVerifyResult(attempt=1) error: %v", err)
+	}
+
+	for _, name := range []string{"verify-0.json", "verify-1.json"} {
+		path := filepath.Join(w.Dir(), "rollup", name)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected file at %s, got: %v", path, err)
+		}
+	}
+}
