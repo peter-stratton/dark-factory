@@ -17,6 +17,7 @@ import (
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/logging"
+	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/spf13/cobra"
@@ -173,7 +174,7 @@ func pollOnce(ctx context.Context, cfg *config.Config, prompts *agent.Prompts, a
 				)
 
 				processed[review.ID] = true
-				handleApproved(cfg, pr, review, logger)
+				handleApproved(ctx, cfg, pr, review, logger)
 				break // PR is now merged; no further review processing for this PR
 			}
 		}
@@ -222,6 +223,16 @@ func handleChangesRequested(ctx context.Context, cfg *config.Config, prompts *ag
 		logger.Warn("failed to create run data writer", "err", writerErr)
 	}
 
+	// Open stats DB for this fix cycle; nil on failure (errors logged, never fatal).
+	statsDB := orchestrator.OpenStatsDB(logger)
+	if statsDB != nil {
+		defer func() {
+			if err := statsDB.Close(); err != nil {
+				logger.Warn("stats: failed to close database", "error", err)
+			}
+		}()
+	}
+
 	// finalizeWriter writes a completed run.json on all exit paths after writer creation.
 	succeeded := false
 	defer func() {
@@ -235,6 +246,7 @@ func handleChangesRequested(ctx context.Context, cfg *config.Config, prompts *ag
 		if err := writer.FinalizeRun(summary); err != nil {
 			logger.Warn("failed to finalize run", "err", err)
 		}
+		orchestrator.WriteRunStats(ctx, statsDB, cfg, writer, summary, logger)
 	}()
 
 	logger.Info("invoking implementer retry for human review",
@@ -278,7 +290,7 @@ func handleChangesRequested(ctx context.Context, cfg *config.Config, prompts *ag
 // issue, removes the godark:awaiting-human-review label, and writes run data.
 // On merge failure the error is logged and the label is left in place for
 // manual intervention.
-func handleApproved(cfg *config.Config, pr github.PRInfo, review github.PRReview, logger *slog.Logger) {
+func handleApproved(ctx context.Context, cfg *config.Config, pr github.PRInfo, review github.PRReview, logger *slog.Logger) {
 	issueNum := issueNumberFromBranch(pr.HeadRefName)
 	if issueNum == 0 {
 		logger.Warn("cannot extract issue number from branch, skipping merge",
@@ -306,6 +318,16 @@ func handleApproved(cfg *config.Config, pr github.PRInfo, review github.PRReview
 		logger.Warn("fetching issue for run data", "issue_number", issueNum, "err", err)
 	}
 
+	// Open stats DB for this approved-merge cycle; nil on failure (errors logged, never fatal).
+	statsDB := orchestrator.OpenStatsDB(logger)
+	if statsDB != nil {
+		defer func() {
+			if err := statsDB.Close(); err != nil {
+				logger.Warn("stats: failed to close database", "error", err)
+			}
+		}()
+	}
+
 	writer, writerErr := watchNewWriterFn(cfg.Repo, "", []int{issueNum}, cfg.BaseBranch, rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
 	if writerErr != nil {
 		logger.Warn("failed to create run data writer", "err", writerErr)
@@ -319,9 +341,11 @@ func handleApproved(cfg *config.Config, pr github.PRInfo, review github.PRReview
 		}); err != nil {
 			logger.Warn("failed to write outcome", "err", err)
 		}
-		if err := writer.FinalizeRun(rundata.RunSummary{Total: 1, Implemented: 1}); err != nil {
+		summary := rundata.RunSummary{Total: 1, Implemented: 1}
+		if err := writer.FinalizeRun(summary); err != nil {
 			logger.Warn("failed to finalize run", "err", err)
 		}
+		orchestrator.WriteRunStats(ctx, statsDB, cfg, writer, summary, logger)
 	}
 
 	logger.Info("approved PR merged and issue closed",

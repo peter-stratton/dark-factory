@@ -25,6 +25,7 @@ import (
 	"github.com/phs/dark-factory/internal/pypi"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
+	"github.com/phs/dark-factory/internal/stats"
 	"github.com/phs/dark-factory/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -232,6 +233,16 @@ func implementIssues(
 	reporter progress.ProgressReporter,
 	punchlistPath string,
 ) error {
+	// Open stats DB early; nil on failure (errors logged, never fatal).
+	statsDB := orchestrator.OpenStatsDB(logger)
+	if statsDB != nil {
+		defer func() {
+			if err := statsDB.Close(); err != nil {
+				logger.Warn("stats: failed to close database", "error", err)
+			}
+		}()
+	}
+
 	var implemented, readyToMerge, needsHumanReview, failed int
 	var punchlistEntries []punchlist.Entry
 
@@ -282,7 +293,7 @@ func implementIssues(
 	}
 
 	reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed, 0)
-	finalizeRunData(writer, implemented, readyToMerge, needsHumanReview, failed, logger)
+	finalizeRunData(ctx, writer, statsDB, cfg, implemented, readyToMerge, needsHumanReview, failed, logger)
 	finalizePunchlistEntries(ctx, punchlistEntries, writer, prompts, cfg, authEnv, logger, punchlistPath, reporter)
 
 	return nil
@@ -371,18 +382,22 @@ func buildPunchlistEntry(cfg *config.Config, issue github.Issue, outcome agent.I
 	}, true
 }
 
-// finalizeRunData writes a run summary to the run data writer.
-func finalizeRunData(writer *rundata.Writer, implemented, readyToMerge, needsHumanReview, failed int, logger *slog.Logger) {
+// finalizeRunData writes a run summary to the run data writer, then records
+// the run in the stats database. statsDB and cfg may be nil; both are no-ops
+// when absent.
+func finalizeRunData(ctx context.Context, writer *rundata.Writer, statsDB *stats.DB, cfg *config.Config, implemented, readyToMerge, needsHumanReview, failed int, logger *slog.Logger) {
 	if writer == nil {
 		return
 	}
-	if err := writer.FinalizeRun(rundata.RunSummary{
+	summary := rundata.RunSummary{
 		Total:       implemented + readyToMerge + needsHumanReview + failed,
 		Implemented: implemented,
 		Failed:      failed,
-	}); err != nil {
+	}
+	if err := writer.FinalizeRun(summary); err != nil {
 		logger.Warn("failed to finalize run data", "error", err)
 	}
+	orchestrator.WriteRunStats(ctx, statsDB, cfg, writer, summary, logger)
 }
 
 // finalizePunchlistEntries enriches, persists, and reports all accumulated punchlist entries.
