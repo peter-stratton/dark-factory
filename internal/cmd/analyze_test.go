@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/phs/dark-factory/internal/analysis"
 	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/phs/dark-factory/internal/stats"
 )
 
 // writeJSONFile marshals v and writes it to path, creating parent dirs as needed.
@@ -54,6 +57,43 @@ func analyzeWithReader(t *testing.T, base, repo, milestone, sinceStr, untilStr s
 	return buf.String(), err
 }
 
+// openTestDB opens an in-memory SQLite stats DB and registers cleanup.
+func openTestDB(t *testing.T) *stats.DB {
+	t.Helper()
+	db, err := stats.Open(":memory:")
+	if err != nil {
+		t.Fatalf("stats.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+// analyzeWithDB calls runAnalyzeDB with the given in-memory DB and returns stdout.
+func analyzeWithDB(t *testing.T, db *stats.DB, repo, milestone, sinceStr, untilStr string, jsonOut bool) (string, error) {
+	t.Helper()
+	since, until, err := parseDateRange(sinceStr, untilStr)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	err = runAnalyzeDB(&buf, db, nil, repo, milestone, since, until, jsonOut)
+	return buf.String(), err
+}
+
+// populateDB writes a RunRecord + IssueOutcomeRecords into db.
+func populateDB(t *testing.T, db *stats.DB, run stats.RunRecord, outcomes []stats.IssueOutcomeRecord) {
+	t.Helper()
+	ctx := context.Background()
+	if err := stats.WriteRun(ctx, db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	for _, o := range outcomes {
+		if err := stats.WriteIssueOutcome(ctx, db, o); err != nil {
+			t.Fatalf("WriteIssueOutcome issue=%d: %v", o.IssueNumber, err)
+		}
+	}
+}
+
 // TestAnalyzeCommandRegistered checks the analyze command is wired to root.
 func TestAnalyzeCommandRegistered(t *testing.T) {
 	names := make(map[string]bool)
@@ -67,7 +107,7 @@ func TestAnalyzeCommandRegistered(t *testing.T) {
 
 // TestAnalyzeCommandFlags verifies all required flags are present.
 func TestAnalyzeCommandFlags(t *testing.T) {
-	for _, name := range []string{"repo", "milestone", "since", "until", "json"} {
+	for _, name := range []string{"repo", "milestone", "since", "until", "json", "legacy"} {
 		if analyzeCmd.Flags().Lookup(name) == nil {
 			t.Errorf("analyze command missing flag --%s", name)
 		}
@@ -353,5 +393,240 @@ func TestSplitRepo(t *testing.T) {
 				t.Errorf("name = %q, want %q", name, tt.wantName)
 			}
 		})
+	}
+}
+
+// TestAnalyzeDB_EmptyDatabase: empty stats.db prints "No runs found", not an error.
+func TestAnalyzeDB_EmptyDatabase(t *testing.T) {
+	db := openTestDB(t)
+	out, err := analyzeWithDB(t, db, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "No runs found") {
+		t.Errorf("output = %q, want 'No runs found'", out)
+	}
+}
+
+// TestAnalyzeDB_DefaultReadsFromDB: populated stats.db produces a report.
+func TestAnalyzeDB_DefaultReadsFromDB(t *testing.T) {
+	db := openTestDB(t)
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	populateDB(t, db,
+		stats.RunRecord{ID: "run-1", Repo: "owner/repo", Milestone: "m1", StartedAt: ts},
+		[]stats.IssueOutcomeRecord{
+			{RunID: "run-1", IssueNumber: 1, Status: "implemented"},
+			{RunID: "run-1", IssueNumber: 2, Status: "failed"},
+		},
+	)
+
+	out, err := analyzeWithDB(t, db, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, want := range []string{
+		"Analyzed 1 runs, 2 issues",
+		"Outcomes",
+		"Flag Frequencies",
+		"Retry Stats",
+		"Cost Stats",
+		"Prompt Gaps",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+// TestAnalyzeDB_RepoFilter: --repo filter works against the database.
+func TestAnalyzeDB_RepoFilter(t *testing.T) {
+	db := openTestDB(t)
+	ts1 := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
+	ts2 := time.Date(2026, 1, 11, 10, 0, 0, 0, time.UTC)
+
+	populateDB(t, db,
+		stats.RunRecord{ID: "run-a", Repo: "org/repo-a", StartedAt: ts1},
+		[]stats.IssueOutcomeRecord{{RunID: "run-a", IssueNumber: 1, Status: "implemented"}},
+	)
+	populateDB(t, db,
+		stats.RunRecord{ID: "run-b", Repo: "org/repo-b", StartedAt: ts2},
+		[]stats.IssueOutcomeRecord{{RunID: "run-b", IssueNumber: 2, Status: "implemented"}},
+	)
+
+	out, err := analyzeWithDB(t, db, "org/repo-a", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "Analyzed 1 runs, 1 issues") {
+		t.Errorf("expected 1 run after repo filter, got:\n%s", out)
+	}
+}
+
+// TestAnalyzeDB_MilestoneFilter: --milestone filter works against the database.
+func TestAnalyzeDB_MilestoneFilter(t *testing.T) {
+	db := openTestDB(t)
+	ts1 := time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC)
+	ts2 := time.Date(2026, 2, 2, 10, 0, 0, 0, time.UTC)
+
+	populateDB(t, db,
+		stats.RunRecord{ID: "run-1", Repo: "org/repo", Milestone: "Phase 7", StartedAt: ts1},
+		[]stats.IssueOutcomeRecord{{RunID: "run-1", IssueNumber: 1, Status: "implemented"}},
+	)
+	populateDB(t, db,
+		stats.RunRecord{ID: "run-2", Repo: "org/repo", Milestone: "Phase 8", StartedAt: ts2},
+		[]stats.IssueOutcomeRecord{{RunID: "run-2", IssueNumber: 2, Status: "failed"}},
+	)
+
+	out, err := analyzeWithDB(t, db, "", "Phase 7", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "Analyzed 1 runs, 1 issues") {
+		t.Errorf("expected 1 run after milestone filter, got:\n%s", out)
+	}
+}
+
+// TestAnalyzeDB_DateFilter: --since/--until filters work against the database.
+func TestAnalyzeDB_DateFilter(t *testing.T) {
+	db := openTestDB(t)
+
+	dec := time.Date(2025, 12, 15, 10, 0, 0, 0, time.UTC)
+	jan := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+	feb := time.Date(2026, 2, 15, 10, 0, 0, 0, time.UTC)
+
+	for i, ts := range []time.Time{dec, jan, feb} {
+		issueNum := i + 1
+		runID := fmt.Sprintf("run-%d", i+1)
+		populateDB(t, db,
+			stats.RunRecord{ID: runID, Repo: "org/repo", Milestone: "m1", StartedAt: ts},
+			[]stats.IssueOutcomeRecord{{RunID: runID, IssueNumber: issueNum, Status: "implemented"}},
+		)
+	}
+
+	out, err := analyzeWithDB(t, db, "", "", "2026-01-01", "2026-02-01", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "Analyzed 1 runs, 1 issues") {
+		t.Errorf("expected 1 run (January only) after date filter, got:\n%s", out)
+	}
+}
+
+// TestAnalyzeDB_JSONOutput: --json flag produces valid JSON when reading from DB.
+func TestAnalyzeDB_JSONOutput(t *testing.T) {
+	db := openTestDB(t)
+	ts := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
+
+	populateDB(t, db,
+		stats.RunRecord{ID: "run-1", Repo: "org/repo", Milestone: "m1", StartedAt: ts},
+		[]stats.IssueOutcomeRecord{{RunID: "run-1", IssueNumber: 1, Status: "implemented"}},
+	)
+
+	out, err := analyzeWithDB(t, db, "", "", "", "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result struct {
+		Report analysis.Report      `json:"report"`
+		Gaps   []analysis.PromptGap `json:"gaps"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\noutput:\n%s", err, out)
+	}
+
+	if result.Report.RunCount != 1 {
+		t.Errorf("report.run_count = %d, want 1", result.Report.RunCount)
+	}
+	if result.Report.IssueCount != 1 {
+		t.Errorf("report.issue_count = %d, want 1", result.Report.IssueCount)
+	}
+}
+
+// TestAnalyzeDB_LegacyFlagUsesFilesystem: --legacy bypasses DB and reads filesystem.
+func TestAnalyzeDB_LegacyFlagUsesFilesystem(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	writeRunDir(t, base, "owner", "repo", rundata.RunMeta{
+		Repo: "owner/repo", Milestone: "m1", IssueNumbers: []int{1}, StartedAt: ts,
+	}, []rundata.Outcome{{IssueNumber: 1, Status: "implemented"}})
+
+	// Redirect the newAnalyzeReader seam to our test base.
+	orig := newAnalyzeReader
+	newAnalyzeReader = func(logger *slog.Logger) (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(base, logger), nil
+	}
+	defer func() { newAnalyzeReader = orig }()
+
+	// The DB has no runs; the filesystem has one. Using --legacy should find it.
+	cmd := analyzeCmd
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	// Parse flags fresh to avoid state leakage.
+	if err := cmd.Flags().Set("legacy", "true"); err != nil {
+		t.Fatalf("set --legacy: %v", err)
+	}
+	defer func() { _ = cmd.Flags().Set("legacy", "false") }()
+
+	// Reset other flags.
+	_ = cmd.Flags().Set("repo", "")
+	_ = cmd.Flags().Set("milestone", "")
+	_ = cmd.Flags().Set("since", "")
+	_ = cmd.Flags().Set("until", "")
+	_ = cmd.Flags().Set("json", "false")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Analyzed 1 runs, 1 issues") {
+		t.Errorf("--legacy did not use filesystem; output:\n%s", out)
+	}
+}
+
+// TestAnalyzeDB_CostFromSteps: step cost records flow through to report.
+func TestAnalyzeDB_CostFromSteps(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	if err := stats.WriteRun(ctx, db, stats.RunRecord{
+		ID: "run-1", Repo: "org/repo", Milestone: "m1", StartedAt: ts,
+	}); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	if err := stats.WriteIssueOutcome(ctx, db, stats.IssueOutcomeRecord{
+		RunID: "run-1", IssueNumber: 1, Status: "implemented",
+	}); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+	if err := stats.WriteStepResult(ctx, db, stats.StepResultRecord{
+		RunID: "run-1", IssueNumber: 1, StepName: "implement", CostUSD: 0.42,
+	}); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	out, err := analyzeWithDB(t, db, "", "", "", "", true)
+	if err != nil {
+		t.Fatalf("analyzeWithDB: %v", err)
+	}
+
+	var result struct {
+		Report analysis.Report `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput:\n%s", err, out)
+	}
+
+	if result.Report.CostStats.TotalUSD != 0.42 {
+		t.Errorf("TotalUSD = %v, want 0.42", result.Report.CostStats.TotalUSD)
 	}
 }
