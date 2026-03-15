@@ -1218,7 +1218,7 @@ func buildFailureReasonRows(report analysis.Report) []FailureReasonRow {
 		if rows[i].Count != rows[j].Count {
 			return rows[i].Count > rows[j].Count
 		}
-		return rows[i].Reason < rows[j].Reason
+		return rows[i].Reason > rows[j].Reason
 	})
 	return rows
 }
