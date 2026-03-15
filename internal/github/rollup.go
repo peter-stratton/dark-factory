@@ -74,6 +74,23 @@ func UpsertRollupPR(repo, baseBranch, defaultBranch, title, body string) (int, s
 	return num, url, nil
 }
 
+// MergeFeaturePR merges a feature PR with squash and deletes the branch. An
+// error is returned when gh pr merge fails. This is used by the watch command
+// when an APPROVED review is detected; it mirrors the merge mechanics used by
+// the orchestrator (squash + delete branch).
+func MergeFeaturePR(repo string, prNum int) error {
+	_, err := CommandRunner("gh", "pr", "merge",
+		strconv.Itoa(prNum),
+		"--repo", repo,
+		"--squash",
+		"--delete-branch",
+	)
+	if err != nil {
+		return fmt.Errorf("gh pr merge: %w", err)
+	}
+	return nil
+}
+
 // MergeRollupPR merges the given PR with squash. An error is returned when
 // gh pr merge fails.
 func MergeRollupPR(repo string, prNum int) error {
