@@ -264,6 +264,13 @@ func printAnalyzeJSON(w io.Writer, report analysis.Report, gaps []analysis.Promp
 func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.PromptGap) {
 	fmt.Fprintf(w, "Analyzed %d runs, %d issues\n", report.RunCount, report.IssueCount)
 
+	// Overview section.
+	fmt.Fprintf(w, "\nOverview\n")
+	fmt.Fprintf(w, "  First-pass success rate:  %.1f%%\n", report.FirstPassSuccessRate*100)
+	fmt.Fprintf(w, "  Avg cost per success:     $%.2f\n", report.AvgCostPerSuccessUSD)
+	fmt.Fprintf(w, "  Wasted cost:              $%.2f\n", report.WastedCostUSD)
+	fmt.Fprintf(w, "  Timeout rate:             %.1f%%\n", report.TimeoutRate*100)
+
 	// Outcome table.
 	fmt.Fprintf(w, "\nOutcomes\n")
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -300,8 +307,9 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "\nRetry Stats\n")
 	fmt.Fprintf(w, "  Avg per issue:  %.2f\n", report.RetryStats.AvgPerIssue)
 	fmt.Fprintf(w, "  Max retries:    %d\n", report.RetryStats.MaxRetries)
-	fmt.Fprintf(w, "  Exhausted:      %d\n", report.RetryStats.ExhaustedCount)
 	fmt.Fprintf(w, "  Recovery rate:  %.1f%%\n", report.RetryStats.RecoveryRate*100)
+
+	printFailureReasons(w, report)
 
 	// Cost stats.
 	fmt.Fprintf(w, "\nCost Stats\n")
@@ -315,6 +323,7 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "\nDuration Stats\n")
 	fmt.Fprintf(w, "  Avg implement duration: %s\n", formatDuration(report.DurationStats.AvgImplementSeconds))
 	fmt.Fprintf(w, "  Avg review duration:    %s\n", formatDuration(report.DurationStats.AvgReviewSeconds))
+	fmt.Fprintf(w, "  Avg time to merge:      %s\n", formatDuration(report.DurationStats.AvgTimeToMergeSeconds))
 
 	printDurationByStep(w, report)
 	printRepoStats(w, report)
@@ -406,10 +415,10 @@ func printRepoStats(w io.Writer, report analysis.Report) {
 	}
 	sort.Strings(repoNames)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "  Repo\tTotal\tImplemented\tFailed\tSuccess Rate\n")
+	fmt.Fprintf(tw, "  Repo\tTotal\tImplemented\tFailed\tSuccess Rate\tFirst-pass\tAvg cost\n")
 	for _, repo := range repoNames {
 		rs := report.RepoStats[repo]
-		fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\t%.1f%%\n", repo, rs.Total, rs.Implemented, rs.Failed, rs.SuccessRate*100)
+		fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\t%.1f%%\t%.1f%%\t$%.2f\n", repo, rs.Total, rs.Implemented, rs.Failed, rs.SuccessRate*100, rs.FirstPassRate*100, rs.AvgCostPerIssueUSD)
 	}
 	_ = tw.Flush()
 }
@@ -434,6 +443,37 @@ func printVerifyStats(w io.Writer, report analysis.Report) {
 			pct = float64(count) / float64(report.IssueCount) * 100
 		}
 		fmt.Fprintf(tw, "  %s\t%d\t%.1f%%\n", check, count, pct)
+	}
+	_ = tw.Flush()
+}
+
+// printFailureReasons writes the "Failure Reasons" section to w.
+// Only non-zero rows are shown. The canonical order is: verify, exhaustion, timeout, error.
+func printFailureReasons(w io.Writer, report analysis.Report) {
+	canonicalOrder := []string{"verify", "exhaustion", "timeout", "error"}
+	hasAny := false
+	for _, reason := range canonicalOrder {
+		if report.FailureReasons[reason] > 0 {
+			hasAny = true
+			break
+		}
+	}
+	if !hasAny {
+		return
+	}
+	fmt.Fprintf(w, "\nFailure Reasons\n")
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Reason\tCount\tPercent\n")
+	for _, reason := range canonicalOrder {
+		count := report.FailureReasons[reason]
+		if count == 0 {
+			continue
+		}
+		var pct float64
+		if report.IssueCount > 0 {
+			pct = float64(count) / float64(report.IssueCount) * 100
+		}
+		fmt.Fprintf(tw, "  %s\t%d\t%.1f%%\n", reason, count, pct)
 	}
 	_ = tw.Flush()
 }
