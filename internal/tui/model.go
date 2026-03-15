@@ -65,23 +65,7 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			if m.done {
-				return m, tea.Quit
-			}
-			// During an active run, cancel the orchestrator context and wait
-			// for RunDoneMsg before exiting.
-			if !m.cancelling && m.cancelFn != nil {
-				m.cancelling = true
-				m.cancelFn()
-			}
-			return m, nil
-		case "q", "esc":
-			if m.done {
-				return m, tea.Quit
-			}
-		}
+		return m.handleKey(msg)
 
 	case RunDoneMsg:
 		m.done = true
@@ -97,21 +81,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case IssueStartedMsg:
-		if m.issueIndex == nil {
-			m.issueIndex = make(map[int]int)
-		}
-		// Only add if not already present (RunStartedMsg may have pre-populated).
-		if _, exists := m.issueIndex[msg.Number]; !exists {
-			m.issueIndex[msg.Number] = len(m.issues)
-			m.issues = append(m.issues, issueRow{
-				number: msg.Number,
-				title:  msg.Title,
-			})
-		}
-		// Decrement queued since this issue is now in progress.
-		if m.queued > 0 {
-			m.queued--
-		}
+		m.handleIssueStarted(msg)
 
 	case IssueStageChangedMsg:
 		if idx, ok := m.issueIndex[msg.Number]; ok {
@@ -119,47 +89,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case IssueCompletedMsg:
-		if idx, ok := m.issueIndex[msg.Number]; ok {
-			m.issues[idx].status = msg.Status
-			m.issues[idx].prNumber = msg.PRNumber
-			m.issues[idx].retries = msg.Retries
-			m.issues[idx].errMsg = msg.ErrMsg
-			// Update summary counts incrementally.
-			switch msg.Status {
-			case "implemented":
-				m.merged++
-			case "ready-to-merge", "needs-human-review":
-				m.inReview++
-			case "failed":
-				m.failed++
-			}
-		}
+		m.handleIssueCompleted(msg)
 
 	case RunStartedMsg:
-		m.repo = msg.Repo
-		m.milestone = msg.Milestone
-		m.timestamp = msg.Timestamp
-		m.baseBranch = msg.BaseBranch
-		if msg.MergeFeature != "" || msg.MergeRollup != "" {
-			m.autoMerge = &autoMerge{
-				feature: msg.MergeFeature,
-				rollup:  msg.MergeRollup,
-			}
-		}
-		// Populate all issue rows as queued so the full list is visible immediately.
-		if m.issueIndex == nil {
-			m.issueIndex = make(map[int]int)
-		}
-		for _, iss := range msg.Issues {
-			if _, exists := m.issueIndex[iss.Number]; !exists {
-				m.issueIndex[iss.Number] = len(m.issues)
-				m.issues = append(m.issues, issueRow{
-					number: iss.Number,
-					title:  iss.Title,
-				})
-			}
-		}
-		m.queued = len(m.issues)
+		m.handleRunStarted(msg)
 
 	case WaveStartedMsg:
 		// Wave metadata is informational; no per-row state changes here.
@@ -227,4 +160,88 @@ func New(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup strin
 		}
 	}
 	return m
+}
+
+// handleKey processes key presses. During an active run, ctrl+c cancels the
+// orchestrator. Once done, q/esc/ctrl+c exit the TUI.
+func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		if m.done {
+			return m, tea.Quit
+		}
+		if !m.cancelling && m.cancelFn != nil {
+			m.cancelling = true
+			m.cancelFn()
+		}
+	case "q", "esc":
+		if m.done {
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+// handleIssueStarted adds a new issue row or skips if already pre-populated.
+func (m *Model) handleIssueStarted(msg IssueStartedMsg) {
+	if m.issueIndex == nil {
+		m.issueIndex = make(map[int]int)
+	}
+	if _, exists := m.issueIndex[msg.Number]; !exists {
+		m.issueIndex[msg.Number] = len(m.issues)
+		m.issues = append(m.issues, issueRow{
+			number: msg.Number,
+			title:  msg.Title,
+		})
+	}
+	if m.queued > 0 {
+		m.queued--
+	}
+}
+
+// handleIssueCompleted updates the issue row and increments summary counts.
+func (m *Model) handleIssueCompleted(msg IssueCompletedMsg) {
+	idx, ok := m.issueIndex[msg.Number]
+	if !ok {
+		return
+	}
+	m.issues[idx].status = msg.Status
+	m.issues[idx].prNumber = msg.PRNumber
+	m.issues[idx].retries = msg.Retries
+	m.issues[idx].errMsg = msg.ErrMsg
+	switch msg.Status {
+	case "implemented":
+		m.merged++
+	case "ready-to-merge", "needs-human-review":
+		m.inReview++
+	case "failed":
+		m.failed++
+	}
+}
+
+// handleRunStarted populates header metadata and pre-fills the issue table.
+func (m *Model) handleRunStarted(msg RunStartedMsg) {
+	m.repo = msg.Repo
+	m.milestone = msg.Milestone
+	m.timestamp = msg.Timestamp
+	m.baseBranch = msg.BaseBranch
+	if msg.MergeFeature != "" || msg.MergeRollup != "" {
+		m.autoMerge = &autoMerge{
+			feature: msg.MergeFeature,
+			rollup:  msg.MergeRollup,
+		}
+	}
+	if m.issueIndex == nil {
+		m.issueIndex = make(map[int]int)
+	}
+	for _, iss := range msg.Issues {
+		if _, exists := m.issueIndex[iss.Number]; !exists {
+			m.issueIndex[iss.Number] = len(m.issues)
+			m.issues = append(m.issues, issueRow{
+				number: iss.Number,
+				title:  iss.Title,
+			})
+		}
+	}
+	m.queued = len(m.issues)
 }
