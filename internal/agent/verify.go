@@ -17,6 +17,10 @@ import (
 // Replaceable for testing.
 var sandboxRunContainer = sandbox.RunContainer
 
+// verifyFixFn is a testability seam for VerifyFix.
+// Replaceable for testing.
+var verifyFixFn = VerifyFix
+
 // Check defines a single verification command to run.
 type Check struct {
 	Name    string // "build", "lint", or "test"
@@ -203,7 +207,7 @@ func RunRollupVerify(
 			"max_attempts", cfg.Verify.MaxFixAttempts,
 		)
 
-		fixResult, err := VerifyFix(ctx, rollupIssue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
+		fixResult, err := verifyFixFn(ctx, rollupIssue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
 		if err != nil {
 			return false, fmt.Errorf("rollup verify-fix agent: %w", err)
 		}
