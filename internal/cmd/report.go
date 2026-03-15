@@ -21,7 +21,7 @@ var newReportDB = func() (*stats.DB, error) {
 	}
 	dbPath := filepath.Join(home, ".godark", "stats.db")
 	if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
-		return nil, fmt.Errorf("No stats database found. Run `godark run` or `godark implement` first.")
+		return nil, fmt.Errorf("no stats database found; run `godark run` or `godark implement` first")
 	}
 	return stats.Open(dbPath)
 }
