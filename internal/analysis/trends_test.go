@@ -300,6 +300,144 @@ func TestComputeTrendsDurationMultipleIssuesAverage(t *testing.T) {
 	}
 }
 
+func TestComputeTrendsFirstPassSuccessRateAllFirstPass(t *testing.T) {
+	// 5 issues, 0 retries, all implemented — FirstPassSuccessRate is 1.0
+	finishedAt := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{FinishedAt: &finishedAt},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 1 {
+		t.Fatalf("len(ComputeTrends) = %d, want 1", len(got))
+	}
+	if !nearlyEqual(got[0].FirstPassSuccessRate, 1.0, 0.0001) {
+		t.Errorf("FirstPassSuccessRate = %f, want 1.0", got[0].FirstPassSuccessRate)
+	}
+}
+
+func TestComputeTrendsFirstPassSuccessRateMixed(t *testing.T) {
+	// 3 first-pass, 2 retried — FirstPassSuccessRate is 0.6
+	finishedAt := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{FinishedAt: &finishedAt},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{
+					Outcome: rundata.Outcome{Status: "implemented"},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+				{
+					Outcome: rundata.Outcome{Status: "implemented"},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 1 {
+		t.Fatalf("len(ComputeTrends) = %d, want 1", len(got))
+	}
+	if !nearlyEqual(got[0].FirstPassSuccessRate, 0.6, 0.0001) {
+		t.Errorf("FirstPassSuccessRate = %f, want 0.6", got[0].FirstPassSuccessRate)
+	}
+}
+
+func TestComputeTrendsFirstPassSuccessRateMultipleRuns(t *testing.T) {
+	// Each run has its own independent first-pass rate.
+	t1 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{StartedAt: t1, FinishedAt: ptr(t1)},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+			},
+		},
+		{
+			RunMeta: rundata.RunMeta{StartedAt: t2, FinishedAt: ptr(t2)},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: "implemented"}},
+				{
+					Outcome: rundata.Outcome{Status: "implemented"},
+					Retries: []rundata.RetryDetail{{Attempt: 0}},
+				},
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 2 {
+		t.Fatalf("len(ComputeTrends) = %d, want 2", len(got))
+	}
+	if !nearlyEqual(got[0].FirstPassSuccessRate, 1.0, 0.0001) {
+		t.Errorf("got[0].FirstPassSuccessRate = %f, want 1.0", got[0].FirstPassSuccessRate)
+	}
+	if !nearlyEqual(got[1].FirstPassSuccessRate, 0.5, 0.0001) {
+		t.Errorf("got[1].FirstPassSuccessRate = %f, want 0.5", got[1].FirstPassSuccessRate)
+	}
+}
+
+func TestComputeTrendsFirstPassSuccessRateEmptyRun(t *testing.T) {
+	// Run with 0 finished issues — rate is 0.0
+	finishedAt := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{FinishedAt: &finishedAt},
+			Issues:  []rundata.IssueDetail{},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 1 {
+		t.Fatalf("len(ComputeTrends) = %d, want 1", len(got))
+	}
+	if got[0].FirstPassSuccessRate != 0.0 {
+		t.Errorf("FirstPassSuccessRate = %f, want 0.0", got[0].FirstPassSuccessRate)
+	}
+}
+
+func TestComputeTrendsFirstPassSuccessRateReadyToMerge(t *testing.T) {
+	// "ready-to-merge" status also counts as first-pass success.
+	finishedAt := time.Now()
+	runs := []rundata.RunDetail{
+		{
+			RunMeta: rundata.RunMeta{FinishedAt: &finishedAt},
+			Issues: []rundata.IssueDetail{
+				{Outcome: rundata.Outcome{Status: "ready-to-merge"}},
+				{Outcome: rundata.Outcome{Status: "failed"}},
+			},
+		},
+	}
+
+	got := ComputeTrends(runs)
+
+	if len(got) != 1 {
+		t.Fatalf("len(ComputeTrends) = %d, want 1", len(got))
+	}
+	if !nearlyEqual(got[0].FirstPassSuccessRate, 0.5, 0.0001) {
+		t.Errorf("FirstPassSuccessRate = %f, want 0.5", got[0].FirstPassSuccessRate)
+	}
+}
+
 func TestComputeTrendsMetaFields(t *testing.T) {
 	finishedAt := time.Now()
 	ts := time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC)
