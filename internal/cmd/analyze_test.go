@@ -76,7 +76,7 @@ func analyzeWithDB(t *testing.T, db *stats.DB, repo, milestone, sinceStr, untilS
 		return "", err
 	}
 	var buf bytes.Buffer
-	err = runAnalyzeDB(&buf, db, nil, repo, milestone, since, until, jsonOut)
+	err = runAnalyzeDB(&buf, db, repo, milestone, since, until, jsonOut)
 	return buf.String(), err
 }
 
