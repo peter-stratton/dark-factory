@@ -57,14 +57,15 @@ func renderTable(rows []issueRow, spin spinner.Model, width int) string {
 	return out
 }
 
-// renderRow renders a single issue row.
+// renderRow renders a single issue row with the badge right-aligned to a
+// consistent column so badges form a clean vertical edge.
 func renderRow(row issueRow, spin spinner.Model, width int) string {
 	marker := markerFor(row, spin)
 	num := rowNumberStyle.Render(fmt.Sprintf("#%d", row.number))
 
-	// Reserve space for: marker(1) + space(1) + "#NNN"(≤6) + space(1) + stage(≤10) + space(1) = ~20
-	// Approximate title column width from terminal width.
-	titleWidth := width - 22
+	// Reserve space for badge (~12 chars with padding) and gutters.
+	badgeReserved := 14
+	titleWidth := width - 22 - badgeReserved
 	if titleWidth < 10 {
 		titleWidth = 10
 	}
@@ -72,10 +73,20 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 
 	badge := badgeFor(row)
 
-	line := marker + " " + num + " " + title
-	if badge != "" {
-		line += "  " + badge
+	left := marker + " " + num + " " + title
+	leftWidth := lipgloss.Width(left)
+
+	// Pad between title and badge so badges align at a consistent column.
+	badgeCol := width - badgeReserved
+	if badgeCol < leftWidth+2 {
+		badgeCol = leftWidth + 2
 	}
+	gap := badgeCol - leftWidth
+	if gap < 2 {
+		gap = 2
+	}
+
+	line := left + strings.Repeat(" ", gap) + badge
 
 	if row.errMsg != "" {
 		line += " " + rowErrStyle.Render(row.errMsg)
