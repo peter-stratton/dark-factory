@@ -225,6 +225,16 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // the closed set is refreshed and dependencies re-resolved so that newly
 // unblocked issues can be processed in the same run.
 func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
+	// Open stats DB early; nil on failure (errors logged, never fatal).
+	statsDB := OpenStatsDB(logger)
+	if statsDB != nil {
+		defer func() {
+			if err := statsDB.Close(); err != nil {
+				logger.Warn("stats: failed to close database", "error", err)
+			}
+		}()
+	}
+
 	// Initial categorization.
 	processable, blocked := categorizeIssues(allIssues, closedSet)
 
@@ -287,8 +297,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 	baseBranch := cfg.EffectiveBaseBranch()
 
-	// Track stats across all waves.
-	var stats struct {
+	// Track run counters across all waves.
+	var runStats struct {
 		implemented      int
 		readyToMerge     int
 		needsHumanReview int
@@ -395,23 +405,23 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 			switch outcome.Status {
 			case agent.StatusImplemented:
-				stats.implemented++
+				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
 				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "")
 				if err := PullAfterMerge(baseBranch, logger); err != nil {
 					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
-					stats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
+					runStats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
 					goto done
 				}
 				merged = true
 			case agent.StatusReadyToMerge:
-				stats.readyToMerge++
+				runStats.readyToMerge++
 				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "")
 			case agent.StatusNeedsHumanReview:
-				stats.needsHumanReview++
+				runStats.needsHumanReview++
 				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "")
 			default:
-				stats.failed++
+				runStats.failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
@@ -488,8 +498,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 done:
-	stats.blocked = len(blocked)
-	reporter.RunFinished(stats.implemented, stats.readyToMerge, stats.needsHumanReview, stats.failed, stats.blocked)
+	runStats.blocked = len(blocked)
+	reporter.RunFinished(runStats.implemented, runStats.readyToMerge, runStats.needsHumanReview, runStats.failed, runStats.blocked)
 
 	// Rollup PR: create (and optionally merge) a PR from the base branch back
 	// to the default branch when the run completed cleanly, used a non-default
@@ -497,10 +507,10 @@ done:
 	defaultBranch := cfg.EffectiveDefaultBranch(cfg.Repo)
 	var rollupPRNumber int
 	var rollupPRURL string
-	if stats.abortReason == "" &&
+	if runStats.abortReason == "" &&
 		cfg.AutoMerge.Rollup != config.RollupNone &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
-		stats.implemented > 0 {
+		runStats.implemented > 0 {
 		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter)
 		if err != nil {
 			logger.Warn("rollup PR handling failed", "error", err)
@@ -512,36 +522,37 @@ done:
 	}
 
 	// Fire abort notification if the run stopped early.
-	if stats.abortReason != "" {
+	if runStats.abortReason != "" {
 		notify.Fire(ctx, notifiers, notify.Event{
 			Type:    "abort",
 			Repo:    cfg.Repo,
-			Message: fmt.Sprintf("Run aborted: %s", stats.abortReason),
+			Message: fmt.Sprintf("Run aborted: %s", runStats.abortReason),
 		}, logger)
 	}
 
 	// Finalize run data.
 	if writer != nil {
 		summary := rundata.RunSummary{
-			Total:         stats.implemented + stats.readyToMerge + stats.needsHumanReview + stats.failed,
-			Implemented:   stats.implemented,
-			Failed:        stats.failed,
-			AbortReason:   stats.abortReason,
+			Total:          runStats.implemented + runStats.readyToMerge + runStats.needsHumanReview + runStats.failed,
+			Implemented:    runStats.implemented,
+			Failed:         runStats.failed,
+			AbortReason:    runStats.abortReason,
 			RollupPRNumber: rollupPRNumber,
-			RollupPRURL:   rollupPRURL,
+			RollupPRURL:    rollupPRURL,
 		}
 		if err := writer.FinalizeRun(summary); err != nil {
 			logger.Warn("failed to finalize run data", "error", err)
 		}
+		WriteRunStats(ctx, statsDB, cfg, writer, summary, logger)
 	}
 
 	// Fire run_complete notification after finalization — only when not aborted.
-	if stats.abortReason == "" {
+	if runStats.abortReason == "" {
 		notify.Fire(ctx, notifiers, notify.Event{
 			Type: "run_complete",
 			Repo: cfg.Repo,
 			Message: fmt.Sprintf("%d implemented, %d failed, %d blocked",
-				stats.implemented, stats.failed, stats.blocked),
+				runStats.implemented, runStats.failed, runStats.blocked),
 		}, logger)
 	}
 

@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -32,4 +33,9 @@ func Open(path string) (*DB, error) {
 // Close closes the database connection.
 func (d *DB) Close() error {
 	return d.db.Close()
+}
+
+// BeginTx begins a new database transaction.
+func (d *DB) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	return d.db.BeginTx(ctx, nil)
 }
