@@ -227,6 +227,90 @@ func TestHandleIssueCompletedZeroCostUnchanged(t *testing.T) {
 	}
 }
 
+// --- Watch-mode tests ---
+
+func TestWatchingMsgSetsWatchingTrue(t *testing.T) {
+	m := Model{}
+	next, cmd := m.Update(WatchingMsg{})
+	if cmd != nil {
+		t.Errorf("Update(WatchingMsg): expected nil cmd, got %v", cmd)
+	}
+	updated, ok := next.(Model)
+	if !ok {
+		t.Fatalf("Update returned wrong type: %T", next)
+	}
+	if !updated.watching {
+		t.Error("watching should be true after WatchingMsg")
+	}
+	if updated.done {
+		t.Error("done should remain false after WatchingMsg")
+	}
+}
+
+func TestWatchingMsgHintText(t *testing.T) {
+	m := Model{watching: true}
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "watching for merges") {
+		t.Errorf("View during watch mode: hint should contain 'watching for merges'\ngot: %q", got)
+	}
+}
+
+func TestWatchingCancellingHintOverridesWatch(t *testing.T) {
+	m := Model{watching: true, cancelling: true}
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "cancelling") {
+		t.Errorf("View during cancelling: hint should contain 'cancelling'\ngot: %q", got)
+	}
+	if strings.Contains(got, "watching for merges") {
+		t.Errorf("View during cancelling: 'watching for merges' should not appear when cancelling\ngot: %q", got)
+	}
+}
+
+func TestIssueStartedDuringWatchAddsRow(t *testing.T) {
+	m := Model{watching: true, issueIndex: map[int]int{}}
+	next, _ := m.Update(IssueStartedMsg{Number: 99, Title: "new issue in watch mode"})
+	updated := next.(Model)
+	if _, exists := updated.issueIndex[99]; !exists {
+		t.Error("IssueStartedMsg during watch mode should add a new row")
+	}
+	if len(updated.issues) != 1 {
+		t.Errorf("expected 1 issue row, got %d", len(updated.issues))
+	}
+}
+
+func TestCtrlCDuringWatchSetsCancelling(t *testing.T) {
+	cancelled := false
+	m := Model{
+		watching: true,
+		cancelFn: func() { cancelled = true },
+	}
+	next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated := next.(Model)
+	if !updated.cancelling {
+		t.Error("ctrl+c during watch mode should set cancelling = true")
+	}
+	if !cancelled {
+		t.Error("ctrl+c during watch mode should invoke cancelFn")
+	}
+}
+
+func TestRunDoneDuringWatchSetsDone(t *testing.T) {
+	m := Model{watching: true}
+	next, _ := m.Update(RunDoneMsg{})
+	updated := next.(Model)
+	if !updated.done {
+		t.Error("RunDoneMsg during watch mode should set done = true")
+	}
+}
+
+func TestRunDoneDuringWatchHintShowsQuit(t *testing.T) {
+	m := Model{watching: true, done: true}
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "press q to exit") {
+		t.Errorf("View after RunDone: should show 'press q to exit'\ngot: %q", got)
+	}
+}
+
 func TestModelUpdateAccumulatesCostViaTUIUpdate(t *testing.T) {
 	m := Model{
 		issueIndex: map[int]int{42: 0},

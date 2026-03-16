@@ -43,6 +43,7 @@ type Model struct {
 
 	// Run lifecycle.
 	done       bool          // true after the orchestrator finishes
+	watching   bool          // true while in watch mode (between run and done)
 	cancelling bool          // true after user requests cancellation
 	cancelFn   func()        // cancels the orchestrator context
 
@@ -66,6 +67,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case WatchingMsg:
+		m.watching = true
+		return m, nil
 
 	case RunDoneMsg:
 		m.done = true
@@ -125,6 +130,8 @@ func (m Model) View() string {
 		hint = "\n\n" + headerLabelStyle.Render("press q to exit")
 	} else if m.cancelling {
 		hint = "\n\n" + summaryFailedStyle.Render("cancelling... waiting for current issue to finish")
+	} else if m.watching {
+		hint = "\n\n" + headerLabelStyle.Render("watching for merges · press ctrl+c to cancel")
 	} else {
 		hint = "\n\n" + headerLabelStyle.Render("press ctrl+c to cancel")
 	}
