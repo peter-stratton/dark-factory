@@ -89,8 +89,8 @@ func TestOpenStatsDBAtMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing database, got nil")
 	}
-	if !strings.Contains(err.Error(), "No stats database found") {
-		t.Errorf("error = %q, want to contain 'No stats database found'", err.Error())
+	if !strings.Contains(err.Error(), "no stats database found") {
+		t.Errorf("error = %q, want to contain 'no stats database found'", err.Error())
 	}
 	if !strings.Contains(err.Error(), "godark run") && !strings.Contains(err.Error(), "godark implement") {
 		t.Errorf("error = %q, want to mention 'godark run' or 'godark implement'", err.Error())
@@ -118,8 +118,8 @@ func TestReportMissingDatabase(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing database, got nil")
 	}
-	if !strings.Contains(err.Error(), "No stats database found") {
-		t.Errorf("error = %q, want to contain 'No stats database found'", err.Error())
+	if !strings.Contains(err.Error(), "no stats database found") {
+		t.Errorf("error = %q, want to contain 'no stats database found'", err.Error())
 	}
 	if !strings.Contains(err.Error(), "godark run") && !strings.Contains(err.Error(), "godark implement") {
 		t.Errorf("error = %q, want to mention 'godark run' or 'godark implement'", err.Error())
