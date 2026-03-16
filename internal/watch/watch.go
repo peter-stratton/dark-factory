@@ -62,7 +62,7 @@ func (w *Watch) RunUntilDone(ctx context.Context) error {
 	if listErr != nil && ctx.Err() == nil {
 		w.logger.Error("listing PRs after poll", "err", listErr)
 	}
-	if len(prs) == 0 {
+	if listErr == nil && len(prs) == 0 {
 		w.logger.Info("no PRs awaiting review, watch exiting")
 		return nil
 	}
@@ -83,7 +83,7 @@ func (w *Watch) RunUntilDone(ctx context.Context) error {
 			if listErr != nil && ctx.Err() == nil {
 				w.logger.Error("listing PRs after poll", "err", listErr)
 			}
-			if len(prs) == 0 {
+			if listErr == nil && len(prs) == 0 {
 				w.logger.Info("no PRs awaiting review, watch exiting")
 				return nil
 			}
