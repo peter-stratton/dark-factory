@@ -301,24 +301,39 @@ type CLIFlags struct {
 // phasePattern matches "Phase N" at the start of a milestone title (case-insensitive).
 var phasePattern = regexp.MustCompile(`(?i)^phase\s+(\d+)`)
 
-// milestoneSlug converts a milestone title to a URL-safe slug.
+// invalidBranchChars matches any character that is not a lowercase letter,
+// digit, or hyphen — all are forbidden in git ref names (git check-ref-format).
+var invalidBranchChars = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// repeatedHyphens collapses two or more consecutive hyphens into one.
+var repeatedHyphens = regexp.MustCompile(`-{2,}`)
+
+// milestoneSlug converts a milestone title to a git-safe slug.
 // "Phase 23: Watch & Daemon Mode" → "phase-23"
-// Falls back to a lowercase-hyphenated slug when no "Phase N" prefix is found.
+// Falls back to a lowercase-hyphenated slug when no "Phase N" prefix is found,
+// stripping any characters that git check-ref-format would reject.
 func milestoneSlug(milestone string) string {
 	if m := phasePattern.FindStringSubmatch(milestone); m != nil {
 		return "phase-" + m[1]
 	}
-	return strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(milestone))
+	// Lower-case and replace common separators with hyphens first.
+	s := strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(milestone))
+	// Strip any remaining characters invalid in git ref names.
+	s = invalidBranchChars.ReplaceAllString(s, "-")
+	// Collapse repeated hyphens and trim leading/trailing hyphens.
+	s = repeatedHyphens.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	return s
 }
 
 // ResolveBranch returns the effective base branch name for a run.
-// When BaseBranch is explicitly set it is returned as-is (including the empty
-// string, which means "direct-to-default branch, no rollup PR").
-// When BaseBranch is empty and a milestone is provided, an auto-generated
-// branch name like "godark/phase-23" is returned.
-// For implement runs without a milestone, issueNums produces "godark/issue-42"
+// When BaseBranch is explicitly set (non-empty) it is returned as-is.
+// When BaseBranch is empty, auto-generation is attempted: a milestone produces
+// a branch like "godark/phase-23", and issueNums produces "godark/issue-42"
 // (single issue) or "godark/issues-42-43" (multiple issues).
-// Returns "" when nothing can be auto-generated.
+// To opt out of auto-generation and merge directly to the default branch,
+// set base_branch to the repo's default branch name (e.g. "main") explicitly.
+// Returns "" when BaseBranch is empty and nothing can be auto-generated.
 func (c *Config) ResolveBranch(milestone string, issueNums []int) string {
 	if c.BaseBranch != "" {
 		return c.BaseBranch
