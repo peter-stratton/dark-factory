@@ -141,5 +141,18 @@ func TestNoOpMethods(t *testing.T) {
 	}
 }
 
+func TestRunAborted_PrintsReasonLine(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextReporter(&buf)
+	r.RunAborted("API rate limit reached, resets 5pm (UTC)")
+	got := buf.String()
+	if !strings.Contains(got, "Run aborted:") {
+		t.Errorf("expected 'Run aborted:' in output, got %q", got)
+	}
+	if !strings.Contains(got, "resets 5pm (UTC)") {
+		t.Errorf("expected reset time in output, got %q", got)
+	}
+}
+
 // Verify TextReporter satisfies the ProgressReporter interface at compile time.
 var _ ProgressReporter = (*TextReporter)(nil)

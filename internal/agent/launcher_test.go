@@ -331,3 +331,51 @@ func TestRun_NoSandbox_TimedOut_HasTiming(t *testing.T) {
 		t.Error("FinishedAt should be non-zero even for timed-out runs")
 	}
 }
+
+func TestIsRateLimitResult_DetectsHitYourLimit(t *testing.T) {
+	if !isRateLimitResult("You've hit your limit · resets 5pm (UTC)") {
+		t.Error("expected true for rate limit message")
+	}
+}
+
+func TestIsRateLimitResult_FalseForNormalResult(t *testing.T) {
+	if isRateLimitResult("Implementation complete. PR created.") {
+		t.Error("expected false for normal result text")
+	}
+}
+
+func TestIsRateLimitResult_FalseForEmpty(t *testing.T) {
+	if isRateLimitResult("") {
+		t.Error("expected false for empty string")
+	}
+}
+
+func TestRun_NoSandbox_SetsRateLimited_WhenResultTextContainsLimit(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"","result":"You've hit your limit \u00b7 resets 5pm (UTC)","cost_usd":0,"is_error":true}`
+		return []byte(out), []byte(""), 1, nil
+	})
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !result.RateLimited {
+		t.Error("expected RateLimited = true when result text contains rate limit message")
+	}
+}
+
+func TestRun_NoSandbox_RateLimited_False_WhenResultNormal(t *testing.T) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		out := `{"session_id":"","result":"Implementation complete","cost_usd":0.5,"is_error":false}`
+		return []byte(out), []byte(""), 0, nil
+	})
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.RateLimited {
+		t.Error("expected RateLimited = false for normal result")
+	}
+}

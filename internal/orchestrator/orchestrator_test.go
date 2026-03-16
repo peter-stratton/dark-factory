@@ -42,6 +42,7 @@ type fakeReporter struct {
 	allBlocked     []fakeAllBlocked
 	rollupCreated  []fakeRollupCreated
 	punchlistTexts []string
+	abortReasons   []string
 }
 
 type fakeIssueCompleted struct {
@@ -92,6 +93,9 @@ func (r *fakeReporter) AllBlocked(total, blocked int) {
 }
 func (r *fakeReporter) RollupCreated(prNumber int, prURL string, merged bool) {
 	r.rollupCreated = append(r.rollupCreated, fakeRollupCreated{prNumber, prURL, merged})
+}
+func (r *fakeReporter) RunAborted(reason string) {
+	r.abortReasons = append(r.abortReasons, reason)
 }
 func (r *fakeReporter) RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int) {
 	r.runFinished = append(r.runFinished, fakeRunFinished{implemented, readyToMerge, needsHumanReview, failed, blocked})
@@ -2260,5 +2264,94 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 	}
 	if !strings.Contains(output, "#3 depends on nodark") {
 		t.Errorf("expected issue #3 in processable output, got:\n%s", output)
+	}
+}
+
+// TestRateLimitAbort_StopsAfterFirstRateLimitedIssue verifies that when the first
+// issue returns RateLimited=true, the second issue is never processed and
+// RunAborted is called with the rate limit reason.
+func TestRateLimitAbort_StopsAfterFirstRateLimitedIssue(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first issue"},
+		{Number: 2, Title: "second issue"},
+	}
+
+	callCount := 0
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		callCount++
+		// First issue hits rate limit.
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusFailed,
+			RateLimited: true,
+			Err:         fmt.Errorf("API rate limit reached, resets 5pm (UTC): %w", agent.ErrRateLimited),
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "test-milestone", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Only the first issue should have been processed.
+	if callCount != 1 {
+		t.Errorf("processIssueFn called %d times, want 1 (should stop after first rate limit)", callCount)
+	}
+
+	// RunAborted should have been called with a non-empty reason.
+	if len(reporter.abortReasons) == 0 {
+		t.Error("expected RunAborted to be called, got 0 calls")
+	} else if reporter.abortReasons[0] == "" {
+		t.Error("expected RunAborted reason to be non-empty")
+	}
+
+	// RunFinished should still be called.
+	if len(reporter.runFinished) == 0 {
+		t.Error("expected RunFinished to be called even after abort")
+	}
+
+	// failed counter must be 1 — the rate-limited issue counts as a failure.
+	if rf := reporter.runFinished[0]; rf.failed != 1 {
+		t.Errorf("RunFinished failed = %d, want 1", rf.failed)
+	}
+}
+
+// TestRateLimitAbort_NormalFailure_DoesNotAbort verifies that a normal failure
+// (non-rate-limit) does not trigger the rate limit abort path.
+func TestRateLimitAbort_NormalFailure_DoesNotAbort(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first issue"},
+		{Number: 2, Title: "second issue"},
+	}
+
+	callCount := 0
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		callCount++
+		// Both issues fail normally — not rate limited.
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusFailed,
+			RateLimited: false,
+			Err:         errors.New("implementer agent did not create a PR"),
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "test-milestone", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Both issues should have been processed — no early abort.
+	if callCount != 2 {
+		t.Errorf("processIssueFn called %d times, want 2 (normal failures should not abort)", callCount)
+	}
+
+	// RunAborted should NOT have been called.
+	if len(reporter.abortReasons) != 0 {
+		t.Errorf("expected no RunAborted calls for normal failure, got %d: %v", len(reporter.abortReasons), reporter.abortReasons)
 	}
 }

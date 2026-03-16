@@ -242,3 +242,43 @@ func TestModelUpdateAccumulatesCostViaTUIUpdate(t *testing.T) {
 		t.Errorf("totalCost after two updates: got %f, want 3.00", final.totalCost)
 	}
 }
+
+// --- RunAbortedMsg tests ---
+
+func TestUpdate_RunAbortedMsg_SetsAbortReason(t *testing.T) {
+	m := New("repo", "ms", "", "", "", "", nil)
+	updated, _ := m.Update(RunAbortedMsg{Reason: "API rate limit reached, resets 5pm (UTC)"})
+	next := updated.(Model)
+
+	if next.abortReason != "API rate limit reached, resets 5pm (UTC)" {
+		t.Errorf("abortReason = %q, want %q", next.abortReason, "API rate limit reached, resets 5pm (UTC)")
+	}
+}
+
+func TestView_Done_WithAbortReason_ShowsAbortReason(t *testing.T) {
+	m := New("repo", "ms", "", "", "", "", nil)
+	m.done = true
+	m.abortReason = "API rate limit reached, resets 5pm (UTC)"
+	m.width = 80
+	m.height = 24
+
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "aborted:") {
+		t.Errorf("expected 'aborted:' in view when abortReason is set, got:\n%s", view)
+	}
+	if !strings.Contains(view, "API rate limit reached") {
+		t.Errorf("expected abort reason in view, got:\n%s", view)
+	}
+}
+
+func TestView_Done_WithoutAbortReason_NoAbortText(t *testing.T) {
+	m := New("repo", "ms", "", "", "", "", nil)
+	m.done = true
+	m.width = 80
+	m.height = 24
+
+	view := stripANSI(m.View())
+	if strings.Contains(view, "aborted:") {
+		t.Errorf("expected no 'aborted:' text in view when abortReason is empty, got:\n%s", view)
+	}
+}

@@ -35,7 +35,23 @@ type IssueOutcome struct {
 	Status      OutcomeStatus
 	PRNumber    int
 	Retries     int
+	RateLimited bool  // true when an agent step hit the Anthropic API usage limit
 	Err         error
+}
+
+// ErrRateLimited is a sentinel error returned when the Anthropic API reports
+// an account-level usage limit. The orchestrator checks for this error to
+// abort the run immediately without processing further issues.
+var ErrRateLimited = errors.New("API rate limit reached")
+
+// rateLimitErr builds a rate-limit error that wraps ErrRateLimited and
+// includes the reset time extracted from the agent result text when available.
+func rateLimitErr(resultText string) error {
+	if idx := strings.Index(resultText, "resets"); idx >= 0 {
+		resetInfo := strings.TrimSpace(resultText[idx:])
+		return fmt.Errorf("API rate limit reached, %s: %w", resetInfo, ErrRateLimited)
+	}
+	return fmt.Errorf("API rate limit reached: %w", ErrRateLimited)
 }
 
 // ProcessIssue runs the full per-issue lifecycle:
@@ -129,6 +145,14 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				return hook.WriteReconResult(issue.Number, step)
 			}
 		}
+		// Check for rate limit before calling handleNonBlockingResult, which
+		// would otherwise silently absorb the failure and waste a container launch.
+		if reconErr == nil && reconResult != nil && reconResult.RateLimited {
+			outcome.RateLimited = true
+			outcome.Status = StatusFailed
+			outcome.Err = rateLimitErr(reconResult.ResultText)
+			return outcome
+		}
 		reconBrief = handleNonBlockingResult(reconResult, reconErr, "recon agent", logger, reconWriteHook)
 	}
 
@@ -145,6 +169,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		runPostMortem(issue.Number, implResult, hook, logger)
 		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent timed out")
+		return outcome
+	}
+	if implResult.RateLimited {
+		outcome.RateLimited = true
+		outcome.Status = StatusFailed
+		outcome.Err = rateLimitErr(implResult.ResultText)
 		return outcome
 	}
 	if hook != nil {
@@ -220,6 +250,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = verifyErr
+		if errors.Is(verifyErr, ErrRateLimited) {
+			outcome.RateLimited = true
+		}
 		return outcome
 	}
 
@@ -232,6 +265,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		if err != nil {
 			outcome.Status = StatusFailed
 			outcome.Err = err
+			if errors.Is(err, ErrRateLimited) {
+				outcome.RateLimited = true
+			}
 			return outcome
 		}
 		if !passed {
@@ -257,6 +293,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	outcome.Status, _, outcome.Retries, outcome.Err = runFunctionalReviewCycle(
 		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter,
 	)
+	if errors.Is(outcome.Err, ErrRateLimited) {
+		outcome.RateLimited = true
+	}
 	return outcome
 }
 
@@ -336,6 +375,9 @@ func runVerifyPhase(
 					}
 					if fixResult.TimedOut {
 						return fmt.Errorf("verify-fix agent timed out")
+					}
+					if fixResult.RateLimited {
+						return rateLimitErr(fixResult.ResultText)
 					}
 					*sessionID = fixResult.SessionID
 
@@ -419,6 +461,9 @@ func runVerifyPhase(
 				}
 				if fixResult.TimedOut {
 					return fmt.Errorf("verify-fix agent timed out")
+				}
+				if fixResult.RateLimited {
+					return rateLimitErr(fixResult.ResultText)
 				}
 				*sessionID = fixResult.SessionID
 
@@ -558,6 +603,9 @@ func runQualityReviewCycle(
 		if err != nil {
 			return false, fmt.Errorf("quality reviewer agent: %w", err)
 		}
+		if qResult.AgentResult.RateLimited {
+			return false, rateLimitErr(qResult.AgentResult.ResultText)
+		}
 		// Quality reviewer is exempt from CheckReviewTestExecution.
 		qFlags := computeReviewFlags(qResult.AgentResult, cfg, false, false)
 		qRDFlags := logAndRecordFlags(qFlags, logger, issue.Number)
@@ -604,6 +652,9 @@ func runQualityReviewCycle(
 			}
 			if retryResult.TimedOut {
 				return false, fmt.Errorf("retry agent (quality) timed out")
+			}
+			if retryResult.RateLimited {
+				return false, rateLimitErr(retryResult.ResultText)
 			}
 			if hook != nil {
 				if err := hook.WriteRetryResult(issue.Number, qAttempt, ResultToStep(retryResult)); err != nil {
@@ -683,6 +734,9 @@ func runFunctionalReviewCycle(
 		reviewResult, err := Review(ctx, issue, prNum, cfg, prompts, authEnv, logger, hasSpec)
 		if err != nil {
 			return StatusFailed, false, 0, fmt.Errorf("reviewer agent: %w", err)
+		}
+		if reviewResult.AgentResult.RateLimited {
+			return StatusFailed, false, 0, rateLimitErr(reviewResult.AgentResult.ResultText)
 		}
 		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
 		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec)
@@ -848,6 +902,9 @@ func runFunctionalReviewCycle(
 					if fixResult.TimedOut {
 						return StatusFailed, false, 0, fmt.Errorf("CI fix agent timed out")
 					}
+					if fixResult.RateLimited {
+						return StatusFailed, false, 0, rateLimitErr(fixResult.ResultText)
+					}
 					*sessionID = fixResult.SessionID
 
 					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
@@ -916,6 +973,9 @@ func runFunctionalReviewCycle(
 			}
 			if retryResult.TimedOut {
 				return StatusFailed, false, 0, fmt.Errorf("retry agent timed out")
+			}
+			if retryResult.RateLimited {
+				return StatusFailed, false, 0, rateLimitErr(retryResult.ResultText)
 			}
 			if hook != nil {
 				if err := hook.WriteRetryResult(issue.Number, attempt, ResultToStep(retryResult)); err != nil {

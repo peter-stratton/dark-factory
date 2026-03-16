@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -4713,6 +4714,7 @@ func (r *mockReporter) IssueCompleted(_ int, _ string, _ string, _, _ int, _ str
 func (r *mockReporter) WaveStarted(_, _ int)              {}
 func (r *mockReporter) AllBlocked(_, _ int)               {}
 func (r *mockReporter) RollupCreated(_ int, _ string, _ bool) {}
+func (r *mockReporter) RunAborted(_ string)               {}
 func (r *mockReporter) RunFinished(_, _, _, _, _ int)     {}
 func (r *mockReporter) PunchlistText(_ string)            {}
 
@@ -4834,5 +4836,120 @@ func TestProcessIssue_RetryReentersImplementStage(t *testing.T) {
 	count := reporter.countStageChanges("implement")
 	if count < 2 {
 		t.Errorf("IssueStageChanged(_, %q) called %d time(s), want at least 2 (initial + retry)", "implement", count)
+	}
+}
+
+// rateLimitOutput returns the agent JSON output for an Anthropic account-level rate limit.
+func rateLimitOutput() string {
+	return `{"session_id":"","result":"You've hit your limit \u00b7 resets 5pm (UTC)","cost_usd":0,"is_error":true}`
+}
+
+func TestRateLimitErr_IncludesResetTime(t *testing.T) {
+	err := rateLimitErr("You've hit your limit · resets 5pm (UTC)")
+	if err == nil {
+		t.Fatal("expected non-nil error")
+	}
+	if !strings.Contains(err.Error(), "resets 5pm (UTC)") {
+		t.Errorf("error %q does not contain reset time", err.Error())
+	}
+}
+
+func TestRateLimitErr_WrapsErrRateLimited(t *testing.T) {
+	err := rateLimitErr("You've hit your limit · resets 5pm (UTC)")
+	if !errors.Is(err, ErrRateLimited) {
+		t.Errorf("expected errors.Is(err, ErrRateLimited) to be true, got err = %v", err)
+	}
+}
+
+func TestRateLimitErr_NoResetTime_StillWrapsErrRateLimited(t *testing.T) {
+	err := rateLimitErr("You've hit your limit")
+	if !errors.Is(err, ErrRateLimited) {
+		t.Errorf("expected errors.Is(err, ErrRateLimited) to be true, got err = %v", err)
+	}
+}
+
+func TestProcessIssue_RateLimited_ByImplementer(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		// Implementer returns a rate limit response.
+		return []byte(rateLimitOutput()), []byte(""), 1, nil
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, nil)
+
+	if !outcome.RateLimited {
+		t.Error("expected RateLimited = true when implementer hits rate limit")
+	}
+	if outcome.Status != StatusFailed {
+		t.Errorf("Status = %q, want %q", outcome.Status, StatusFailed)
+	}
+	if outcome.Err == nil {
+		t.Fatal("expected non-nil Err")
+	}
+	if !errors.Is(outcome.Err, ErrRateLimited) {
+		t.Errorf("expected errors.Is(outcome.Err, ErrRateLimited), got %v", outcome.Err)
+	}
+}
+
+func TestProcessIssue_RateLimited_ByReviewer(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer — succeeds
+			return []byte(wrapRunnerJSON("implementation done")), []byte(""), 0, nil
+		case 2: // quality reviewer — rate limited
+			return []byte(rateLimitOutput()), []byte(""), 1, nil
+		default:
+			return []byte(wrapRunnerJSON("unexpected call")), []byte(""), 0, nil
+		}
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, nil)
+
+	if !outcome.RateLimited {
+		t.Error("expected RateLimited = true when quality reviewer hits rate limit")
+	}
+	if outcome.Status != StatusFailed {
+		t.Errorf("Status = %q, want %q", outcome.Status, StatusFailed)
+	}
+	if !errors.Is(outcome.Err, ErrRateLimited) {
+		t.Errorf("expected errors.Is(outcome.Err, ErrRateLimited), got %v", outcome.Err)
+	}
+}
+
+func TestProcessIssue_NormalFailure_NotRateLimited(t *testing.T) {
+	origRunner := Runner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		Runner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		// Implementer fails with a normal error (not a rate limit).
+		return []byte(wrapRunnerJSON("something went wrong")), []byte(""), 1, nil
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), nil, nil)
+
+	if outcome.RateLimited {
+		t.Error("expected RateLimited = false for normal failure")
 	}
 }

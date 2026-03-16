@@ -32,6 +32,7 @@ type Result struct {
 	Stdout       string
 	Stderr       string
 	TimedOut     bool
+	RateLimited  bool     // true when the API reports an account-level usage limit
 	SessionID    string
 	CostUSD      float64
 	ResultText   string   // agent's final text output (from SDK result message)
@@ -150,6 +151,9 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}
+		if isRateLimitResult(parsed.Result) {
+			res.RateLimited = true
+		}
 	}
 
 	// Capture bounded log for post-mortem on failure only.
@@ -227,6 +231,9 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}
+		if isRateLimitResult(parsed.Result) {
+			res.RateLimited = true
+		}
 	}
 
 	// Capture bounded container log for post-mortem on failure only.
@@ -273,4 +280,10 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return "..." + s[len(s)-n:]
+}
+
+// isRateLimitResult reports whether the agent result text indicates an
+// account-level Anthropic API usage limit has been reached.
+func isRateLimitResult(text string) bool {
+	return strings.Contains(text, "You've hit your limit")
 }
