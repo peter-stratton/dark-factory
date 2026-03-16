@@ -150,7 +150,7 @@ func buildNotableFailures(runDetails []rundata.RunDetail) []NotableFailure {
 func buildShippedIssues(runDetails []rundata.RunDetail) []ShippedIssue {
 	var result []ShippedIssue
 	for _, rd := range runDetails {
-		repo := rd.RunMeta.Repo
+		repo := rd.Repo
 		for _, issue := range rd.Issues {
 			if issue.Outcome.Status != rundata.OutcomeStatusImplemented &&
 				issue.Outcome.Status != rundata.OutcomeStatusReadyToMerge {
@@ -439,8 +439,20 @@ func RenderHTML(rpt SprintReport) string {
 		sb.WriteString("</table>\n")
 	}
 
-	if len(rpt.NotableFailures) > 0 {
-		sb.WriteString(`<h2 style="color:#333;border-bottom:1px solid #ddd">Notable Failures</h2>
+	renderHTMLNotableFailures(&sb, rpt.NotableFailures)
+	renderHTMLShippedIssues(&sb, rpt.ShippedIssues)
+	renderHTMLPriorPeriod(&sb, rpt)
+
+	sb.WriteString("</body>\n</html>\n")
+	return sb.String()
+}
+
+// renderHTMLNotableFailures writes the notable failures table section.
+func renderHTMLNotableFailures(sb *strings.Builder, failures []NotableFailure) {
+	if len(failures) == 0 {
+		return
+	}
+	sb.WriteString(`<h2 style="color:#333;border-bottom:1px solid #ddd">Notable Failures</h2>
 <table style="border-collapse:collapse;width:100%">
 <tr style="background:#f5f5f5">
   <th style="text-align:left;padding:8px;border:1px solid #ddd">Issue</th>
@@ -449,37 +461,46 @@ func RenderHTML(rpt SprintReport) string {
   <th style="text-align:left;padding:8px;border:1px solid #ddd">Error</th>
 </tr>
 `)
-		for _, f := range rpt.NotableFailures {
-			fmt.Fprintf(&sb,
-				`<tr><td style="padding:8px;border:1px solid #ddd">#%d</td><td style="padding:8px;border:1px solid #ddd">%s</td><td style="padding:8px;border:1px solid #ddd">$%.2f</td><td style="padding:8px;border:1px solid #ddd">%s</td></tr>
+	for _, f := range failures {
+		fmt.Fprintf(sb,
+			`<tr><td style="padding:8px;border:1px solid #ddd">#%d</td><td style="padding:8px;border:1px solid #ddd">%s</td><td style="padding:8px;border:1px solid #ddd">$%.2f</td><td style="padding:8px;border:1px solid #ddd">%s</td></tr>
 `,
-				f.IssueNumber,
-				html.EscapeString(f.Title),
-				f.CostUSD,
-				html.EscapeString(truncate(f.Error, 120)),
-			)
-		}
-		sb.WriteString("</table>\n")
+			f.IssueNumber,
+			html.EscapeString(f.Title),
+			f.CostUSD,
+			html.EscapeString(truncate(f.Error, 120)),
+		)
 	}
+	sb.WriteString("</table>\n")
+}
 
-	if len(rpt.ShippedIssues) > 0 {
-		fmt.Fprintf(&sb, `<h2 style="color:#333;border-bottom:1px solid #ddd">What was Shipped (%d issues)</h2>
+// renderHTMLShippedIssues writes the shipped issues list section.
+func renderHTMLShippedIssues(sb *strings.Builder, issues []ShippedIssue) {
+	if len(issues) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, `<h2 style="color:#333;border-bottom:1px solid #ddd">What was Shipped (%d issues)</h2>
 <ul>
-`, len(rpt.ShippedIssues))
-		for _, si := range rpt.ShippedIssues {
-			if si.PRNumber > 0 && si.Repo != "" {
-				prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
-				fmt.Fprintf(&sb, `<li><a href="%s">#%d</a> — %s</li>
+`, len(issues))
+	for _, si := range issues {
+		if si.PRNumber > 0 && si.Repo != "" {
+			prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
+			fmt.Fprintf(sb, `<li><a href="%s">#%d</a> — %s</li>
 `, html.EscapeString(prURL), si.IssueNumber, html.EscapeString(si.Title))
-			} else {
-				fmt.Fprintf(&sb, "<li>#%d — %s</li>\n", si.IssueNumber, html.EscapeString(si.Title))
-			}
+		} else {
+			fmt.Fprintf(sb, "<li>#%d — %s</li>\n", si.IssueNumber, html.EscapeString(si.Title))
 		}
-		sb.WriteString("</ul>\n")
 	}
+	sb.WriteString("</ul>\n")
+}
 
-	if rpt.PriorPeriod != nil && rpt.PriorPeriod.TotalRuns > 0 {
-		fmt.Fprintf(&sb, `<h2 style="color:#333;border-bottom:1px solid #ddd">Compared to Prior Period (%s – %s)</h2>
+// renderHTMLPriorPeriod writes the period comparison table section.
+func renderHTMLPriorPeriod(sb *strings.Builder, rpt SprintReport) {
+	if rpt.PriorPeriod == nil || rpt.PriorPeriod.TotalRuns == 0 {
+		return
+	}
+	pp := rpt.PriorPeriod
+	fmt.Fprintf(sb, `<h2 style="color:#333;border-bottom:1px solid #ddd">Compared to Prior Period (%s – %s)</h2>
 <table style="border-collapse:collapse;width:100%%">
 <tr style="background:#f5f5f5">
   <th style="text-align:left;padding:8px;border:1px solid #ddd">Metric</th>
@@ -487,37 +508,33 @@ func RenderHTML(rpt SprintReport) string {
   <th style="text-align:left;padding:8px;border:1px solid #ddd">Current</th>
   <th style="text-align:left;padding:8px;border:1px solid #ddd">Delta</th>
 </tr>
-`, html.EscapeString(formatDate(rpt.PriorPeriod.Since)), html.EscapeString(formatDate(rpt.PriorPeriod.Until)))
-		writeHTMLDeltaRow(&sb, "Success rate",
-			fmt.Sprintf("%.1f%%", rpt.PriorPeriod.SuccessRate*100),
-			fmt.Sprintf("%.1f%%", rpt.SuccessRate*100),
-			formatRateDelta(rpt.SuccessRate-rpt.PriorPeriod.SuccessRate),
-			rpt.SuccessRate >= rpt.PriorPeriod.SuccessRate)
-		writeHTMLDeltaRow(&sb, "First-pass rate",
-			fmt.Sprintf("%.1f%%", rpt.PriorPeriod.FirstPassRate*100),
-			fmt.Sprintf("%.1f%%", rpt.FirstPassRate*100),
-			formatRateDelta(rpt.FirstPassRate-rpt.PriorPeriod.FirstPassRate),
-			rpt.FirstPassRate >= rpt.PriorPeriod.FirstPassRate)
-		writeHTMLDeltaRow(&sb, "Issues processed",
-			fmt.Sprintf("%d", rpt.PriorPeriod.IssuesProcessed),
-			fmt.Sprintf("%d", rpt.IssuesProcessed),
-			formatIntDelta(rpt.IssuesProcessed-rpt.PriorPeriod.IssuesProcessed),
-			rpt.IssuesProcessed >= rpt.PriorPeriod.IssuesProcessed)
-		writeHTMLDeltaRow(&sb, "Total cost",
-			fmt.Sprintf("$%.2f", rpt.PriorPeriod.TotalCostUSD),
-			fmt.Sprintf("$%.2f", rpt.TotalCostUSD),
-			formatCostDelta(rpt.TotalCostUSD-rpt.PriorPeriod.TotalCostUSD),
-			rpt.TotalCostUSD <= rpt.PriorPeriod.TotalCostUSD)
-		writeHTMLDeltaRow(&sb, "Avg per success",
-			fmt.Sprintf("$%.2f", rpt.PriorPeriod.AvgCostPerSuccessUSD),
-			fmt.Sprintf("$%.2f", rpt.AvgCostPerSuccessUSD),
-			formatCostDelta(rpt.AvgCostPerSuccessUSD-rpt.PriorPeriod.AvgCostPerSuccessUSD),
-			rpt.AvgCostPerSuccessUSD <= rpt.PriorPeriod.AvgCostPerSuccessUSD)
-		sb.WriteString("</table>\n")
-	}
-
-	sb.WriteString("</body>\n</html>\n")
-	return sb.String()
+`, html.EscapeString(formatDate(pp.Since)), html.EscapeString(formatDate(pp.Until)))
+	writeHTMLDeltaRow(sb, "Success rate",
+		fmt.Sprintf("%.1f%%", pp.SuccessRate*100),
+		fmt.Sprintf("%.1f%%", rpt.SuccessRate*100),
+		formatRateDelta(rpt.SuccessRate-pp.SuccessRate),
+		rpt.SuccessRate >= pp.SuccessRate)
+	writeHTMLDeltaRow(sb, "First-pass rate",
+		fmt.Sprintf("%.1f%%", pp.FirstPassRate*100),
+		fmt.Sprintf("%.1f%%", rpt.FirstPassRate*100),
+		formatRateDelta(rpt.FirstPassRate-pp.FirstPassRate),
+		rpt.FirstPassRate >= pp.FirstPassRate)
+	writeHTMLDeltaRow(sb, "Issues processed",
+		fmt.Sprintf("%d", pp.IssuesProcessed),
+		fmt.Sprintf("%d", rpt.IssuesProcessed),
+		formatIntDelta(rpt.IssuesProcessed-pp.IssuesProcessed),
+		rpt.IssuesProcessed >= pp.IssuesProcessed)
+	writeHTMLDeltaRow(sb, "Total cost",
+		fmt.Sprintf("$%.2f", pp.TotalCostUSD),
+		fmt.Sprintf("$%.2f", rpt.TotalCostUSD),
+		formatCostDelta(rpt.TotalCostUSD-pp.TotalCostUSD),
+		rpt.TotalCostUSD <= pp.TotalCostUSD)
+	writeHTMLDeltaRow(sb, "Avg per success",
+		fmt.Sprintf("$%.2f", pp.AvgCostPerSuccessUSD),
+		fmt.Sprintf("$%.2f", rpt.AvgCostPerSuccessUSD),
+		formatCostDelta(rpt.AvgCostPerSuccessUSD-pp.AvgCostPerSuccessUSD),
+		rpt.AvgCostPerSuccessUSD <= pp.AvgCostPerSuccessUSD)
+	sb.WriteString("</table>\n")
 }
 
 // writeHTMLRow writes a two-column table row with inline styles.
