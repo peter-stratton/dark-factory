@@ -871,3 +871,97 @@ func TestBuildFeedback_EmptyBodyWithComments(t *testing.T) {
 		t.Errorf("expected %q, got %q", "inline comment", got)
 	}
 }
+
+// TestRunUntilDone_ExitsWhenNoPRs verifies that RunUntilDone exits immediately
+// if no PRs are awaiting review after the initial poll.
+func TestRunUntilDone_ExitsWhenNoPRs(t *testing.T) {
+	stubSeams(t)
+
+	origListPRs := listPRsFn
+	listPRsFn = func(_ string, _ string) ([]github.PRInfo, error) {
+		return nil, nil // no PRs awaiting review
+	}
+	defer func() { listPRsFn = origListPRs }()
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+	err := w.RunUntilDone(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestRunUntilDone_ExitsAfterLastPRMerged verifies that RunUntilDone exits once
+// the last awaiting PR is gone (PR count drops to zero after a poll tick).
+func TestRunUntilDone_ExitsAfterLastPRMerged(t *testing.T) {
+	stubSeams(t)
+
+	callCount := 0
+	origListPRs := listPRsFn
+	listPRsFn = func(_ string, _ string) ([]github.PRInfo, error) {
+		callCount++
+		// First call (after initial poll): still 1 PR awaiting.
+		// Second call (after a tick): PR is gone.
+		if callCount == 1 {
+			return []github.PRInfo{{Number: 5, HeadRefName: "42-feature"}}, nil
+		}
+		return nil, nil
+	}
+	defer func() { listPRsFn = origListPRs }()
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+	err := w.RunUntilDone(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if callCount < 2 {
+		t.Errorf("expected at least 2 PR list calls, got %d", callCount)
+	}
+}
+
+// TestRunUntilDone_ContextCancelled verifies that a cancelled context causes
+// RunUntilDone to return nil cleanly.
+func TestRunUntilDone_ContextCancelled(t *testing.T) {
+	stubSeams(t)
+
+	origListPRs := listPRsFn
+	listPRsFn = func(_ string, _ string) ([]github.PRInfo, error) {
+		// Always return a PR so the loop would run forever without cancellation.
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-feature"}}, nil
+	}
+	defer func() { listPRsFn = origListPRs }()
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- w.RunUntilDone(ctx)
+	}()
+
+	// Cancel context after a short delay to allow the goroutine to start.
+	cancel()
+
+	err := <-done
+	if err != nil {
+		t.Fatalf("expected nil on context cancel, got %v", err)
+	}
+}

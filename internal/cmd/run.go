@@ -3,17 +3,23 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/pypi"
+	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/phs/dark-factory/internal/tui"
+	"github.com/phs/dark-factory/internal/watch"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -28,6 +34,7 @@ each unblocked issue through the implement → review → merge loop.`,
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		force, _ := cmd.Flags().GetBool("force")
 		noTUI, _ := cmd.Flags().GetBool("no-tui")
+		watchFlag, _ := cmd.Flags().GetBool("watch")
 
 		flags := parseCLIFlags(cmd)
 		flags.Config = configPath
@@ -100,10 +107,13 @@ each unblocked issue through the implement → review → merge loop.`,
 
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
 
+		var runErr error
 		if useTUI {
 			// Wrap the signal context with a cancel we can hand to the TUI
 			// so ctrl+c in the TUI cancels the orchestrator gracefully.
-			ctx, cancel := context.WithCancel(ctx)
+			// Use a separate child context so the outer ctx remains usable
+			// for the watch loop after the TUI exits.
+			tuiCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
 			// Metadata fields (milestone, timestamp, etc.) are populated later
@@ -115,23 +125,63 @@ each unblocked issue through the implement → review → merge loop.`,
 
 			errCh := make(chan error, 1)
 			go func() {
-				err := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
 				errCh <- err
 				program.Send(tui.RunDoneMsg{})
 			}()
 
 			_, _ = program.Run()
-			return <-errCh
+			runErr = <-errCh
+		} else {
+			reporter := progress.NewTextReporter(os.Stdout)
+			runErr = orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
 		}
 
-		reporter := progress.NewTextReporter(os.Stdout)
-		return orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+		if runErr != nil || !watchFlag {
+			return runErr
+		}
+
+		// --watch: enter polling loop if any PRs are awaiting review.
+		return runEnterWatch(ctx, cfg, logger)
 	},
 }
 
 // isTerminalFn reports whether the given file descriptor is connected to a
 // terminal. Replaceable for testing.
 var isTerminalFn = term.IsTerminal
+
+// runEnterWatch checks for pending review PRs and, if any exist, loads prompts
+// and auth then enters the RunUntilDone polling loop. Called after
+// orchestrator.Run when --watch is set.
+func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+	// Check for awaiting PRs first to avoid loading prompts/auth unnecessarily.
+	prs, err := runListPRsFn(cfg.Repo, label.AwaitingHumanReview)
+	if err != nil {
+		logger.Warn("checking for awaiting PRs before watch", "err", err)
+	}
+
+	if len(prs) == 0 {
+		logger.Info("no PRs awaiting review after run, skipping watch loop")
+		return nil
+	}
+
+	prompts, err := agent.LoadPrompts(cfg)
+	if err != nil {
+		return fmt.Errorf("loading prompts: %w", err)
+	}
+
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	if err != nil {
+		return fmt.Errorf("collecting auth: %w", err)
+	}
+
+	return watch.New(cfg, prompts, authEnv, logger).RunUntilDone(ctx)
+}
+
+// runListPRsFn is a testability seam for listing PRs by label. Replaced in tests.
+var runListPRsFn = func(repo, lbl string) ([]github.PRInfo, error) {
+	return github.ListPRsWithLabel(repo, lbl)
+}
 
 func init() {
 	f := runCmd.Flags()
@@ -144,6 +194,7 @@ func init() {
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
+	f.Bool("watch", false, "After first pass, keep running and poll for PR reviews until no more await review")
 	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
 	f.String("auto-merge-rollup", "manual", "Rollup merge strategy after run: none (no rollup PR), manual (create PR but don't merge), auto (create and merge rollup PR)")
 	f.String("config", "godark.yaml", "Path to configuration file")
