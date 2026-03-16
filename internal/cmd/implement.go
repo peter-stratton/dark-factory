@@ -16,6 +16,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/notify"
@@ -275,6 +276,12 @@ func implementIssues(
 			failed++
 			reporter.IssueCompleted(issueNumber, "", "failed", 0, 0, err.Error(), 0.0)
 			continue
+		}
+
+		for _, l := range issue.Labels {
+			if l == label.NoDark {
+				return fmt.Errorf("issue #%d is labeled nodark (human-only task), skipping agent processing", issueNumber)
+			}
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)

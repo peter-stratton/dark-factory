@@ -112,6 +112,11 @@ func runNew(cmd *cobra.Command, projectName, repo string) error {
 		return err
 	}
 
+	// Ensure godark labels exist on the repo (no-op when --repo is not set).
+	if err := ensureLabels(cmd); err != nil {
+		return err
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "\nProject %q created.\n", projectName)
 	fmt.Fprintf(cmd.OutOrStdout(), "\nNext steps:\n")
 	fmt.Fprintf(cmd.OutOrStdout(), "  1. Fill in the language-specific sections of CLAUDE.md\n")

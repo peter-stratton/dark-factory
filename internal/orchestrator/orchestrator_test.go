@@ -2153,3 +2153,112 @@ func TestReporter_IssueCompleted_ZeroCostWhenNoWriter(t *testing.T) {
 		t.Errorf("IssueCompleted costUSD = %f, want 0.0", got)
 	}
 }
+
+func TestFilterNoDarkIssues_RemovesNoDarkLabeled(t *testing.T) {
+	logger := slog.Default()
+	issues := []github.Issue{
+		{Number: 1, Title: "normal issue", Labels: []string{}},
+		{Number: 2, Title: "nodark issue", Labels: []string{"nodark"}},
+		{Number: 3, Title: "another normal", Labels: []string{"p1"}},
+		{Number: 4, Title: "nodark with other labels", Labels: []string{"p2", "nodark"}},
+	}
+
+	filtered := filterNoDarkIssues(issues, logger)
+
+	if len(filtered) != 2 {
+		t.Fatalf("filterNoDarkIssues() returned %d issues, want 2", len(filtered))
+	}
+	if filtered[0].Number != 1 {
+		t.Errorf("filtered[0].Number = %d, want 1", filtered[0].Number)
+	}
+	if filtered[1].Number != 3 {
+		t.Errorf("filtered[1].Number = %d, want 3", filtered[1].Number)
+	}
+}
+
+func TestFilterNoDarkIssues_NoNoDarkLabels(t *testing.T) {
+	logger := slog.Default()
+	issues := []github.Issue{
+		{Number: 1, Title: "normal issue", Labels: []string{"p1"}},
+		{Number: 2, Title: "another normal", Labels: []string{}},
+	}
+
+	filtered := filterNoDarkIssues(issues, logger)
+
+	if len(filtered) != 2 {
+		t.Errorf("filterNoDarkIssues() returned %d issues, want 2", len(filtered))
+	}
+}
+
+func TestFilterNoDarkIssues_AllNoDark(t *testing.T) {
+	logger := slog.Default()
+	issues := []github.Issue{
+		{Number: 1, Title: "nodark 1", Labels: []string{"nodark"}},
+		{Number: 2, Title: "nodark 2", Labels: []string{"nodark"}},
+	}
+
+	filtered := filterNoDarkIssues(issues, logger)
+
+	if len(filtered) != 0 {
+		t.Errorf("filterNoDarkIssues() returned %d issues, want 0", len(filtered))
+	}
+}
+
+func TestDryRun_NoDarkIssuesExcluded(t *testing.T) {
+	openIssues := []ghIssue{
+		{Number: 1, Title: "normal issue", Labels: []ghLabel{}},
+		{Number: 2, Title: "nodark issue", Labels: []ghLabel{{Name: "nodark"}}},
+		{Number: 3, Title: "another normal", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	output := captureStdout(t, func() {
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	})
+
+	// The nodark issue should not appear in output.
+	if strings.Contains(output, "#2 nodark issue") {
+		t.Errorf("nodark issue #2 should not appear in output, got:\n%s", output)
+	}
+	// Normal issues should still appear.
+	if !strings.Contains(output, "#1 normal issue") {
+		t.Errorf("expected normal issue #1 in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "#3 another normal") {
+		t.Errorf("expected normal issue #3 in output, got:\n%s", output)
+	}
+	// Summary should show only 2 total (nodark excluded).
+	if !strings.Contains(output, "Summary: 2 total") {
+		t.Errorf("expected summary with 2 total (nodark excluded), got:\n%s", output)
+	}
+}
+
+func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
+	// Issue 2 (nodark) is declared as a dependency of issue 3.
+	// Since nodark issues are excluded before dep resolution, issue 3 should
+	// NOT be treated as blocked by issue 2.
+	openIssues := []ghIssue{
+		{Number: 1, Title: "normal issue", Labels: []ghLabel{}},
+		{Number: 2, Title: "nodark issue", Labels: []ghLabel{{Name: "nodark"}}},
+		{Number: 3, Title: "depends on nodark", Body: "**Blocked by**: #2", Labels: []ghLabel{}},
+	}
+	setupFakeGH(t, openIssues, nil)
+
+	output := captureStdout(t, func() {
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	})
+
+	// Issue 3 should appear as processable (not blocked), because #2 is excluded.
+	if strings.Contains(output, "Blocked issues:") {
+		t.Errorf("expected no blocked issues (nodark should not block others), got:\n%s", output)
+	}
+	if !strings.Contains(output, "#3 depends on nodark") {
+		t.Errorf("expected issue #3 in processable output, got:\n%s", output)
+	}
+}

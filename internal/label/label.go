@@ -3,6 +3,10 @@ package label
 // InProgress is the GitHub label applied to issues during an active godark run.
 const InProgress = "godark-in-progress"
 
+// NoDark is the GitHub label that marks an issue as a human-only task.
+// Issues with this label are skipped by godark agents during run and implement.
+const NoDark = "nodark"
+
 // PR lifecycle label constants communicate state to humans at a glance.
 const (
 	AwaitingHumanReview  = "godark:awaiting-human-review"
@@ -56,6 +60,7 @@ var Specs = []Spec{
 	{Name: AwaitingHumanReview, Color: "4A90E2", Description: "PR approved by AI, awaiting human review"},
 	{Name: FixingReviewFeedback, Color: "F5D76E", Description: "AI is addressing review feedback"},
 	{Name: ReadyToMerge, Color: "50C878", Description: "All reviews passed, ready to merge"},
+	{Name: NoDark, Color: "CCCCCC", Description: "Human-only task — skipped by godark agents"},
 }
 
 // All returns all PR lifecycle label strings. Useful for bulk operations such
