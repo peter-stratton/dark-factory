@@ -40,6 +40,7 @@ func stubSeams(t *testing.T) {
 	origFetchComments := fetchReviewCommentsFn
 	origFetchIssue := fetchIssueFn
 	origMergePR := mergePRFn
+	origListMergedPRs := listMergedPRsFn
 
 	retryFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
 		return &agent.Result{SessionID: "sess-stub"}, nil
@@ -53,6 +54,7 @@ func stubSeams(t *testing.T) {
 		return github.Issue{Number: 42, Title: "test issue"}, nil
 	}
 	mergePRFn = func(_ string, _ int) error { return nil }
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) { return nil, nil }
 
 	t.Cleanup(func() {
 		retryFn = origRetry
@@ -61,6 +63,7 @@ func stubSeams(t *testing.T) {
 		fetchReviewCommentsFn = origFetchComments
 		fetchIssueFn = origFetchIssue
 		mergePRFn = origMergePR
+		listMergedPRsFn = origListMergedPRs
 	})
 }
 
@@ -869,6 +872,100 @@ func TestBuildFeedback_EmptyBodyWithComments(t *testing.T) {
 	got := buildFeedback("", fetchFn, "owner/repo", 5, 101, slog.Default())
 	if got != "inline comment" {
 		t.Errorf("expected %q, got %q", "inline comment", got)
+	}
+}
+
+// TestDetectMergedPRs_DetectsMergedPR verifies that an issue whose PR has been
+// merged is returned by DetectMergedPRs.
+func TestDetectMergedPRs_DetectsMergedPR(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-fix-bug"}}, nil
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0] != 42 {
+		t.Errorf("expected [42], got %v", got)
+	}
+	if !w.mergedIssues[42] {
+		t.Error("expected issue 42 to be recorded in mergedIssues")
+	}
+}
+
+// TestDetectMergedPRs_AlreadyDetectedSkipped verifies that an issue already
+// present in mergedIssues is not returned again.
+func TestDetectMergedPRs_AlreadyDetectedSkipped(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-fix-bug"}}, nil
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w.mergedIssues[42] = true // already detected in a prior cycle
+
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty result for already-detected issue, got %v", got)
+	}
+}
+
+// TestDetectMergedPRs_NoMerges verifies that an empty slice is returned when
+// no PRs in the provided list have been merged.
+func TestDetectMergedPRs_NoMerges(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{}, nil // no merged PRs
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42, 43})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty result when no PRs merged, got %v", got)
+	}
+}
+
+// TestDetectMergedPRs_MultipleIssuesMerged verifies that all matching merged
+// issues are returned when multiple PRs have been merged.
+func TestDetectMergedPRs_MultipleIssuesMerged(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{
+			{Number: 5, HeadRefName: "42-fix-bug"},
+			{Number: 6, HeadRefName: "43-another-fix"},
+		}, nil
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42, 43})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 merged issues, got %v", got)
+	}
+	gotSet := make(map[int]bool)
+	for _, n := range got {
+		gotSet[n] = true
+	}
+	if !gotSet[42] || !gotSet[43] {
+		t.Errorf("expected both 42 and 43 in result, got %v", got)
+	}
+	if !w.mergedIssues[42] || !w.mergedIssues[43] {
+		t.Error("expected both issues to be recorded in mergedIssues")
 	}
 }
 
