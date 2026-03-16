@@ -208,7 +208,9 @@ func (w *Watch) PollOnce(ctx context.Context) error {
 	if len(w.seenIssues) > 0 {
 		seenList := make([]int, 0, len(w.seenIssues))
 		for n := range w.seenIssues {
-			seenList = append(seenList, n)
+			if !w.mergedIssues[n] {
+				seenList = append(seenList, n)
+			}
 		}
 		merged, err := w.DetectMergedPRs(ctx, w.cfg.Repo, seenList)
 		if err != nil {
@@ -401,9 +403,12 @@ func (w *Watch) HandleApproved(ctx context.Context, pr github.PRInfo, review git
 // convention, and records newly detected merges in w.mergedIssues so they are
 // not returned again on subsequent calls.
 func (w *Watch) DetectMergedPRs(ctx context.Context, repo string, issueNumbers []int) ([]int, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	mergedPRs, err := listMergedPRsFn(repo)
 	if err != nil {
-		return nil, fmt.Errorf("listing merged PRs: %w", err)
+		return nil, fmt.Errorf("detect merged PRs: %w", err)
 	}
 
 	// Build a set of issue numbers that have at least one merged PR.
