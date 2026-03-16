@@ -25,6 +25,7 @@ import (
 	"github.com/phs/dark-factory/internal/punchlist"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/sandbox"
+	"github.com/phs/dark-factory/internal/stats"
 )
 
 // Run is the main entry point for the orchestration loop.
@@ -259,36 +260,11 @@ func ReResolveAndProcess(
 		return false, nil
 	}
 
-	logger.Info("re-resolution: newly unblocked issues found",
-		"count", len(unblocked),
-	)
+	logger.Info("re-resolution: newly unblocked issues found", "count", len(unblocked))
 
-	// Set up auth and prompt templates.
-	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	authEnv, prompts, err := prepareResolveEnv(ctx, cfg, logger)
 	if err != nil {
-		return false, fmt.Errorf("collecting auth: %w", err)
-	}
-
-	prompts, err := agent.LoadPrompts(cfg)
-	if err != nil {
-		return false, fmt.Errorf("loading prompts: %w", err)
-	}
-
-	// Ensure all PR lifecycle labels exist in the repo.
-	for _, spec := range label.Specs {
-		if err := github.EnsureLabel(cfg.Repo, spec.Name, spec.Color, spec.Description); err != nil {
-			logger.Warn("failed to ensure lifecycle label", "label", spec.Name, "error", err)
-		}
-	}
-
-	// Build Docker image once if using sandbox mode.
-	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
-		tag, err := sandbox.BuildImage(ctx, dc, logger)
-		if err != nil {
-			return false, fmt.Errorf("building Docker image: %w", err)
-		}
-		cfg.Docker.Image = tag
+		return false, err
 	}
 
 	// Open stats DB and create a run data writer.
@@ -324,12 +300,60 @@ func ReResolveAndProcess(
 		}
 	}()
 
+	implemented, failed, abortReason := processUnblockedLoop(ctx, unblocked, cfg, prompts, authEnv, logger, hook, reporter, writer, seen)
+	finalizeResolveRun(ctx, statsDB, cfg, writer, implemented, failed, abortReason, notifiers, logger)
+
+	return len(unblocked) > 0, nil
+}
+
+// prepareResolveEnv sets up auth, prompts, lifecycle labels, and (when
+// sandbox mode is active) builds the Docker image. cfg.Docker.Image is
+// updated in place when a new image is built.
+func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Logger) (map[string]string, *agent.Prompts, error) {
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	if err != nil {
+		return nil, nil, fmt.Errorf("collecting auth: %w", err)
+	}
+
+	prompts, err := agent.LoadPrompts(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading prompts: %w", err)
+	}
+
+	for _, spec := range label.Specs {
+		if err := github.EnsureLabel(cfg.Repo, spec.Name, spec.Color, spec.Description); err != nil {
+			logger.Warn("failed to ensure lifecycle label", "label", spec.Name, "error", err)
+		}
+	}
+
+	if !cfg.NoSandbox {
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
+		tag, err := sandbox.BuildImage(ctx, dc, logger)
+		if err != nil {
+			return nil, nil, fmt.Errorf("building Docker image: %w", err)
+		}
+		cfg.Docker.Image = tag
+	}
+
+	return authEnv, prompts, nil
+}
+
+// processUnblockedLoop iterates over unblocked issues, marks each as seen,
+// processes it, and records the outcome. It returns counts of implemented and
+// failed issues plus a non-empty abortReason when processing must stop early.
+func processUnblockedLoop(
+	ctx context.Context,
+	unblocked []github.Issue,
+	cfg *config.Config,
+	prompts *agent.Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	hook agent.RunDataHook,
+	reporter progress.ProgressReporter,
+	writer *rundata.Writer,
+	seen map[int]bool,
+) (implemented, failed int, abortReason string) {
 	baseBranch := cfg.EffectiveBaseBranch()
-
-	var implemented int
-	var failed int
-	var abortReason string
-
 	for _, issue := range unblocked {
 		if ctx.Err() != nil {
 			logger.Warn("context cancelled, stopping daemon re-resolution", "error", ctx.Err())
@@ -340,58 +364,97 @@ func ReResolveAndProcess(
 		reporter.IssueStarted(issue.Number, issue.Title)
 		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
 
-		// Write dialogue after processing if we have a PR and writer.
-		if writer != nil && outcome.PRNumber > 0 {
-			bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
-			if fetchErr != nil {
-				logger.Warn("failed to fetch PR comment bodies for dialogue",
-					"issue_number", issue.Number, "error", fetchErr)
-			} else {
-				entries := BuildDialogueEntries(bodies)
-				if len(entries) > 0 {
-					if err := writer.WriteDialogue(issue.Number, entries); err != nil {
-						logger.Warn("failed to write dialogue",
-							"issue_number", issue.Number, "error", err)
-					}
-				}
-			}
-		}
+		writeResolveDialogue(writer, issue, outcome, cfg, logger)
 
 		var issueCost float64
 		if writer != nil {
 			issueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
 		}
 
-		switch outcome.Status {
-		case agent.StatusImplemented:
-			implemented++
-			reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost)
-			if err := PullAfterMerge(baseBranch, logger); err != nil {
-				logger.Warn("daemon re-resolve: stopping after merge sync failure", "error", err)
-				abortReason = fmt.Sprintf("could not sync after merge: %v", err)
-				goto doneLoop
-			}
-		case agent.StatusReadyToMerge:
-			reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost)
-		case agent.StatusNeedsHumanReview:
-			reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost)
-		default:
-			failed++
-			errMsg := ""
-			if outcome.Err != nil {
-				errMsg = outcome.Err.Error()
-			}
-			reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost)
-		}
+		abortReason = handleResolveOutcome(issue, outcome, &implemented, &failed, reporter, issueCost, baseBranch, logger)
 
 		logger.Info("daemon re-resolve: issue outcome",
 			"issue_number", outcome.IssueNumber,
 			"status", outcome.Status,
 			"pr_number", outcome.PRNumber,
 		)
-	}
 
-doneLoop:
+		if abortReason != "" {
+			break
+		}
+	}
+	return implemented, failed, abortReason
+}
+
+// writeResolveDialogue writes PR dialogue entries to the run data writer when
+// the outcome has a PR number and the writer is available.
+func writeResolveDialogue(writer *rundata.Writer, issue github.Issue, outcome agent.IssueOutcome, cfg *config.Config, logger *slog.Logger) {
+	if writer == nil || outcome.PRNumber == 0 {
+		return
+	}
+	bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+	if fetchErr != nil {
+		logger.Warn("failed to fetch PR comment bodies for dialogue",
+			"issue_number", issue.Number, "error", fetchErr)
+		return
+	}
+	entries := BuildDialogueEntries(bodies)
+	if len(entries) == 0 {
+		return
+	}
+	if err := writer.WriteDialogue(issue.Number, entries); err != nil {
+		logger.Warn("failed to write dialogue", "issue_number", issue.Number, "error", err)
+	}
+}
+
+// handleResolveOutcome records the issue outcome via reporter and updates the
+// implemented/failed counters. It returns a non-empty abortReason when the
+// caller must stop processing further issues.
+func handleResolveOutcome(
+	issue github.Issue,
+	outcome agent.IssueOutcome,
+	implemented *int,
+	failed *int,
+	reporter progress.ProgressReporter,
+	issueCost float64,
+	baseBranch string,
+	logger *slog.Logger,
+) string {
+	switch outcome.Status {
+	case agent.StatusImplemented:
+		*implemented++
+		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost)
+		if err := PullAfterMerge(baseBranch, logger); err != nil {
+			logger.Warn("daemon re-resolve: stopping after merge sync failure", "error", err)
+			return fmt.Sprintf("could not sync after merge: %v", err)
+		}
+	case agent.StatusReadyToMerge:
+		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost)
+	case agent.StatusNeedsHumanReview:
+		reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost)
+	default:
+		*failed++
+		errMsg := ""
+		if outcome.Err != nil {
+			errMsg = outcome.Err.Error()
+		}
+		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost)
+	}
+	return ""
+}
+
+// finalizeResolveRun writes run stats and fires notifications after a daemon
+// re-resolve run completes.
+func finalizeResolveRun(
+	ctx context.Context,
+	statsDB *stats.DB,
+	cfg *config.Config,
+	writer *rundata.Writer,
+	implemented, failed int,
+	abortReason string,
+	notifiers []notify.Notifier,
+	logger *slog.Logger,
+) {
 	if writer != nil {
 		summary := rundata.RunSummary{
 			Total:       implemented + failed,
@@ -407,10 +470,9 @@ doneLoop:
 
 	if abortReason == "" && implemented > 0 {
 		notify.Fire(ctx, notifiers, notify.Event{
-			Type: "run_complete",
-			Repo: cfg.Repo,
-			Message: fmt.Sprintf("daemon re-resolve: %d implemented, %d failed",
-				implemented, failed),
+			Type:    "run_complete",
+			Repo:    cfg.Repo,
+			Message: fmt.Sprintf("daemon re-resolve: %d implemented, %d failed", implemented, failed),
 		}, logger)
 	} else if abortReason != "" {
 		notify.Fire(ctx, notifiers, notify.Event{
@@ -419,8 +481,6 @@ doneLoop:
 			Message: fmt.Sprintf("daemon re-resolve aborted: %s", abortReason),
 		}, logger)
 	}
-
-	return len(unblocked) > 0, nil
 }
 
 // filterSingleIssue extracts a single issue from processable, returning an
