@@ -154,7 +154,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, cfg, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
+	return processIssues(ctx, issues, closedSet, noDarkNums, cfg, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
 }
 
 // filterNoDarkIssues removes any issue labeled with label.NoDark from the
@@ -268,7 +268,12 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // re-resolution after each merge. When an issue is successfully merged,
 // the closed set is refreshed and dependencies re-resolved so that newly
 // unblocked issues can be processed in the same run.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
+//
+// noDarkNums holds the issue numbers filtered out as nodark before this
+// function was called. They are re-injected into every rebuilt closedSet so
+// that issues depending on a nodark issue are never re-classified as blocked
+// on waves 2+.
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, noDarkNums []int, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
 	// Open stats DB early; nil on failure (errors logged, never fatal).
 	statsDB := OpenStatsDB(logger)
 	if statsDB != nil {
@@ -545,6 +550,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			break
 		}
 		closedSet = deps.ClosedSet(closedNumbers)
+		// Re-inject nodark issue numbers so issues that depend on a nodark
+		// issue are never re-classified as blocked on subsequent waves.
+		for _, n := range noDarkNums {
+			closedSet[n] = true
+		}
 		processable, blocked = categorizeIssues(allIssues, closedSet)
 	}
 

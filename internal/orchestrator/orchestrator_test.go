@@ -570,7 +570,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -617,7 +617,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "", nil)
+		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -666,7 +666,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -791,7 +791,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1170,7 +1170,7 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1250,7 +1250,7 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1307,7 +1307,7 @@ func TestProcessIssues_AbortNotificationFired(t *testing.T) {
 	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1419,7 +1419,7 @@ func TestRollup_NoneDoesNothing(t *testing.T) {
 	cfg.AutoMerge.Rollup = "none"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1450,7 +1450,7 @@ func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 
 	output := captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1487,7 +1487,7 @@ func TestRollup_AutoCreateAndMerges(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	output := captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1521,7 +1521,7 @@ func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1549,7 +1549,7 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1578,7 +1578,7 @@ func TestRollup_SkipWhenBaseBranchEqualsCustomDefault(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1607,7 +1607,7 @@ func TestRollup_UsesCustomDefaultBranch(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1638,7 +1638,7 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1682,7 +1682,7 @@ func TestRollup_SkipWhenAborted(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1725,7 +1725,7 @@ func TestReporter_IssueCompleted(t *testing.T) {
 	cfg := testConfig()
 	cfg.NoSandbox = true
 
-	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1772,7 +1772,7 @@ func TestReporter_WaveStarted(t *testing.T) {
 	cfg := testConfig()
 	cfg.NoSandbox = true
 
-	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1809,7 +1809,7 @@ func TestReporter_RunFinished(t *testing.T) {
 	cfg := testConfig()
 	cfg.NoSandbox = true
 
-	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1873,7 +1873,7 @@ func TestReporter_LoggerPreserved(t *testing.T) {
 	cfg := testConfig()
 	cfg.NoSandbox = true
 
-	if err := processIssues(context.Background(), allIssues, closedSet, cfg, logger, reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, logger, reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1912,7 +1912,7 @@ func TestReporter_AllBlockedCalled(t *testing.T) {
 	cfg := testConfig()
 	cfg.NoSandbox = true
 
-	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -2111,7 +2111,7 @@ func TestReporter_IssueCompleted_WithCost(t *testing.T) {
 	cfg := testConfig()
 	cfg.NoSandbox = true
 
-	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, writer, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, writer, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -2142,7 +2142,7 @@ func TestReporter_IssueCompleted_ZeroCostWhenNoWriter(t *testing.T) {
 	cfg.NoSandbox = true
 
 	// Pass nil writer — cost must degrade gracefully to 0.0.
-	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 

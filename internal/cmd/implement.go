@@ -278,10 +278,12 @@ func implementIssues(
 			continue
 		}
 
-		for _, l := range issue.Labels {
-			if l == label.NoDark {
-				return fmt.Errorf("issue #%d is labeled nodark (human-only task), skipping agent processing", issueNumber)
-			}
+		if hasNoDarkLabel(issue.Labels) {
+			logger.Info("skipping nodark issue", "issue_number", issueNumber, "title", issue.Title)
+			failed++
+			reporter.IssueCompleted(issueNumber, issue.Title, "failed", 0, 0,
+				fmt.Sprintf("issue #%d is labeled nodark (human-only task), skipping agent processing", issueNumber), 0.0)
+			continue
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
@@ -505,6 +507,16 @@ func parseIssueNumbers(s string) ([]int, error) {
 		nums = append(nums, n)
 	}
 	return nums, nil
+}
+
+// hasNoDarkLabel reports whether the nodark label is present in the labels slice.
+func hasNoDarkLabel(labels []string) bool {
+	for _, l := range labels {
+		if l == label.NoDark {
+			return true
+		}
+	}
+	return false
 }
 
 // fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
