@@ -30,6 +30,17 @@ func makeOutcome(runID string, issueNum int, status, title, errStr string) stats
 	}
 }
 
+// makeOutcomeWithPR creates an IssueOutcomeRecord with a PR number for testing.
+func makeOutcomeWithPR(runID string, issueNum int, status, title string, prNumber int) stats.IssueOutcomeRecord {
+	return stats.IssueOutcomeRecord{
+		RunID:       runID,
+		IssueNumber: issueNum,
+		Title:       title,
+		Status:      status,
+		PRNumber:    prNumber,
+	}
+}
+
 // makeStep creates a minimal StepResultRecord for testing.
 func makeStep(runID string, issueNum int, step string, cost float64) stats.StepResultRecord {
 	return stats.StepResultRecord{
@@ -334,6 +345,300 @@ func TestExecSummaryHTML(t *testing.T) {
 	reportIdx := strings.Index(out, "<h1")
 	if summaryIdx > reportIdx {
 		t.Error("executive summary card should appear before the h1 Sprint Report heading")
+	}
+}
+
+// TestShippedIssuesList verifies that implemented issues appear in the shipped list.
+func TestShippedIssuesList(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "org/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcomeWithPR("run-1", 100, rundata.OutcomeStatusImplemented, "Add login page", 100),
+		makeOutcomeWithPR("run-1", 101, rundata.OutcomeStatusImplemented, "Fix sidebar bug", 101),
+		makeOutcomeWithPR("run-1", 102, rundata.OutcomeStatusImplemented, "Improve search", 102),
+		makeOutcomeWithPR("run-1", 103, rundata.OutcomeStatusReadyToMerge, "Add dark mode", 103),
+		makeOutcomeWithPR("run-1", 104, rundata.OutcomeStatusImplemented, "Update docs", 104),
+		makeOutcome("run-1", 105, rundata.OutcomeStatusFailed, "Broken feature", "compile error"),
+	}
+	var steps []stats.StepResultRecord
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+
+	if len(rpt.ShippedIssues) != 5 {
+		t.Errorf("ShippedIssues = %d, want 5", len(rpt.ShippedIssues))
+	}
+
+	// Verify shipped list is sorted by issue number.
+	for i := 0; i < len(rpt.ShippedIssues)-1; i++ {
+		if rpt.ShippedIssues[i].IssueNumber >= rpt.ShippedIssues[i+1].IssueNumber {
+			t.Errorf("ShippedIssues not sorted: %d >= %d", rpt.ShippedIssues[i].IssueNumber, rpt.ShippedIssues[i+1].IssueNumber)
+		}
+	}
+
+	// Failed issue must not appear in shipped list.
+	for _, si := range rpt.ShippedIssues {
+		if si.IssueNumber == 105 {
+			t.Error("failed issue #105 should not be in shipped list")
+		}
+	}
+
+	// Terminal output contains shipped issues section.
+	termOut := report.RenderTerminal(rpt)
+	if !strings.Contains(termOut, "What was Shipped") {
+		t.Error("terminal output missing 'What was Shipped' section")
+	}
+	if !strings.Contains(termOut, "#100") {
+		t.Error("terminal output missing issue #100")
+	}
+	if !strings.Contains(termOut, "Add login page") {
+		t.Error("terminal output missing issue title 'Add login page'")
+	}
+}
+
+// TestTerminalShippedNoURLs verifies that terminal format shows issues without URLs.
+func TestTerminalShippedNoURLs(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "org/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcomeWithPR("run-1", 498, rundata.OutcomeStatusImplemented, "My feature", 498),
+	}
+	var steps []stats.StepResultRecord
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+
+	out := report.RenderTerminal(rpt)
+
+	if !strings.Contains(out, "#498") {
+		t.Error("terminal output missing issue #498")
+	}
+	if !strings.Contains(out, "My feature") {
+		t.Error("terminal output missing issue title")
+	}
+	// Terminal must not contain https:// URLs.
+	if strings.Contains(out, "https://") {
+		t.Error("terminal output must not contain URLs")
+	}
+}
+
+// TestMarkdownPRLinks verifies that markdown renders clickable PR links.
+func TestMarkdownPRLinks(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "org/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcomeWithPR("run-1", 498, rundata.OutcomeStatusImplemented, "My feature", 498),
+	}
+	var steps []stats.StepResultRecord
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+
+	out := report.RenderMarkdown(rpt)
+
+	wantLink := "[#498](https://github.com/org/repo/pull/498)"
+	if !strings.Contains(out, wantLink) {
+		t.Errorf("markdown output missing expected link %q; got:\n%s", wantLink, out)
+	}
+	if !strings.Contains(out, "My feature") {
+		t.Error("markdown output missing issue title")
+	}
+}
+
+// TestMarkdownShippedNoPRFallback verifies that an issue with PRNumber==0 renders without a link.
+func TestMarkdownShippedNoPRFallback(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "org/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcome("run-1", 499, rundata.OutcomeStatusImplemented, "No PR issue", ""),
+	}
+	var steps []stats.StepResultRecord
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+
+	out := report.RenderMarkdown(rpt)
+
+	// Should render without a link.
+	if !strings.Contains(out, "#499") {
+		t.Error("markdown output missing issue #499")
+	}
+	// Should not generate a malformed link with pull/0.
+	if strings.Contains(out, "pull/0") {
+		t.Error("markdown output must not render a pull/0 link for PRNumber==0")
+	}
+}
+
+// TestHTMLPRLinks verifies that HTML renders clickable anchor tags.
+func TestHTMLPRLinks(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "org/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcomeWithPR("run-1", 498, rundata.OutcomeStatusImplemented, "My feature", 498),
+	}
+	var steps []stats.StepResultRecord
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+
+	out := report.RenderHTML(rpt)
+
+	if !strings.Contains(out, `href="https://github.com/org/repo/pull/498"`) {
+		t.Errorf("HTML output missing expected href; got:\n%s", out)
+	}
+	if !strings.Contains(out, "#498") {
+		t.Error("HTML output missing issue number #498")
+	}
+	if !strings.Contains(out, "My feature") {
+		t.Error("HTML output missing issue title")
+	}
+}
+
+// TestFailedIssueExcludedFromShippedList verifies failed issues do not appear in shipped list.
+func TestFailedIssueExcludedFromShippedList(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "org/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcome("run-1", 200, rundata.OutcomeStatusFailed, "Broken A", "err"),
+		makeOutcome("run-1", 201, rundata.OutcomeStatusNeedsHumanReview, "Broken B", "err"),
+	}
+	var steps []stats.StepResultRecord
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+
+	if len(rpt.ShippedIssues) != 0 {
+		t.Errorf("ShippedIssues = %d, want 0 (no implemented issues)", len(rpt.ShippedIssues))
+	}
+
+	// Terminal output must not show shipped section when there are no shipped issues.
+	out := report.RenderTerminal(rpt)
+	if strings.Contains(out, "What was Shipped") {
+		t.Error("terminal output should omit 'What was Shipped' when no issues shipped")
+	}
+}
+
+// TestPeriodComparisonPositive verifies that a higher success rate shows a positive delta.
+func TestPeriodComparisonPositive(t *testing.T) {
+	since := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	// Current period: 89% success (8/9 implemented).
+	currRuns := []stats.RunRecord{makeRun("curr-1", "org/repo")}
+	var currOutcomes []stats.IssueOutcomeRecord
+	for i := 1; i <= 8; i++ {
+		currOutcomes = append(currOutcomes, makeOutcome("curr-1", i, rundata.OutcomeStatusImplemented, "Feature", ""))
+	}
+	currOutcomes = append(currOutcomes, makeOutcome("curr-1", 9, rundata.OutcomeStatusFailed, "Failed", "err"))
+
+	// Prior period: 75% success (3/4 implemented).
+	priorRuns := []stats.RunRecord{makeRun("prior-1", "org/repo")}
+	var priorOutcomes []stats.IssueOutcomeRecord
+	for i := 10; i <= 12; i++ {
+		priorOutcomes = append(priorOutcomes, makeOutcome("prior-1", i, rundata.OutcomeStatusImplemented, "Feature", ""))
+	}
+	priorOutcomes = append(priorOutcomes, makeOutcome("prior-1", 13, rundata.OutcomeStatusFailed, "Failed", "err"))
+
+	priorSince := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	priorUntil := since
+
+	rpt := report.Generate(currRuns, currOutcomes, nil, since, until, "org/repo")
+	priorRpt := report.Generate(priorRuns, priorOutcomes, nil, priorSince, priorUntil, "org/repo")
+	rpt.PriorPeriod = &priorRpt
+
+	// Terminal should show positive delta.
+	termOut := report.RenderTerminal(rpt)
+	if !strings.Contains(termOut, "Compared to Prior Period") {
+		t.Error("terminal output missing 'Compared to Prior Period' section")
+	}
+	if !strings.Contains(termOut, "+") {
+		t.Error("terminal output missing positive delta indicator")
+	}
+
+	// Markdown should include the comparison table.
+	mdOut := report.RenderMarkdown(rpt)
+	if !strings.Contains(mdOut, "Compared to Prior Period") {
+		t.Error("markdown output missing 'Compared to Prior Period' section")
+	}
+
+	// HTML should include the comparison section.
+	htmlOut := report.RenderHTML(rpt)
+	if !strings.Contains(htmlOut, "Compared to Prior Period") {
+		t.Error("HTML output missing 'Compared to Prior Period' section")
+	}
+}
+
+// TestPeriodComparisonNoPriorData verifies comparison section is omitted when PriorPeriod is nil.
+func TestPeriodComparisonNoPriorData(t *testing.T) {
+	runs, outcomes, steps := buildTestData()
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+	// PriorPeriod left nil.
+
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"terminal", report.RenderTerminal(rpt)},
+		{"markdown", report.RenderMarkdown(rpt)},
+		{"html", report.RenderHTML(rpt)},
+	} {
+		if strings.Contains(tc.out, "Compared to Prior Period") {
+			t.Errorf("%s output should omit comparison section when PriorPeriod is nil", tc.name)
+		}
+	}
+}
+
+// TestPeriodComparisonEmptyPrior verifies comparison section is omitted when prior period has no runs.
+func TestPeriodComparisonEmptyPrior(t *testing.T) {
+	runs, outcomes, steps := buildTestData()
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	rpt := report.Generate(runs, outcomes, steps, since, until, "org/repo")
+	// Prior period with zero runs.
+	emptyPrior := report.Generate(nil, nil, nil, since.AddDate(0, -1, 0), since, "org/repo")
+	rpt.PriorPeriod = &emptyPrior
+
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"terminal", report.RenderTerminal(rpt)},
+		{"markdown", report.RenderMarkdown(rpt)},
+		{"html", report.RenderHTML(rpt)},
+	} {
+		if strings.Contains(tc.out, "Compared to Prior Period") {
+			t.Errorf("%s output should omit comparison section when prior period has no runs", tc.name)
+		}
+	}
+}
+
+// TestShippedIssuesOmittedWhenEmpty verifies the "What was shipped" section is omitted
+// when all issues failed.
+func TestShippedIssuesOmittedWhenEmpty(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "org/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcome("run-1", 1, rundata.OutcomeStatusFailed, "Fail", "err"),
+	}
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, nil, since, until, "org/repo")
+
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"terminal", report.RenderTerminal(rpt)},
+		{"markdown", report.RenderMarkdown(rpt)},
+		{"html", report.RenderHTML(rpt)},
+	} {
+		if strings.Contains(tc.out, "What was Shipped") {
+			t.Errorf("%s output should omit 'What was Shipped' when no issues shipped", tc.name)
+		}
 	}
 }
 

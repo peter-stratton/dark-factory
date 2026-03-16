@@ -131,16 +131,38 @@ func runReport(w io.Writer, db *stats.DB, repo string, since, until time.Time, f
 		}
 	}
 
-	return renderReport(w, format, repo, since, until, runs, outcomes, steps, execSummary)
-}
-
-// renderReport generates and writes a sprint report in the requested format.
-// execSummary is injected into the report before rendering; pass an empty
-// string to omit the executive summary section.
-func renderReport(w io.Writer, format, repo string, since, until time.Time, runs []stats.RunRecord, outcomes []stats.IssueOutcomeRecord, steps []stats.StepResultRecord, execSummary string) error {
 	rpt := report.Generate(runs, outcomes, steps, since, until, repo)
 	rpt.ExecSummary = execSummary
 
+	// Query the equivalent prior period and attach it for period comparison.
+	duration := until.Sub(since)
+	priorSince := since.Add(-duration)
+	priorUntil := since
+	priorFilter := stats.RunFilter{
+		Repo:  repo,
+		Since: priorSince,
+		Until: priorUntil,
+	}
+	priorRuns, err := stats.QueryRuns(ctx, db, priorFilter)
+	if err != nil {
+		return fmt.Errorf("querying prior runs: %w", err)
+	}
+	priorOutcomes, err := stats.QueryIssueOutcomes(ctx, db, priorFilter)
+	if err != nil {
+		return fmt.Errorf("querying prior issue outcomes: %w", err)
+	}
+	priorSteps, err := stats.QueryStepResults(ctx, db, priorFilter)
+	if err != nil {
+		return fmt.Errorf("querying prior step results: %w", err)
+	}
+	priorRpt := report.Generate(priorRuns, priorOutcomes, priorSteps, priorSince, priorUntil, repo)
+	rpt.PriorPeriod = &priorRpt
+
+	return renderReport(w, format, rpt)
+}
+
+// renderReport writes a pre-built sprint report in the requested format.
+func renderReport(w io.Writer, format string, rpt report.SprintReport) error {
 	var rendered string
 	switch format {
 	case "markdown":
