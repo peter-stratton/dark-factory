@@ -41,14 +41,15 @@ func TestTransition(t *testing.T) {
 
 func TestAll(t *testing.T) {
 	all := All()
-	if len(all) != 3 {
-		t.Errorf("All() returned %d labels, want 3", len(all))
+	if len(all) != 4 {
+		t.Errorf("All() returned %d labels, want 4", len(all))
 	}
 
 	want := map[string]bool{
 		AwaitingHumanReview:  true,
 		FixingReviewFeedback: true,
 		ReadyToMerge:         true,
+		NoDark:               true,
 	}
 	for _, label := range all {
 		if !want[label] {

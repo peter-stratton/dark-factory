@@ -71,12 +71,28 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		return nil
 	}
 
+	// Filter out nodark issues before dependency resolution. They do not
+	// participate in the run — not blocked, not processable, not shown in TUI.
+	// Collect their numbers so they can be treated as "resolved" during
+	// dependency resolution (nodark issues must not block other issues).
+	issues, noDarkNums := filterNoDarkIssues(issues, logger)
+
+	if len(issues) == 0 {
+		logger.Info("all issues are labeled nodark, nothing to process", "milestone", milestone)
+		fmt.Println("No issues found in milestone.")
+		return nil
+	}
+
 	// Step 2: Fetch closed issues for dependency resolution.
 	closedNumbers, err := github.FetchClosedIssueNumbers(cfg.Repo)
 	if err != nil {
 		return fmt.Errorf("fetching closed issues: %w", err)
 	}
 	closedSet := deps.ClosedSet(closedNumbers)
+	// Treat nodark issues as resolved so they do not block other issues.
+	for _, n := range noDarkNums {
+		closedSet[n] = true
+	}
 
 	// Step 3: Categorize issues into blocked and processable.
 	processable, blocked := categorizeIssues(issues, closedSet)
@@ -138,7 +154,35 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, cfg, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
+	return processIssues(ctx, issues, closedSet, noDarkNums, cfg, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
+}
+
+// filterNoDarkIssues removes any issue labeled with label.NoDark from the
+// slice, logging each skipped issue at info level. It returns the filtered
+// slice and the numbers of the removed issues so callers can treat them as
+// resolved during dependency resolution.
+func filterNoDarkIssues(issues []github.Issue, logger *slog.Logger) ([]github.Issue, []int) {
+	var noDarkNums []int
+	filtered := issues[:0:0]
+	for _, iss := range issues {
+		if hasLabel(iss.Labels, label.NoDark) {
+			logger.Info("skipping nodark issue", "issue_number", iss.Number, "title", iss.Title)
+			noDarkNums = append(noDarkNums, iss.Number)
+			continue
+		}
+		filtered = append(filtered, iss)
+	}
+	return filtered, noDarkNums
+}
+
+// hasLabel reports whether the given label name is present in the labels slice.
+func hasLabel(labels []string, name string) bool {
+	for _, l := range labels {
+		if l == name {
+			return true
+		}
+	}
+	return false
 }
 
 // categorizeIssues splits issues into processable and blocked based on the
@@ -224,7 +268,12 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // re-resolution after each merge. When an issue is successfully merged,
 // the closed set is refreshed and dependencies re-resolved so that newly
 // unblocked issues can be processed in the same run.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
+//
+// noDarkNums holds the issue numbers filtered out as nodark before this
+// function was called. They are re-injected into every rebuilt closedSet so
+// that issues depending on a nodark issue are never re-classified as blocked
+// on waves 2+.
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, noDarkNums []int, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
 	// Open stats DB early; nil on failure (errors logged, never fatal).
 	statsDB := OpenStatsDB(logger)
 	if statsDB != nil {
@@ -501,6 +550,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			break
 		}
 		closedSet = deps.ClosedSet(closedNumbers)
+		// Re-inject nodark issue numbers so issues that depend on a nodark
+		// issue are never re-classified as blocked on subsequent waves.
+		for _, n := range noDarkNums {
+			closedSet[n] = true
+		}
 		processable, blocked = categorizeIssues(allIssues, closedSet)
 	}
 

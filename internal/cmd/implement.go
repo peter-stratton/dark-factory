@@ -16,6 +16,7 @@ import (
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/notify"
@@ -277,6 +278,14 @@ func implementIssues(
 			continue
 		}
 
+		if hasNoDarkLabel(issue.Labels) {
+			logger.Info("skipping nodark issue", "issue_number", issueNumber, "title", issue.Title)
+			failed++
+			reporter.IssueCompleted(issueNumber, issue.Title, "failed", 0, 0,
+				fmt.Sprintf("issue #%d is labeled nodark (human-only task), skipping agent processing", issueNumber), 0.0)
+			continue
+		}
+
 		reporter.IssueStarted(issue.Number, issue.Title)
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
 		writeIssueDialogue(writer, cfg.Repo, issueNumber, outcome, logger)
@@ -498,6 +507,16 @@ func parseIssueNumbers(s string) ([]int, error) {
 		nums = append(nums, n)
 	}
 	return nums, nil
+}
+
+// hasNoDarkLabel reports whether the nodark label is present in the labels slice.
+func hasNoDarkLabel(labels []string) bool {
+	for _, l := range labels {
+		if l == label.NoDark {
+			return true
+		}
+	}
+	return false
 }
 
 // fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
