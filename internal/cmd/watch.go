@@ -28,6 +28,7 @@ linked issue is closed.
 Runs as a long-lived foreground process. Press Ctrl+C to stop.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		configPath, _ := cmd.Flags().GetString("config")
+		noTUI, _ := cmd.Flags().GetBool("no-tui")
 		flags := config.CLIFlags{Config: configPath}
 		if cmd.Flags().Changed("repo") {
 			v, _ := cmd.Flags().GetString("repo")
@@ -39,12 +40,22 @@ Runs as a long-lived foreground process. Press Ctrl+C to stop.`,
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		// Determine whether to use TUI mode: interactive terminal and --no-tui not set.
+		useTUI := !noTUI && isTerminalFn(int(os.Stdout.Fd()))
+
+		// Select the appropriate logger factory. In TUI mode the TUI owns stdout,
+		// so the logger must write only to the JSON file.
+		logFactory := logging.NewLogger
+		if useTUI {
+			logFactory = logging.NewLoggerFileOnly
+		}
+
 		logDir, err := os.MkdirTemp("", "godark-watch-*")
 		if err != nil {
 			return fmt.Errorf("creating temp log dir: %w", err)
 		}
 
-		logger, err := logging.NewLogger(logDir)
+		logger, err := logFactory(logDir)
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
@@ -71,6 +82,7 @@ func init() {
 	f := watchCmd.Flags()
 	f.String("repo", "", "GitHub repository (owner/repo)")
 	f.String("config", "godark.yaml", "Path to configuration file")
+	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
 
 	rootCmd.AddCommand(watchCmd)
 }
