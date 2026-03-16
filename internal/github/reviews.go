@@ -88,6 +88,25 @@ func ListWatchedPRs(repo, label string) ([]WatchedPR, error) {
 	return prs, nil
 }
 
+// ListMergedPRs returns merged pull requests in repo.
+func ListMergedPRs(repo string) ([]PRInfo, error) {
+	out, err := CommandRunner("gh", "pr", "list",
+		"--repo", repo,
+		"--state", "merged",
+		"--json", "number,headRefName",
+		"--limit", "200",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing merged PRs: %w", err)
+	}
+
+	var prs []PRInfo
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return nil, fmt.Errorf("parsing merged pr list: %w", err)
+	}
+	return prs, nil
+}
+
 // FetchPRReviews returns all reviews for the given pull request number in repo.
 func FetchPRReviews(repo string, prNum int) ([]PRReview, error) {
 	out, err := CommandRunner("gh", "api",

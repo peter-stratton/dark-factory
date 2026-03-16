@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/progress"
 	"github.com/spf13/cobra"
 )
 
@@ -250,6 +254,60 @@ func TestNoSandboxWarning(t *testing.T) {
 
 	if !strings.Contains(out.String(), "without sandbox") {
 		t.Errorf("stderr = %q, want warning containing 'without sandbox'", out.String())
+	}
+}
+
+// TestWatchFlagRegistered verifies that the --watch flag exists on the run
+// command and defaults to false.
+func TestWatchFlagRegistered(t *testing.T) {
+	f := runCmd.Flags().Lookup("watch")
+	if f == nil {
+		t.Fatal("run command missing --watch flag")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("watch default = %q, want %q", f.DefValue, "false")
+	}
+}
+
+// TestWatchFlagIndependentOfNoTUI verifies that --watch and --no-tui are
+// separate flags that can be set independently.
+func TestWatchFlagIndependentOfNoTUI(t *testing.T) {
+	watchFlag := runCmd.Flags().Lookup("watch")
+	noTUIFlag := runCmd.Flags().Lookup("no-tui")
+
+	if watchFlag == nil {
+		t.Fatal("run command missing --watch flag")
+	}
+	if noTUIFlag == nil {
+		t.Fatal("run command missing --no-tui flag")
+	}
+
+	// Both flags have independent defaults.
+	if watchFlag.DefValue != "false" {
+		t.Errorf("watch default = %q, want %q", watchFlag.DefValue, "false")
+	}
+	if noTUIFlag.DefValue != "false" {
+		t.Errorf("no-tui default = %q, want %q", noTUIFlag.DefValue, "false")
+	}
+}
+
+// TestRunListPRsFnSkipsWatchWhenNoPRs verifies that runEnterWatch exits without
+// entering the polling loop when no PRs are awaiting review.
+func TestRunListPRsFnSkipsWatchWhenNoPRs(t *testing.T) {
+	orig := runListPRsFn
+	runListPRsFn = func(_, _ string) ([]github.PRInfo, error) {
+		return nil, nil // no awaiting PRs
+	}
+	defer func() { runListPRsFn = orig }()
+
+	cfg := &config.Config{Repo: "owner/repo"}
+
+	// runEnterWatch should not invoke the watch loop — it just returns nil.
+	// Providing a cancelled context would expose any loop that starts (it would
+	// exit immediately), but we primarily verify no panic/error on empty queue.
+	ctx := context.Background()
+	if err := runEnterWatch(ctx, cfg, slog.Default(), "", progress.NewTextReporter(os.Stdout)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

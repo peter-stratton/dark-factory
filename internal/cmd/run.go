@@ -3,17 +3,25 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
+	"github.com/phs/dark-factory/internal/github"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/logging"
 	"github.com/phs/dark-factory/internal/orchestrator"
 	"github.com/phs/dark-factory/internal/progress"
 	"github.com/phs/dark-factory/internal/pypi"
+	"github.com/phs/dark-factory/internal/sandbox"
 	"github.com/phs/dark-factory/internal/tui"
+	"github.com/phs/dark-factory/internal/watch"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -28,6 +36,7 @@ each unblocked issue through the implement → review → merge loop.`,
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		force, _ := cmd.Flags().GetBool("force")
 		noTUI, _ := cmd.Flags().GetBool("no-tui")
+		watchFlag, _ := cmd.Flags().GetBool("watch")
 
 		flags := parseCLIFlags(cmd)
 		flags.Config = configPath
@@ -106,8 +115,10 @@ each unblocked issue through the implement → review → merge loop.`,
 
 		if useTUI {
 			// Wrap the signal context with a cancel we can hand to the TUI
-			// so ctrl+c in the TUI cancels the orchestrator gracefully.
-			ctx, cancel := context.WithCancel(ctx)
+			// so ctrl+c in the TUI cancels the orchestrator and watch loop
+			// gracefully. Both orchestrator.Run and runEnterWatch run under
+			// tuiCtx so the TUI ctrl+c propagates to the watch loop.
+			tuiCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
 			// Metadata fields (milestone, timestamp, etc.) are populated later
@@ -119,8 +130,17 @@ each unblocked issue through the implement → review → merge loop.`,
 
 			errCh := make(chan error, 1)
 			go func() {
-				err := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
-				errCh <- err
+				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+				if err != nil || !watchFlag {
+					errCh <- err
+					program.Send(tui.RunDoneMsg{})
+					return
+				}
+				// Signal the TUI that we are entering watch mode; the spinner keeps
+				// running and the hint changes to "watching for merges".
+				program.Send(tui.WatchingMsg{})
+				watchErr := runEnterWatch(tuiCtx, cfg, logger, milestone, reporter)
+				errCh <- watchErr
 				program.Send(tui.RunDoneMsg{})
 			}()
 
@@ -129,13 +149,146 @@ each unblocked issue through the implement → review → merge loop.`,
 		}
 
 		reporter := progress.NewTextReporter(os.Stdout)
-		return orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+		runErr := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+		if runErr != nil || !watchFlag {
+			return runErr
+		}
+
+		// --watch: enter polling loop if any PRs are awaiting review.
+		return runEnterWatch(ctx, cfg, logger, milestone, reporter)
 	},
 }
 
 // isTerminalFn reports whether the given file descriptor is connected to a
 // terminal. Replaceable for testing.
 var isTerminalFn = term.IsTerminal
+
+// runEnterWatch checks for pending review PRs and, if any exist, loads prompts
+// and auth then enters the RunUntilDone polling loop. Called after
+// orchestrator.Run when --watch is set. milestone is used for re-resolution
+// runs triggered by external merges. reporter is used to surface re-resolution
+// issue progress (TUI reporter in TUI mode, text reporter otherwise).
+func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, reporter progress.ProgressReporter) error {
+	// Check for awaiting PRs first to avoid loading prompts/auth unnecessarily.
+	prs, err := runListPRsFn(cfg.Repo, label.AwaitingHumanReview)
+	if err != nil {
+		logger.Warn("checking for awaiting PRs before watch", "err", err)
+	}
+
+	if err == nil && len(prs) == 0 {
+		logger.Info("no PRs awaiting review after run, skipping watch loop")
+		return nil
+	}
+
+	prompts, err := agent.LoadPrompts(cfg)
+	if err != nil {
+		return fmt.Errorf("loading prompts: %w", err)
+	}
+
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	if err != nil {
+		return fmt.Errorf("collecting auth: %w", err)
+	}
+
+	// Re-fetch the current open milestone issues so re-resolution has the full
+	// dependency graph. Issues that were blocked in the first pass are still
+	// open; their dependencies (now merged) appear in FetchClosedIssueNumbers.
+	allIssues, noDarkNums, err := runFetchMilestoneIssuesFn(cfg.Repo, milestone, logger)
+	if err != nil {
+		logger.Warn("failed to fetch milestone issues for watch re-resolution, proceeding without daemon re-resolve", "err", err)
+		allIssues = nil
+	}
+
+	// seen tracks issue numbers already processed (in the initial run or prior
+	// daemon cycles) so re-resolution does not reprocess completed issues.
+	// Pre-populate from PRs created by the initial run so that issues whose
+	// PRs are already awaiting review or ready to merge are not reprocessed.
+	seen := seedSeenFromProcessedPRs(cfg.Repo, logger)
+
+	w := watch.New(cfg, prompts, authEnv, logger)
+
+	if len(allIssues) > 0 {
+		w.SetMergeCallback(func(mCtx context.Context, mergedNums []int) {
+			logger.Info("daemon re-resolve triggered", "merged_issue_count", len(mergedNums))
+			if _, reErr := orchestrator.ReResolveAndProcess(
+				mCtx, allIssues, noDarkNums, seen, cfg, milestone, logger, reporter, nil,
+			); reErr != nil {
+				logger.Error("daemon re-resolve failed", "err", reErr)
+			}
+		})
+	}
+
+	return w.RunUntilDone(ctx)
+}
+
+// seedSeenFromProcessedPRs queries open PRs that carry PR lifecycle labels and
+// returns a map pre-populated with the issue numbers associated with those PRs.
+// This ensures that daemon re-resolution skips issues already handled by the
+// initial orchestrator.Run call (e.g. PRs awaiting human review or ready to
+// merge). Failed issues are intentionally excluded so the daemon can retry them.
+func seedSeenFromProcessedPRs(repo string, logger *slog.Logger) map[int]bool {
+	seen := make(map[int]bool)
+	for _, lbl := range []string{label.AwaitingHumanReview, label.ReadyToMerge, label.FixingReviewFeedback} {
+		prs, err := runListPRsFn(repo, lbl)
+		if err != nil {
+			logger.Warn("watch: failed to fetch PRs for seen seeding", "label", lbl, "err", err)
+			continue
+		}
+		for _, pr := range prs {
+			if n := issueNumFromBranch(pr.HeadRefName); n != 0 {
+				seen[n] = true
+			}
+		}
+	}
+	return seen
+}
+
+// issueNumFromBranch parses the issue number prefix from a PR head branch name.
+// Branch names follow the "<issue-number>-<slug>" convention (e.g. "42-fix-bug").
+// Returns 0 if the branch name does not match the convention.
+func issueNumFromBranch(name string) int {
+	idx := strings.Index(name, "-")
+	if idx <= 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(name[:idx])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// runFetchMilestoneIssuesFn fetches open milestone issues and splits out
+// nodark-labeled ones. Replaceable for testing.
+var runFetchMilestoneIssuesFn = func(repo, milestone string, logger *slog.Logger) ([]github.Issue, []int, error) {
+	issues, err := github.FetchMilestoneIssues(repo, milestone)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching milestone issues: %w", err)
+	}
+	var noDarkNums []int
+	var filtered []github.Issue
+	for _, iss := range issues {
+		hasNoDark := false
+		for _, l := range iss.Labels {
+			if l == label.NoDark {
+				hasNoDark = true
+				break
+			}
+		}
+		if hasNoDark {
+			logger.Info("watch: skipping nodark issue", "issue_number", iss.Number)
+			noDarkNums = append(noDarkNums, iss.Number)
+		} else {
+			filtered = append(filtered, iss)
+		}
+	}
+	return filtered, noDarkNums, nil
+}
+
+// runListPRsFn is a testability seam for listing PRs by label. Replaced in tests.
+var runListPRsFn = func(repo, lbl string) ([]github.PRInfo, error) {
+	return github.ListPRsWithLabel(repo, lbl)
+}
 
 func init() {
 	f := runCmd.Flags()
@@ -148,6 +301,7 @@ func init() {
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
+	f.Bool("watch", false, "After first pass, keep running and poll for PR reviews until no more await review")
 	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
 	f.String("auto-merge-rollup", "manual", "Rollup merge strategy after run: none (no rollup PR), manual (create PR but don't merge), auto (create and merge rollup PR)")
 	f.String("config", "godark.yaml", "Path to configuration file")

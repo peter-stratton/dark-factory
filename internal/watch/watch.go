@@ -22,21 +22,85 @@ const defaultPollInterval = 60 * time.Second
 
 // Watch polls GitHub for PRs awaiting human review and handles review events.
 type Watch struct {
-	cfg       *config.Config
-	prompts   *agent.Prompts
-	authEnv   map[string]string
-	logger    *slog.Logger
-	processed map[int]bool
+	cfg              *config.Config
+	prompts          *agent.Prompts
+	authEnv          map[string]string
+	logger           *slog.Logger
+	processed        map[int]bool
+	mergedIssues     map[int]bool // issue numbers whose merged PRs have already been reported
+	seenIssues       map[int]bool // issue numbers ever seen in awaiting-human-review label
+	onMergesDetected func(ctx context.Context, mergedNums []int)
 }
 
 // New creates a Watch instance with the given dependencies.
 func New(cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) *Watch {
 	return &Watch{
-		cfg:       cfg,
-		prompts:   prompts,
-		authEnv:   authEnv,
-		logger:    logger,
-		processed: make(map[int]bool),
+		cfg:          cfg,
+		prompts:      prompts,
+		authEnv:      authEnv,
+		logger:       logger,
+		processed:    make(map[int]bool),
+		mergedIssues: make(map[int]bool),
+		seenIssues:   make(map[int]bool),
+	}
+}
+
+// SetMergeCallback registers a function to be called whenever new external
+// merges are detected by the polling loop. The callback receives the context
+// and the slice of newly merged issue numbers. Only one callback may be set;
+// calling SetMergeCallback again replaces any existing callback.
+func (w *Watch) SetMergeCallback(fn func(ctx context.Context, mergedNums []int)) {
+	w.onMergesDetected = fn
+}
+
+// RunUntilDone runs the polling loop until ctx is cancelled or there are no
+// more PRs labeled godark:awaiting-human-review. It is used by
+// "godark run --watch" to stay alive after the first pass completes, then exit
+// cleanly once all outstanding PRs are reviewed or merged.
+func (w *Watch) RunUntilDone(ctx context.Context) error {
+	interval, err := w.pollInterval()
+	if err != nil {
+		return err
+	}
+
+	w.logger.Info("starting watch (exit when empty)", "repo", w.cfg.Repo, "poll_interval", interval)
+
+	// Poll once immediately before the first tick so results appear right away.
+	if err := w.PollOnce(ctx); err != nil && ctx.Err() == nil {
+		w.logger.Error("poll error", "err", err)
+	}
+
+	// Check remaining PRs after the initial poll; exit if none remain.
+	prs, listErr := listPRsFn(w.cfg.Repo, label.AwaitingHumanReview)
+	if listErr != nil && ctx.Err() == nil {
+		w.logger.Error("listing PRs after poll", "err", listErr)
+	}
+	if listErr == nil && len(prs) == 0 {
+		w.logger.Info("no PRs awaiting review, watch exiting")
+		return nil
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			w.logger.Info("watch stopped")
+			return nil
+		case <-ticker.C:
+			if err := w.PollOnce(ctx); err != nil && ctx.Err() == nil {
+				w.logger.Error("poll error", "err", err)
+			}
+			prs, listErr := listPRsFn(w.cfg.Repo, label.AwaitingHumanReview)
+			if listErr != nil && ctx.Err() == nil {
+				w.logger.Error("listing PRs after poll", "err", listErr)
+			}
+			if listErr == nil && len(prs) == 0 {
+				w.logger.Info("no PRs awaiting review, watch exiting")
+				return nil
+			}
+		}
 	}
 }
 
@@ -141,7 +205,43 @@ func (w *Watch) PollOnce(ctx context.Context) error {
 		}
 	}
 
+	// Accumulate issue numbers and detect externally merged PRs.
+	w.pollExternalMerges(ctx, prs)
+
 	return nil
+}
+
+// pollExternalMerges accumulates issue numbers from prs into seenIssues and
+// detects any PRs that have been merged externally since the last poll cycle.
+func (w *Watch) pollExternalMerges(ctx context.Context, prs []github.PRInfo) {
+	for _, pr := range prs {
+		if n := issueNumberFromBranch(pr.HeadRefName); n != 0 {
+			w.seenIssues[n] = true
+		}
+	}
+
+	if len(w.seenIssues) == 0 {
+		return
+	}
+
+	seenList := make([]int, 0, len(w.seenIssues))
+	for n := range w.seenIssues {
+		if !w.mergedIssues[n] {
+			seenList = append(seenList, n)
+		}
+	}
+
+	merged, err := w.DetectMergedPRs(ctx, w.cfg.Repo, seenList)
+	if err != nil {
+		w.logger.Error("detecting merged PRs", "err", err)
+		return
+	}
+	for _, n := range merged {
+		w.logger.Info("PR merged externally", "issue_number", n)
+	}
+	if len(merged) > 0 && w.onMergesDetected != nil {
+		w.onMergesDetected(ctx, merged)
+	}
 }
 
 // HandleChangesRequested invokes the implementer agent to address human review
@@ -316,6 +416,40 @@ func (w *Watch) HandleApproved(ctx context.Context, pr github.PRInfo, review git
 	)
 }
 
+// DetectMergedPRs checks which of the given issue numbers now have merged PRs
+// that have not been reported in a prior call. It fetches recently merged PRs
+// via listMergedPRsFn, correlates them to issue numbers through the branch name
+// convention, and records newly detected merges in w.mergedIssues so they are
+// not returned again on subsequent calls.
+func (w *Watch) DetectMergedPRs(ctx context.Context, repo string, issueNumbers []int) ([]int, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	mergedPRs, err := listMergedPRsFn(repo)
+	if err != nil {
+		return nil, fmt.Errorf("detect merged PRs: %w", err)
+	}
+
+	// Build a set of issue numbers that have at least one merged PR.
+	mergedSet := make(map[int]bool, len(mergedPRs))
+	for _, pr := range mergedPRs {
+		if n := issueNumberFromBranch(pr.HeadRefName); n != 0 {
+			mergedSet[n] = true
+		}
+	}
+
+	// Collect newly merged issues from the provided list.
+	newlyMerged := make([]int, 0)
+	for _, issueNum := range issueNumbers {
+		if mergedSet[issueNum] && !w.mergedIssues[issueNum] {
+			newlyMerged = append(newlyMerged, issueNum)
+			w.mergedIssues[issueNum] = true
+		}
+	}
+
+	return newlyMerged, nil
+}
+
 // buildFeedback concatenates the review body and any inline review comments
 // into a single feedback string. Network errors fetching inline comments are
 // logged and non-fatal.
@@ -386,3 +520,7 @@ var fetchReviewCommentsFn = github.FetchReviewComments
 var fetchIssueFn = github.FetchIssue
 
 var mergePRFn = github.MergeFeaturePR
+
+var listPRsFn = github.ListPRsWithLabel
+
+var listMergedPRsFn = github.ListMergedPRs

@@ -40,6 +40,7 @@ func stubSeams(t *testing.T) {
 	origFetchComments := fetchReviewCommentsFn
 	origFetchIssue := fetchIssueFn
 	origMergePR := mergePRFn
+	origListMergedPRs := listMergedPRsFn
 
 	retryFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
 		return &agent.Result{SessionID: "sess-stub"}, nil
@@ -53,6 +54,7 @@ func stubSeams(t *testing.T) {
 		return github.Issue{Number: 42, Title: "test issue"}, nil
 	}
 	mergePRFn = func(_ string, _ int) error { return nil }
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) { return nil, nil }
 
 	t.Cleanup(func() {
 		retryFn = origRetry
@@ -61,6 +63,7 @@ func stubSeams(t *testing.T) {
 		fetchReviewCommentsFn = origFetchComments
 		fetchIssueFn = origFetchIssue
 		mergePRFn = origMergePR
+		listMergedPRsFn = origListMergedPRs
 	})
 }
 
@@ -869,5 +872,314 @@ func TestBuildFeedback_EmptyBodyWithComments(t *testing.T) {
 	got := buildFeedback("", fetchFn, "owner/repo", 5, 101, slog.Default())
 	if got != "inline comment" {
 		t.Errorf("expected %q, got %q", "inline comment", got)
+	}
+}
+
+// TestDetectMergedPRs_DetectsMergedPR verifies that an issue whose PR has been
+// merged is returned by DetectMergedPRs.
+func TestDetectMergedPRs_DetectsMergedPR(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-fix-bug"}}, nil
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0] != 42 {
+		t.Errorf("expected [42], got %v", got)
+	}
+	if !w.mergedIssues[42] {
+		t.Error("expected issue 42 to be recorded in mergedIssues")
+	}
+}
+
+// TestDetectMergedPRs_AlreadyDetectedSkipped verifies that an issue already
+// present in mergedIssues is not returned again.
+func TestDetectMergedPRs_AlreadyDetectedSkipped(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-fix-bug"}}, nil
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w.mergedIssues[42] = true // already detected in a prior cycle
+
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty result for already-detected issue, got %v", got)
+	}
+}
+
+// TestDetectMergedPRs_NoMerges verifies that an empty slice is returned when
+// no PRs in the provided list have been merged.
+func TestDetectMergedPRs_NoMerges(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{}, nil // no merged PRs
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42, 43})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty result when no PRs merged, got %v", got)
+	}
+}
+
+// TestDetectMergedPRs_MultipleIssuesMerged verifies that all matching merged
+// issues are returned when multiple PRs have been merged.
+func TestDetectMergedPRs_MultipleIssuesMerged(t *testing.T) {
+	origListMergedPRs := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{
+			{Number: 5, HeadRefName: "42-fix-bug"},
+			{Number: 6, HeadRefName: "43-another-fix"},
+		}, nil
+	}
+	defer func() { listMergedPRsFn = origListMergedPRs }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42, 43})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 merged issues, got %v", got)
+	}
+	gotSet := make(map[int]bool)
+	for _, n := range got {
+		gotSet[n] = true
+	}
+	if !gotSet[42] || !gotSet[43] {
+		t.Errorf("expected both 42 and 43 in result, got %v", got)
+	}
+	if !w.mergedIssues[42] || !w.mergedIssues[43] {
+		t.Error("expected both issues to be recorded in mergedIssues")
+	}
+}
+
+// TestRunUntilDone_ExitsWhenNoPRs verifies that RunUntilDone exits immediately
+// if no PRs are awaiting review after the initial poll.
+func TestRunUntilDone_ExitsWhenNoPRs(t *testing.T) {
+	stubSeams(t)
+
+	origListPRs := listPRsFn
+	listPRsFn = func(_ string, _ string) ([]github.PRInfo, error) {
+		return nil, nil // no PRs awaiting review
+	}
+	defer func() { listPRsFn = origListPRs }()
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+	err := w.RunUntilDone(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestRunUntilDone_ExitsAfterLastPRMerged verifies that RunUntilDone exits once
+// the last awaiting PR is gone (PR count drops to zero after a poll tick).
+func TestRunUntilDone_ExitsAfterLastPRMerged(t *testing.T) {
+	stubSeams(t)
+
+	callCount := 0
+	origListPRs := listPRsFn
+	listPRsFn = func(_ string, _ string) ([]github.PRInfo, error) {
+		callCount++
+		// First call (after initial poll): still 1 PR awaiting.
+		// Second call (after a tick): PR is gone.
+		if callCount == 1 {
+			return []github.PRInfo{{Number: 5, HeadRefName: "42-feature"}}, nil
+		}
+		return nil, nil
+	}
+	defer func() { listPRsFn = origListPRs }()
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+	err := w.RunUntilDone(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if callCount < 2 {
+		t.Errorf("expected at least 2 PR list calls, got %d", callCount)
+	}
+}
+
+// TestRunUntilDone_ContextCancelled verifies that a cancelled context causes
+// RunUntilDone to return nil cleanly.
+func TestRunUntilDone_ContextCancelled(t *testing.T) {
+	stubSeams(t)
+
+	origListPRs := listPRsFn
+	listPRsFn = func(_ string, _ string) ([]github.PRInfo, error) {
+		// Always return a PR so the loop would run forever without cancellation.
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-feature"}}, nil
+	}
+	defer func() { listPRsFn = origListPRs }()
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- w.RunUntilDone(ctx)
+	}()
+
+	// Cancel context after a short delay to allow the goroutine to start.
+	cancel()
+
+	err := <-done
+	if err != nil {
+		t.Fatalf("expected nil on context cancel, got %v", err)
+	}
+}
+
+// TestSetMergeCallback_CalledOnExternalMerge verifies that the merge callback
+// is invoked when pollExternalMerges detects a newly merged PR.
+func TestSetMergeCallback_CalledOnExternalMerge(t *testing.T) {
+	stubSeams(t)
+
+	// Arrange: PR #5 with branch "42-feature-branch" is awaiting review.
+	// listMergedPRsFn will report it merged.
+	origListMerged := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-feature-branch"}}, nil
+	}
+	t.Cleanup(func() { listMergedPRsFn = origListMerged })
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		}
+		if len(args) >= 2 && args[0] == "api" {
+			return []byte(`[]`), nil // no reviews
+		}
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+
+	var callbackIssues []int
+	w.SetMergeCallback(func(_ context.Context, nums []int) {
+		callbackIssues = append(callbackIssues, nums...)
+	})
+
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("PollOnce error: %v", err)
+	}
+
+	if len(callbackIssues) != 1 || callbackIssues[0] != 42 {
+		t.Errorf("expected callback with [42], got %v", callbackIssues)
+	}
+}
+
+// TestSetMergeCallback_NotCalledWhenNothingMerged verifies the callback is not
+// invoked when no new merges are detected.
+func TestSetMergeCallback_NotCalledWhenNothingMerged(t *testing.T) {
+	stubSeams(t)
+
+	origListMerged := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return nil, nil // no merged PRs
+	}
+	t.Cleanup(func() { listMergedPRsFn = origListMerged })
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		}
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+
+	callbackInvoked := false
+	w.SetMergeCallback(func(_ context.Context, nums []int) {
+		callbackInvoked = true
+	})
+
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("PollOnce error: %v", err)
+	}
+
+	if callbackInvoked {
+		t.Error("expected callback not to be invoked when no merges detected")
+	}
+}
+
+// TestSetMergeCallback_NotCalledForAlreadyReportedMerge verifies idempotency:
+// the callback is only invoked once per unique merge, even across multiple polls.
+func TestSetMergeCallback_NotCalledForAlreadyReportedMerge(t *testing.T) {
+	stubSeams(t)
+
+	origListMerged := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-feature-branch"}}, nil
+	}
+	t.Cleanup(func() { listMergedPRsFn = origListMerged })
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		}
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+
+	var callCount int
+	w.SetMergeCallback(func(_ context.Context, nums []int) {
+		callCount++
+	})
+
+	// First poll should trigger the callback.
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("first PollOnce error: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected callback called once after first poll, got %d", callCount)
+	}
+
+	// Second poll should NOT trigger callback again for the same merge.
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("second PollOnce error: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected callback not called again on second poll, got total %d calls", callCount)
 	}
 }
