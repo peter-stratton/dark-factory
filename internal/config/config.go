@@ -298,6 +298,47 @@ type CLIFlags struct {
 	Config            string
 }
 
+// phasePattern matches "Phase N" at the start of a milestone title (case-insensitive).
+var phasePattern = regexp.MustCompile(`(?i)^phase\s+(\d+)`)
+
+// milestoneSlug converts a milestone title to a URL-safe slug.
+// "Phase 23: Watch & Daemon Mode" → "phase-23"
+// Falls back to a lowercase-hyphenated slug when no "Phase N" prefix is found.
+func milestoneSlug(milestone string) string {
+	if m := phasePattern.FindStringSubmatch(milestone); m != nil {
+		return "phase-" + m[1]
+	}
+	return strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(milestone))
+}
+
+// ResolveBranch returns the effective base branch name for a run.
+// When BaseBranch is explicitly set it is returned as-is (including the empty
+// string, which means "direct-to-default branch, no rollup PR").
+// When BaseBranch is empty and a milestone is provided, an auto-generated
+// branch name like "godark/phase-23" is returned.
+// For implement runs without a milestone, issueNums produces "godark/issue-42"
+// (single issue) or "godark/issues-42-43" (multiple issues).
+// Returns "" when nothing can be auto-generated.
+func (c *Config) ResolveBranch(milestone string, issueNums []int) string {
+	if c.BaseBranch != "" {
+		return c.BaseBranch
+	}
+	if milestone != "" {
+		return "godark/" + milestoneSlug(milestone)
+	}
+	if len(issueNums) == 1 {
+		return fmt.Sprintf("godark/issue-%d", issueNums[0])
+	}
+	if len(issueNums) > 1 {
+		parts := make([]string, len(issueNums))
+		for i, n := range issueNums {
+			parts[i] = fmt.Sprintf("%d", n)
+		}
+		return "godark/issues-" + strings.Join(parts, "-")
+	}
+	return ""
+}
+
 // EffectiveBaseBranch returns BaseBranch, defaulting to "main" when empty.
 func (c *Config) EffectiveBaseBranch() string {
 	if c.BaseBranch == "" {
@@ -353,7 +394,7 @@ func defaults() *Config {
 		MaxRetries:        3,
 		MaxResumeRetries:  2,
 		MaxRebaseAttempts: 1,
-		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupNone},
+		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupManual},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},
 		DeniedCommands: []string{
