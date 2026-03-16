@@ -294,16 +294,7 @@ func implementIssues(
 		writeIssueDialogue(writer, cfg.Repo, issueNumber, outcome, logger)
 
 		// Abort immediately on API rate limit — remaining issues will also fail.
-		if outcome.RateLimited {
-			errMsg := ""
-			if outcome.Err != nil {
-				errMsg = outcome.Err.Error()
-			}
-			failed++
-			reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0)
-			reporter.RunAborted(errMsg)
-			logger.Warn("run aborted: API rate limit reached", "reason", errMsg)
-			reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed, 0)
+		if rateLimitAbort(outcome, issue, implemented, readyToMerge, needsHumanReview, failed, reporter, logger) {
 			return nil
 		}
 
@@ -340,6 +331,23 @@ func implementIssues(
 	finalizePunchlistEntries(ctx, punchlistEntries, writer, prompts, cfg, authEnv, logger, punchlistPath, reporter)
 
 	return nil
+}
+
+// rateLimitAbort reports the rate-limited issue outcome and emits RunFinished, then returns true
+// when the outcome signals an API rate limit so the caller can return immediately.
+func rateLimitAbort(outcome agent.IssueOutcome, issue github.Issue, implemented, readyToMerge, needsHumanReview, failed int, reporter progress.ProgressReporter, logger *slog.Logger) bool {
+	if !outcome.RateLimited {
+		return false
+	}
+	errMsg := ""
+	if outcome.Err != nil {
+		errMsg = outcome.Err.Error()
+	}
+	reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0)
+	reporter.RunAborted(errMsg)
+	logger.Warn("run aborted: API rate limit reached", "reason", errMsg)
+	reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed+1, 0)
+	return true
 }
 
 // writeIssueDialogue fetches PR comment bodies and writes dialogue to the run data writer.
