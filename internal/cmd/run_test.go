@@ -158,8 +158,8 @@ func TestAutoMergeRollupFlagParsing(t *testing.T) {
 			if f == nil {
 				t.Fatalf("%s command missing --auto-merge-rollup flag", tc.name)
 			}
-			if f.DefValue != "none" {
-				t.Errorf("auto-merge-rollup default = %q, want %q", f.DefValue, "none")
+			if f.DefValue != "manual" {
+				t.Errorf("auto-merge-rollup default = %q, want %q", f.DefValue, "manual")
 			}
 		})
 	}
@@ -185,7 +185,7 @@ func TestAutoMergeConfigFile(t *testing.T) {
 	}
 }
 
-func TestAutoMergeDefaultNone(t *testing.T) {
+func TestAutoMergeDefaultManual(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "godark.yaml")
 	err := os.WriteFile(p, []byte("repo: owner/repo\n"), 0o644)
@@ -200,8 +200,8 @@ func TestAutoMergeDefaultNone(t *testing.T) {
 	if cfg.AutoMerge.Feature != "none" {
 		t.Errorf("AutoMerge.Feature = %q, want %q by default", cfg.AutoMerge.Feature, "none")
 	}
-	if cfg.AutoMerge.Rollup != "none" {
-		t.Errorf("AutoMerge.Rollup = %q, want %q by default", cfg.AutoMerge.Rollup, "none")
+	if cfg.AutoMerge.Rollup != "manual" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q by default", cfg.AutoMerge.Rollup, "manual")
 	}
 }
 

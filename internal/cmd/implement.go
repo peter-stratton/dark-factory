@@ -59,6 +59,9 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		// Resolve base branch: auto-generate from issue numbers when not explicitly set.
+		cfg.BaseBranch = cfg.ResolveBranch("", issueNums)
+
 		if err := config.ValidateRequiredEnv(cfg.RequiredEnv); err != nil {
 			return err
 		}
@@ -535,7 +538,7 @@ func init() {
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
 	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
-	f.String("auto-merge-rollup", "none", "Rollup merge strategy after run: none (no rollup PR), manual (create PR but don't merge), auto (create and merge rollup PR)")
+	f.String("auto-merge-rollup", "manual", "Rollup merge strategy after run: none (no rollup PR), manual (create PR but don't merge), auto (create and merge rollup PR)")
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.String("config", "godark.yaml", "Path to configuration file")
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")

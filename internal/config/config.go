@@ -298,6 +298,62 @@ type CLIFlags struct {
 	Config            string
 }
 
+// phasePattern matches "Phase N" at the start of a milestone title (case-insensitive).
+var phasePattern = regexp.MustCompile(`(?i)^phase\s+(\d+)`)
+
+// invalidBranchChars matches any character that is not a lowercase letter,
+// digit, or hyphen — all are forbidden in git ref names (git check-ref-format).
+var invalidBranchChars = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// repeatedHyphens collapses two or more consecutive hyphens into one.
+var repeatedHyphens = regexp.MustCompile(`-{2,}`)
+
+// milestoneSlug converts a milestone title to a git-safe slug.
+// "Phase 23: Watch & Daemon Mode" → "phase-23"
+// Falls back to a lowercase-hyphenated slug when no "Phase N" prefix is found,
+// stripping any characters that git check-ref-format would reject.
+func milestoneSlug(milestone string) string {
+	if m := phasePattern.FindStringSubmatch(milestone); m != nil {
+		return "phase-" + m[1]
+	}
+	// Lower-case and replace common separators with hyphens first.
+	s := strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(milestone))
+	// Strip any remaining characters invalid in git ref names.
+	s = invalidBranchChars.ReplaceAllString(s, "-")
+	// Collapse repeated hyphens and trim leading/trailing hyphens.
+	s = repeatedHyphens.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	return s
+}
+
+// ResolveBranch returns the effective base branch name for a run.
+// When BaseBranch is explicitly set (non-empty) it is returned as-is.
+// When BaseBranch is empty, auto-generation is attempted: a milestone produces
+// a branch like "godark/phase-23", and issueNums produces "godark/issue-42"
+// (single issue) or "godark/issues-42-43" (multiple issues).
+// To opt out of auto-generation and merge directly to the default branch,
+// set base_branch to the repo's default branch name (e.g. "main") explicitly.
+// Returns "" when BaseBranch is empty and nothing can be auto-generated.
+func (c *Config) ResolveBranch(milestone string, issueNums []int) string {
+	if c.BaseBranch != "" {
+		return c.BaseBranch
+	}
+	if milestone != "" {
+		return "godark/" + milestoneSlug(milestone)
+	}
+	if len(issueNums) == 1 {
+		return fmt.Sprintf("godark/issue-%d", issueNums[0])
+	}
+	if len(issueNums) > 1 {
+		parts := make([]string, len(issueNums))
+		for i, n := range issueNums {
+			parts[i] = fmt.Sprintf("%d", n)
+		}
+		return "godark/issues-" + strings.Join(parts, "-")
+	}
+	return ""
+}
+
 // EffectiveBaseBranch returns BaseBranch, defaulting to "main" when empty.
 func (c *Config) EffectiveBaseBranch() string {
 	if c.BaseBranch == "" {
@@ -353,7 +409,7 @@ func defaults() *Config {
 		MaxRetries:        3,
 		MaxResumeRetries:  2,
 		MaxRebaseAttempts: 1,
-		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupNone},
+		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupManual},
 		RoadmapPath:    "docs/ROADMAP.md",
 		ProtectedPaths: []string{"godark.yaml"},
 		DeniedCommands: []string{

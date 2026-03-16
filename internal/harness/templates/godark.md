@@ -47,7 +47,8 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | `max_retries` | Review/fix cycles before escalating to human | `3` |
 | `agent_timeout` | Max wall-clock time per agent run | `30m` |
 | `auto_merge.feature` | Merge strategy for feature PRs after approval: `none`, `low_risk`, `all` | `none` |
-| `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `none` |
+| `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `manual` |
+| `base_branch` | Base branch for feature PRs. Auto-generated when omitted: `godark/phase-N` for milestone runs, `godark/issue-N` for implement runs. Set to `main` to merge directly to the default branch without a rollup PR. | auto-generated |
 | `default_branch` | Default branch of the repo (auto-detected from GitHub if omitted) | auto-detect / `main` |
 | `no_sandbox` | Run agents on host instead of Docker | `false` |
 
@@ -94,15 +95,19 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 
 ### Rollup modes (`auto_merge.rollup`)
 
-When godark runs against a non-default base branch, a rollup PR merges the base
-branch into the default branch after all feature PRs are done. The `rollup` field controls
-what godark does with that rollup PR:
+When godark runs against a non-default base branch (which happens automatically
+unless `base_branch` is set to the default branch), a rollup PR merges the base
+branch into the default branch after all feature PRs are done. The `rollup` field
+controls what godark does with that rollup PR:
 
 | Mode | Feature PRs → base branch | Base branch → main |
 |---|---|---|
 | `none` | godark merges | human does everything (inspects branch, opens PR manually) |
-| `manual` | godark merges | godark opens PR, human reviews and merges |
+| `manual` (default) | godark merges | godark opens PR, human reviews and merges |
 | `auto` | godark merges | godark opens PR and merges |
+
+To disable rollup PRs and merge feature branches directly to the default branch,
+set `base_branch: main` (or your repo's default branch name) in `godark.yaml`.
 
 ### Risk thresholds (for `auto_merge.feature: low_risk`)
 

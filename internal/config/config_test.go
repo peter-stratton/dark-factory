@@ -342,8 +342,8 @@ repo: owner/repo
 	if cfg.AutoMerge.Feature != "none" {
 		t.Errorf("AutoMerge.Feature = %q, want %q", cfg.AutoMerge.Feature, "none")
 	}
-	if cfg.AutoMerge.Rollup != "none" {
-		t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, "none")
+	if cfg.AutoMerge.Rollup != "manual" {
+		t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, "manual")
 	}
 }
 
@@ -1950,5 +1950,118 @@ truncation:
 	}
 	if !strings.Contains(err.Error(), "truncation.pr_diff") {
 		t.Errorf("error = %q, want mention of 'truncation.pr_diff'", err.Error())
+	}
+}
+
+// --- ResolveBranch tests ---
+
+func TestResolveBranch_ExplicitBaseBranch(t *testing.T) {
+	cfg := &Config{BaseBranch: "feature/custom"}
+	got := cfg.ResolveBranch("Phase 23: Watch", []int{42, 43})
+	if got != "feature/custom" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "feature/custom")
+	}
+}
+
+func TestResolveBranch_MilestonePhase(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("Phase 23: Watch & Daemon Mode", nil)
+	if got != "godark/phase-23" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "godark/phase-23")
+	}
+}
+
+func TestResolveBranch_MilestonePhaseNoSubtitle(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("Phase 5", nil)
+	if got != "godark/phase-5" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "godark/phase-5")
+	}
+}
+
+func TestResolveBranch_MilestoneNonPhase(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("Q1 Hardening", nil)
+	if got != "godark/q1-hardening" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "godark/q1-hardening")
+	}
+}
+
+func TestResolveBranch_SingleIssue(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("", []int{42})
+	if got != "godark/issue-42" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "godark/issue-42")
+	}
+}
+
+func TestResolveBranch_MultipleIssues(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("", []int{42, 43})
+	if got != "godark/issues-42-43" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "godark/issues-42-43")
+	}
+}
+
+func TestResolveBranch_MultipleIssuesThree(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("", []int{10, 20, 30})
+	if got != "godark/issues-10-20-30" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "godark/issues-10-20-30")
+	}
+}
+
+func TestResolveBranch_EmptyReturnsEmpty(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("", nil)
+	if got != "" {
+		t.Errorf("ResolveBranch() = %q, want empty string", got)
+	}
+}
+
+func TestResolveBranch_MilestoneTakesPriorityOverIssueNums(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveBranch("Phase 7: Infra", []int{42})
+	if got != "godark/phase-7" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "godark/phase-7")
+	}
+}
+
+func TestResolveBranch_ExplicitMainAllowsOptOut(t *testing.T) {
+	// Setting base_branch: main signals "merge directly to default branch, no rollup".
+	cfg := &Config{BaseBranch: "main"}
+	got := cfg.ResolveBranch("Phase 23: Watch", nil)
+	if got != "main" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "main")
+	}
+}
+
+func TestDefaultRollupIsManual(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `repo: owner/repo`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AutoMerge.Rollup != RollupManual {
+		t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, RollupManual)
+	}
+}
+
+func TestRollupNoneCanBeExplicitlySet(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+auto_merge:
+  rollup: none
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AutoMerge.Rollup != RollupNone {
+		t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, RollupNone)
 	}
 }
