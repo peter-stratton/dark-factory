@@ -305,7 +305,7 @@ func TestRunListPRsFnSkipsWatchWhenNoPRs(t *testing.T) {
 	// Providing a cancelled context would expose any loop that starts (it would
 	// exit immediately), but we primarily verify no panic/error on empty queue.
 	ctx := context.Background()
-	if err := runEnterWatch(ctx, cfg, slog.Default()); err != nil {
+	if err := runEnterWatch(ctx, cfg, slog.Default(), ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

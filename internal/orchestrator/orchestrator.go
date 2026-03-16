@@ -203,6 +203,226 @@ func categorizeIssues(issues []github.Issue, closedSet map[int]bool) ([]github.I
 	return processable, blocked
 }
 
+// refreshAndCategorize re-fetches closed issue numbers from GitHub, rebuilds
+// the closed set (injecting noDarkNums as resolved), and re-categorizes
+// allIssues into processable and blocked slices.
+func refreshAndCategorize(repo string, allIssues []github.Issue, noDarkNums []int) (processable []github.Issue, blocked []blockedIssue, err error) {
+	closedNumbers, err := github.FetchClosedIssueNumbers(repo)
+	if err != nil {
+		return nil, nil, fmt.Errorf("re-fetching closed issues: %w", err)
+	}
+	cs := deps.ClosedSet(closedNumbers)
+	// Treat nodark issues as resolved so they do not block other issues.
+	for _, n := range noDarkNums {
+		cs[n] = true
+	}
+	processable, blocked = categorizeIssues(allIssues, cs)
+	return processable, blocked, nil
+}
+
+// ReResolveAndProcess is the daemon-mode entry point for handling external
+// merges. It re-fetches closed issues, re-categorizes allIssues, and processes
+// any newly unblocked issues that are not already recorded in seen. seen is
+// updated in place as issues are processed.
+//
+// Returns true if at least one issue was processed, false otherwise. Callers
+// can use the return value to decide whether to continue the polling loop.
+//
+// This function sets up its own auth, prompts, Docker image, locker, and stats
+// DB since it runs independently of the main processIssues call.
+func ReResolveAndProcess(
+	ctx context.Context,
+	allIssues []github.Issue,
+	noDarkNums []int,
+	seen map[int]bool,
+	cfg *config.Config,
+	milestone string,
+	logger *slog.Logger,
+	reporter progress.ProgressReporter,
+	notifiers []notify.Notifier,
+) (bool, error) {
+	processable, _, err := refreshAndCategorize(cfg.Repo, allIssues, noDarkNums)
+	if err != nil {
+		return false, fmt.Errorf("re-resolving dependencies: %w", err)
+	}
+
+	// Filter to issues not yet seen.
+	var unblocked []github.Issue
+	for _, iss := range processable {
+		if !seen[iss.Number] {
+			unblocked = append(unblocked, iss)
+		}
+	}
+
+	if len(unblocked) == 0 {
+		logger.Info("re-resolution: no newly unblocked issues")
+		return false, nil
+	}
+
+	logger.Info("re-resolution: newly unblocked issues found",
+		"count", len(unblocked),
+	)
+
+	// Set up auth and prompt templates.
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	if err != nil {
+		return false, fmt.Errorf("collecting auth: %w", err)
+	}
+
+	prompts, err := agent.LoadPrompts(cfg)
+	if err != nil {
+		return false, fmt.Errorf("loading prompts: %w", err)
+	}
+
+	// Ensure all PR lifecycle labels exist in the repo.
+	for _, spec := range label.Specs {
+		if err := github.EnsureLabel(cfg.Repo, spec.Name, spec.Color, spec.Description); err != nil {
+			logger.Warn("failed to ensure lifecycle label", "label", spec.Name, "error", err)
+		}
+	}
+
+	// Build Docker image once if using sandbox mode.
+	if !cfg.NoSandbox {
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
+		tag, err := sandbox.BuildImage(ctx, dc, logger)
+		if err != nil {
+			return false, fmt.Errorf("building Docker image: %w", err)
+		}
+		cfg.Docker.Image = tag
+	}
+
+	// Open stats DB and create a run data writer.
+	statsDB := OpenStatsDB(logger)
+	if statsDB != nil {
+		defer func() {
+			if closeErr := statsDB.Close(); closeErr != nil {
+				logger.Warn("stats: failed to close database", "error", closeErr)
+			}
+		}()
+	}
+
+	issueNums := issueNumbers(unblocked)
+	writer, writerErr := newRunDataWriterFn(cfg.Repo, milestone, issueNums, cfg.BaseBranch,
+		rundata.AutoMerge{Feature: string(cfg.AutoMerge.Feature), Rollup: string(cfg.AutoMerge.Rollup)})
+	if writerErr != nil {
+		logger.Warn("failed to create run data writer, run data will not be recorded", "error", writerErr)
+	}
+
+	var hook agent.RunDataHook
+	if writer != nil {
+		hook = writer
+	}
+
+	// Acquire a run lock for the newly unblocked issues.
+	locker := lock.New(cfg.Repo, logger)
+	if err := locker.Acquire(issueNums, false); err != nil {
+		return false, fmt.Errorf("acquiring run lock: %w", err)
+	}
+	defer func() {
+		if releaseErr := locker.Release(issueNums); releaseErr != nil {
+			logger.Warn("failed to release run lock", "error", releaseErr)
+		}
+	}()
+
+	baseBranch := cfg.EffectiveBaseBranch()
+
+	var implemented int
+	var failed int
+	var abortReason string
+
+	for _, issue := range unblocked {
+		if ctx.Err() != nil {
+			logger.Warn("context cancelled, stopping daemon re-resolution", "error", ctx.Err())
+			break
+		}
+
+		seen[issue.Number] = true
+		reporter.IssueStarted(issue.Number, issue.Title)
+		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+
+		// Write dialogue after processing if we have a PR and writer.
+		if writer != nil && outcome.PRNumber > 0 {
+			bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+			if fetchErr != nil {
+				logger.Warn("failed to fetch PR comment bodies for dialogue",
+					"issue_number", issue.Number, "error", fetchErr)
+			} else {
+				entries := BuildDialogueEntries(bodies)
+				if len(entries) > 0 {
+					if err := writer.WriteDialogue(issue.Number, entries); err != nil {
+						logger.Warn("failed to write dialogue",
+							"issue_number", issue.Number, "error", err)
+					}
+				}
+			}
+		}
+
+		var issueCost float64
+		if writer != nil {
+			issueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
+		}
+
+		switch outcome.Status {
+		case agent.StatusImplemented:
+			implemented++
+			reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost)
+			if err := PullAfterMerge(baseBranch, logger); err != nil {
+				logger.Warn("daemon re-resolve: stopping after merge sync failure", "error", err)
+				abortReason = fmt.Sprintf("could not sync after merge: %v", err)
+				goto doneLoop
+			}
+		case agent.StatusReadyToMerge:
+			reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost)
+		case agent.StatusNeedsHumanReview:
+			reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost)
+		default:
+			failed++
+			errMsg := ""
+			if outcome.Err != nil {
+				errMsg = outcome.Err.Error()
+			}
+			reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost)
+		}
+
+		logger.Info("daemon re-resolve: issue outcome",
+			"issue_number", outcome.IssueNumber,
+			"status", outcome.Status,
+			"pr_number", outcome.PRNumber,
+		)
+	}
+
+doneLoop:
+	if writer != nil {
+		summary := rundata.RunSummary{
+			Total:       implemented + failed,
+			Implemented: implemented,
+			Failed:      failed,
+			AbortReason: abortReason,
+		}
+		if finalizeErr := writer.FinalizeRun(summary); finalizeErr != nil {
+			logger.Warn("failed to finalize run data", "error", finalizeErr)
+		}
+		WriteRunStats(ctx, statsDB, cfg, writer, summary, logger)
+	}
+
+	if abortReason == "" && implemented > 0 {
+		notify.Fire(ctx, notifiers, notify.Event{
+			Type: "run_complete",
+			Repo: cfg.Repo,
+			Message: fmt.Sprintf("daemon re-resolve: %d implemented, %d failed",
+				implemented, failed),
+		}, logger)
+	} else if abortReason != "" {
+		notify.Fire(ctx, notifiers, notify.Event{
+			Type:    "abort",
+			Repo:    cfg.Repo,
+			Message: fmt.Sprintf("daemon re-resolve aborted: %s", abortReason),
+		}, logger)
+	}
+
+	return len(unblocked) > 0, nil
+}
+
 // filterSingleIssue extracts a single issue from processable, returning an
 // error if it's not found or is blocked.
 func filterSingleIssue(processable []github.Issue, blocked []blockedIssue, issueNum int) ([]github.Issue, error) {
@@ -544,18 +764,12 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 
 		// Re-fetch closed issues and re-categorize for the next wave.
-		closedNumbers, err := github.FetchClosedIssueNumbers(cfg.Repo)
-		if err != nil {
-			logger.Warn("failed to re-fetch closed issues, stopping re-resolution", "error", err)
+		var refreshErr error
+		processable, blocked, refreshErr = refreshAndCategorize(cfg.Repo, allIssues, noDarkNums)
+		if refreshErr != nil {
+			logger.Warn("failed to re-fetch closed issues, stopping re-resolution", "error", refreshErr)
 			break
 		}
-		closedSet = deps.ClosedSet(closedNumbers)
-		// Re-inject nodark issue numbers so issues that depend on a nodark
-		// issue are never re-classified as blocked on subsequent waves.
-		for _, n := range noDarkNums {
-			closedSet[n] = true
-		}
-		processable, blocked = categorizeIssues(allIssues, closedSet)
 	}
 
 done:

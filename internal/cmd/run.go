@@ -142,7 +142,7 @@ each unblocked issue through the implement → review → merge loop.`,
 		}
 
 		// --watch: enter polling loop if any PRs are awaiting review.
-		return runEnterWatch(ctx, cfg, logger)
+		return runEnterWatch(ctx, cfg, logger, milestone)
 	},
 }
 
@@ -152,8 +152,9 @@ var isTerminalFn = term.IsTerminal
 
 // runEnterWatch checks for pending review PRs and, if any exist, loads prompts
 // and auth then enters the RunUntilDone polling loop. Called after
-// orchestrator.Run when --watch is set.
-func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+// orchestrator.Run when --watch is set. milestone is used for re-resolution
+// runs triggered by external merges.
+func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string) error {
 	// Check for awaiting PRs first to avoid loading prompts/auth unnecessarily.
 	prs, err := runListPRsFn(cfg.Repo, label.AwaitingHumanReview)
 	if err != nil {
@@ -175,7 +176,61 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger)
 		return fmt.Errorf("collecting auth: %w", err)
 	}
 
-	return watch.New(cfg, prompts, authEnv, logger).RunUntilDone(ctx)
+	// Re-fetch the current open milestone issues so re-resolution has the full
+	// dependency graph. Issues that were blocked in the first pass are still
+	// open; their dependencies (now merged) appear in FetchClosedIssueNumbers.
+	allIssues, noDarkNums, err := runFetchMilestoneIssuesFn(cfg.Repo, milestone, logger)
+	if err != nil {
+		logger.Warn("failed to fetch milestone issues for watch re-resolution, proceeding without daemon re-resolve", "err", err)
+		allIssues = nil
+	}
+
+	// seen tracks issue numbers already processed (in the initial run or prior
+	// daemon cycles) so re-resolution does not reprocess completed issues.
+	seen := make(map[int]bool)
+
+	w := watch.New(cfg, prompts, authEnv, logger)
+
+	if len(allIssues) > 0 {
+		reporter := progress.NewTextReporter(os.Stdout)
+		w.SetMergeCallback(func(mCtx context.Context, mergedNums []int) {
+			logger.Info("daemon re-resolve triggered", "merged_issue_count", len(mergedNums))
+			if _, reErr := orchestrator.ReResolveAndProcess(
+				mCtx, allIssues, noDarkNums, seen, cfg, milestone, logger, reporter, nil,
+			); reErr != nil {
+				logger.Error("daemon re-resolve failed", "err", reErr)
+			}
+		})
+	}
+
+	return w.RunUntilDone(ctx)
+}
+
+// runFetchMilestoneIssuesFn fetches open milestone issues and splits out
+// nodark-labeled ones. Replaceable for testing.
+var runFetchMilestoneIssuesFn = func(repo, milestone string, logger *slog.Logger) ([]github.Issue, []int, error) {
+	issues, err := github.FetchMilestoneIssues(repo, milestone)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching milestone issues: %w", err)
+	}
+	var noDarkNums []int
+	var filtered []github.Issue
+	for _, iss := range issues {
+		hasNoDark := false
+		for _, l := range iss.Labels {
+			if l == label.NoDark {
+				hasNoDark = true
+				break
+			}
+		}
+		if hasNoDark {
+			logger.Info("watch: skipping nodark issue", "issue_number", iss.Number)
+			noDarkNums = append(noDarkNums, iss.Number)
+		} else {
+			filtered = append(filtered, iss)
+		}
+	}
+	return filtered, noDarkNums, nil
 }
 
 // runListPRsFn is a testability seam for listing PRs by label. Replaced in tests.

@@ -1062,3 +1062,124 @@ func TestRunUntilDone_ContextCancelled(t *testing.T) {
 		t.Fatalf("expected nil on context cancel, got %v", err)
 	}
 }
+
+// TestSetMergeCallback_CalledOnExternalMerge verifies that the merge callback
+// is invoked when pollExternalMerges detects a newly merged PR.
+func TestSetMergeCallback_CalledOnExternalMerge(t *testing.T) {
+	stubSeams(t)
+
+	// Arrange: PR #5 with branch "42-feature-branch" is awaiting review.
+	// listMergedPRsFn will report it merged.
+	origListMerged := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-feature-branch"}}, nil
+	}
+	t.Cleanup(func() { listMergedPRsFn = origListMerged })
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		}
+		if len(args) >= 2 && args[0] == "api" {
+			return []byte(`[]`), nil // no reviews
+		}
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+
+	var callbackIssues []int
+	w.SetMergeCallback(func(_ context.Context, nums []int) {
+		callbackIssues = append(callbackIssues, nums...)
+	})
+
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("PollOnce error: %v", err)
+	}
+
+	if len(callbackIssues) != 1 || callbackIssues[0] != 42 {
+		t.Errorf("expected callback with [42], got %v", callbackIssues)
+	}
+}
+
+// TestSetMergeCallback_NotCalledWhenNothingMerged verifies the callback is not
+// invoked when no new merges are detected.
+func TestSetMergeCallback_NotCalledWhenNothingMerged(t *testing.T) {
+	stubSeams(t)
+
+	origListMerged := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return nil, nil // no merged PRs
+	}
+	t.Cleanup(func() { listMergedPRsFn = origListMerged })
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		}
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+
+	callbackInvoked := false
+	w.SetMergeCallback(func(_ context.Context, nums []int) {
+		callbackInvoked = true
+	})
+
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("PollOnce error: %v", err)
+	}
+
+	if callbackInvoked {
+		t.Error("expected callback not to be invoked when no merges detected")
+	}
+}
+
+// TestSetMergeCallback_NotCalledForAlreadyReportedMerge verifies idempotency:
+// the callback is only invoked once per unique merge, even across multiple polls.
+func TestSetMergeCallback_NotCalledForAlreadyReportedMerge(t *testing.T) {
+	stubSeams(t)
+
+	origListMerged := listMergedPRsFn
+	listMergedPRsFn = func(_ string) ([]github.PRInfo, error) {
+		return []github.PRInfo{{Number: 5, HeadRefName: "42-feature-branch"}}, nil
+	}
+	t.Cleanup(func() { listMergedPRsFn = origListMerged })
+
+	orig := github.CommandRunner
+	github.CommandRunner = fakeRunner(t, func(args []string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
+			return []byte(`[{"number":5,"headRefName":"42-feature-branch"}]`), nil
+		}
+		return []byte(`[]`), nil
+	})
+	defer func() { github.CommandRunner = orig }()
+
+	w := New(testWatchCfg(), nil, nil, slog.Default())
+
+	var callCount int
+	w.SetMergeCallback(func(_ context.Context, nums []int) {
+		callCount++
+	})
+
+	// First poll should trigger the callback.
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("first PollOnce error: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected callback called once after first poll, got %d", callCount)
+	}
+
+	// Second poll should NOT trigger callback again for the same merge.
+	if err := w.PollOnce(context.Background()); err != nil {
+		t.Fatalf("second PollOnce error: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected callback not called again on second poll, got total %d calls", callCount)
+	}
+}
