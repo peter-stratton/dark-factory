@@ -16,3 +16,4 @@
 - Coding conventions — docs/conventions.md
 - Roadmap and phasing — docs/ROADMAP.md
 - Build, test, and runtime config — godark.yaml
+- Run analytics database — ~/.godark/stats.db (SQLite, queryable for cost/duration/outcome trends)
