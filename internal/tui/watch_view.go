@@ -59,14 +59,27 @@ func renderWatchHeader(m WatchModel) string {
 }
 
 // renderWatchPRTable renders the PR table section. Shows "no PRs awaiting
-// review" when the list is empty.
+// review" when the list is empty. When the terminal height is known, at most
+// half the available lines are used for PR rows so the activity log and footer
+// always remain visible.
 func renderWatchPRTable(m WatchModel) string {
 	if len(m.prs) == 0 {
 		return headerLabelStyle.Render("no PRs awaiting review")
 	}
 
+	prs := m.prs
+	if m.height > 0 {
+		maxRows := m.height / 2
+		if maxRows < 1 {
+			maxRows = 1
+		}
+		if len(prs) > maxRows {
+			prs = prs[:maxRows]
+		}
+	}
+
 	var rows []string
-	for _, pr := range m.prs {
+	for _, pr := range prs {
 		rows = append(rows, renderWatchPRRow(pr, m.width))
 	}
 	return strings.Join(rows, "\n")

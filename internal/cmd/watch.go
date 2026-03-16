@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -103,8 +104,11 @@ Runs as a long-lived foreground process. Press Ctrl+C to stop.`,
 		// Goroutine 2: poll for PR display data and feed PRUpdateMsg / ActivityMsg.
 		go watchTUIPoller(ctx, program, cfg.Repo, interval, logger)
 
-		_, _ = program.Run()
-		return <-errCh
+		_, tuiErr := program.Run()
+		watchErr := <-errCh
+		// Join the two errors so that a TUI initialisation failure (e.g. terminal
+		// not writable) is not silently discarded behind the watcher result.
+		return errors.Join(tuiErr, watchErr)
 	},
 }
 
@@ -123,10 +127,16 @@ func watchPollInterval(cfg *config.Config) time.Duration {
 	return d
 }
 
+// msgSender is the minimal interface for sending messages to a Bubble Tea
+// program. *tea.Program satisfies this interface.
+type msgSender interface {
+	Send(tea.Msg)
+}
+
 // watchTUIPoller runs a separate tick loop that fetches the current watched PR
-// list and sends PRUpdateMsg to program on each tick. It also sends an initial
+// list and sends PRUpdateMsg to sender on each tick. It also sends an initial
 // update immediately so the table is populated before the first tick fires.
-func watchTUIPoller(ctx context.Context, program *tea.Program, repo string, interval time.Duration, logger interface{ Info(string, ...any) }) {
+func watchTUIPoller(ctx context.Context, sender msgSender, repo string, interval time.Duration, logger interface{ Info(string, ...any) }) {
 	sendPRUpdate := func() {
 		prs, err := listWatchedPRsFn(repo, label.AwaitingHumanReview)
 		if err != nil {
@@ -141,7 +151,7 @@ func watchTUIPoller(ctx context.Context, program *tea.Program, repo string, inte
 				Labels: pr.Labels,
 			}
 		}
-		program.Send(tui.PRUpdateMsg{PRs: rows})
+		sender.Send(tui.PRUpdateMsg{PRs: rows})
 	}
 
 	// Poll immediately before the first tick.

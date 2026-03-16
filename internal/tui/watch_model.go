@@ -70,11 +70,12 @@ func NewWatchModel(repo string, interval time.Duration, cancelFn func()) WatchMo
 	}
 }
 
-// Init implements tea.Model. Starts the periodic poll tick.
+// Init implements tea.Model. Returns nil — all PR updates are driven by
+// PRUpdateMsg messages sent from the external watchTUIPoller goroutine in cmd.
+// There is no internal tick; keeping one would schedule no-op messages for
+// the entire lifetime of the program.
 func (m WatchModel) Init() tea.Cmd {
-	return tea.Every(m.interval, func(t time.Time) tea.Msg {
-		return PollTickMsg{Time: t}
-	})
+	return nil
 }
 
 // Update implements tea.Model. Handles window-size messages and all watch
@@ -89,10 +90,8 @@ func (m WatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case PollTickMsg:
-		// Re-arm the periodic tick.
-		return m, tea.Every(m.interval, func(t time.Time) tea.Msg {
-			return PollTickMsg{Time: t}
-		})
+		// No-op: the internal timer was removed. PollTickMsg may still be
+		// sent by external callers; handled here to prevent unmatched messages.
 
 	case PRUpdateMsg:
 		m.prs = msg.PRs

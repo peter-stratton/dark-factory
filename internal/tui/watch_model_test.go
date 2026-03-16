@@ -8,10 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// --- Compile-time interface check ---
-
-var _ tea.Model = WatchModel{}
-
 // --- PRUpdateMsg tests ---
 
 func TestWatchModel_PRUpdateMsg_AddsPRs(t *testing.T) {
