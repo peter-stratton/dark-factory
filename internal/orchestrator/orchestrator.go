@@ -73,15 +73,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 
 	// Filter out nodark issues before dependency resolution. They do not
 	// participate in the run — not blocked, not processable, not shown in TUI.
-	// Collect their numbers first so they can be treated as "resolved" during
+	// Collect their numbers so they can be treated as "resolved" during
 	// dependency resolution (nodark issues must not block other issues).
-	var noDarkNums []int
-	for _, iss := range issues {
-		if hasLabel(iss.Labels, label.NoDark) {
-			noDarkNums = append(noDarkNums, iss.Number)
-		}
-	}
-	issues = filterNoDarkIssues(issues, logger)
+	issues, noDarkNums := filterNoDarkIssues(issues, logger)
 
 	if len(issues) == 0 {
 		logger.Info("all issues are labeled nodark, nothing to process", "milestone", milestone)
@@ -164,17 +158,21 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 }
 
 // filterNoDarkIssues removes any issue labeled with label.NoDark from the
-// slice, logging each skipped issue at info level.
-func filterNoDarkIssues(issues []github.Issue, logger *slog.Logger) []github.Issue {
+// slice, logging each skipped issue at info level. It returns the filtered
+// slice and the numbers of the removed issues so callers can treat them as
+// resolved during dependency resolution.
+func filterNoDarkIssues(issues []github.Issue, logger *slog.Logger) ([]github.Issue, []int) {
+	var noDarkNums []int
 	filtered := issues[:0:0]
 	for _, iss := range issues {
 		if hasLabel(iss.Labels, label.NoDark) {
 			logger.Info("skipping nodark issue", "issue_number", iss.Number, "title", iss.Title)
+			noDarkNums = append(noDarkNums, iss.Number)
 			continue
 		}
 		filtered = append(filtered, iss)
 	}
-	return filtered
+	return filtered, noDarkNums
 }
 
 // hasLabel reports whether the given label name is present in the labels slice.
