@@ -93,11 +93,17 @@ func renderWatchPRRow(pr WatchPRRow, width int) string {
 	badgesWidth := lipgloss.Width(labelBadges)
 
 	// Reserve space: "#NNN " (6) + " " gap + badges.
-	titleWidth := width - 8 - badgesWidth - 2
-	if titleWidth < 10 {
-		titleWidth = 10
+	// When width is unknown (0), skip truncation so the full title is shown.
+	var title string
+	if width <= 0 {
+		title = rowTitleStyle.Render(pr.Title)
+	} else {
+		titleWidth := width - 8 - badgesWidth - 2
+		if titleWidth < 10 {
+			titleWidth = 10
+		}
+		title = rowTitleStyle.Render(truncate(pr.Title, titleWidth))
 	}
-	title := rowTitleStyle.Render(truncate(pr.Title, titleWidth))
 
 	left := num + " " + title
 	leftWidth := lipgloss.Width(left)
@@ -177,7 +183,7 @@ func renderWatchFooter(m WatchModel) string {
 	}
 
 	if m.cancelling {
-		parts = append(parts, summaryFailedStyle.Render("stopping..."))
+		parts = append(parts, summaryFailedStyle.Render("cancelling..."))
 		return strings.Join(parts, styledSep)
 	}
 
