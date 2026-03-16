@@ -261,3 +261,101 @@ func TestNotableFailuresTop5(t *testing.T) {
 		t.Errorf("expected most expensive failure to be issue #7, got #%d", rpt.NotableFailures[0].IssueNumber)
 	}
 }
+
+// TestExecSummaryTerminal verifies the executive summary appears before stats in terminal output.
+func TestExecSummaryTerminal(t *testing.T) {
+	runs, outcomes, steps := buildTestData()
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	rpt := report.Generate(runs, outcomes, steps, since, until, "owner/repo")
+	rpt.ExecSummary = "The team shipped ten features this sprint, improving reliability."
+
+	out := report.RenderTerminal(rpt)
+
+	if !strings.Contains(out, "Executive Summary") {
+		t.Error("terminal output missing 'Executive Summary' header")
+	}
+	if !strings.Contains(out, rpt.ExecSummary) {
+		t.Error("terminal output missing executive summary text")
+	}
+	// Summary should appear before the stats section.
+	summaryIdx := strings.Index(out, "Executive Summary")
+	statsIdx := strings.Index(out, "Sprint Report")
+	if summaryIdx > statsIdx {
+		t.Error("executive summary should appear before the Sprint Report header")
+	}
+}
+
+// TestExecSummaryMarkdown verifies the executive summary renders as ## Executive Summary.
+func TestExecSummaryMarkdown(t *testing.T) {
+	runs, outcomes, steps := buildTestData()
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	rpt := report.Generate(runs, outcomes, steps, since, until, "")
+	rpt.ExecSummary = "Ten features were shipped, streamlining the developer workflow."
+
+	out := report.RenderMarkdown(rpt)
+
+	if !strings.Contains(out, "## Executive Summary") {
+		t.Error("markdown output missing '## Executive Summary' header")
+	}
+	if !strings.Contains(out, rpt.ExecSummary) {
+		t.Error("markdown output missing executive summary text")
+	}
+	// Summary should appear before the ## Sprint Report section.
+	summaryIdx := strings.Index(out, "## Executive Summary")
+	reportIdx := strings.Index(out, "## Sprint Report")
+	if summaryIdx > reportIdx {
+		t.Error("executive summary section should appear before ## Sprint Report")
+	}
+}
+
+// TestExecSummaryHTML verifies the executive summary renders in a styled card in HTML.
+func TestExecSummaryHTML(t *testing.T) {
+	runs, outcomes, steps := buildTestData()
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	rpt := report.Generate(runs, outcomes, steps, since, until, "owner/repo")
+	rpt.ExecSummary = "The sprint delivered reliability improvements across the board."
+
+	out := report.RenderHTML(rpt)
+
+	if !strings.Contains(out, "Executive Summary") {
+		t.Error("HTML output missing 'Executive Summary' text")
+	}
+	if !strings.Contains(out, rpt.ExecSummary) {
+		t.Error("HTML output missing executive summary text")
+	}
+	// Summary card should appear before the h1 Sprint Report heading.
+	summaryIdx := strings.Index(out, "Executive Summary")
+	reportIdx := strings.Index(out, "<h1")
+	if summaryIdx > reportIdx {
+		t.Error("executive summary card should appear before the h1 Sprint Report heading")
+	}
+}
+
+// TestNoExecSummaryOmitted verifies the Executive Summary section is absent when ExecSummary is empty.
+func TestNoExecSummaryOmitted(t *testing.T) {
+	runs, outcomes, steps := buildTestData()
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	rpt := report.Generate(runs, outcomes, steps, since, until, "owner/repo")
+	// ExecSummary is zero-value (empty string).
+
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"terminal", report.RenderTerminal(rpt)},
+		{"markdown", report.RenderMarkdown(rpt)},
+		{"html", report.RenderHTML(rpt)},
+	} {
+		if strings.Contains(tc.out, "Executive Summary") {
+			t.Errorf("%s output should omit Executive Summary when ExecSummary is empty", tc.name)
+		}
+	}
+}
