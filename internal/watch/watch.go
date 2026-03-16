@@ -40,6 +40,57 @@ func New(cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, 
 	}
 }
 
+// RunUntilDone runs the polling loop until ctx is cancelled or there are no
+// more PRs labeled godark:awaiting-human-review. It is used by
+// "godark run --watch" to stay alive after the first pass completes, then exit
+// cleanly once all outstanding PRs are reviewed or merged.
+func (w *Watch) RunUntilDone(ctx context.Context) error {
+	interval, err := w.pollInterval()
+	if err != nil {
+		return err
+	}
+
+	w.logger.Info("starting watch (exit when empty)", "repo", w.cfg.Repo, "poll_interval", interval)
+
+	// Poll once immediately before the first tick so results appear right away.
+	if err := w.PollOnce(ctx); err != nil && ctx.Err() == nil {
+		w.logger.Error("poll error", "err", err)
+	}
+
+	// Check remaining PRs after the initial poll; exit if none remain.
+	prs, listErr := listPRsFn(w.cfg.Repo, label.AwaitingHumanReview)
+	if listErr != nil && ctx.Err() == nil {
+		w.logger.Error("listing PRs after poll", "err", listErr)
+	}
+	if listErr == nil && len(prs) == 0 {
+		w.logger.Info("no PRs awaiting review, watch exiting")
+		return nil
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			w.logger.Info("watch stopped")
+			return nil
+		case <-ticker.C:
+			if err := w.PollOnce(ctx); err != nil && ctx.Err() == nil {
+				w.logger.Error("poll error", "err", err)
+			}
+			prs, listErr := listPRsFn(w.cfg.Repo, label.AwaitingHumanReview)
+			if listErr != nil && ctx.Err() == nil {
+				w.logger.Error("listing PRs after poll", "err", listErr)
+			}
+			if listErr == nil && len(prs) == 0 {
+				w.logger.Info("no PRs awaiting review, watch exiting")
+				return nil
+			}
+		}
+	}
+}
+
 // Run runs the polling loop until ctx is cancelled.
 func (w *Watch) Run(ctx context.Context) error {
 	interval, err := w.pollInterval()
@@ -386,3 +437,5 @@ var fetchReviewCommentsFn = github.FetchReviewComments
 var fetchIssueFn = github.FetchIssue
 
 var mergePRFn = github.MergeFeaturePR
+
+var listPRsFn = github.ListPRsWithLabel
