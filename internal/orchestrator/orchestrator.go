@@ -300,10 +300,10 @@ func ReResolveAndProcess(
 		}
 	}()
 
-	implemented, failed, abortReason := processUnblockedLoop(ctx, unblocked, cfg, prompts, authEnv, logger, hook, reporter, writer, seen)
+	attempted, implemented, failed, abortReason := processUnblockedLoop(ctx, unblocked, cfg, prompts, authEnv, logger, hook, reporter, writer, seen)
 	finalizeResolveRun(ctx, statsDB, cfg, writer, implemented, failed, abortReason, notifiers, logger)
 
-	return len(unblocked) > 0, nil
+	return attempted > 0, nil
 }
 
 // prepareResolveEnv sets up auth, prompts, lifecycle labels, and (when
@@ -338,9 +338,10 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Log
 	return authEnv, prompts, nil
 }
 
-// processUnblockedLoop iterates over unblocked issues, marks each as seen,
-// processes it, and records the outcome. It returns counts of implemented and
-// failed issues plus a non-empty abortReason when processing must stop early.
+// processUnblockedLoop iterates over unblocked issues, processes each through
+// the agent, and records the outcome. It returns the count of issues the agent
+// actually attempted (regardless of outcome), counts of implemented and failed
+// issues, and a non-empty abortReason when processing must stop early.
 func processUnblockedLoop(
 	ctx context.Context,
 	unblocked []github.Issue,
@@ -352,7 +353,7 @@ func processUnblockedLoop(
 	reporter progress.ProgressReporter,
 	writer *rundata.Writer,
 	seen map[int]bool,
-) (implemented, failed int, abortReason string) {
+) (attempted, implemented, failed int, abortReason string) {
 	baseBranch := cfg.EffectiveBaseBranch()
 	for _, issue := range unblocked {
 		if ctx.Err() != nil {
@@ -360,9 +361,9 @@ func processUnblockedLoop(
 			break
 		}
 
-		seen[issue.Number] = true
 		reporter.IssueStarted(issue.Number, issue.Title)
 		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+		attempted++
 
 		writeResolveDialogue(writer, issue, outcome, cfg, logger)
 
@@ -372,6 +373,14 @@ func processUnblockedLoop(
 		}
 
 		abortReason = handleResolveOutcome(issue, outcome, &implemented, &failed, reporter, issueCost, baseBranch, logger)
+
+		// Mark seen only for terminal success states so that transient failures
+		// (e.g. API errors, context cancellation) leave the issue available for
+		// retry in the next daemon polling cycle.
+		switch outcome.Status {
+		case agent.StatusImplemented, agent.StatusReadyToMerge, agent.StatusNeedsHumanReview:
+			seen[issue.Number] = true
+		}
 
 		logger.Info("daemon re-resolve: issue outcome",
 			"issue_number", outcome.IssueNumber,
@@ -383,7 +392,7 @@ func processUnblockedLoop(
 			break
 		}
 	}
-	return implemented, failed, abortReason
+	return attempted, implemented, failed, abortReason
 }
 
 // writeResolveDialogue writes PR dialogue entries to the run data writer when

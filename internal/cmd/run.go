@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -187,7 +189,9 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger,
 
 	// seen tracks issue numbers already processed (in the initial run or prior
 	// daemon cycles) so re-resolution does not reprocess completed issues.
-	seen := make(map[int]bool)
+	// Pre-populate from PRs created by the initial run so that issues whose
+	// PRs are already awaiting review or ready to merge are not reprocessed.
+	seen := seedSeenFromProcessedPRs(cfg.Repo, logger)
 
 	w := watch.New(cfg, prompts, authEnv, logger)
 
@@ -204,6 +208,43 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger,
 	}
 
 	return w.RunUntilDone(ctx)
+}
+
+// seedSeenFromProcessedPRs queries open PRs that carry PR lifecycle labels and
+// returns a map pre-populated with the issue numbers associated with those PRs.
+// This ensures that daemon re-resolution skips issues already handled by the
+// initial orchestrator.Run call (e.g. PRs awaiting human review or ready to
+// merge). Failed issues are intentionally excluded so the daemon can retry them.
+func seedSeenFromProcessedPRs(repo string, logger *slog.Logger) map[int]bool {
+	seen := make(map[int]bool)
+	for _, lbl := range []string{label.AwaitingHumanReview, label.ReadyToMerge, label.FixingReviewFeedback} {
+		prs, err := runListPRsFn(repo, lbl)
+		if err != nil {
+			logger.Warn("watch: failed to fetch PRs for seen seeding", "label", lbl, "err", err)
+			continue
+		}
+		for _, pr := range prs {
+			if n := issueNumFromBranch(pr.HeadRefName); n != 0 {
+				seen[n] = true
+			}
+		}
+	}
+	return seen
+}
+
+// issueNumFromBranch parses the issue number prefix from a PR head branch name.
+// Branch names follow the "<issue-number>-<slug>" convention (e.g. "42-fix-bug").
+// Returns 0 if the branch name does not match the convention.
+func issueNumFromBranch(name string) int {
+	idx := strings.Index(name, "-")
+	if idx <= 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(name[:idx])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // runFetchMilestoneIssuesFn fetches open milestone issues and splits out
