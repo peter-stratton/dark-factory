@@ -10,10 +10,33 @@ import (
 	"syscall"
 
 	"github.com/phs/dark-factory/internal/dashboard"
+	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/stats"
 	"github.com/spf13/cobra"
 )
+
+// githubWatchQuerier adapts the github package to the dashboard.WatchQuerier
+// interface. It lives in the cmd layer, which may depend on both
+// presentation (dashboard) and infrastructure (github).
+type githubWatchQuerier struct{}
+
+func (githubWatchQuerier) ListWatchedPRs(ctx context.Context, repo, lbl string) ([]dashboard.WatchedPRInfo, error) {
+	prs, err := github.ListWatchedPRs(repo, lbl)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]dashboard.WatchedPRInfo, len(prs))
+	for i, pr := range prs {
+		result[i] = dashboard.WatchedPRInfo{
+			Number:    pr.Number,
+			Title:     pr.Title,
+			Labels:    pr.Labels,
+			UpdatedAt: pr.UpdatedAt,
+		}
+	}
+	return result, nil
+}
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
@@ -52,8 +75,9 @@ Press Ctrl-C to stop the server.`,
 		}
 
 		srv, err := dashboard.New(dashboard.Config{
-			Port:   port,
-			Logger: logger,
+			Port:         port,
+			Logger:       logger,
+			WatchQuerier: githubWatchQuerier{},
 		}, reader, statsDB)
 		if err != nil {
 			return fmt.Errorf("creating dashboard server: %w", err)

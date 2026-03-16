@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/phs/dark-factory/internal/analysis"
+	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/rundata"
 	"github.com/phs/dark-factory/internal/stats"
 )
@@ -1274,6 +1275,125 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// WatchPRView is the view model for a single PR on the watch status page.
+type WatchPRView struct {
+	Number       int
+	Title        string
+	CurrentLabel string // full label name, e.g. "godark:awaiting-human-review"
+	BadgeClass   string // CSS badge modifier, e.g. "badge--info"
+	BadgeLabel   string // short human-readable label, e.g. "Awaiting Review"
+	TimeInState  string // human-readable duration, e.g. "2 hours"
+	GitHubURL    string // https://github.com/owner/repo/pull/123
+}
+
+// WatchStatusData is the data passed to the watch.html template.
+type WatchStatusData struct {
+	Repo        string   // currently selected repo, empty if none
+	Repos       []string // known repos from run data, for the selector
+	PRs         []WatchPRView
+	HasQuerier  bool // false when WatchQuerier is not configured
+	Error       string
+}
+
+func (s *Server) handleWatchStatus(w http.ResponseWriter, r *http.Request) {
+	data := s.buildWatchStatusData(r.Context(), r)
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "watch.html", data); err != nil {
+		s.cfg.Logger.Error("rendering watch template", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+func (s *Server) buildWatchStatusData(ctx context.Context, r *http.Request) WatchStatusData {
+	repo := r.URL.Query().Get("repo")
+
+	// Collect known repos from run data for the selector.
+	repos := s.knownRepos()
+
+	data := WatchStatusData{
+		Repo:       repo,
+		Repos:      repos,
+		HasQuerier: s.cfg.WatchQuerier != nil,
+	}
+
+	if s.cfg.WatchQuerier == nil || repo == "" {
+		return data
+	}
+
+	// Query both watched labels and merge results by PR number.
+	byNumber := make(map[int]WatchedPRInfo)
+	for _, lbl := range []string{label.AwaitingHumanReview, label.FixingReviewFeedback} {
+		prs, err := s.cfg.WatchQuerier.ListWatchedPRs(ctx, repo, lbl)
+		if err != nil {
+			s.cfg.Logger.Error("listing watched PRs", "repo", repo, "label", lbl, "error", err)
+			data.Error = fmt.Sprintf("Failed to fetch PRs: %v", err)
+			return data
+		}
+		for _, pr := range prs {
+			byNumber[pr.Number] = pr
+		}
+	}
+
+	views := make([]WatchPRView, 0, len(byNumber))
+	for _, pr := range byNumber {
+		views = append(views, watchPRToView(pr, repo))
+	}
+	sort.Slice(views, func(i, j int) bool {
+		return views[i].Number < views[j].Number
+	})
+	data.PRs = views
+	return data
+}
+
+// knownRepos returns the unique repos seen in run data, sorted.
+func (s *Server) knownRepos() []string {
+	metas, err := s.reader.ListRuns()
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	for _, m := range metas {
+		seen[m.Repo] = struct{}{}
+	}
+	repos := make([]string, 0, len(seen))
+	for repo := range seen {
+		repos = append(repos, repo)
+	}
+	sort.Strings(repos)
+	return repos
+}
+
+// watchPRToView converts a WatchedPRInfo into a WatchPRView for rendering.
+func watchPRToView(pr WatchedPRInfo, repo string) WatchPRView {
+	currentLabel, badgeClass, badgeLabel := watchedPRBadge(pr.Labels)
+	return WatchPRView{
+		Number:       pr.Number,
+		Title:        pr.Title,
+		CurrentLabel: currentLabel,
+		BadgeClass:   badgeClass,
+		BadgeLabel:   badgeLabel,
+		TimeInState:  humanizeAge(pr.UpdatedAt),
+		GitHubURL:    fmt.Sprintf("https://github.com/%s/pull/%d", repo, pr.Number),
+	}
+}
+
+// watchedPRBadge selects the most relevant lifecycle label from a PR's label
+// list and returns the label name, badge CSS class, and display text.
+func watchedPRBadge(labels []string) (name, class, display string) {
+	for _, l := range labels {
+		switch l {
+		case label.FixingReviewFeedback:
+			return l, "badge--warning", "Fixing Feedback"
+		case label.AwaitingHumanReview:
+			return l, "badge--info", "Awaiting Review"
+		}
+	}
+	return "", "badge--secondary", "Unknown"
 }
 
 func humanizeAge(t time.Time) string {

@@ -23,10 +23,28 @@ import (
 //go:embed templates static
 var content embed.FS
 
+// WatchedPRInfo holds the fields needed to render a single PR on the watch page.
+// It is defined here so the presentation layer can remain decoupled from the
+// infrastructure layer (internal/github).
+type WatchedPRInfo struct {
+	Number    int
+	Title     string
+	Labels    []string
+	UpdatedAt time.Time
+}
+
+// WatchQuerier retrieves open watched PRs from a repository. It is an
+// interface so the presentation layer does not depend on infrastructure.
+// The concrete implementation lives in the cmd layer (internal/cmd).
+type WatchQuerier interface {
+	ListWatchedPRs(ctx context.Context, repo, label string) ([]WatchedPRInfo, error)
+}
+
 // Config holds the dashboard server configuration.
 type Config struct {
-	Port   int
-	Logger *slog.Logger
+	Port         int
+	Logger       *slog.Logger
+	WatchQuerier WatchQuerier // optional; if nil, /watch shows a disabled state
 }
 
 // Server is the dashboard HTTP server.
@@ -129,6 +147,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /runs/{owner}/{repo}/{timestamp}/logs/entries", s.handleRunLogsEntries)
 	s.mux.HandleFunc("DELETE /runs/{owner}/{repo}/{timestamp}", s.handleDeleteRun)
 	s.mux.Handle("GET /static/", http.FileServer(http.FS(content)))
+	s.mux.HandleFunc("GET /watch", s.handleWatchStatus)
 }
 
 // BrowserOpener opens a URL in the system default browser. Errors are silently
