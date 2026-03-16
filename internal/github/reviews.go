@@ -3,12 +3,22 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // PRInfo holds the fields returned by gh pr list for a single pull request.
 type PRInfo struct {
 	Number      int    `json:"number"`
 	HeadRefName string `json:"headRefName"`
+}
+
+// WatchedPR holds the richer fields needed to render the watch dashboard page.
+type WatchedPR struct {
+	Number      int
+	Title       string
+	Labels      []string
+	UpdatedAt   time.Time
+	HeadRefName string
 }
 
 // PRReview holds the fields from a GitHub pull request review.
@@ -34,6 +44,49 @@ func ListPRsWithLabel(repo, label string) ([]PRInfo, error) {
 	var prs []PRInfo
 	if err := json.Unmarshal(out, &prs); err != nil {
 		return nil, fmt.Errorf("parsing pr list: %w", err)
+	}
+	return prs, nil
+}
+
+// ListWatchedPRs returns open pull requests in repo that carry the given label,
+// fetching the richer field set needed for the watch dashboard page.
+func ListWatchedPRs(repo, label string) ([]WatchedPR, error) {
+	out, err := CommandRunner("gh", "pr", "list",
+		"--repo", repo,
+		"--label", label,
+		"--json", "number,title,labels,updatedAt,headRefName",
+		"--limit", "200",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing watched PRs with label %q: %w", label, err)
+	}
+
+	var raw []struct {
+		Number      int    `json:"number"`
+		Title       string `json:"title"`
+		Labels      []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+		UpdatedAt   time.Time `json:"updatedAt"`
+		HeadRefName string    `json:"headRefName"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parsing watched pr list: %w", err)
+	}
+
+	prs := make([]WatchedPR, len(raw))
+	for i, r := range raw {
+		labels := make([]string, len(r.Labels))
+		for j, l := range r.Labels {
+			labels[j] = l.Name
+		}
+		prs[i] = WatchedPR{
+			Number:      r.Number,
+			Title:       r.Title,
+			Labels:      labels,
+			UpdatedAt:   r.UpdatedAt,
+			HeadRefName: r.HeadRefName,
+		}
 	}
 	return prs, nil
 }

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>godark — Watch</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph-ext.min.js"></script>
+  <script src="/static/etag-cache.js"></script>
+</head>
+<body hx-ext="morph">
+  <div class="shell">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__logo">
+        <span class="topbar__logo-mark"></span>
+        godark
+      </div>
+      <span class="topbar__sep"></span>
+      <nav class="breadcrumbs">
+        <a href="/" class="breadcrumbs__link">Runs</a>
+        <span class="breadcrumbs__sep">/</span>
+        <span class="breadcrumbs__current">Watch</span>
+      </nav>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__status">
+        <span class="topbar__dot"></span>
+        Dashboard
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar__section">
+        <div class="sidebar__label">Navigation</div>
+        <ul class="sidebar__nav">
+          <li>
+            <a href="/" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1.5 1.75V13.5h13V1.75H1.5zm-1.5 0A1.5 1.5 0 011.5.25h13A1.5 1.5 0 0116 1.75V13.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 010 13.5V1.75zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Runs
+            </a>
+          </li>
+          <li>
+            <a href="/analysis" class="sidebar__link">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1 11l4-8 3 5 2-3 2 6H1zm13.5-5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              </svg>
+              Analysis
+            </a>
+          </li>
+          <li>
+            <a href="/watch" class="sidebar__link sidebar__link--active">
+              <svg class="sidebar__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 1a7 7 0 100 14A7 7 0 008 1zM0 8a8 8 0 1116 0A8 8 0 010 8zm8-3.5a.5.5 0 01.5.5v3.25l2.5 1.5a.5.5 0 01-.5.866L7.75 9.1A.5.5 0 017.5 8.5V5a.5.5 0 01.5-.5z"/>
+              </svg>
+              Watch
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      {{if .Repos}}
+      <div class="sidebar__section">
+        <div class="sidebar__label">Repositories</div>
+        <ul class="sidebar__nav">
+          {{range .Repos}}
+          <li>
+            <a href="/watch?repo={{.}}" class="sidebar__link{{if eq . $.Repo}} sidebar__link--active{{end}}">
+              {{.}}
+            </a>
+          </li>
+          {{end}}
+        </ul>
+      </div>
+      {{end}}
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="page-header animate-in">
+        <h1 class="page-header__title">Watch</h1>
+        <p class="page-header__subtitle">PRs under active watch — awaiting review or fixing feedback</p>
+      </div>
+
+      {{if .HasQuerier}}
+
+        {{if .Error}}
+        <div class="card animate-in animate-in-1" style="border-left: 3px solid var(--color-danger, #f87171); background: rgba(248,113,113,0.06);">
+          <p style="margin: 0; color: var(--color-danger, #f87171);">{{.Error}}</p>
+        </div>
+
+        {{else if .Repo}}
+
+        <!-- Repo selector -->
+        <div class="controls animate-in animate-in-1">
+          <div class="control-group">
+            <select class="filter-select"
+                    aria-label="Select repository"
+                    onchange="location.href='/watch?repo='+encodeURIComponent(this.value)">
+              {{range .Repos}}
+              <option value="{{.}}"{{if eq . $.Repo}} selected{{end}}>{{.}}</option>
+              {{end}}
+            </select>
+          </div>
+        </div>
+
+        {{if .PRs}}
+        <!-- Watched PRs Table -->
+        <div class="card animate-in animate-in-2">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>PR</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Time in State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .PRs}}
+              <tr>
+                <td>
+                  <a href="{{.GitHubURL}}" target="_blank" rel="noopener noreferrer" class="text-secondary">
+                    #{{.Number}}
+                  </a>
+                </td>
+                <td>
+                  <a href="{{.GitHubURL}}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">
+                    {{.Title}}
+                  </a>
+                </td>
+                <td>
+                  <span class="badge {{.BadgeClass}}">
+                    <span class="badge__dot"></span>
+                    {{.BadgeLabel}}
+                  </span>
+                </td>
+                <td class="text-secondary">{{.TimeInState}}</td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+
+        {{else}}
+        <!-- Empty state: no watched PRs for selected repo -->
+        <div class="empty-state animate-in animate-in-2">
+          <h2 class="empty-state__title">No watched PRs</h2>
+          <p class="empty-state__description">
+            No open PRs with <code>godark:awaiting-human-review</code> or
+            <code>godark:fixing-review-feedback</code> labels found in
+            <strong>{{.Repo}}</strong>.
+          </p>
+        </div>
+        {{end}}
+
+        {{else}}
+        <!-- No repo selected -->
+        <div class="empty-state animate-in animate-in-1">
+          <h2 class="empty-state__title">Select a repository</h2>
+          <p class="empty-state__description">
+            Choose a repository from the sidebar to view its watched PRs.
+          </p>
+          {{if .Repos}}
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-top: 1rem;">
+            {{range .Repos}}
+            <a href="/watch?repo={{.}}" class="badge badge--info" style="text-decoration: none; padding: 0.4rem 0.75rem; font-size: var(--text-sm);">{{.}}</a>
+            {{end}}
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+
+      {{else}}
+      <!-- WatchQuerier not configured -->
+      <div class="empty-state animate-in animate-in-1">
+        <h2 class="empty-state__title">Watch not configured</h2>
+        <p class="empty-state__description">
+          The dashboard was started without a GitHub querier. Start the daemon with
+          <code>godark watch</code> to enable live PR tracking.
+        </p>
+      </div>
+      {{end}}
+
+    </main>
+  </div>
+</body>
+</html>
