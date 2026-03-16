@@ -4708,7 +4708,7 @@ func (r *mockReporter) IssueStageChanged(number int, stage string) {
 }
 func (r *mockReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
 func (r *mockReporter) IssueStarted(_ int, _ string)              {}
-func (r *mockReporter) IssueCompleted(_ int, _ string, _ string, _, _ int, _ string) {
+func (r *mockReporter) IssueCompleted(_ int, _ string, _ string, _, _ int, _ string, _ float64) {
 }
 func (r *mockReporter) WaveStarted(_, _ int)              {}
 func (r *mockReporter) AllBlocked(_, _ int)               {}

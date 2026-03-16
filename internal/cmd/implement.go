@@ -273,7 +273,7 @@ func implementIssues(
 		if err != nil {
 			logger.Warn("failed to fetch issue, skipping", "issue_number", issueNumber, "error", err)
 			failed++
-			reporter.IssueCompleted(issueNumber, "", "failed", 0, 0, err.Error())
+			reporter.IssueCompleted(issueNumber, "", "failed", 0, 0, err.Error(), 0.0)
 			continue
 		}
 
@@ -333,23 +333,23 @@ func writeIssueDialogue(writer *rundata.Writer, repo string, issueNumber int, ou
 func applyOutcomeStats(outcome agent.IssueOutcome, issue github.Issue, cfg *config.Config, reporter progress.ProgressReporter, logger *slog.Logger) (int, int, int, int) {
 	switch outcome.Status {
 	case agent.StatusImplemented:
-		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "")
+		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", 0.0)
 		if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
 			logger.Warn("could not sync local repo after merge", "error", err)
 		}
 		return 1, 0, 0, 0
 	case agent.StatusReadyToMerge:
-		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "")
+		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", 0.0)
 		return 0, 1, 0, 0
 	case agent.StatusNeedsHumanReview:
-		reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "")
+		reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", 0.0)
 		return 0, 0, 1, 0
 	default:
 		errMsg := ""
 		if outcome.Err != nil {
 			errMsg = outcome.Err.Error()
 		}
-		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg)
+		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0.0)
 		return 0, 0, 0, 1
 	}
 }

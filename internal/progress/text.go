@@ -35,7 +35,7 @@ func (r *TextReporter) IssueStageChanged(issueNumber int, stage string) {
 }
 
 // IssueCompleted writes the outcome line for an issue.
-func (r *TextReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string) {
+func (r *TextReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, _ float64) {
 	switch status {
 	case "implemented":
 		fmt.Fprintf(r.w, "  #%d %s \u2014 implemented (PR #%d, %d retries)\n", issueNumber, title, prNumber, retries)
