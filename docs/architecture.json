@@ -10,7 +10,7 @@
     {
       "name": "orchestration",
       "description": "Workflow coordination and agent lifecycle. Runs multi-issue workflows and manages agent execution.",
-      "paths": ["internal/orchestrator/", "internal/agent/"],
+      "paths": ["internal/orchestrator/", "internal/agent/", "internal/watch/"],
       "may_depend_on": ["service", "domain", "infrastructure", "foundation", "content"],
       "must_not_depend_on": ["cmd", "presentation"]
     },
