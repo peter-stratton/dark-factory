@@ -22,13 +22,14 @@ const defaultPollInterval = 60 * time.Second
 
 // Watch polls GitHub for PRs awaiting human review and handles review events.
 type Watch struct {
-	cfg          *config.Config
-	prompts      *agent.Prompts
-	authEnv      map[string]string
-	logger       *slog.Logger
-	processed    map[int]bool
-	mergedIssues map[int]bool // issue numbers whose merged PRs have already been reported
-	seenIssues   map[int]bool // issue numbers ever seen in awaiting-human-review label
+	cfg              *config.Config
+	prompts          *agent.Prompts
+	authEnv          map[string]string
+	logger           *slog.Logger
+	processed        map[int]bool
+	mergedIssues     map[int]bool // issue numbers whose merged PRs have already been reported
+	seenIssues       map[int]bool // issue numbers ever seen in awaiting-human-review label
+	onMergesDetected func(ctx context.Context, mergedNums []int)
 }
 
 // New creates a Watch instance with the given dependencies.
@@ -42,6 +43,14 @@ func New(cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, 
 		mergedIssues: make(map[int]bool),
 		seenIssues:   make(map[int]bool),
 	}
+}
+
+// SetMergeCallback registers a function to be called whenever new external
+// merges are detected by the polling loop. The callback receives the context
+// and the slice of newly merged issue numbers. Only one callback may be set;
+// calling SetMergeCallback again replaces any existing callback.
+func (w *Watch) SetMergeCallback(fn func(ctx context.Context, mergedNums []int)) {
+	w.onMergesDetected = fn
 }
 
 // RunUntilDone runs the polling loop until ctx is cancelled or there are no
@@ -229,6 +238,9 @@ func (w *Watch) pollExternalMerges(ctx context.Context, prs []github.PRInfo) {
 	}
 	for _, n := range merged {
 		w.logger.Info("PR merged externally", "issue_number", n)
+	}
+	if len(merged) > 0 && w.onMergesDetected != nil {
+		w.onMergesDetected(ctx, merged)
 	}
 }
 

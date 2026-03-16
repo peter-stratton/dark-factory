@@ -2262,3 +2262,194 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 		t.Errorf("expected issue #3 in processable output, got:\n%s", output)
 	}
 }
+
+// setupReResolveAndProcessMocks is like setupProcessMocks but also stubs
+// sandbox.BuildImage (not needed for NoSandbox) and preps the lock seam.
+// It returns closedNumbers as a mutable slice pointer for tests to update.
+func setupReResolveAndProcessMocks(t *testing.T, closedNumbers *[]int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome) {
+	t.Helper()
+	setupProcessMocks(t, func() []int { return *closedNumbers }, processFn)
+}
+
+func TestReResolveAndProcess_UnblocksAfterMerge(t *testing.T) {
+	// Issue 1 (no deps) was already processed (in seen).
+	// Issue 2 (blocked by #1) should become processable after #1 is closed.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first task"},
+		{Number: 2, Title: "second task", Body: "**Blocked by**: #1"},
+	}
+
+	var processed []int
+	closedNums := []int{1} // #1 already merged externally
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		processed = append(processed, issue.Number)
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 200 + issue.Number}
+	})
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	seen := map[int]bool{1: true} // issue 1 was processed in the prior run
+
+	captureStdout(t, func() {
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		if err != nil {
+			t.Fatalf("ReResolveAndProcess() error = %v", err)
+		}
+		if !got {
+			t.Error("expected ReResolveAndProcess to return true (issues were processed)")
+		}
+	})
+
+	if len(processed) != 1 || processed[0] != 2 {
+		t.Errorf("expected issue #2 to be processed, got %v", processed)
+	}
+	if !seen[2] {
+		t.Error("expected seen to be updated with issue #2")
+	}
+}
+
+func TestReResolveAndProcess_MultipleUnblocked(t *testing.T) {
+	// Issue 3 blocked by #1, issue 4 blocked by #2. Both #1 and #2 closed.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+		{Number: 3, Title: "third", Body: "**Blocked by**: #1"},
+		{Number: 4, Title: "fourth", Body: "**Blocked by**: #2"},
+	}
+
+	var processed []int
+	closedNums := []int{1, 2}
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		processed = append(processed, issue.Number)
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "ready-to-merge", PRNumber: 300 + issue.Number}
+	})
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	seen := map[int]bool{1: true, 2: true}
+
+	captureStdout(t, func() {
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		if err != nil {
+			t.Fatalf("ReResolveAndProcess() error = %v", err)
+		}
+		if !got {
+			t.Error("expected true when issues are processed")
+		}
+	})
+
+	if len(processed) != 2 {
+		t.Fatalf("expected 2 issues processed, got %d: %v", len(processed), processed)
+	}
+	for _, n := range []int{3, 4} {
+		found := false
+		for _, p := range processed {
+			if p == n {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected issue #%d to be processed, processed=%v", n, processed)
+		}
+	}
+}
+
+func TestReResolveAndProcess_NoNewUnblocked(t *testing.T) {
+	// Issue 2 blocked by #99 which is NOT closed yet. No processing expected.
+	allIssues := []github.Issue{
+		{Number: 2, Title: "blocked task", Body: "**Blocked by**: #99"},
+	}
+
+	var processed []int
+	closedNums := []int{} // #99 still open
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		processed = append(processed, issue.Number)
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented"}
+	})
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	seen := map[int]bool{}
+
+	captureStdout(t, func() {
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		if err != nil {
+			t.Fatalf("ReResolveAndProcess() error = %v", err)
+		}
+		if got {
+			t.Error("expected false when no issues are unblocked")
+		}
+	})
+
+	if len(processed) != 0 {
+		t.Errorf("expected no issues processed, got %v", processed)
+	}
+}
+
+func TestReResolveAndProcess_SeenSkipsAlreadyProcessed(t *testing.T) {
+	// Both issues are unblocked, but issue 1 is already in seen — only issue 2 should run.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "already done"},
+		{Number: 2, Title: "fresh issue"},
+	}
+
+	var processed []int
+	closedNums := []int{}
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		processed = append(processed, issue.Number)
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "ready-to-merge"}
+	})
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	seen := map[int]bool{1: true} // issue 1 already processed
+
+	captureStdout(t, func() {
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		if err != nil {
+			t.Fatalf("ReResolveAndProcess() error = %v", err)
+		}
+		if !got {
+			t.Error("expected true (issue 2 was processed)")
+		}
+	})
+
+	if len(processed) != 1 || processed[0] != 2 {
+		t.Errorf("expected only issue #2 to be processed, got %v", processed)
+	}
+}
+
+func TestRefreshAndCategorize_ReturnsCorrectSplit(t *testing.T) {
+	// Issue 3 is blocked by #1. After #1 closes, #3 becomes processable.
+	allIssues := []github.Issue{
+		{Number: 2, Title: "free issue"},
+		{Number: 3, Title: "blocked by 1", Body: "**Blocked by**: #1"},
+	}
+
+	origRunner := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origRunner })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		for i, a := range args {
+			if a == "--state" && i+1 < len(args) && args[i+1] == "closed" {
+				return json.Marshal([]struct{ Number int }{{Number: 1}})
+			}
+		}
+		return []byte("[]"), nil
+	}
+
+	processable, blocked, err := refreshAndCategorize("owner/repo", allIssues, nil)
+	if err != nil {
+		t.Fatalf("refreshAndCategorize() error = %v", err)
+	}
+	if len(processable) != 2 {
+		t.Fatalf("expected 2 processable (2 and 3), got %d: %v", len(processable), processable)
+	}
+	if len(blocked) != 0 {
+		t.Errorf("expected 0 blocked, got %d: %v", len(blocked), blocked)
+	}
+}
