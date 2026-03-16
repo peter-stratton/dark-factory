@@ -444,6 +444,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 					errMsg = outcome.Err.Error()
 				}
 				runStats.abortReason = errMsg
+				runStats.failed++
 				logger.Warn("run aborted: API rate limit reached", "reason", errMsg)
 				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0)
 				goto done

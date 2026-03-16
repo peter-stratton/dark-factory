@@ -2311,6 +2311,11 @@ func TestRateLimitAbort_StopsAfterFirstRateLimitedIssue(t *testing.T) {
 	if len(reporter.runFinished) == 0 {
 		t.Error("expected RunFinished to be called even after abort")
 	}
+
+	// failed counter must be 1 — the rate-limited issue counts as a failure.
+	if rf := reporter.runFinished[0]; rf.failed != 1 {
+		t.Errorf("RunFinished failed = %d, want 1", rf.failed)
+	}
 }
 
 // TestRateLimitAbort_NormalFailure_DoesNotAbort verifies that a normal failure
