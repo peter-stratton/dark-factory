@@ -1,6 +1,7 @@
 package dashboard_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,7 @@ type stubWatchQuerier struct {
 	err error
 }
 
-func (s *stubWatchQuerier) ListWatchedPRs(repo, label string) ([]dashboard.WatchedPRInfo, error) {
+func (s *stubWatchQuerier) ListWatchedPRs(_ context.Context, repo, label string) ([]dashboard.WatchedPRInfo, error) {
 	if s.err != nil {
 		return nil, s.err
 	}

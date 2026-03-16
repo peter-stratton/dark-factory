@@ -21,7 +21,7 @@ import (
 // presentation (dashboard) and infrastructure (github).
 type githubWatchQuerier struct{}
 
-func (githubWatchQuerier) ListWatchedPRs(repo, lbl string) ([]dashboard.WatchedPRInfo, error) {
+func (githubWatchQuerier) ListWatchedPRs(ctx context.Context, repo, lbl string) ([]dashboard.WatchedPRInfo, error) {
 	prs, err := github.ListWatchedPRs(repo, lbl)
 	if err != nil {
 		return nil, err
@@ -29,11 +29,10 @@ func (githubWatchQuerier) ListWatchedPRs(repo, lbl string) ([]dashboard.WatchedP
 	result := make([]dashboard.WatchedPRInfo, len(prs))
 	for i, pr := range prs {
 		result[i] = dashboard.WatchedPRInfo{
-			Number:      pr.Number,
-			Title:       pr.Title,
-			Labels:      pr.Labels,
-			UpdatedAt:   pr.UpdatedAt,
-			HeadRefName: pr.HeadRefName,
+			Number:    pr.Number,
+			Title:     pr.Title,
+			Labels:    pr.Labels,
+			UpdatedAt: pr.UpdatedAt,
 		}
 	}
 	return result, nil

@@ -27,18 +27,17 @@ var content embed.FS
 // It is defined here so the presentation layer can remain decoupled from the
 // infrastructure layer (internal/github).
 type WatchedPRInfo struct {
-	Number      int
-	Title       string
-	Labels      []string
-	UpdatedAt   time.Time
-	HeadRefName string
+	Number    int
+	Title     string
+	Labels    []string
+	UpdatedAt time.Time
 }
 
 // WatchQuerier retrieves open watched PRs from a repository. It is an
 // interface so the presentation layer does not depend on infrastructure.
 // The concrete implementation lives in the cmd layer (internal/cmd).
 type WatchQuerier interface {
-	ListWatchedPRs(repo, label string) ([]WatchedPRInfo, error)
+	ListWatchedPRs(ctx context.Context, repo, label string) ([]WatchedPRInfo, error)
 }
 
 // Config holds the dashboard server configuration.

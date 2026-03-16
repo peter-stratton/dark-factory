@@ -1298,7 +1298,7 @@ type WatchStatusData struct {
 }
 
 func (s *Server) handleWatchStatus(w http.ResponseWriter, r *http.Request) {
-	data := s.buildWatchStatusData(r)
+	data := s.buildWatchStatusData(r.Context(), r)
 	var buf bytes.Buffer
 	if err := s.tmpl.ExecuteTemplate(&buf, "watch.html", data); err != nil {
 		s.cfg.Logger.Error("rendering watch template", "error", err)
@@ -1309,7 +1309,7 @@ func (s *Server) handleWatchStatus(w http.ResponseWriter, r *http.Request) {
 	_, _ = buf.WriteTo(w)
 }
 
-func (s *Server) buildWatchStatusData(r *http.Request) WatchStatusData {
+func (s *Server) buildWatchStatusData(ctx context.Context, r *http.Request) WatchStatusData {
 	repo := r.URL.Query().Get("repo")
 
 	// Collect known repos from run data for the selector.
@@ -1328,7 +1328,7 @@ func (s *Server) buildWatchStatusData(r *http.Request) WatchStatusData {
 	// Query both watched labels and merge results by PR number.
 	byNumber := make(map[int]WatchedPRInfo)
 	for _, lbl := range []string{label.AwaitingHumanReview, label.FixingReviewFeedback} {
-		prs, err := s.cfg.WatchQuerier.ListWatchedPRs(repo, lbl)
+		prs, err := s.cfg.WatchQuerier.ListWatchedPRs(ctx, repo, lbl)
 		if err != nil {
 			s.cfg.Logger.Error("listing watched PRs", "repo", repo, "label", lbl, "error", err)
 			data.Error = fmt.Sprintf("Failed to fetch PRs: %v", err)

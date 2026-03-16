@@ -14,11 +14,10 @@ type PRInfo struct {
 
 // WatchedPR holds the richer fields needed to render the watch dashboard page.
 type WatchedPR struct {
-	Number      int
-	Title       string
-	Labels      []string
-	UpdatedAt   time.Time
-	HeadRefName string
+	Number    int
+	Title     string
+	Labels    []string
+	UpdatedAt time.Time
 }
 
 // PRReview holds the fields from a GitHub pull request review.
@@ -54,7 +53,7 @@ func ListWatchedPRs(repo, label string) ([]WatchedPR, error) {
 	out, err := CommandRunner("gh", "pr", "list",
 		"--repo", repo,
 		"--label", label,
-		"--json", "number,title,labels,updatedAt,headRefName",
+		"--json", "number,title,labels,updatedAt",
 		"--limit", "200",
 	)
 	if err != nil {
@@ -62,13 +61,12 @@ func ListWatchedPRs(repo, label string) ([]WatchedPR, error) {
 	}
 
 	var raw []struct {
-		Number      int    `json:"number"`
-		Title       string `json:"title"`
-		Labels      []struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		Labels []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
-		UpdatedAt   time.Time `json:"updatedAt"`
-		HeadRefName string    `json:"headRefName"`
+		UpdatedAt time.Time `json:"updatedAt"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, fmt.Errorf("parsing watched pr list: %w", err)
@@ -81,11 +79,10 @@ func ListWatchedPRs(repo, label string) ([]WatchedPR, error) {
 			labels[j] = l.Name
 		}
 		prs[i] = WatchedPR{
-			Number:      r.Number,
-			Title:       r.Title,
-			Labels:      labels,
-			UpdatedAt:   r.UpdatedAt,
-			HeadRefName: r.HeadRefName,
+			Number:    r.Number,
+			Title:     r.Title,
+			Labels:    labels,
+			UpdatedAt: r.UpdatedAt,
 		}
 	}
 	return prs, nil
