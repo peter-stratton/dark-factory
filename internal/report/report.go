@@ -210,21 +210,21 @@ func RenderMarkdown(rpt SprintReport) string {
 	sb.WriteString("## Summary\n\n")
 	fmt.Fprintf(&sb, "- **Runs:** %d\n", rpt.TotalRuns)
 	fmt.Fprintf(&sb, "- **Issues processed:** %d\n", rpt.IssuesProcessed)
-	sb.WriteString(fmt.Sprintf("- **Implemented:** %d\n", rpt.IssuesImplemented))
-	sb.WriteString(fmt.Sprintf("- **Failed:** %d\n", rpt.IssuesFailed))
-	sb.WriteString(fmt.Sprintf("- **Success rate:** **%.1f%%**\n", rpt.SuccessRate*100))
-	sb.WriteString(fmt.Sprintf("- **First-pass rate:** **%.1f%%**\n", rpt.FirstPassRate*100))
+	fmt.Fprintf(&sb, "- **Implemented:** %d\n", rpt.IssuesImplemented)
+	fmt.Fprintf(&sb, "- **Failed:** %d\n", rpt.IssuesFailed)
+	fmt.Fprintf(&sb, "- **Success rate:** **%.1f%%**\n", rpt.SuccessRate*100)
+	fmt.Fprintf(&sb, "- **First-pass rate:** **%.1f%%**\n", rpt.FirstPassRate*100)
 
 	sb.WriteString("\n## Cost\n\n")
-	sb.WriteString(fmt.Sprintf("- **Total:** $%.2f\n", rpt.TotalCostUSD))
-	sb.WriteString(fmt.Sprintf("- **Avg per success:** $%.2f\n", rpt.AvgCostPerSuccessUSD))
-	sb.WriteString(fmt.Sprintf("- **Wasted:** $%.2f\n", rpt.WastedCostUSD))
+	fmt.Fprintf(&sb, "- **Total:** $%.2f\n", rpt.TotalCostUSD)
+	fmt.Fprintf(&sb, "- **Avg per success:** $%.2f\n", rpt.AvgCostPerSuccessUSD)
+	fmt.Fprintf(&sb, "- **Wasted:** $%.2f\n", rpt.WastedCostUSD)
 
 	if len(rpt.FailureReasons) > 0 {
 		sb.WriteString("\n## Failure Reasons\n\n")
 		reasons := sortedKeys(rpt.FailureReasons)
 		for _, reason := range reasons {
-			sb.WriteString(fmt.Sprintf("- **%s:** %d\n", reason, rpt.FailureReasons[reason]))
+			fmt.Fprintf(&sb, "- **%s:** %d\n", reason, rpt.FailureReasons[reason])
 		}
 	}
 
@@ -235,7 +235,7 @@ func RenderMarkdown(rpt SprintReport) string {
 		for _, f := range rpt.NotableFailures {
 			title := strings.ReplaceAll(f.Title, "|", "\\|")
 			errStr := strings.ReplaceAll(truncate(f.Error, 80), "|", "\\|")
-			sb.WriteString(fmt.Sprintf("| #%d | %s | $%.2f | %s |\n", f.IssueNumber, title, f.CostUSD, errStr))
+			fmt.Fprintf(&sb, "| #%d | %s | $%.2f | %s |\n", f.IssueNumber, title, f.CostUSD, errStr)
 		}
 	}
 
@@ -254,11 +254,11 @@ func RenderHTML(rpt SprintReport) string {
 
 	sb.WriteString(`<h1 style="color:#1a1a1a">Sprint Report</h1>
 `)
-	sb.WriteString(fmt.Sprintf(`<p><strong>Period:</strong> %s – %s</p>
-`, html.EscapeString(formatDate(rpt.Since)), html.EscapeString(formatDate(rpt.Until))))
+	fmt.Fprintf(&sb, `<p><strong>Period:</strong> %s – %s</p>
+`, html.EscapeString(formatDate(rpt.Since)), html.EscapeString(formatDate(rpt.Until)))
 	if rpt.Repo != "" {
-		sb.WriteString(fmt.Sprintf(`<p><strong>Repo:</strong> %s</p>
-`, html.EscapeString(rpt.Repo)))
+		fmt.Fprintf(&sb, `<p><strong>Repo:</strong> %s</p>
+`, html.EscapeString(rpt.Repo))
 	}
 
 	if rpt.TotalRuns == 0 {
@@ -310,14 +310,14 @@ func RenderHTML(rpt SprintReport) string {
 </tr>
 `)
 		for _, f := range rpt.NotableFailures {
-			sb.WriteString(fmt.Sprintf(
+			fmt.Fprintf(&sb,
 				`<tr><td style="padding:8px;border:1px solid #ddd">#%d</td><td style="padding:8px;border:1px solid #ddd">%s</td><td style="padding:8px;border:1px solid #ddd">$%.2f</td><td style="padding:8px;border:1px solid #ddd">%s</td></tr>
 `,
 				f.IssueNumber,
 				html.EscapeString(f.Title),
 				f.CostUSD,
 				html.EscapeString(truncate(f.Error, 120)),
-			))
+			)
 		}
 		sb.WriteString("</table>\n")
 	}
@@ -328,12 +328,12 @@ func RenderHTML(rpt SprintReport) string {
 
 // writeHTMLRow writes a two-column table row with inline styles.
 func writeHTMLRow(sb *strings.Builder, label, value string) {
-	sb.WriteString(fmt.Sprintf(
+	fmt.Fprintf(sb,
 		`<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">%s</td><td style="padding:8px;border:1px solid #ddd">%s</td></tr>
 `,
 		html.EscapeString(label),
 		html.EscapeString(value),
-	))
+	)
 }
 
 // formatDate formats a time as YYYY-MM-DD. Returns "(none)" for zero time.
