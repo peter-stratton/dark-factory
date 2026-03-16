@@ -24,6 +24,16 @@ type NotableFailure struct {
 	CostUSD     float64
 }
 
+// ShippedIssue represents an implemented issue included in the "What was
+// shipped" section of the report. Repo and PRNumber are used to construct
+// clickable GitHub PR links in non-terminal output formats.
+type ShippedIssue struct {
+	IssueNumber int
+	Title       string
+	PRNumber    int
+	Repo        string
+}
+
 // SprintReport summarises a sprint period for engineering managers.
 type SprintReport struct {
 	Since time.Time
@@ -47,6 +57,16 @@ type SprintReport struct {
 
 	FailureReasons  map[string]int
 	NotableFailures []NotableFailure
+
+	// ShippedIssues lists all implemented issues in this period, sorted by
+	// issue number. Used to render the "What was shipped" section.
+	ShippedIssues []ShippedIssue
+
+	// PriorPeriod holds the report for the equivalent preceding time window.
+	// When non-nil and non-empty, it is used to render the period comparison
+	// section. Set by the caller after Generate() returns; nil means no prior
+	// data is available.
+	PriorPeriod *SprintReport
 }
 
 // Generate computes a SprintReport from pre-queried stats DB records and
@@ -79,6 +99,7 @@ func Generate(runs []stats.RunRecord, outcomes []stats.IssueOutcomeRecord, steps
 	rpt.FailureReasons = agg.FailureReasons
 
 	rpt.NotableFailures = buildNotableFailures(runDetails)
+	rpt.ShippedIssues = buildShippedIssues(runDetails)
 	return rpt
 }
 
@@ -122,6 +143,30 @@ func buildNotableFailures(runDetails []rundata.RunDetail) []NotableFailure {
 			CostUSD:     f.costUSD,
 		})
 	}
+	return result
+}
+
+// buildShippedIssues returns all implemented issues sorted by issue number.
+func buildShippedIssues(runDetails []rundata.RunDetail) []ShippedIssue {
+	var result []ShippedIssue
+	for _, rd := range runDetails {
+		repo := rd.Repo
+		for _, issue := range rd.Issues {
+			if issue.Outcome.Status != rundata.OutcomeStatusImplemented &&
+				issue.Outcome.Status != rundata.OutcomeStatusReadyToMerge {
+				continue
+			}
+			result = append(result, ShippedIssue{
+				IssueNumber: issue.Outcome.IssueNumber,
+				Title:       issue.Outcome.Title,
+				PRNumber:    issue.Outcome.PRNumber,
+				Repo:        repo,
+			})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].IssueNumber < result[j].IssueNumber
+	})
 	return result
 }
 
@@ -200,6 +245,37 @@ func RenderTerminal(rpt SprintReport) string {
 		_ = tw.Flush()
 	}
 
+	// Shipped issues
+	if len(rpt.ShippedIssues) > 0 {
+		fmt.Fprintf(&sb, "\nWhat was Shipped (%d issues)\n", len(rpt.ShippedIssues))
+		for _, si := range rpt.ShippedIssues {
+			fmt.Fprintf(&sb, "  #%d — %s\n", si.IssueNumber, si.Title)
+		}
+	}
+
+	// Period comparison
+	if rpt.PriorPeriod != nil && rpt.PriorPeriod.TotalRuns > 0 {
+		fmt.Fprintf(&sb, "\nCompared to Prior Period (%s – %s)\n",
+			formatDate(rpt.PriorPeriod.Since), formatDate(rpt.PriorPeriod.Until))
+		tw = tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(tw, "  Success rate\t%.1f%% → %.1f%%\t%s\n",
+			rpt.PriorPeriod.SuccessRate*100, rpt.SuccessRate*100,
+			formatRateDelta(rpt.SuccessRate-rpt.PriorPeriod.SuccessRate))
+		fmt.Fprintf(tw, "  First-pass rate\t%.1f%% → %.1f%%\t%s\n",
+			rpt.PriorPeriod.FirstPassRate*100, rpt.FirstPassRate*100,
+			formatRateDelta(rpt.FirstPassRate-rpt.PriorPeriod.FirstPassRate))
+		fmt.Fprintf(tw, "  Issues processed\t%d → %d\t%s\n",
+			rpt.PriorPeriod.IssuesProcessed, rpt.IssuesProcessed,
+			formatIntDelta(rpt.IssuesProcessed-rpt.PriorPeriod.IssuesProcessed))
+		fmt.Fprintf(tw, "  Total cost\t$%.2f → $%.2f\t%s\n",
+			rpt.PriorPeriod.TotalCostUSD, rpt.TotalCostUSD,
+			formatCostDelta(rpt.TotalCostUSD-rpt.PriorPeriod.TotalCostUSD))
+		fmt.Fprintf(tw, "  Avg per success\t$%.2f → $%.2f\t%s\n",
+			rpt.PriorPeriod.AvgCostPerSuccessUSD, rpt.AvgCostPerSuccessUSD,
+			formatCostDelta(rpt.AvgCostPerSuccessUSD-rpt.PriorPeriod.AvgCostPerSuccessUSD))
+		_ = tw.Flush()
+	}
+
 	return sb.String()
 }
 
@@ -254,6 +330,40 @@ func RenderMarkdown(rpt SprintReport) string {
 			errStr := strings.ReplaceAll(truncate(f.Error, 80), "|", "\\|")
 			fmt.Fprintf(&sb, "| #%d | %s | $%.2f | %s |\n", f.IssueNumber, title, f.CostUSD, errStr)
 		}
+	}
+
+	if len(rpt.ShippedIssues) > 0 {
+		fmt.Fprintf(&sb, "\n## What was Shipped (%d issues)\n\n", len(rpt.ShippedIssues))
+		for _, si := range rpt.ShippedIssues {
+			if si.PRNumber > 0 && si.Repo != "" {
+				prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
+				fmt.Fprintf(&sb, "- [#%d](%s) — %s\n", si.IssueNumber, prURL, si.Title)
+			} else {
+				fmt.Fprintf(&sb, "- #%d — %s\n", si.IssueNumber, si.Title)
+			}
+		}
+	}
+
+	if rpt.PriorPeriod != nil && rpt.PriorPeriod.TotalRuns > 0 {
+		fmt.Fprintf(&sb, "\n## Compared to Prior Period (%s – %s)\n\n",
+			formatDate(rpt.PriorPeriod.Since), formatDate(rpt.PriorPeriod.Until))
+		sb.WriteString("| Metric | Prior | Current | Delta |\n")
+		sb.WriteString("|--------|-------|---------|-------|\n")
+		fmt.Fprintf(&sb, "| Success rate | %.1f%% | %.1f%% | %s |\n",
+			rpt.PriorPeriod.SuccessRate*100, rpt.SuccessRate*100,
+			formatRateDelta(rpt.SuccessRate-rpt.PriorPeriod.SuccessRate))
+		fmt.Fprintf(&sb, "| First-pass rate | %.1f%% | %.1f%% | %s |\n",
+			rpt.PriorPeriod.FirstPassRate*100, rpt.FirstPassRate*100,
+			formatRateDelta(rpt.FirstPassRate-rpt.PriorPeriod.FirstPassRate))
+		fmt.Fprintf(&sb, "| Issues processed | %d | %d | %s |\n",
+			rpt.PriorPeriod.IssuesProcessed, rpt.IssuesProcessed,
+			formatIntDelta(rpt.IssuesProcessed-rpt.PriorPeriod.IssuesProcessed))
+		fmt.Fprintf(&sb, "| Total cost | $%.2f | $%.2f | %s |\n",
+			rpt.PriorPeriod.TotalCostUSD, rpt.TotalCostUSD,
+			formatCostDelta(rpt.TotalCostUSD-rpt.PriorPeriod.TotalCostUSD))
+		fmt.Fprintf(&sb, "| Avg per success | $%.2f | $%.2f | %s |\n",
+			rpt.PriorPeriod.AvgCostPerSuccessUSD, rpt.AvgCostPerSuccessUSD,
+			formatCostDelta(rpt.AvgCostPerSuccessUSD-rpt.PriorPeriod.AvgCostPerSuccessUSD))
 	}
 
 	return sb.String()
@@ -329,8 +439,20 @@ func RenderHTML(rpt SprintReport) string {
 		sb.WriteString("</table>\n")
 	}
 
-	if len(rpt.NotableFailures) > 0 {
-		sb.WriteString(`<h2 style="color:#333;border-bottom:1px solid #ddd">Notable Failures</h2>
+	renderHTMLNotableFailures(&sb, rpt.NotableFailures)
+	renderHTMLShippedIssues(&sb, rpt.ShippedIssues)
+	renderHTMLPriorPeriod(&sb, rpt)
+
+	sb.WriteString("</body>\n</html>\n")
+	return sb.String()
+}
+
+// renderHTMLNotableFailures writes the notable failures table section.
+func renderHTMLNotableFailures(sb *strings.Builder, failures []NotableFailure) {
+	if len(failures) == 0 {
+		return
+	}
+	sb.WriteString(`<h2 style="color:#333;border-bottom:1px solid #ddd">Notable Failures</h2>
 <table style="border-collapse:collapse;width:100%">
 <tr style="background:#f5f5f5">
   <th style="text-align:left;padding:8px;border:1px solid #ddd">Issue</th>
@@ -339,21 +461,80 @@ func RenderHTML(rpt SprintReport) string {
   <th style="text-align:left;padding:8px;border:1px solid #ddd">Error</th>
 </tr>
 `)
-		for _, f := range rpt.NotableFailures {
-			fmt.Fprintf(&sb,
-				`<tr><td style="padding:8px;border:1px solid #ddd">#%d</td><td style="padding:8px;border:1px solid #ddd">%s</td><td style="padding:8px;border:1px solid #ddd">$%.2f</td><td style="padding:8px;border:1px solid #ddd">%s</td></tr>
+	for _, f := range failures {
+		fmt.Fprintf(sb,
+			`<tr><td style="padding:8px;border:1px solid #ddd">#%d</td><td style="padding:8px;border:1px solid #ddd">%s</td><td style="padding:8px;border:1px solid #ddd">$%.2f</td><td style="padding:8px;border:1px solid #ddd">%s</td></tr>
 `,
-				f.IssueNumber,
-				html.EscapeString(f.Title),
-				f.CostUSD,
-				html.EscapeString(truncate(f.Error, 120)),
-			)
-		}
-		sb.WriteString("</table>\n")
+			f.IssueNumber,
+			html.EscapeString(f.Title),
+			f.CostUSD,
+			html.EscapeString(truncate(f.Error, 120)),
+		)
 	}
+	sb.WriteString("</table>\n")
+}
 
-	sb.WriteString("</body>\n</html>\n")
-	return sb.String()
+// renderHTMLShippedIssues writes the shipped issues list section.
+func renderHTMLShippedIssues(sb *strings.Builder, issues []ShippedIssue) {
+	if len(issues) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, `<h2 style="color:#333;border-bottom:1px solid #ddd">What was Shipped (%d issues)</h2>
+<ul>
+`, len(issues))
+	for _, si := range issues {
+		if si.PRNumber > 0 && si.Repo != "" {
+			prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
+			fmt.Fprintf(sb, `<li><a href="%s">#%d</a> — %s</li>
+`, html.EscapeString(prURL), si.IssueNumber, html.EscapeString(si.Title))
+		} else {
+			fmt.Fprintf(sb, "<li>#%d — %s</li>\n", si.IssueNumber, html.EscapeString(si.Title))
+		}
+	}
+	sb.WriteString("</ul>\n")
+}
+
+// renderHTMLPriorPeriod writes the period comparison table section.
+func renderHTMLPriorPeriod(sb *strings.Builder, rpt SprintReport) {
+	if rpt.PriorPeriod == nil || rpt.PriorPeriod.TotalRuns == 0 {
+		return
+	}
+	pp := rpt.PriorPeriod
+	fmt.Fprintf(sb, `<h2 style="color:#333;border-bottom:1px solid #ddd">Compared to Prior Period (%s – %s)</h2>
+<table style="border-collapse:collapse;width:100%%">
+<tr style="background:#f5f5f5">
+  <th style="text-align:left;padding:8px;border:1px solid #ddd">Metric</th>
+  <th style="text-align:left;padding:8px;border:1px solid #ddd">Prior</th>
+  <th style="text-align:left;padding:8px;border:1px solid #ddd">Current</th>
+  <th style="text-align:left;padding:8px;border:1px solid #ddd">Delta</th>
+</tr>
+`, html.EscapeString(formatDate(pp.Since)), html.EscapeString(formatDate(pp.Until)))
+	writeHTMLDeltaRow(sb, "Success rate",
+		fmt.Sprintf("%.1f%%", pp.SuccessRate*100),
+		fmt.Sprintf("%.1f%%", rpt.SuccessRate*100),
+		formatRateDelta(rpt.SuccessRate-pp.SuccessRate),
+		rpt.SuccessRate >= pp.SuccessRate)
+	writeHTMLDeltaRow(sb, "First-pass rate",
+		fmt.Sprintf("%.1f%%", pp.FirstPassRate*100),
+		fmt.Sprintf("%.1f%%", rpt.FirstPassRate*100),
+		formatRateDelta(rpt.FirstPassRate-pp.FirstPassRate),
+		rpt.FirstPassRate >= pp.FirstPassRate)
+	writeHTMLDeltaRow(sb, "Issues processed",
+		fmt.Sprintf("%d", pp.IssuesProcessed),
+		fmt.Sprintf("%d", rpt.IssuesProcessed),
+		formatIntDelta(rpt.IssuesProcessed-pp.IssuesProcessed),
+		rpt.IssuesProcessed >= pp.IssuesProcessed)
+	writeHTMLDeltaRow(sb, "Total cost",
+		fmt.Sprintf("$%.2f", pp.TotalCostUSD),
+		fmt.Sprintf("$%.2f", rpt.TotalCostUSD),
+		formatCostDelta(rpt.TotalCostUSD-pp.TotalCostUSD),
+		rpt.TotalCostUSD <= pp.TotalCostUSD)
+	writeHTMLDeltaRow(sb, "Avg per success",
+		fmt.Sprintf("$%.2f", pp.AvgCostPerSuccessUSD),
+		fmt.Sprintf("$%.2f", rpt.AvgCostPerSuccessUSD),
+		formatCostDelta(rpt.AvgCostPerSuccessUSD-pp.AvgCostPerSuccessUSD),
+		rpt.AvgCostPerSuccessUSD <= pp.AvgCostPerSuccessUSD)
+	sb.WriteString("</table>\n")
 }
 
 // writeHTMLRow writes a two-column table row with inline styles.
@@ -364,6 +545,48 @@ func writeHTMLRow(sb *strings.Builder, label, value string) {
 		html.EscapeString(label),
 		html.EscapeString(value),
 	)
+}
+
+// writeHTMLDeltaRow writes a four-column comparison row with a color-coded delta cell.
+// positive=true means the change is beneficial (rendered green), false means red.
+func writeHTMLDeltaRow(sb *strings.Builder, label, prior, current, delta string, positive bool) {
+	color := "#cc0000"
+	if positive {
+		color = "#007700"
+	}
+	fmt.Fprintf(sb,
+		`<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">%s</td><td style="padding:8px;border:1px solid #ddd">%s</td><td style="padding:8px;border:1px solid #ddd">%s</td><td style="padding:8px;border:1px solid #ddd;color:%s;font-weight:bold">%s</td></tr>
+`,
+		html.EscapeString(label),
+		html.EscapeString(prior),
+		html.EscapeString(current),
+		color,
+		html.EscapeString(delta),
+	)
+}
+
+// formatRateDelta formats a rate delta (0.0–1.0 scale) as "+12.5%" or "-3.0%".
+func formatRateDelta(delta float64) string {
+	if delta >= 0 {
+		return fmt.Sprintf("+%.1f%%", delta*100)
+	}
+	return fmt.Sprintf("%.1f%%", delta*100)
+}
+
+// formatCostDelta formats a cost delta as "+$1.30" or "-$4.20".
+func formatCostDelta(delta float64) string {
+	if delta >= 0 {
+		return fmt.Sprintf("+$%.2f", delta)
+	}
+	return fmt.Sprintf("-$%.2f", -delta)
+}
+
+// formatIntDelta formats an integer delta as "+7" or "-3".
+func formatIntDelta(delta int) string {
+	if delta >= 0 {
+		return fmt.Sprintf("+%d", delta)
+	}
+	return fmt.Sprintf("%d", delta)
 }
 
 // formatDate formats a time as YYYY-MM-DD. Returns "(none)" for zero time.
