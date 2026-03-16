@@ -2163,7 +2163,7 @@ func TestFilterNoDarkIssues_RemovesNoDarkLabeled(t *testing.T) {
 		{Number: 4, Title: "nodark with other labels", Labels: []string{"p2", "nodark"}},
 	}
 
-	filtered := filterNoDarkIssues(issues, logger)
+	filtered, _ := filterNoDarkIssues(issues, logger)
 
 	if len(filtered) != 2 {
 		t.Fatalf("filterNoDarkIssues() returned %d issues, want 2", len(filtered))
@@ -2183,7 +2183,7 @@ func TestFilterNoDarkIssues_NoNoDarkLabels(t *testing.T) {
 		{Number: 2, Title: "another normal", Labels: []string{}},
 	}
 
-	filtered := filterNoDarkIssues(issues, logger)
+	filtered, _ := filterNoDarkIssues(issues, logger)
 
 	if len(filtered) != 2 {
 		t.Errorf("filterNoDarkIssues() returned %d issues, want 2", len(filtered))
@@ -2197,7 +2197,7 @@ func TestFilterNoDarkIssues_AllNoDark(t *testing.T) {
 		{Number: 2, Title: "nodark 2", Labels: []string{"nodark"}},
 	}
 
-	filtered := filterNoDarkIssues(issues, logger)
+	filtered, _ := filterNoDarkIssues(issues, logger)
 
 	if len(filtered) != 0 {
 		t.Errorf("filterNoDarkIssues() returned %d issues, want 0", len(filtered))
