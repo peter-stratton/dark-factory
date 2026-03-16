@@ -169,6 +169,55 @@ func (w *Writer) issueDir(issueNum int) string {
 	return filepath.Join(w.dir, "issues", strconv.Itoa(issueNum))
 }
 
+// IssueDir returns the directory path for the given issue number.
+// Callers use this to locate step result files after processing.
+func (w *Writer) IssueDir(issueNum int) string {
+	return w.issueDir(issueNum)
+}
+
+// IssueCostUSD returns the total cost of all recorded step results in issueDir.
+// It reads recon.json, spec-generator.json, implement.json, quality-review.json,
+// functional-review.json, and all retry subdirectory JSON files. Errors reading
+// individual files are silently ignored — cost computation is best-effort.
+func IssueCostUSD(issueDir string) float64 {
+	var total float64
+	for _, name := range []string{"recon.json", "spec-generator.json", "implement.json", "quality-review.json", "functional-review.json"} {
+		total += readStepCost(filepath.Join(issueDir, name))
+	}
+	retriesDir := filepath.Join(issueDir, "retries")
+	entries, err := os.ReadDir(retriesDir)
+	if err != nil {
+		// No retries directory or unreadable — not an error.
+		return total
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		retryDir := filepath.Join(retriesDir, entry.Name())
+		for _, name := range []string{"retry.json", "quality-review.json", "functional-review.json"} {
+			total += readStepCost(filepath.Join(retryDir, name))
+		}
+	}
+	return total
+}
+
+// readStepCost reads a StepResult JSON file and returns its CostUSD field.
+// Returns 0.0 if the file does not exist or cannot be parsed.
+func readStepCost(path string) float64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0.0
+	}
+	var step struct {
+		CostUSD float64 `json:"cost_usd"`
+	}
+	if err := json.Unmarshal(data, &step); err != nil {
+		return 0.0
+	}
+	return step.CostUSD
+}
+
 // issueRetryDir returns the directory path for the given issue and retry number.
 func (w *Writer) issueRetryDir(issueNum, retryNum int) string {
 	return filepath.Join(w.issueDir(issueNum), "retries", strconv.Itoa(retryNum))

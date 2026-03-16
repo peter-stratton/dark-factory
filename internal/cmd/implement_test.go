@@ -7,9 +7,40 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/phs/dark-factory/internal/agent"
+	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/notify"
+	"github.com/phs/dark-factory/internal/orchestrator"
+	"github.com/phs/dark-factory/internal/progress"
 )
+
+// stubProgressReporter records IssueCompleted calls for assertions.
+type stubProgressReporter struct {
+	issueCompleted []stubIssueCompleted
+}
+
+type stubIssueCompleted struct {
+	issueNumber int
+	title       string
+	status      string
+	prNumber    int
+	retries     int
+	errMsg      string
+	costUSD     float64
+}
+
+func (r *stubProgressReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
+func (r *stubProgressReporter) IssueStarted(_ int, _ string)                                   {}
+func (r *stubProgressReporter) IssueStageChanged(_ int, _ string)                              {}
+func (r *stubProgressReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64) {
+	r.issueCompleted = append(r.issueCompleted, stubIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg, costUSD})
+}
+func (r *stubProgressReporter) WaveStarted(_ int, _ int)                                     {}
+func (r *stubProgressReporter) AllBlocked(_ int, _ int)                                      {}
+func (r *stubProgressReporter) RollupCreated(_ int, _ string, _ bool)                        {}
+func (r *stubProgressReporter) RunFinished(_ int, _ int, _ int, _ int, _ int)                {}
+func (r *stubProgressReporter) PunchlistText(_ string)                                       {}
 
 // stubNotifier records sent events and optionally returns an error.
 type stubNotifier struct {
@@ -301,4 +332,65 @@ func TestFireImplementNotification_NoNotifiers(t *testing.T) {
 	// Should not panic with nil or empty slice.
 	notify.Fire(context.Background(), nil, notify.Event{Type: "implementation_complete"}, slog.Default())
 	notify.Fire(context.Background(), []notify.Notifier{}, notify.Event{Type: "implementation_complete"}, slog.Default())
+}
+
+func TestApplyOutcomeStats_PassesCostToReporter(t *testing.T) {
+	issue := github.Issue{Number: 10, Title: "test issue"}
+	cfg := &config.Config{Repo: "owner/repo"}
+	reporter := &stubProgressReporter{}
+	logger := slog.Default()
+
+	tests := []struct {
+		name    string
+		outcome agent.IssueOutcome
+		cost    float64
+	}{
+		{
+			name:    "implemented",
+			outcome: agent.IssueOutcome{IssueNumber: 10, Status: agent.StatusImplemented, PRNumber: 5},
+			cost:    1.50,
+		},
+		{
+			name:    "ready-to-merge",
+			outcome: agent.IssueOutcome{IssueNumber: 10, Status: agent.StatusReadyToMerge, PRNumber: 5},
+			cost:    2.00,
+		},
+		{
+			name:    "needs-human-review",
+			outcome: agent.IssueOutcome{IssueNumber: 10, Status: agent.StatusNeedsHumanReview, PRNumber: 5},
+			cost:    0.75,
+		},
+		{
+			name:    "failed",
+			outcome: agent.IssueOutcome{IssueNumber: 10, Status: agent.StatusFailed, Err: fmt.Errorf("oops")},
+			cost:    0.10,
+		},
+		{
+			name:    "zero cost graceful",
+			outcome: agent.IssueOutcome{IssueNumber: 10, Status: agent.StatusFailed},
+			cost:    0.0,
+		},
+	}
+
+	// Stub orchestrator.CommandRunner so PullAfterMerge (called on StatusImplemented)
+	// does not invoke real git commands.
+	origRunner := orchestrator.CommandRunner
+	orchestrator.CommandRunner = func(_ string, _ ...string) ([]byte, error) { return []byte(""), nil }
+	defer func() { orchestrator.CommandRunner = origRunner }()
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reporter.issueCompleted = nil
+
+			applyOutcomeStats(tc.outcome, issue, cfg, reporter, logger, tc.cost)
+
+			if len(reporter.issueCompleted) != 1 {
+				t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
+			}
+			got := reporter.issueCompleted[0].costUSD
+			if got != tc.cost {
+				t.Errorf("IssueCompleted costUSD = %f, want %f", got, tc.cost)
+			}
+		})
+	}
 }
