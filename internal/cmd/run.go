@@ -91,8 +91,12 @@ each unblocked issue through the implement → review → merge loop.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		// Ensure base branch exists on the remote before starting the run (no-op if empty or dry-run).
+		// Preflight checks before TUI starts — errors after TUI launch are
+		// invisible until the user quits.
 		if !dryRun {
+			if err := orchestrator.CheckWorkingTree(); err != nil {
+				return err
+			}
 			if err := orchestrator.EnsureBaseBranch(cfg.BaseBranch, logger); err != nil {
 				return fmt.Errorf("ensuring base branch: %w", err)
 			}
