@@ -1139,3 +1139,99 @@ func TestWriteRollupVerifyResultMultipleAttempts(t *testing.T) {
 		}
 	}
 }
+
+func TestIssueCostUSD_NoFiles(t *testing.T) {
+	// When no step files exist, IssueCostUSD must return 0.0.
+	got := IssueCostUSD(t.TempDir())
+	if got != 0.0 {
+		t.Errorf("IssueCostUSD with no files = %f, want 0.0", got)
+	}
+}
+
+func TestIssueCostUSD_SingleStep(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{1}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	if err := w.WriteImplementResult(1, StepResult{CostUSD: 1.50}); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	got := IssueCostUSD(w.IssueDir(1))
+	if got != 1.50 {
+		t.Errorf("IssueCostUSD = %f, want 1.50", got)
+	}
+}
+
+func TestIssueCostUSD_MultipleSteps(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{7}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	if err := w.WriteReconResult(7, StepResult{CostUSD: 0.10}); err != nil {
+		t.Fatalf("WriteReconResult() error: %v", err)
+	}
+	if err := w.WriteImplementResult(7, StepResult{CostUSD: 1.00}); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+	if err := w.WriteReviewResult(7, "quality", StepResult{CostUSD: 0.20}); err != nil {
+		t.Fatalf("WriteReviewResult(quality) error: %v", err)
+	}
+	if err := w.WriteReviewResult(7, "functional", StepResult{CostUSD: 0.30}); err != nil {
+		t.Fatalf("WriteReviewResult(functional) error: %v", err)
+	}
+	// Retry steps.
+	if err := w.WriteRetryResult(7, 1, StepResult{CostUSD: 0.80}); err != nil {
+		t.Fatalf("WriteRetryResult() error: %v", err)
+	}
+	if err := w.WriteRetryReviewResult(7, 1, StepResult{CostUSD: 0.15}); err != nil {
+		t.Fatalf("WriteRetryReviewResult() error: %v", err)
+	}
+	if err := w.WriteRetryFunctionalReviewResult(7, 1, StepResult{CostUSD: 0.25}); err != nil {
+		t.Fatalf("WriteRetryFunctionalReviewResult() error: %v", err)
+	}
+
+	const want = 0.10 + 1.00 + 0.20 + 0.30 + 0.80 + 0.15 + 0.25
+	got := IssueCostUSD(w.IssueDir(7))
+	// Use a small epsilon for floating-point comparison.
+	const eps = 1e-9
+	if got < want-eps || got > want+eps {
+		t.Errorf("IssueCostUSD = %.10f, want %.10f", got, want)
+	}
+}
+
+func TestIssueCostUSD_ZeroCostSteps(t *testing.T) {
+	// Steps written without CostUSD (zero value) should not inflate the total.
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{3}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	if err := w.WriteImplementResult(3, StepResult{}); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	got := IssueCostUSD(w.IssueDir(3))
+	if got != 0.0 {
+		t.Errorf("IssueCostUSD with zero-cost step = %f, want 0.0", got)
+	}
+}
+
+func TestIssueDir(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{5}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	got := w.IssueDir(5)
+	want := filepath.Join(w.Dir(), "issues", "5")
+	if got != want {
+		t.Errorf("IssueDir(5) = %q, want %q", got, want)
+	}
+}

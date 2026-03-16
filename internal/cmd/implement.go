@@ -281,7 +281,14 @@ func implementIssues(
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
 		writeIssueDialogue(writer, cfg.Repo, issueNumber, outcome, logger)
 
-		di, drtm, dnhr, df := applyOutcomeStats(outcome, issue, cfg, reporter, logger)
+		// Compute per-issue cost from recorded step result files. Gracefully
+		// degrades to 0.0 when the writer is nil or step files have no cost data.
+		var issueCost float64
+		if writer != nil {
+			issueCost = rundata.IssueCostUSD(writer.IssueDir(issueNumber))
+		}
+
+		di, drtm, dnhr, df := applyOutcomeStats(outcome, issue, cfg, reporter, logger, issueCost)
 		implemented += di
 		readyToMerge += drtm
 		needsHumanReview += dnhr
@@ -330,26 +337,26 @@ func writeIssueDialogue(writer *rundata.Writer, repo string, issueNumber int, ou
 
 // applyOutcomeStats updates the reporter and returns counter increments
 // (implemented, readyToMerge, needsHumanReview, failed).
-func applyOutcomeStats(outcome agent.IssueOutcome, issue github.Issue, cfg *config.Config, reporter progress.ProgressReporter, logger *slog.Logger) (int, int, int, int) {
+func applyOutcomeStats(outcome agent.IssueOutcome, issue github.Issue, cfg *config.Config, reporter progress.ProgressReporter, logger *slog.Logger, costUSD float64) (int, int, int, int) {
 	switch outcome.Status {
 	case agent.StatusImplemented:
-		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", 0.0)
+		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", costUSD)
 		if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
 			logger.Warn("could not sync local repo after merge", "error", err)
 		}
 		return 1, 0, 0, 0
 	case agent.StatusReadyToMerge:
-		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", 0.0)
+		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", costUSD)
 		return 0, 1, 0, 0
 	case agent.StatusNeedsHumanReview:
-		reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", 0.0)
+		reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", costUSD)
 		return 0, 0, 1, 0
 	default:
 		errMsg := ""
 		if outcome.Err != nil {
 			errMsg = outcome.Err.Error()
 		}
-		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0.0)
+		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, costUSD)
 		return 0, 0, 0, 1
 	}
 }

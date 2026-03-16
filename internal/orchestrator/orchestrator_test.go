@@ -2082,3 +2082,74 @@ func TestRollupVerify_ManualMode_VerifyFailsLeavesOpen(t *testing.T) {
 		t.Errorf("manual rollup: PR should be left open, got rollupCreated: %v", reporter.rollupCreated)
 	}
 }
+
+// TestReporter_IssueCompleted_WithCost verifies that processIssues reads per-issue
+// cost from step result files written to the run data writer directory and passes
+// the cost to reporter.IssueCompleted.
+func TestReporter_IssueCompleted_WithCost(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 42, Title: "add cost tracking"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test error")}
+		})
+
+	// Create a writer with a known step cost so IssueCostUSD can find it.
+	tmpDir := t.TempDir()
+	writer, err := rundata.NewWithBase(tmpDir, "owner/repo", "m1", []int{42}, "", rundata.AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+	if err := writer.WriteImplementResult(42, rundata.StepResult{CostUSD: 1.50}); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, writer, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.issueCompleted) != 1 {
+		t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
+	}
+	got := reporter.issueCompleted[0]
+	if got.costUSD != 1.50 {
+		t.Errorf("IssueCompleted costUSD = %f, want 1.50", got.costUSD)
+	}
+}
+
+// TestReporter_IssueCompleted_ZeroCostWhenNoWriter verifies that cost is 0.0
+// when the writer is nil (no run data directory).
+func TestReporter_IssueCompleted_ZeroCostWhenNoWriter(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 99, Title: "no cost"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+	cfg.NoSandbox = true
+
+	// Pass nil writer — cost must degrade gracefully to 0.0.
+	if err := processIssues(context.Background(), allIssues, closedSet, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.issueCompleted) != 1 {
+		t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
+	}
+	if got := reporter.issueCompleted[0].costUSD; got != 0.0 {
+		t.Errorf("IssueCompleted costUSD = %f, want 0.0", got)
+	}
+}
