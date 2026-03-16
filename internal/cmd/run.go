@@ -160,7 +160,7 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger)
 		logger.Warn("checking for awaiting PRs before watch", "err", err)
 	}
 
-	if len(prs) == 0 {
+	if err == nil && len(prs) == 0 {
 		logger.Info("no PRs awaiting review after run, skipping watch loop")
 		return nil
 	}
