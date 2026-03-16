@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -45,6 +46,7 @@ The --until flag accepts a date string (RFC 3339 or YYYY-MM-DD), defaulting to n
 		untilStr, _ := cmd.Flags().GetString("until")
 		repo, _ := cmd.Flags().GetString("repo")
 		format, _ := cmd.Flags().GetString("format")
+		noSummary, _ := cmd.Flags().GetBool("no-summary")
 
 		switch format {
 		case "terminal", "markdown", "html":
@@ -78,7 +80,7 @@ The --until flag accepts a date string (RFC 3339 or YYYY-MM-DD), defaulting to n
 		}
 		defer db.Close()
 
-		return runReport(cmd.OutOrStdout(), db, repo, sinceTime, untilTime, format)
+		return runReport(cmd.OutOrStdout(), db, repo, sinceTime, untilTime, format, noSummary)
 	},
 }
 
@@ -88,11 +90,12 @@ func init() {
 	f.String("until", "", "End of report window (RFC 3339 or YYYY-MM-DD; default now)")
 	f.String("repo", "", "Filter to runs for this repository (owner/repo)")
 	f.String("format", "terminal", "Output format: terminal, markdown, or html")
+	f.Bool("no-summary", false, "Skip LLM executive summary generation")
 	rootCmd.AddCommand(reportCmd)
 }
 
 // runReport queries the stats database and renders a report.
-func runReport(w io.Writer, db *stats.DB, repo string, since, until time.Time, format string) error {
+func runReport(w io.Writer, db *stats.DB, repo string, since, until time.Time, format string, noSummary bool) error {
 	filter := stats.RunFilter{
 		Repo:  repo,
 		Since: since,
@@ -116,12 +119,27 @@ func runReport(w io.Writer, db *stats.DB, repo string, since, until time.Time, f
 		return fmt.Errorf("querying step results: %w", err)
 	}
 
-	return renderReport(w, format, repo, since, until, runs, outcomes, steps)
+	var execSummary string
+	if !noSummary && len(outcomes) > 0 {
+		prompt := buildSummaryPrompt(runs, outcomes)
+		summary, summaryErr := generateSummary(ctx, prompt)
+		if summaryErr != nil {
+			slog.Warn("executive summary generation failed; rendering report without it",
+				"error", summaryErr)
+		} else {
+			execSummary = summary
+		}
+	}
+
+	return renderReport(w, format, repo, since, until, runs, outcomes, steps, execSummary)
 }
 
 // renderReport generates and writes a sprint report in the requested format.
-func renderReport(w io.Writer, format, repo string, since, until time.Time, runs []stats.RunRecord, outcomes []stats.IssueOutcomeRecord, steps []stats.StepResultRecord) error {
+// execSummary is injected into the report before rendering; pass an empty
+// string to omit the executive summary section.
+func renderReport(w io.Writer, format, repo string, since, until time.Time, runs []stats.RunRecord, outcomes []stats.IssueOutcomeRecord, steps []stats.StepResultRecord, execSummary string) error {
 	rpt := report.Generate(runs, outcomes, steps, since, until, repo)
+	rpt.ExecSummary = execSummary
 
 	var rendered string
 	switch format {

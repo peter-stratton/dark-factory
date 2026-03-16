@@ -26,9 +26,14 @@ type NotableFailure struct {
 
 // SprintReport summarises a sprint period for engineering managers.
 type SprintReport struct {
-	Since   time.Time
-	Until   time.Time
-	Repo string // empty = all repos
+	Since time.Time
+	Until time.Time
+	Repo  string // empty = all repos
+
+	// ExecSummary is an optional LLM-generated executive summary in plain
+	// language. When non-empty it is rendered as the first section of all
+	// output formats.
+	ExecSummary string
 
 	TotalRuns            int
 	IssuesProcessed      int
@@ -135,6 +140,12 @@ func computeIssueCost(issue rundata.IssueDetail) float64 {
 func RenderTerminal(rpt SprintReport) string {
 	var sb strings.Builder
 
+	if rpt.ExecSummary != "" {
+		sb.WriteString("Executive Summary\n\n")
+		sb.WriteString(rpt.ExecSummary)
+		sb.WriteString("\n\n")
+	}
+
 	if rpt.TotalRuns == 0 {
 		sb.WriteString("No runs found in this period\n")
 		return sb.String()
@@ -196,6 +207,12 @@ func RenderTerminal(rpt SprintReport) string {
 func RenderMarkdown(rpt SprintReport) string {
 	var sb strings.Builder
 
+	if rpt.ExecSummary != "" {
+		sb.WriteString("## Executive Summary\n\n")
+		sb.WriteString(rpt.ExecSummary)
+		sb.WriteString("\n\n")
+	}
+
 	sb.WriteString("## Sprint Report\n\n")
 	fmt.Fprintf(&sb, "**Period:** %s – %s\n\n", formatDate(rpt.Since), formatDate(rpt.Until))
 	if rpt.Repo != "" {
@@ -251,6 +268,19 @@ func RenderHTML(rpt SprintReport) string {
 <head><meta charset="utf-8"><title>Sprint Report</title></head>
 <body style="font-family:sans-serif;max-width:800px;margin:0 auto;padding:20px;color:#333">
 `)
+
+	if rpt.ExecSummary != "" {
+		sb.WriteString(`<div style="background:#f0f7ff;border-left:4px solid #0066cc;padding:16px 20px;margin-bottom:24px;border-radius:4px">
+<h2 style="color:#0066cc;margin-top:0">Executive Summary</h2>
+`)
+		for _, para := range strings.Split(rpt.ExecSummary, "\n\n") {
+			para = strings.TrimSpace(para)
+			if para != "" {
+				fmt.Fprintf(&sb, "<p>%s</p>\n", html.EscapeString(para))
+			}
+		}
+		sb.WriteString("</div>\n")
+	}
 
 	sb.WriteString(`<h1 style="color:#1a1a1a">Sprint Report</h1>
 `)

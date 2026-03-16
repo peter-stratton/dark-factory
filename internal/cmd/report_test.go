@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -213,7 +214,129 @@ func TestRunReportFilter(t *testing.T) {
 	until := time.Now()
 
 	// runReport should not error on an empty DB with a repo filter.
-	if err := runReport(&buf, db, "org/my-repo", since, until, "terminal"); err != nil {
+	// noSummary=true to skip the API call in the test environment.
+	if err := runReport(&buf, db, "org/my-repo", since, until, "terminal", true); err != nil {
 		t.Errorf("runReport unexpected error: %v", err)
+	}
+}
+
+// TestReportNoSummaryFlag verifies the --no-summary flag is registered with correct defaults.
+func TestReportNoSummaryFlag(t *testing.T) {
+	f := reportCmd.Flags().Lookup("no-summary")
+	if f == nil {
+		t.Fatal("report command missing flag --no-summary")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--no-summary default = %q, want %q", f.DefValue, "false")
+	}
+}
+
+// TestReportNoSummarySkipsAPI verifies that --no-summary=true results in no
+// generateSummary call.
+func TestReportNoSummarySkipsAPI(t *testing.T) {
+	orig := generateSummary
+	called := false
+	generateSummary = func(_ context.Context, _ string) (string, error) {
+		called = true
+		return "summary", nil
+	}
+	defer func() { generateSummary = orig }()
+
+	db, err := stats.Open(":memory:")
+	if err != nil {
+		t.Fatalf("stats.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	var buf bytes.Buffer
+	since := time.Now().Add(-7 * 24 * time.Hour)
+	until := time.Now()
+
+	if err := runReport(&buf, db, "", since, until, "terminal", true); err != nil {
+		t.Fatalf("runReport unexpected error: %v", err)
+	}
+	if called {
+		t.Error("generateSummary was called despite noSummary=true")
+	}
+}
+
+// TestReportAPIFailureGraceful verifies that a generateSummary error does not
+// prevent the report from rendering.
+func TestReportAPIFailureGraceful(t *testing.T) {
+	orig := generateSummary
+	generateSummary = func(_ context.Context, _ string) (string, error) {
+		return "", fmt.Errorf("API unreachable")
+	}
+	defer func() { generateSummary = orig }()
+
+	db, err := stats.Open(":memory:")
+	if err != nil {
+		t.Fatalf("stats.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	since := time.Now().Add(-7 * 24 * time.Hour)
+	until := time.Now()
+
+	// Insert a run and outcome so the API call is triggered (len(outcomes) > 0).
+	ctx := context.Background()
+	run := stats.RunRecord{ID: "run-graceful", Repo: "org/repo", StartedAt: time.Now().Add(-1 * time.Hour), FinishedAt: time.Now()}
+	if err := stats.WriteRun(ctx, db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	outcome := stats.IssueOutcomeRecord{RunID: "run-graceful", IssueNumber: 1, Title: "Test issue", Status: "implemented"}
+	if err := stats.WriteIssueOutcome(ctx, db, outcome); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+
+	var buf bytes.Buffer
+	// Should not return an error even though generateSummary failed.
+	if err := runReport(&buf, db, "", since, until, "terminal", false); err != nil {
+		t.Errorf("runReport returned unexpected error on API failure: %v", err)
+	}
+}
+
+// TestReportSummaryInjected verifies that a successful generateSummary call
+// results in the summary text appearing in the rendered output.
+func TestReportSummaryInjected(t *testing.T) {
+	const wantSummary = "This sprint delivered major improvements to the pipeline."
+
+	orig := generateSummary
+	generateSummary = func(_ context.Context, _ string) (string, error) {
+		return wantSummary, nil
+	}
+	defer func() { generateSummary = orig }()
+
+	db, err := stats.Open(":memory:")
+	if err != nil {
+		t.Fatalf("stats.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	since := time.Now().Add(-7 * 24 * time.Hour)
+	until := time.Now()
+
+	// Insert a run and outcome so len(outcomes) > 0 and the summary path is exercised.
+	ctx := context.Background()
+	run := stats.RunRecord{ID: "run-summary", Repo: "org/repo", StartedAt: time.Now().Add(-1 * time.Hour), FinishedAt: time.Now()}
+	if err := stats.WriteRun(ctx, db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	outcome := stats.IssueOutcomeRecord{RunID: "run-summary", IssueNumber: 42, Title: "Add dashboard widget", Status: "implemented"}
+	if err := stats.WriteIssueOutcome(ctx, db, outcome); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := runReport(&buf, db, "", since, until, "terminal", false); err != nil {
+		t.Fatalf("runReport unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, wantSummary) {
+		t.Errorf("report output missing injected summary text;\ngot: %s", out)
+	}
+	if !strings.Contains(out, "Executive Summary") {
+		t.Errorf("report output missing 'Executive Summary' header;\ngot: %s", out)
 	}
 }
