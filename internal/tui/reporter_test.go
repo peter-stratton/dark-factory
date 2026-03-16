@@ -221,3 +221,19 @@ func TestPunchlistTextIsNoOp(t *testing.T) {
 		t.Errorf("PunchlistText should send no messages, got %d", len(s.msgs))
 	}
 }
+
+func TestRunAbortedSendsMessage(t *testing.T) {
+	r, s := newTestReporter()
+	r.RunAborted("API rate limit reached, resets 5pm (UTC)")
+
+	if len(s.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(s.msgs))
+	}
+	msg, ok := s.msgs[0].(RunAbortedMsg)
+	if !ok {
+		t.Fatalf("expected RunAbortedMsg, got %T", s.msgs[0])
+	}
+	if msg.Reason != "API rate limit reached, resets 5pm (UTC)" {
+		t.Errorf("Reason: got %q, want %q", msg.Reason, "API rate limit reached, resets 5pm (UTC)")
+	}
+}

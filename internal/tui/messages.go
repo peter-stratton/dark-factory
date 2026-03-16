@@ -63,6 +63,13 @@ type RollupCreatedMsg struct {
 	Merged   bool
 }
 
+// RunAbortedMsg is sent when the run was stopped early due to an unrecoverable
+// error (e.g. API rate limit). It carries the human-readable abort reason so
+// the TUI can display it in the summary view.
+type RunAbortedMsg struct {
+	Reason string
+}
+
 // RunDoneMsg is sent when the orchestrator goroutine finishes. The TUI stays
 // on screen so the user can review results; pressing q/esc/ctrl+c exits.
 type RunDoneMsg struct{}

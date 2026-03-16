@@ -92,6 +92,11 @@ func (r *TUIReporter) RunFinished(implemented, readyToMerge, needsHumanReview, f
 	})
 }
 
+// RunAborted sends RunAbortedMsg with the abort reason so the TUI can display it.
+func (r *TUIReporter) RunAborted(reason string) {
+	r.p.Send(RunAbortedMsg{Reason: reason})
+}
+
 // PunchlistText is a no-op in TUI mode. The punchlist is written to a file;
 // the TUI does not display it inline.
 func (r *TUIReporter) PunchlistText(text string) {}

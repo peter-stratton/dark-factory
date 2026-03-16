@@ -435,6 +435,20 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			reporter.IssueStarted(issue.Number, issue.Title)
 			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
 
+			// Abort immediately when an agent hits the Anthropic API usage limit.
+			// Continuing would only waste container launches on requests that will
+			// all fail with the same error until the limit resets.
+			if outcome.RateLimited {
+				errMsg := ""
+				if outcome.Err != nil {
+					errMsg = outcome.Err.Error()
+				}
+				runStats.abortReason = errMsg
+				logger.Warn("run aborted: API rate limit reached", "reason", errMsg)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0)
+				goto done
+			}
+
 			// Write dialogue after processing if we have a PR and a writer.
 			if writer != nil && outcome.PRNumber > 0 {
 				bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
@@ -565,6 +579,9 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 done:
 	runStats.blocked = len(blocked)
+	if runStats.abortReason != "" {
+		reporter.RunAborted(runStats.abortReason)
+	}
 	reporter.RunFinished(runStats.implemented, runStats.readyToMerge, runStats.needsHumanReview, runStats.failed, runStats.blocked)
 
 	// Rollup PR: create (and optionally merge) a PR from the base branch back

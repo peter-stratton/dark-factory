@@ -24,6 +24,9 @@ type ProgressReporter interface {
 	AllBlocked(total, blocked int)
 	// RollupCreated signals rollup PR creation and optional merge.
 	RollupCreated(prNumber int, prURL string, merged bool)
+	// RunAborted signals that the run was stopped early due to an unrecoverable
+	// error (e.g. API rate limit). It is called before RunFinished.
+	RunAborted(reason string)
 	// RunFinished signals the final summary.
 	RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int)
 	// PunchlistText outputs a punchlist fragment as it becomes available.

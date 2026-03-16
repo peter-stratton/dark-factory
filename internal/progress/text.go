@@ -70,6 +70,11 @@ func (r *TextReporter) RollupCreated(prNumber int, prURL string, merged bool) {
 	}
 }
 
+// RunAborted writes an abort notice line with the reason.
+func (r *TextReporter) RunAborted(reason string) {
+	fmt.Fprintf(r.w, "\nRun aborted: %s\n", reason)
+}
+
 // RunFinished writes a blank line followed by the results summary.
 func (r *TextReporter) RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int) {
 	fmt.Fprintln(r.w)

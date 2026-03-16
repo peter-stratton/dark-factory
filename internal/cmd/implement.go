@@ -293,6 +293,20 @@ func implementIssues(
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
 		writeIssueDialogue(writer, cfg.Repo, issueNumber, outcome, logger)
 
+		// Abort immediately on API rate limit — remaining issues will also fail.
+		if outcome.RateLimited {
+			errMsg := ""
+			if outcome.Err != nil {
+				errMsg = outcome.Err.Error()
+			}
+			failed++
+			reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0)
+			reporter.RunAborted(errMsg)
+			logger.Warn("run aborted: API rate limit reached", "reason", errMsg)
+			reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed, 0)
+			return nil
+		}
+
 		// Compute per-issue cost from recorded step result files. Gracefully
 		// degrades to 0.0 when the writer is nil or step files have no cost data.
 		var issueCost float64

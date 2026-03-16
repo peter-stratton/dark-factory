@@ -38,9 +38,10 @@ func (r *stubProgressReporter) IssueCompleted(issueNumber int, title, status str
 }
 func (r *stubProgressReporter) WaveStarted(_ int, _ int)                                     {}
 func (r *stubProgressReporter) AllBlocked(_ int, _ int)                                      {}
-func (r *stubProgressReporter) RollupCreated(_ int, _ string, _ bool)                        {}
-func (r *stubProgressReporter) RunFinished(_ int, _ int, _ int, _ int, _ int)                {}
-func (r *stubProgressReporter) PunchlistText(_ string)                                       {}
+func (r *stubProgressReporter) RollupCreated(_ int, _ string, _ bool)              {}
+func (r *stubProgressReporter) RunAborted(_ string)                                {}
+func (r *stubProgressReporter) RunFinished(_ int, _ int, _ int, _ int, _ int)     {}
+func (r *stubProgressReporter) PunchlistText(_ string)                             {}
 
 // stubNotifier records sent events and optionally returns an error.
 type stubNotifier struct {

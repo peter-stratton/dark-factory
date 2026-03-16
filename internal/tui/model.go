@@ -42,9 +42,10 @@ type Model struct {
 	spinner spinner.Model
 
 	// Run lifecycle.
-	done       bool          // true after the orchestrator finishes
-	cancelling bool          // true after user requests cancellation
-	cancelFn   func()        // cancels the orchestrator context
+	done        bool   // true after the orchestrator finishes
+	abortReason string // non-empty when the run was aborted early
+	cancelling  bool   // true after user requests cancellation
+	cancelFn    func() // cancels the orchestrator context
 
 	// Terminal dimensions.
 	width  int
@@ -97,6 +98,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case WaveStartedMsg:
 		// Wave metadata is informational; no per-row state changes here.
 
+	case RunAbortedMsg:
+		m.abortReason = msg.Reason
+
 	case RunFinishedMsg:
 		m.merged = msg.Implemented
 		m.inReview = msg.ReadyToMerge + msg.NeedsHumanReview
@@ -122,7 +126,12 @@ func (m Model) View() string {
 
 	var hint string
 	if m.done {
-		hint = "\n\n" + headerLabelStyle.Render("press q to exit")
+		if m.abortReason != "" {
+			hint = "\n\n" + summaryFailedStyle.Render("aborted: "+m.abortReason) +
+				"\n\n" + headerLabelStyle.Render("press q to exit")
+		} else {
+			hint = "\n\n" + headerLabelStyle.Render("press q to exit")
+		}
 	} else if m.cancelling {
 		hint = "\n\n" + summaryFailedStyle.Render("cancelling... waiting for current issue to finish")
 	} else {
