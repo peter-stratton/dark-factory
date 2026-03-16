@@ -197,3 +197,48 @@ func TestNewAutoMergeNilWhenEmpty(t *testing.T) {
 		t.Errorf("autoMerge should be nil when both merge fields are empty, got %+v", m.autoMerge)
 	}
 }
+
+// --- Cost accumulation tests ---
+
+func TestHandleIssueCompletedAccumulatesCost(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{1: 0},
+		issues:     []issueRow{{number: 1, title: "test"}},
+	}
+
+	m.handleIssueCompleted(IssueCompletedMsg{Number: 1, Status: "implemented", CostUSD: 1.50})
+	m.handleIssueCompleted(IssueCompletedMsg{Number: 1, Status: "implemented", CostUSD: 1.50})
+
+	if m.totalCost != 3.00 {
+		t.Errorf("totalCost: got %f, want 3.00", m.totalCost)
+	}
+}
+
+func TestHandleIssueCompletedZeroCostUnchanged(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{1: 0},
+		issues:     []issueRow{{number: 1, title: "test"}},
+	}
+
+	m.handleIssueCompleted(IssueCompletedMsg{Number: 1, Status: "implemented", CostUSD: 0.0})
+
+	if m.totalCost != 0.0 {
+		t.Errorf("totalCost: got %f, want 0.0", m.totalCost)
+	}
+}
+
+func TestModelUpdateAccumulatesCostViaTUIUpdate(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{42: 0},
+		issues:     []issueRow{{number: 42, title: "some issue"}},
+	}
+
+	next, _ := m.Update(IssueCompletedMsg{Number: 42, Status: "implemented", CostUSD: 2.25})
+	updated := next.(Model)
+	next2, _ := updated.Update(IssueCompletedMsg{Number: 42, Status: "implemented", CostUSD: 0.75})
+	final := next2.(Model)
+
+	if final.totalCost != 3.00 {
+		t.Errorf("totalCost after two updates: got %f, want 3.00", final.totalCost)
+	}
+}

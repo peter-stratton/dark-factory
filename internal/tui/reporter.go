@@ -54,7 +54,7 @@ func (r *TUIReporter) IssueStageChanged(issueNumber int, stage string) {
 }
 
 // IssueCompleted sends IssueCompletedMsg with the terminal outcome for an issue.
-func (r *TUIReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string) {
+func (r *TUIReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64) {
 	r.p.Send(IssueCompletedMsg{
 		Number:   issueNumber,
 		Title:    title,
@@ -62,6 +62,7 @@ func (r *TUIReporter) IssueCompleted(issueNumber int, title, status string, prNu
 		PRNumber: prNumber,
 		Retries:  retries,
 		ErrMsg:   errMsg,
+		CostUSD:  costUSD,
 	})
 }
 

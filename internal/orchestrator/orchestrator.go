@@ -407,7 +407,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			case agent.StatusImplemented:
 				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
-				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "")
+				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", 0.0)
 				if err := PullAfterMerge(baseBranch, logger); err != nil {
 					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
 					runStats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
@@ -416,17 +416,17 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				merged = true
 			case agent.StatusReadyToMerge:
 				runStats.readyToMerge++
-				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "")
+				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", 0.0)
 			case agent.StatusNeedsHumanReview:
 				runStats.needsHumanReview++
-				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "")
+				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", 0.0)
 			default:
 				runStats.failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
 				}
-				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, 0.0)
 			}
 
 			logger.Info("issue outcome",

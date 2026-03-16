@@ -9,7 +9,7 @@ import (
 func TestIssueCompleted_Implemented(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTextReporter(&buf)
-	r.IssueCompleted(42, "add cost tracking", "implemented", 87, 0, "")
+	r.IssueCompleted(42, "add cost tracking", "implemented", 87, 0, "", 0.0)
 	want := "  #42 add cost tracking \u2014 implemented (PR #87, 0 retries)\n"
 	if got := buf.String(); got != want {
 		t.Errorf("IssueCompleted implemented\ngot:  %q\nwant: %q", got, want)
@@ -19,7 +19,7 @@ func TestIssueCompleted_Implemented(t *testing.T) {
 func TestIssueCompleted_ReadyToMerge(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTextReporter(&buf)
-	r.IssueCompleted(10, "fix login", "ready-to-merge", 55, 2, "")
+	r.IssueCompleted(10, "fix login", "ready-to-merge", 55, 2, "", 0.0)
 	want := "  #10 fix login \u2014 ready-to-merge (PR #55, 2 retries)\n"
 	if got := buf.String(); got != want {
 		t.Errorf("IssueCompleted ready-to-merge\ngot:  %q\nwant: %q", got, want)
@@ -29,7 +29,7 @@ func TestIssueCompleted_ReadyToMerge(t *testing.T) {
 func TestIssueCompleted_NeedsHumanReview(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTextReporter(&buf)
-	r.IssueCompleted(7, "refactor auth", "needs-human-review", 33, 1, "")
+	r.IssueCompleted(7, "refactor auth", "needs-human-review", 33, 1, "", 0.0)
 	want := "  #7 refactor auth \u2014 needs human review (PR #33)\n"
 	if got := buf.String(); got != want {
 		t.Errorf("IssueCompleted needs-human-review\ngot:  %q\nwant: %q", got, want)
@@ -39,7 +39,7 @@ func TestIssueCompleted_NeedsHumanReview(t *testing.T) {
 func TestIssueCompleted_Failed(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTextReporter(&buf)
-	r.IssueCompleted(42, "add cost tracking", "failed", 0, 0, "timeout")
+	r.IssueCompleted(42, "add cost tracking", "failed", 0, 0, "timeout", 0.0)
 	want := "  #42 add cost tracking \u2014 failed: timeout\n"
 	if got := buf.String(); got != want {
 		t.Errorf("IssueCompleted failed\ngot:  %q\nwant: %q", got, want)

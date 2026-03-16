@@ -222,6 +222,7 @@ func (m *Model) handleIssueCompleted(msg IssueCompletedMsg) {
 	case "failed":
 		m.failed++
 	}
+	m.totalCost += msg.CostUSD
 }
 
 // handleRunStarted populates header metadata and pre-fills the issue table.

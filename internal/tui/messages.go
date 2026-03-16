@@ -20,6 +20,7 @@ type IssueCompletedMsg struct {
 	PRNumber int
 	Retries  int
 	ErrMsg   string
+	CostUSD  float64
 }
 
 // WaveStartedMsg is sent when a new dependency re-resolution wave begins.
