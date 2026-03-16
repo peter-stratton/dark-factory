@@ -63,6 +63,11 @@ type RollupCreatedMsg struct {
 	Merged   bool
 }
 
+// WatchingMsg is sent when the run transitions from initial processing to watch
+// mode. The TUI updates the hint text to "watching for merges" and keeps the
+// spinner running to indicate active polling.
+type WatchingMsg struct{}
+
 // RunDoneMsg is sent when the orchestrator goroutine finishes. The TUI stays
 // on screen so the user can review results; pressing q/esc/ctrl+c exits.
 type RunDoneMsg struct{}

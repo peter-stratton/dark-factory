@@ -109,12 +109,11 @@ each unblocked issue through the implement → review → merge loop.`,
 
 		punchlistPath, _ := cmd.Flags().GetString("punchlist")
 
-		var runErr error
 		if useTUI {
 			// Wrap the signal context with a cancel we can hand to the TUI
-			// so ctrl+c in the TUI cancels the orchestrator gracefully.
-			// Use a separate child context so the outer ctx remains usable
-			// for the watch loop after the TUI exits.
+			// so ctrl+c in the TUI cancels the orchestrator and watch loop
+			// gracefully. Both orchestrator.Run and runEnterWatch run under
+			// tuiCtx so the TUI ctrl+c propagates to the watch loop.
 			tuiCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
@@ -128,23 +127,31 @@ each unblocked issue through the implement → review → merge loop.`,
 			errCh := make(chan error, 1)
 			go func() {
 				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
-				errCh <- err
+				if err != nil || !watchFlag {
+					errCh <- err
+					program.Send(tui.RunDoneMsg{})
+					return
+				}
+				// Signal the TUI that we are entering watch mode; the spinner keeps
+				// running and the hint changes to "watching for merges".
+				program.Send(tui.WatchingMsg{})
+				watchErr := runEnterWatch(tuiCtx, cfg, logger, milestone, reporter)
+				errCh <- watchErr
 				program.Send(tui.RunDoneMsg{})
 			}()
 
 			_, _ = program.Run()
-			runErr = <-errCh
-		} else {
-			reporter := progress.NewTextReporter(os.Stdout)
-			runErr = orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+			return <-errCh
 		}
 
+		reporter := progress.NewTextReporter(os.Stdout)
+		runErr := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
 		if runErr != nil || !watchFlag {
 			return runErr
 		}
 
 		// --watch: enter polling loop if any PRs are awaiting review.
-		return runEnterWatch(ctx, cfg, logger, milestone)
+		return runEnterWatch(ctx, cfg, logger, milestone, reporter)
 	},
 }
 
@@ -155,8 +162,9 @@ var isTerminalFn = term.IsTerminal
 // runEnterWatch checks for pending review PRs and, if any exist, loads prompts
 // and auth then enters the RunUntilDone polling loop. Called after
 // orchestrator.Run when --watch is set. milestone is used for re-resolution
-// runs triggered by external merges.
-func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string) error {
+// runs triggered by external merges. reporter is used to surface re-resolution
+// issue progress (TUI reporter in TUI mode, text reporter otherwise).
+func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, reporter progress.ProgressReporter) error {
 	// Check for awaiting PRs first to avoid loading prompts/auth unnecessarily.
 	prs, err := runListPRsFn(cfg.Repo, label.AwaitingHumanReview)
 	if err != nil {
@@ -196,7 +204,6 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger,
 	w := watch.New(cfg, prompts, authEnv, logger)
 
 	if len(allIssues) > 0 {
-		reporter := progress.NewTextReporter(os.Stdout)
 		w.SetMergeCallback(func(mCtx context.Context, mergedNums []int) {
 			logger.Info("daemon re-resolve triggered", "merged_issue_count", len(mergedNums))
 			if _, reErr := orchestrator.ReResolveAndProcess(
