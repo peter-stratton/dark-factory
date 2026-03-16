@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/phs/dark-factory/internal/stats"
 )
@@ -24,7 +25,9 @@ var generateSummary = func(ctx context.Context, prompt string) (string, error) {
 	if apiKey == "" {
 		return "", fmt.Errorf("ANTHROPIC_API_KEY not set")
 	}
-	return callClaudeAPI(ctx, apiKey, prompt)
+	apiCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return callClaudeAPI(apiCtx, apiKey, prompt)
 }
 
 // callClaudeAPI sends a prompt to the Anthropic Messages API and returns the text response.

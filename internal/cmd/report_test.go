@@ -275,10 +275,21 @@ func TestReportAPIFailureGraceful(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	var buf bytes.Buffer
 	since := time.Now().Add(-7 * 24 * time.Hour)
 	until := time.Now()
 
+	// Insert a run and outcome so the API call is triggered (len(outcomes) > 0).
+	ctx := context.Background()
+	run := stats.RunRecord{ID: "run-graceful", Repo: "org/repo", StartedAt: time.Now().Add(-1 * time.Hour), FinishedAt: time.Now()}
+	if err := stats.WriteRun(ctx, db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	outcome := stats.IssueOutcomeRecord{RunID: "run-graceful", IssueNumber: 1, Title: "Test issue", Status: "implemented"}
+	if err := stats.WriteIssueOutcome(ctx, db, outcome); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+
+	var buf bytes.Buffer
 	// Should not return an error even though generateSummary failed.
 	if err := runReport(&buf, db, "", since, until, "terminal", false); err != nil {
 		t.Errorf("runReport returned unexpected error on API failure: %v", err)
@@ -302,10 +313,21 @@ func TestReportSummaryInjected(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	var buf bytes.Buffer
 	since := time.Now().Add(-7 * 24 * time.Hour)
 	until := time.Now()
 
+	// Insert a run and outcome so len(outcomes) > 0 and the summary path is exercised.
+	ctx := context.Background()
+	run := stats.RunRecord{ID: "run-summary", Repo: "org/repo", StartedAt: time.Now().Add(-1 * time.Hour), FinishedAt: time.Now()}
+	if err := stats.WriteRun(ctx, db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	outcome := stats.IssueOutcomeRecord{RunID: "run-summary", IssueNumber: 42, Title: "Add dashboard widget", Status: "implemented"}
+	if err := stats.WriteIssueOutcome(ctx, db, outcome); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+
+	var buf bytes.Buffer
 	if err := runReport(&buf, db, "", since, until, "terminal", false); err != nil {
 		t.Fatalf("runReport unexpected error: %v", err)
 	}

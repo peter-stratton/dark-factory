@@ -120,7 +120,7 @@ func runReport(w io.Writer, db *stats.DB, repo string, since, until time.Time, f
 	}
 
 	var execSummary string
-	if !noSummary {
+	if !noSummary && len(outcomes) > 0 {
 		prompt := buildSummaryPrompt(runs, outcomes)
 		summary, summaryErr := generateSummary(ctx, prompt)
 		if summaryErr != nil {
