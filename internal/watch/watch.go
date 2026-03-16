@@ -427,7 +427,7 @@ func (w *Watch) DetectMergedPRs(ctx context.Context, repo string, issueNumbers [
 	}
 
 	// Collect newly merged issues from the provided list.
-	var newlyMerged []int
+	newlyMerged := make([]int, 0)
 	for _, issueNum := range issueNumbers {
 		if mergedSet[issueNum] && !w.mergedIssues[issueNum] {
 			newlyMerged = append(newlyMerged, issueNum)
