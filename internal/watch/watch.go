@@ -196,33 +196,40 @@ func (w *Watch) PollOnce(ctx context.Context) error {
 		}
 	}
 
-	// Accumulate issue numbers from the PRs currently awaiting review so that
-	// DetectMergedPRs can find them even after the PR disappears from the label.
+	// Accumulate issue numbers and detect externally merged PRs.
+	w.pollExternalMerges(ctx, prs)
+
+	return nil
+}
+
+// pollExternalMerges accumulates issue numbers from prs into seenIssues and
+// detects any PRs that have been merged externally since the last poll cycle.
+func (w *Watch) pollExternalMerges(ctx context.Context, prs []github.PRInfo) {
 	for _, pr := range prs {
 		if n := issueNumberFromBranch(pr.HeadRefName); n != 0 {
 			w.seenIssues[n] = true
 		}
 	}
 
-	// Detect PRs that have been merged externally since the last poll cycle.
-	if len(w.seenIssues) > 0 {
-		seenList := make([]int, 0, len(w.seenIssues))
-		for n := range w.seenIssues {
-			if !w.mergedIssues[n] {
-				seenList = append(seenList, n)
-			}
-		}
-		merged, err := w.DetectMergedPRs(ctx, w.cfg.Repo, seenList)
-		if err != nil {
-			w.logger.Error("detecting merged PRs", "err", err)
-		} else {
-			for _, n := range merged {
-				w.logger.Info("PR merged externally", "issue_number", n)
-			}
+	if len(w.seenIssues) == 0 {
+		return
+	}
+
+	seenList := make([]int, 0, len(w.seenIssues))
+	for n := range w.seenIssues {
+		if !w.mergedIssues[n] {
+			seenList = append(seenList, n)
 		}
 	}
 
-	return nil
+	merged, err := w.DetectMergedPRs(ctx, w.cfg.Repo, seenList)
+	if err != nil {
+		w.logger.Error("detecting merged PRs", "err", err)
+		return
+	}
+	for _, n := range merged {
+		w.logger.Info("PR merged externally", "issue_number", n)
+	}
 }
 
 // HandleChangesRequested invokes the implementer agent to address human review
