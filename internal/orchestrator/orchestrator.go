@@ -464,10 +464,15 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
 				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost)
-				if err := PullAfterMerge(baseBranch, logger); err != nil {
-					logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
-					runStats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
-					goto done
+				// Only pull after merge in host mode (no sandbox). When agents
+				// run in Docker, each gets a fresh clone — the local repo state
+				// doesn't matter for the next agent invocation.
+				if cfg.NoSandbox {
+					if err := PullAfterMerge(baseBranch, logger); err != nil {
+						logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
+						runStats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
+						goto done
+					}
 				}
 				merged = true
 			case agent.StatusReadyToMerge:

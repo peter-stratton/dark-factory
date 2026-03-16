@@ -353,8 +353,10 @@ func applyOutcomeStats(outcome agent.IssueOutcome, issue github.Issue, cfg *conf
 	switch outcome.Status {
 	case agent.StatusImplemented:
 		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", costUSD)
-		if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
-			logger.Warn("could not sync local repo after merge", "error", err)
+		if cfg.NoSandbox {
+			if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
+				logger.Warn("could not sync local repo after merge", "error", err)
+			}
 		}
 		return 1, 0, 0, 0
 	case agent.StatusReadyToMerge:
