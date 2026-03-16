@@ -111,9 +111,9 @@ each unblocked issue through the implement → review → merge loop.`,
 
 		if useTUI {
 			// Wrap the signal context with a cancel we can hand to the TUI
-			// so ctrl+c in the TUI cancels the orchestrator gracefully.
-			// Use a separate child context so the outer ctx remains usable
-			// for the watch loop after the TUI exits.
+			// so ctrl+c in the TUI cancels the orchestrator and watch loop
+			// gracefully. Both orchestrator.Run and runEnterWatch run under
+			// tuiCtx so the TUI ctrl+c propagates to the watch loop.
 			tuiCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
@@ -135,7 +135,7 @@ each unblocked issue through the implement → review → merge loop.`,
 				// Signal the TUI that we are entering watch mode; the spinner keeps
 				// running and the hint changes to "watching for merges".
 				program.Send(tui.WatchingMsg{})
-				watchErr := runEnterWatch(ctx, cfg, logger, milestone, reporter)
+				watchErr := runEnterWatch(tuiCtx, cfg, logger, milestone, reporter)
 				errCh <- watchErr
 				program.Send(tui.RunDoneMsg{})
 			}()
