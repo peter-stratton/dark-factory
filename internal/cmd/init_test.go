@@ -396,7 +396,7 @@ func TestInitConfigIncludesLintCommand(t *testing.T) {
 	}
 }
 
-func TestInitGoProjectSuggestsGolangciLint(t *testing.T) {
+func TestInitGoProjectWritesActiveCommands(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
 	os.Chdir(dir)
@@ -414,11 +414,23 @@ func TestInitGoProjectSuggestsGolangciLint(t *testing.T) {
 		t.Fatalf("godark.yaml not created: %v", err)
 	}
 
-	if !strings.Contains(string(data), "golangci-lint run ./...") {
-		t.Error("godark.yaml should suggest golangci-lint for Go projects")
+	content := string(data)
+
+	// Commands should be active (uncommented), not just present as examples.
+	for _, want := range []string{
+		"build_command: \"go build ./...\"",
+		"test_command: \"go test ./...\"",
+		"format_command: \"gofmt -l -d .\"",
+		"lint_command: \"golangci-lint run ./...\"",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("godark.yaml missing active command line: %s", want)
+		}
 	}
-	if !strings.Contains(string(data), "gofmt -l -d .") {
-		t.Error("godark.yaml should suggest gofmt for Go projects")
+
+	// Should include the auto-detected comment.
+	if !strings.Contains(content, "auto-detected") {
+		t.Error("godark.yaml should note commands were auto-detected")
 	}
 }
 

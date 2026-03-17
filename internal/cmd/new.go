@@ -129,8 +129,9 @@ func runNew(cmd *cobra.Command, projectName, repo string) error {
 // writeNewProjectConfig writes godark.yaml into the current directory, with the
 // repo field pre-populated if repo is non-empty.
 func writeNewProjectConfig(cmd *cobra.Command, repo string) error {
-	// New projects have no go.mod yet, so use generic (empty) command examples.
-	config := buildDefaultConfig("", "")
+	// New projects have no go.mod yet, so detection won't find anything.
+	detected := detectCommandsForDir(".")
+	config := buildDefaultConfig(detected)
 	if repo != "" {
 		safe := strings.ReplaceAll(repo, `"`, `\"`)
 		config = strings.Replace(config, `repo: ""`, fmt.Sprintf(`repo: "%s"`, safe), 1)

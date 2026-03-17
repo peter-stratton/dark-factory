@@ -14,7 +14,6 @@ import (
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/deps"
-	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/dialogue"
 	gexec "github.com/phs/dark-factory/internal/exec"
 	"github.com/phs/dark-factory/internal/github"
@@ -56,9 +55,6 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		logger.Warn("failed to initialize notifiers, continuing without notifications", "error", err)
 		notifiers = nil
 	}
-
-	// Auto-detect project type when no runtime/commands are explicitly configured.
-	detect.ApplyToConfig(cfg, ".", logger)
 
 	// Step 1: Fetch open issues for the milestone.
 	issues, err := github.FetchMilestoneIssues(cfg.Repo, milestone)

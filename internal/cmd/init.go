@@ -16,16 +16,42 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// detectedCommands holds auto-detected build/test commands for config generation.
+type detectedCommands struct {
+	build  string
+	test   string
+	format string
+	lint   string
+}
+
 // buildDefaultConfig constructs the default godark.yaml config string.
-// formatExample and lintExample are the example values shown in the commented-out
-// format_command and lint_command fields. Pass empty strings for generic examples.
-func buildDefaultConfig(formatExample, lintExample string) string {
-	if formatExample == "" {
-		formatExample = `""`
+// When detected is non-nil, build/test/format/lint commands are written as
+// active (uncommented) fields. Otherwise they remain commented-out placeholders.
+func buildDefaultConfig(detected *detectedCommands) string {
+	var commandBlock string
+	if detected != nil && (detected.build != "" || detected.test != "") {
+		commandBlock = "# Build, test, format, and lint commands (auto-detected — verify for your project)\n"
+		if detected.build != "" {
+			commandBlock += fmt.Sprintf("build_command: %q\n", detected.build)
+		}
+		if detected.test != "" {
+			commandBlock += fmt.Sprintf("test_command: %q\n", detected.test)
+		}
+		if detected.format != "" {
+			commandBlock += fmt.Sprintf("format_command: %q\n", detected.format)
+		}
+		if detected.lint != "" {
+			commandBlock += fmt.Sprintf("lint_command: %q\n", detected.lint)
+		}
+	} else {
+		commandBlock = `# Build, test, format, and lint commands (all optional)
+# build_command: ""  # run before the verify step
+# test_command: ""   # run by the verify step
+# format_command: "" # run during verify step
+# lint_command: ""   # run during verify step
+`
 	}
-	if lintExample == "" {
-		lintExample = `""`
-	}
+
 	return `# godark.yaml — Configuration for godark
 repo: ""              # GitHub repository (owner/repo)
 
@@ -42,12 +68,7 @@ auto_merge:
   feature: none
   rollup: none
 
-# Build, test, format, and lint commands (all optional)
-# build_command: "go build ./..."  # run before the verify step
-# test_command: "go test ./..."    # run by the verify step
-# format_command: ` + formatExample + `  # run during verify step
-# lint_command: ` + lintExample + `  # run during verify step
-
+` + commandBlock + `
 # Paths (defaults shown — override to customize)
 # roadmap_path: docs/ROADMAP.md
 # planning_dir: docs/planning/
@@ -169,8 +190,8 @@ func writeDefaultConfig(cmd *cobra.Command) error {
 		return nil
 	}
 
-	formatEx, lintEx := commandExamplesForDir(".")
-	content := buildDefaultConfig(formatEx, lintEx)
+	detected := detectCommandsForDir(".")
+	content := buildDefaultConfig(detected)
 	if repo != "" {
 		safe := strings.ReplaceAll(repo, `"`, `\"`)
 		content = strings.Replace(content, `repo: ""`, fmt.Sprintf(`repo: "%s"`, safe), 1)
@@ -208,15 +229,23 @@ func patchConfigRepo(cmd *cobra.Command, repo string) error {
 	return nil
 }
 
-// commandExamplesForDir returns format_command and lint_command example strings
-// for the config template. When a Go project is detected in dir, Go-specific
-// tool suggestions are returned; otherwise empty strings produce generic placeholders.
-func commandExamplesForDir(dir string) (formatExample, lintExample string) {
+// detectCommandsForDir runs runtime detection and returns commands to write
+// into godark.yaml. Returns nil if no runtime is detected.
+func detectCommandsForDir(dir string) *detectedCommands {
 	dp, err := detect.DetectRuntime(dir)
-	if err != nil || dp.Runtime.Name != "go" {
-		return "", ""
+	if err != nil {
+		return nil
 	}
-	return `"gofmt -l -d ."`, `"golangci-lint run ./..."`
+	dc := &detectedCommands{
+		build: dp.BuildCommand,
+		test:  dp.TestCommand,
+	}
+	// Add language-specific format/lint suggestions.
+	if dp.Runtime.Name == "go" {
+		dc.format = "gofmt -l -d ."
+		dc.lint = "golangci-lint run ./..."
+	}
+	return dc
 }
 
 // writeHarnessDocs scaffolds harness documentation files into the current

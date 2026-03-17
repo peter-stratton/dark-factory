@@ -14,7 +14,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/phs/dark-factory/internal/agent"
 	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/label"
 	"github.com/phs/dark-factory/internal/lock"
@@ -147,9 +146,6 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		}
 
 		pypi.WarnIfSDKOutdated(os.Stderr, logger)
-
-		// Auto-detect project type when no runtime/commands are explicitly configured.
-		detect.ApplyToConfig(cfg, ".", logger)
 
 		authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
 		if err != nil {

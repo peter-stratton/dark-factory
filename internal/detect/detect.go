@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,29 +88,6 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 	return nil, fmt.Errorf("could not detect project type: no known marker files found in %s", repoPath)
 }
 
-// ApplyToConfig runs detection if no runtime is explicitly configured,
-// and applies detected values to cfg where not already set, logging results to logger.
-func ApplyToConfig(cfg *config.Config, repoPath string, logger *slog.Logger) {
-	if cfg.Runtime.Name != "" {
-		return
-	}
-	dp, err := DetectRuntime(repoPath)
-	if err != nil {
-		logger.Warn("project type not detected, continuing without toolchain defaults", "error", err)
-		return
-	}
-	cfg.Runtime = dp.Runtime
-	if cfg.BuildCommand == "" {
-		cfg.BuildCommand = dp.BuildCommand
-	}
-	if cfg.TestCommand == "" {
-		cfg.TestCommand = dp.TestCommand
-	}
-	logger.Info("detected project type",
-		"runtime", dp.Runtime.Name,
-		"version", dp.Runtime.Version,
-	)
-}
 
 // parseGoMod extracts the Go version from go.mod content.
 // Returns an empty string if no "go <version>" directive is found.
