@@ -51,6 +51,18 @@ func makeStep(runID string, issueNum int, step string, cost float64) stats.StepR
 	}
 }
 
+// makeStepWithResources creates a StepResultRecord with resource usage fields set.
+func makeStepWithResources(runID string, issueNum int, step string, cost float64, peakMemBytes, cpuNanos int64) stats.StepResultRecord {
+	return stats.StepResultRecord{
+		RunID:           runID,
+		IssueNumber:     issueNum,
+		StepName:        step,
+		CostUSD:         cost,
+		PeakMemoryBytes: peakMemBytes,
+		CPUNanoseconds:  cpuNanos,
+	}
+}
+
 // buildTestData constructs 3 runs with 15 issues total: 10 implemented, 5 failed.
 func buildTestData() ([]stats.RunRecord, []stats.IssueOutcomeRecord, []stats.StepResultRecord) {
 	runs := []stats.RunRecord{
@@ -639,6 +651,132 @@ func TestShippedIssuesOmittedWhenEmpty(t *testing.T) {
 		if strings.Contains(tc.out, "What was Shipped") {
 			t.Errorf("%s output should omit 'What was Shipped' when no issues shipped", tc.name)
 		}
+	}
+}
+
+// TestResourceUsageTerminal verifies the Resource Usage section appears in terminal output
+// when resource data is present.
+func TestResourceUsageTerminal(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "owner/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcome("run-1", 1, rundata.OutcomeStatusImplemented, "Feature A", ""),
+	}
+	// 200 MB peak memory, 5 CPU seconds
+	steps := []stats.StepResultRecord{
+		makeStepWithResources("run-1", 1, "implement", 0.50, 200*1048576, 5_000_000_000),
+	}
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "owner/repo")
+	out := report.RenderTerminal(rpt)
+
+	if !strings.Contains(out, "Resource Usage") {
+		t.Error("terminal output missing 'Resource Usage' section")
+	}
+	if !strings.Contains(out, "Peak memory") {
+		t.Error("terminal output missing 'Peak memory' label")
+	}
+	if !strings.Contains(out, "200.0 MB") {
+		t.Errorf("terminal output missing '200.0 MB'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Total CPU") {
+		t.Error("terminal output missing 'Total CPU' label")
+	}
+	if !strings.Contains(out, "5.00 s") {
+		t.Errorf("terminal output missing '5.00 s'; got:\n%s", out)
+	}
+}
+
+// TestResourceUsageMarkdown verifies the Resource Usage section appears in markdown output
+// when resource data is present.
+func TestResourceUsageMarkdown(t *testing.T) {
+	runs := []stats.RunRecord{makeRun("run-1", "owner/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcome("run-1", 1, rundata.OutcomeStatusImplemented, "Feature A", ""),
+	}
+	// 512 MB peak memory, 10 CPU seconds
+	steps := []stats.StepResultRecord{
+		makeStepWithResources("run-1", 1, "implement", 0.50, 512*1048576, 10_000_000_000),
+	}
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "owner/repo")
+	out := report.RenderMarkdown(rpt)
+
+	if !strings.Contains(out, "## Resource Usage") {
+		t.Error("markdown output missing '## Resource Usage' header")
+	}
+	if !strings.Contains(out, "**Peak memory:**") {
+		t.Error("markdown output missing '**Peak memory:**' label")
+	}
+	if !strings.Contains(out, "512.0 MB") {
+		t.Errorf("markdown output missing '512.0 MB'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "**Total CPU:**") {
+		t.Error("markdown output missing '**Total CPU:**' label")
+	}
+	if !strings.Contains(out, "10.00 s") {
+		t.Errorf("markdown output missing '10.00 s'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "**Avg CPU per issue:**") {
+		t.Error("markdown output missing '**Avg CPU per issue:**' label")
+	}
+}
+
+// TestResourceUsageOmittedWhenNoData verifies the Resource Usage section is omitted
+// when no resource data exists in the report window.
+func TestResourceUsageOmittedWhenNoData(t *testing.T) {
+	// Use steps with zero resource fields (the default from makeStep).
+	runs, outcomes, steps := buildTestData()
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	rpt := report.Generate(runs, outcomes, steps, since, until, "owner/repo")
+
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"terminal", report.RenderTerminal(rpt)},
+		{"markdown", report.RenderMarkdown(rpt)},
+		{"html", report.RenderHTML(rpt)},
+	} {
+		if strings.Contains(tc.out, "Resource Usage") {
+			t.Errorf("%s output should omit 'Resource Usage' section when no resource data exists", tc.name)
+		}
+	}
+}
+
+// TestResourceUsagePeakMemoryCorrectness verifies the peak memory reflects the single highest
+// step value, not an average. Uses implement at 400 MB and quality-review at 200 MB; peak must be 400 MB.
+func TestResourceUsagePeakMemoryCorrectness(t *testing.T) {
+	const mb = int64(1048576)
+	runs := []stats.RunRecord{makeRun("run-1", "owner/repo")}
+	outcomes := []stats.IssueOutcomeRecord{
+		makeOutcome("run-1", 1, rundata.OutcomeStatusImplemented, "Feature A", ""),
+	}
+	steps := []stats.StepResultRecord{
+		makeStepWithResources("run-1", 1, "implement", 0.50, 400*mb, 2_000_000_000),
+		makeStepWithResources("run-1", 1, "quality-review", 0.10, 200*mb, 1_000_000_000),
+	}
+
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	rpt := report.Generate(runs, outcomes, steps, since, until, "owner/repo")
+
+	if rpt.PeakMemoryBytes != 400*mb {
+		t.Errorf("PeakMemoryBytes = %d, want %d (400 MB)", rpt.PeakMemoryBytes, 400*mb)
+	}
+
+	// Terminal output must show 400.0 MB, not 300.0 MB (which would be the average).
+	out := report.RenderTerminal(rpt)
+	if !strings.Contains(out, "400.0 MB") {
+		t.Errorf("terminal output shows wrong peak memory; want '400.0 MB', got:\n%s", out)
+	}
+	if strings.Contains(out, "300.0 MB") {
+		t.Error("terminal output must show peak (400 MB), not average (300 MB)")
 	}
 }
 
