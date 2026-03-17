@@ -3,6 +3,7 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -23,10 +24,25 @@ type RunOpts struct {
 
 // RunResult holds the outcome of a container run.
 type RunResult struct {
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	TimedOut bool
+	ExitCode       int
+	Stdout         string
+	Stderr         string
+	TimedOut       bool
+	PeakMemoryBytes int64
+	CPUNanoseconds  int64
+}
+
+// containerInspect is the minimal shape of docker inspect JSON used to
+// extract resource usage stats after a container stops.
+type containerInspect struct {
+	MemoryStats struct {
+		MaxUsage int64 `json:"MaxUsage"`
+	} `json:"MemoryStats"`
+	CpuStats struct {
+		CpuUsage struct {
+			TotalUsage int64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+	} `json:"cpu_stats"`
 }
 
 // SplitRunner executes a command and returns stdout and stderr separately.
@@ -125,6 +141,20 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	}
 	result.Stdout = string(stdoutBytes)
 	result.Stderr = string(stderrBytes)
+
+	// 5. docker inspect (best-effort resource stats — must run before deferred rm -f)
+	inspectOut, inspectErr := CommandRunner("docker", "inspect", name)
+	if inspectErr != nil {
+		logger.Warn("docker inspect failed", "name", name, "error", inspectErr)
+	} else {
+		var inspects []containerInspect
+		if jsonErr := json.Unmarshal(inspectOut, &inspects); jsonErr != nil || len(inspects) == 0 {
+			logger.Warn("failed to parse docker inspect output", "name", name, "error", jsonErr)
+		} else {
+			result.PeakMemoryBytes = inspects[0].MemoryStats.MaxUsage
+			result.CPUNanoseconds = inspects[0].CpuStats.CpuUsage.TotalUsage
+		}
+	}
 
 	logger.Info("container finished", "name", name, "exit_code", result.ExitCode, "timed_out", result.TimedOut)
 	return result, nil
