@@ -1705,3 +1705,149 @@ func TestServer_IssueDetail_VerifyCheckSummaries_NoChecks(t *testing.T) {
 		t.Errorf("body missing 'Passed' verdict")
 	}
 }
+
+// --- Resource stats tests ---
+
+func TestServer_IssueDetail_ResourceStats_WithData(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{60},
+		StartedAt:    now,
+	})
+
+	issueDir := buildIssueDir(t, runDir, 60)
+	// 104857600 bytes = 100.0 MB; 2500000000 ns = 2.50s
+	writeJSON(t, filepath.Join(issueDir, "implement.json"), rundata.StepResult{
+		Output:          "done",
+		DurationSeconds: 30,
+		CostUSD:         0.001,
+		PeakMemoryBytes: 104857600,
+		CPUNanoseconds:  2500000000,
+	})
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"), rundata.Outcome{
+		IssueNumber: 60,
+		Status:      "implemented",
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/60", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	if !strings.Contains(body, "100.0 MB") {
+		t.Errorf("body missing formatted peak memory '100.0 MB'; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "2.50s") {
+		t.Errorf("body missing formatted CPU time '2.50s'; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_IssueDetail_ResourceStats_NoData(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{61},
+		StartedAt:    now,
+	})
+
+	issueDir := buildIssueDir(t, runDir, 61)
+	// Older run: resource fields absent (zero values).
+	writeJSON(t, filepath.Join(issueDir, "implement.json"), rundata.StepResult{
+		Output:          "done",
+		DurationSeconds: 15,
+		CostUSD:         0.0005,
+		// PeakMemoryBytes and CPUNanoseconds intentionally zero (pre-feature run).
+	})
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"), rundata.Outcome{
+		IssueNumber: 61,
+		Status:      "implemented",
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/61", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	// Both resource columns should show the placeholder "—" for zero values.
+	// We check that "—" appears (it will appear at least for the two resource columns).
+	count := strings.Count(body, "—")
+	if count < 2 {
+		t.Errorf("expected at least 2 '—' placeholders for missing resource data, got %d; body: %q", count, truncate(body, 500))
+	}
+	// Ensure no MB or CPU seconds values are rendered for zero data.
+	if strings.Contains(body, " MB") {
+		t.Errorf("body should not contain ' MB' when PeakMemoryBytes is zero; got: %q", truncate(body, 500))
+	}
+}
+
+func TestServer_IssueDetail_ResourceStats_MixedSteps(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		IssueNumbers: []int{62},
+		StartedAt:    now,
+	})
+
+	issueDir := buildIssueDir(t, runDir, 62)
+	// Implement step has resource data.
+	writeJSON(t, filepath.Join(issueDir, "implement.json"), rundata.StepResult{
+		Output:          "done",
+		DurationSeconds: 20,
+		CostUSD:         0.002,
+		PeakMemoryBytes: 52428800, // 50.0 MB
+		CPUNanoseconds:  1000000000, // 1.00s
+	})
+	// Quality review step has no resource data.
+	writeJSON(t, filepath.Join(issueDir, "quality-review.json"), rundata.StepResult{
+		Output:          "AGENT_RESULT=APPROVED",
+		DurationSeconds: 10,
+		CostUSD:         0.001,
+		// No resource fields.
+	})
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"), rundata.Outcome{
+		IssueNumber: 62,
+		Status:      "implemented",
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/62", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	// Implement step should show resource values.
+	if !strings.Contains(body, "50.0 MB") {
+		t.Errorf("body missing '50.0 MB' for implement step; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "1.00s") {
+		t.Errorf("body missing '1.00s' for implement step; got: %q", truncate(body, 500))
+	}
+	// Quality review step (no resource data) should contribute "—" placeholders.
+	if !strings.Contains(body, "—") {
+		t.Errorf("body missing '—' placeholder for quality review step with no resource data")
+	}
+}
