@@ -40,7 +40,7 @@ import (
 // logFactory is called to create the run-directory logger once the RunDataWriter
 // has established its directory. Pass logging.NewLogger for text/pipe mode and
 // logging.NewLoggerFileOnly for TUI mode (where the TUI owns stdout).
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, issue int, dryRun bool, force bool, punchlistPath string) error {
+func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, dryRun bool, force bool, punchlistPath string) error {
 	// Preflight: fail fast if working tree is dirty (skip in dry-run mode).
 	if !dryRun {
 		if err := CheckWorkingTree(); err != nil {
@@ -93,14 +93,6 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 
 	// Step 3: Categorize issues into blocked and processable.
 	processable, blocked := categorizeIssues(issues, closedSet)
-
-	// Single-issue mode: filter processable to the requested issue.
-	if issue != 0 {
-		processable, err = filterSingleIssue(processable, blocked, issue)
-		if err != nil {
-			return err
-		}
-	}
 
 	// Step 4: Switch logger to run directory before any orchestration logging.
 	// Creating the RunDataWriter here (with actual issue numbers) ensures that
@@ -486,22 +478,6 @@ func finalizeResolveRun(
 			Message: fmt.Sprintf("daemon re-resolve aborted: %s", abortReason),
 		}, logger)
 	}
-}
-
-// filterSingleIssue extracts a single issue from processable, returning an
-// error if it's not found or is blocked.
-func filterSingleIssue(processable []github.Issue, blocked []blockedIssue, issueNum int) ([]github.Issue, error) {
-	for _, issue := range processable {
-		if issue.Number == issueNum {
-			return []github.Issue{issue}, nil
-		}
-	}
-	for _, bi := range blocked {
-		if bi.Issue.Number == issueNum {
-			return nil, fmt.Errorf("issue #%d is blocked by %s", issueNum, formatIssueRefs(bi.BlockedBy))
-		}
-	}
-	return nil, fmt.Errorf("issue #%d not found in milestone", issueNum)
 }
 
 // blockedIssue pairs an issue with its open (unresolved) dependency numbers.

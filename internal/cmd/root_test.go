@@ -18,7 +18,7 @@ func TestRootCommandHasSubcommands(t *testing.T) {
 }
 
 func TestRunCommandFlags(t *testing.T) {
-	flags := []string{"repo", "milestone", "issue", "max-retries", "dry-run", "no-sandbox", "config"}
+	flags := []string{"repo", "milestone", "max-retries", "dry-run", "no-sandbox", "config"}
 	for _, name := range flags {
 		if runCmd.Flags().Lookup(name) == nil {
 			t.Errorf("run command missing flag --%s", name)

@@ -28,9 +28,10 @@ import (
 
 var runCmd = &cobra.Command{
 	Use:   "run",
-	Short: "Run the development loop for a milestone or single issue",
+	Short: "Run the development loop for a milestone",
 	Long: `Fetch issues from a GitHub milestone, resolve dependencies, and process
-each unblocked issue through the implement → review → merge loop.`,
+each unblocked issue through the implement → review → merge loop.
+Use "godark implement" to process individual issues by number.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		configPath, _ := cmd.Flags().GetString("config")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
@@ -41,19 +42,13 @@ each unblocked issue through the implement → review → merge loop.`,
 		flags := parseCLIFlags(cmd)
 		flags.Config = configPath
 
-		// Parse milestone/issue locally — these are per-run params, not config.
-		var issue int
-
 		milestone, err := resolveTag(cmd)
 		if err != nil {
 			return err
 		}
-		if cmd.Flags().Changed("issue") {
-			issue, _ = cmd.Flags().GetInt("issue")
-		}
 
-		if milestone == "" && issue == 0 {
-			return fmt.Errorf("milestone or issue is required (pass --milestone, --tag, or --issue)")
+		if milestone == "" {
+			return fmt.Errorf("milestone is required (pass --milestone or --tag)")
 		}
 
 		cfg, err := config.Load(configPath, flags)
@@ -130,7 +125,7 @@ each unblocked issue through the implement → review → merge loop.`,
 
 			errCh := make(chan error, 1)
 			go func() {
-				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath)
 				if err != nil || !watchFlag {
 					errCh <- err
 					program.Send(tui.RunDoneMsg{})
@@ -149,7 +144,7 @@ each unblocked issue through the implement → review → merge loop.`,
 		}
 
 		reporter := progress.NewTextReporter(os.Stdout)
-		runErr := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, issue, dryRun, force, punchlistPath)
+		runErr := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath)
 		if runErr != nil || !watchFlag {
 			return runErr
 		}
@@ -295,7 +290,6 @@ func init() {
 	f.String("repo", "", "GitHub repository (owner/repo)")
 	f.String("milestone", "", "GitHub milestone to process (exact title)")
 	f.String("tag", "", "Milestone tag (e.g., phase-3) — resolved to full milestone title")
-	f.Int("issue", 0, "Single issue number to process (instead of milestone)")
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles per issue")
 	f.Bool("dry-run", false, "Print execution plan without taking action")
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")

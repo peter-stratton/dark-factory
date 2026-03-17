@@ -194,7 +194,7 @@ func TestDryRun_ListsIssuesInOrder(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -220,7 +220,7 @@ func TestDryRun_BlockedIssuesShownSeparately(t *testing.T) {
 	setupFakeGH(t, openIssues, nil) // #99 not closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -246,7 +246,7 @@ func TestDryRun_SummaryCounts(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -270,7 +270,7 @@ func TestDryRun_LogFileCreated(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		if err := Run(context.Background(), testConfig(), logger, progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, ""); err != nil {
+		if err := Run(context.Background(), testConfig(), logger, progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, ""); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
@@ -285,7 +285,7 @@ func TestEmptyMilestone(t *testing.T) {
 	setupFakeGH(t, []ghIssue{}, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -318,7 +318,7 @@ func TestAllBlocked(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -339,7 +339,7 @@ func TestDryRun_ClosedDepsUnblock(t *testing.T) {
 	setupFakeGH(t, openIssues, []int{3}) // #3 is closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -385,7 +385,7 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -397,70 +397,6 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	if !strings.Contains(output, "[priority: none]") {
 		t.Error("expected priority 'none' for unlabeled issues")
 	}
-}
-
-func TestSingleIssueMode_FiltersCorrectly(t *testing.T) {
-	openIssues := []ghIssue{
-		{Number: 1, Title: "first", Labels: []ghLabel{}},
-		{Number: 2, Title: "second", Labels: []ghLabel{}},
-		{Number: 3, Title: "third", Labels: []ghLabel{}},
-	}
-	setupFakeGH(t, openIssues, nil)
-
-	cfg := testConfig()
-
-	output := captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 2, true, false, "")
-		if err != nil {
-			t.Fatalf("Run() error = %v", err)
-		}
-	})
-
-	if !strings.Contains(output, "#2 second") {
-		t.Errorf("expected issue #2 in output, got:\n%s", output)
-	}
-	// Should not contain the other issues in processable section
-	if strings.Contains(output, "#1 first") {
-		t.Errorf("expected issue #1 filtered out, got:\n%s", output)
-	}
-}
-
-func TestSingleIssueMode_ErrorWhenBlocked(t *testing.T) {
-	openIssues := []ghIssue{
-		{Number: 1, Title: "blocked", Body: "**Blocked by**: #99", Labels: []ghLabel{}},
-	}
-	setupFakeGH(t, openIssues, nil)
-
-	cfg := testConfig()
-
-	captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 1, true, false, "")
-		if err == nil {
-			t.Fatal("expected error for blocked single issue")
-		}
-		if !strings.Contains(err.Error(), "blocked by") {
-			t.Errorf("expected 'blocked by' in error, got: %v", err)
-		}
-	})
-}
-
-func TestSingleIssueMode_ErrorWhenNotFound(t *testing.T) {
-	openIssues := []ghIssue{
-		{Number: 1, Title: "first", Labels: []ghLabel{}},
-	}
-	setupFakeGH(t, openIssues, nil)
-
-	cfg := testConfig()
-
-	captureStdout(t, func() {
-		err := Run(context.Background(), cfg, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 999, true, false, "")
-		if err == nil {
-			t.Fatal("expected error for missing single issue")
-		}
-		if !strings.Contains(err.Error(), "not found") {
-			t.Errorf("expected 'not found' in error, got: %v", err)
-		}
-	})
 }
 
 func TestCategorizeIssues(t *testing.T) {
@@ -933,7 +869,7 @@ func TestRun_DirtyTreeBlocksRun(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -959,7 +895,7 @@ func TestRun_DirtyTreeErrorListsFiles(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -986,7 +922,7 @@ func TestRun_DryRunSkipsDirtyCheck(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("dry-run should not fail on dirty tree: %v", err)
 		}
@@ -1836,7 +1772,7 @@ func TestReporter_DryRunDoesNotCallReporter(t *testing.T) {
 	reporter := &fakeReporter{}
 	cfg := testConfig()
 
-	if err := Run(context.Background(), cfg, testLogger(t), reporter, logging.NewLogger, "Phase 1", 0, true, false, ""); err != nil {
+	if err := Run(context.Background(), cfg, testLogger(t), reporter, logging.NewLogger, "Phase 1", true, false, ""); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -2213,7 +2149,7 @@ func TestDryRun_NoDarkIssuesExcluded(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -2248,7 +2184,7 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", 0, true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
