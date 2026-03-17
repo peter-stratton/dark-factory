@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -329,5 +331,135 @@ func TestRun_NoSandbox_TimedOut_HasTiming(t *testing.T) {
 	}
 	if result.FinishedAt.IsZero() {
 		t.Error("FinishedAt should be non-zero even for timed-out runs")
+	}
+}
+
+func TestRun_NoSandbox_ResourceStats_Populated_MacOS(t *testing.T) {
+	// Scenario: Host mode captures resource stats (macOS platform).
+	// Maxrss = 204800 KB on macOS → PeakMemoryBytes = 209715200 (204800 * 1024).
+	// Utime = 2s + Stime = 1s → CPUNanoseconds = 3000000000.
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
+		rusage.Maxrss = 204800
+		rusage.Utime = syscall.Timeval{Sec: 2, Usec: 0}
+		rusage.Stime = syscall.Timeval{Sec: 1, Usec: 0}
+		return nil
+	})
+	stubGOOS(t, "darwin")
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	const wantMem = 204800 * 1024
+	if result.PeakMemoryBytes != wantMem {
+		t.Errorf("PeakMemoryBytes = %d, want %d", result.PeakMemoryBytes, wantMem)
+	}
+	const wantCPU = 3_000_000_000
+	if result.CPUNanoseconds != wantCPU {
+		t.Errorf("CPUNanoseconds = %d, want %d", result.CPUNanoseconds, wantCPU)
+	}
+}
+
+func TestRun_NoSandbox_ResourceStats_GetrusageFailure_ZeroAndNoError(t *testing.T) {
+	// Scenario: Getrusage failure returns zero values and no error.
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
+		return errors.New("getrusage: operation not permitted")
+	})
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() returned error on getrusage failure = %v", err)
+	}
+	if result.PeakMemoryBytes != 0 {
+		t.Errorf("PeakMemoryBytes = %d, want 0 on getrusage failure", result.PeakMemoryBytes)
+	}
+	if result.CPUNanoseconds != 0 {
+		t.Errorf("CPUNanoseconds = %d, want 0 on getrusage failure", result.CPUNanoseconds)
+	}
+}
+
+func TestRun_NoSandbox_ResourceStats_PlatformNormalization_MacOS(t *testing.T) {
+	// Scenario: Platform normalization on macOS.
+	// Maxrss = 1024 KB on macOS → PeakMemoryBytes = 1048576 (1024 * 1024).
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
+		rusage.Maxrss = 1024
+		return nil
+	})
+	stubGOOS(t, "darwin")
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	const want = 1024 * 1024
+	if result.PeakMemoryBytes != want {
+		t.Errorf("PeakMemoryBytes = %d, want %d (macOS KB→bytes conversion)", result.PeakMemoryBytes, want)
+	}
+}
+
+func TestRun_NoSandbox_ResourceStats_PlatformNormalization_Linux(t *testing.T) {
+	// Scenario: Platform normalization on Linux.
+	// Maxrss = 1048576 bytes on Linux → PeakMemoryBytes = 1048576 (no conversion).
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	})
+	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
+		rusage.Maxrss = 1048576
+		return nil
+	})
+	stubGOOS(t, "linux")
+
+	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	const want = 1048576
+	if result.PeakMemoryBytes != want {
+		t.Errorf("PeakMemoryBytes = %d, want %d (Linux bytes, no conversion)", result.PeakMemoryBytes, want)
+	}
+}
+
+func TestRun_NoSandbox_ResourceStats_SkippedOnTimeout(t *testing.T) {
+	// On timeout the process may still be running, so resource fields should be zero.
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+		<-ctx.Done()
+		return []byte("partial"), []byte(""), 0, ctx.Err()
+	})
+	getrusageCalled := false
+	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
+		getrusageCalled = true
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := Run(ctx, RunOpts{Prompt: "test"}, true, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !result.TimedOut {
+		t.Error("expected TimedOut = true")
+	}
+	if getrusageCalled {
+		t.Error("GetrusageFn should not be called on timeout")
+	}
+	if result.PeakMemoryBytes != 0 {
+		t.Errorf("PeakMemoryBytes = %d, want 0 on timeout", result.PeakMemoryBytes)
+	}
+	if result.CPUNanoseconds != 0 {
+		t.Errorf("CPUNanoseconds = %d, want 0 on timeout", result.CPUNanoseconds)
 	}
 }
