@@ -310,32 +310,39 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	report.FlagFrequencies = buildFlagFrequencies(acc.flagCounts, report.IssueCount)
 
 	// Populate resource stats (omitted when no resource data was collected).
-	if acc.memNonZeroCount > 0 || acc.totalCPU > 0 {
-		rs := &ResourceStats{
-			MaxPeakMemoryBytes:  acc.maxPeakMemory,
-			TotalCPUNanoseconds: acc.totalCPU,
-			ResourceByStep:      make(map[string]StepResourceStats),
-		}
-		if acc.memNonZeroCount > 0 {
-			rs.AvgPeakMemoryBytes = acc.totalPeakMemory / int64(acc.memNonZeroCount)
-		}
-		if acc.issueCount > 0 {
-			rs.AvgCPUNanosecondsPerIssue = acc.totalCPU / int64(acc.issueCount)
-		}
-		for stepName, sa := range acc.resourceByStep {
-			srs := StepResourceStats{
-				MaxMemoryBytes:      sa.maxMemory,
-				TotalCPUNanoseconds: sa.totalCPU,
-			}
-			if sa.memCount > 0 {
-				srs.AvgMemoryBytes = sa.totalMemory / int64(sa.memCount)
-			}
-			rs.ResourceByStep[stepName] = srs
-		}
-		report.ResourceStats = rs
-	}
+	report.ResourceStats = buildResourceStats(&acc)
 
 	return report
+}
+
+// buildResourceStats constructs a ResourceStats value from accumulated data,
+// returning nil when no resource data was collected.
+func buildResourceStats(acc *issueAcc) *ResourceStats {
+	if acc.memNonZeroCount == 0 && acc.totalCPU == 0 {
+		return nil
+	}
+	rs := &ResourceStats{
+		MaxPeakMemoryBytes:  acc.maxPeakMemory,
+		TotalCPUNanoseconds: acc.totalCPU,
+		ResourceByStep:      make(map[string]StepResourceStats),
+	}
+	if acc.memNonZeroCount > 0 {
+		rs.AvgPeakMemoryBytes = acc.totalPeakMemory / int64(acc.memNonZeroCount)
+	}
+	if acc.issueCount > 0 {
+		rs.AvgCPUNanosecondsPerIssue = acc.totalCPU / int64(acc.issueCount)
+	}
+	for stepName, sa := range acc.resourceByStep {
+		srs := StepResourceStats{
+			MaxMemoryBytes:      sa.maxMemory,
+			TotalCPUNanoseconds: sa.totalCPU,
+		}
+		if sa.memCount > 0 {
+			srs.AvgMemoryBytes = sa.totalMemory / int64(sa.memCount)
+		}
+		rs.ResourceByStep[stepName] = srs
+	}
+	return rs
 }
 
 // buildFlagFrequencies converts raw flag counts into a sorted FlagFrequency slice.
