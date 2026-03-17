@@ -263,6 +263,37 @@ func TestToRunDetails_ZeroFinishedAt(t *testing.T) {
 	}
 }
 
+// TestToRunDetails_ResourceFieldsPropagation: PeakMemoryBytes and CPUNanoseconds
+// are propagated from StepResultRecord through toStepResult to rundata.StepResult.
+func TestToRunDetails_ResourceFieldsPropagation(t *testing.T) {
+	ts := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	runs := []RunRecord{{ID: "run-1", Repo: "org/repo", StartedAt: ts}}
+	outcomes := []IssueOutcomeRecord{{RunID: "run-1", IssueNumber: 1, Status: "implemented"}}
+	steps := []StepResultRecord{
+		{
+			RunID:           "run-1",
+			IssueNumber:     1,
+			StepName:        "implement",
+			PeakMemoryBytes: 128 * 1024 * 1024,
+			CPUNanoseconds:  1_000_000_000,
+		},
+	}
+
+	got := ToRunDetails(runs, outcomes, steps)
+	if len(got) != 1 || len(got[0].Issues) != 1 {
+		t.Fatalf("unexpected structure: %d runs", len(got))
+	}
+
+	impl := got[0].Issues[0].Implement
+	if impl.PeakMemoryBytes != 128*1024*1024 {
+		t.Errorf("PeakMemoryBytes: got %d, want %d", impl.PeakMemoryBytes, 128*1024*1024)
+	}
+	if impl.CPUNanoseconds != 1_000_000_000 {
+		t.Errorf("CPUNanoseconds: got %d, want %d", impl.CPUNanoseconds, 1_000_000_000)
+	}
+}
+
 // TestParseRetryStepName covers valid and invalid inputs.
 func TestParseRetryStepName(t *testing.T) {
 	tests := []struct {

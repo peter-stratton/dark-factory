@@ -139,6 +139,8 @@ func toStepResult(s StepResultRecord) rundata.StepResult {
 	step := rundata.StepResult{
 		CostUSD:         s.CostUSD,
 		DurationSeconds: s.DurationSeconds,
+		PeakMemoryBytes: s.PeakMemoryBytes,
+		CPUNanoseconds:  s.CPUNanoseconds,
 	}
 
 	if !s.StartedAt.IsZero() {

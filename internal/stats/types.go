@@ -34,12 +34,14 @@ type IssueOutcomeRecord struct {
 // Fields map 1:1 to columns in the step_results table.
 // Flags is a slice of flag code strings serialized as a JSON array in storage.
 type StepResultRecord struct {
-	RunID           string
-	IssueNumber     int
-	StepName        string
-	CostUSD         float64
-	DurationSeconds float64
-	Flags           []string
-	StartedAt       time.Time
-	FinishedAt      time.Time
+	RunID            string
+	IssueNumber      int
+	StepName         string
+	CostUSD          float64
+	DurationSeconds  float64
+	Flags            []string
+	StartedAt        time.Time
+	FinishedAt       time.Time
+	PeakMemoryBytes  int64
+	CPUNanoseconds   int64
 }

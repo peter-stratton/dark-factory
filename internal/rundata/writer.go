@@ -64,16 +64,18 @@ type Flag struct {
 
 // StepResult holds the output of a single agent step.
 type StepResult struct {
-	Output          string     `json:"output,omitempty"`
-	Error           string     `json:"error,omitempty"`
-	TimedOut        bool       `json:"timed_out,omitempty"`
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
-	DurationSeconds float64    `json:"duration_seconds,omitempty"`
-	CostUSD         float64    `json:"cost_usd,omitempty"`
-	Flags           []Flag     `json:"flags,omitempty"`
-	ToolTrace       []string   `json:"tool_trace,omitempty"`
-	SessionID       string     `json:"session_id,omitempty"`
+	Output           string     `json:"output,omitempty"`
+	Error            string     `json:"error,omitempty"`
+	TimedOut         bool       `json:"timed_out,omitempty"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	FinishedAt       *time.Time `json:"finished_at,omitempty"`
+	DurationSeconds  float64    `json:"duration_seconds,omitempty"`
+	CostUSD          float64    `json:"cost_usd,omitempty"`
+	Flags            []Flag     `json:"flags,omitempty"`
+	ToolTrace        []string   `json:"tool_trace,omitempty"`
+	SessionID        string     `json:"session_id,omitempty"`
+	PeakMemoryBytes  int64      `json:"peak_memory_bytes,omitempty"`
+	CPUNanoseconds   int64      `json:"cpu_nanoseconds,omitempty"`
 }
 
 // OutcomeStatus constants mirror the agent.OutcomeStatus values for use in
