@@ -1,0 +1,29 @@
+name: Auto-close external PRs
+
+on:
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  close-external:
+    if: github.event.pull_request.user.login != 'peter-stratton'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Close PR with comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `Thanks for your interest in Dark Factory! This project is an experiment in autonomous software development — the codebase is generated and maintained entirely by AI agents via the [GoDark](https://github.com/peter-stratton/dark-factory) process. Because of that, we don't accept external pull requests.\n\nIf you've found a bug or have a feature idea, please open an issue instead — GoDark can pick it up and add it to the roadmap.\n\nFeel free to fork the project and take it in your own direction!`
+            });
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              state: 'closed'
+            });
