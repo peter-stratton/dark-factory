@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Capture container resource stats via docker inspect
+## Issue 543: Capture container resource stats via docker inspect
 
 ### Description
 
@@ -48,9 +48,9 @@ Use `docker inspect --format '{{json .State}}'` (or similar) to extract:
 
 ---
 
-## Issue: Add resource fields to StepResult and step_results table
+## Issue 544: Add resource fields to StepResult and step_results table
 
-**Blocked by**: Capture container resource stats via docker inspect
+**Blocked by**: #543
 
 ### Description
 
@@ -85,9 +85,9 @@ persist the new fields.
 
 ---
 
-## Issue: Surface resource stats in analyze CLI output
+## Issue 545: Surface resource stats in analyze CLI output
 
-**Blocked by**: Add resource fields to StepResult and step_results table
+**Blocked by**: #544
 
 ### Description
 
@@ -121,9 +121,9 @@ for peak memory and CPU time.
 
 ---
 
-## Issue: Surface resource stats in dashboard issue detail view
+## Issue 546: Surface resource stats in dashboard issue detail view
 
-**Blocked by**: Add resource fields to StepResult and step_results table
+**Blocked by**: #544
 
 ### Description
 
@@ -153,9 +153,9 @@ issue detail view. Display human-friendly units (MB for memory, seconds for CPU)
 
 ---
 
-## Issue: Include resource summary in report sprint output
+## Issue 547: Include resource summary in report sprint output
 
-**Blocked by**: Surface resource stats in analyze CLI output
+**Blocked by**: #545
 
 ### Description
 
@@ -187,9 +187,9 @@ Useful for capacity planning discussions.
 
 ---
 
-## Issue: Resource stats for --no-sandbox host mode
+## Issue 548: Resource stats for --no-sandbox host mode
 
-**Blocked by**: Add resource fields to StepResult and step_results table
+**Blocked by**: #544
 
 ### Description
 

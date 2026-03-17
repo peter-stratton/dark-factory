@@ -1140,6 +1140,10 @@ bounded concurrency.
 - Add resource stats to `--no-sandbox` mode (capture from host process instead
   of container)
 
+**Issues**: #543–#548
+
+**Planning doc**: `docs/planning/phase-24-container-resource-tracking.md`
+
 ---
 
 ### Future considerations (not yet scoped)
