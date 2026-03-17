@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
@@ -154,18 +155,56 @@ func writeGodarkDoc(cmd *cobra.Command) error {
 func writeDefaultConfig(cmd *cobra.Command) error {
 	const configPath = "godark.yaml"
 
+	repo, _ := cmd.Flags().GetString("repo")
+
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "skipped %s (already exists)\n", configPath)
+		// File exists — update the repo field if --repo was provided.
+		if repo != "" {
+			if err := patchConfigRepo(cmd, repo); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "skipped %s (already exists)\n", configPath)
+		}
 		return nil
 	}
 
 	formatEx, lintEx := commandExamplesForDir(".")
 	content := buildDefaultConfig(formatEx, lintEx)
+	if repo != "" {
+		safe := strings.ReplaceAll(repo, `"`, `\"`)
+		content = strings.Replace(content, `repo: ""`, fmt.Sprintf(`repo: "%s"`, safe), 1)
+	}
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", configPath, err)
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", configPath)
+	return nil
+}
+
+// patchConfigRepo updates the repo field in an existing godark.yaml file.
+func patchConfigRepo(cmd *cobra.Command, repo string) error {
+	const path = "godark.yaml"
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+
+	safe := strings.ReplaceAll(repo, `"`, `\"`)
+	old := string(data)
+	updated := strings.Replace(old, `repo: ""`, fmt.Sprintf(`repo: "%s"`, safe), 1)
+
+	if old == updated {
+		fmt.Fprintf(cmd.OutOrStdout(), "skipped %s (repo already set)\n", path)
+		return nil
+	}
+
+	if err := os.WriteFile(filepath.Clean(path), []byte(updated), 0o644); err != nil { //nolint:gosec // path is a hardcoded constant
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "updated repo in %s\n", path)
 	return nil
 }
 

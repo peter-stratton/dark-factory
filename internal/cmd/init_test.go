@@ -422,6 +422,82 @@ func TestInitGoProjectSuggestsGolangciLint(t *testing.T) {
 	}
 }
 
+func TestInitRepoFlagUpdatesExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	// Write a config with an empty repo field.
+	os.WriteFile("godark.yaml", []byte("repo: \"\"\nauto_merge:\n  feature: none\n"), 0o644)
+
+	if err := initCmd.Flags().Set("repo", "owner/repo-name"); err != nil {
+		t.Fatalf("setting flag: %v", err)
+	}
+	defer initCmd.Flags().Set("repo", "") //nolint:errcheck
+
+	buf := runInit(t)
+
+	data, _ := os.ReadFile("godark.yaml")
+	if !strings.Contains(string(data), `repo: "owner/repo-name"`) {
+		t.Errorf("expected repo field to be updated, got: %s", data)
+	}
+
+	if !strings.Contains(buf.String(), "updated repo in godark.yaml") {
+		t.Error("expected update message for repo field")
+	}
+}
+
+func TestInitRepoFlagSkipsAlreadySetConfig(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	// Write a config with repo already set.
+	existing := "repo: \"owner/existing-repo\"\nauto_merge:\n  feature: none\n"
+	os.WriteFile("godark.yaml", []byte(existing), 0o644)
+
+	if err := initCmd.Flags().Set("repo", "owner/new-repo"); err != nil {
+		t.Fatalf("setting flag: %v", err)
+	}
+	defer initCmd.Flags().Set("repo", "") //nolint:errcheck
+
+	buf := runInit(t)
+
+	data, _ := os.ReadFile("godark.yaml")
+	if string(data) != existing {
+		t.Error("config with existing repo should not be modified")
+	}
+
+	if !strings.Contains(buf.String(), "skipped godark.yaml (repo already set)") {
+		t.Error("expected skip message for already-set repo")
+	}
+}
+
+func TestInitRepoFlagPopulatesNewConfig(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	if err := initCmd.Flags().Set("repo", "owner/new-project"); err != nil {
+		t.Fatalf("setting flag: %v", err)
+	}
+	defer initCmd.Flags().Set("repo", "") //nolint:errcheck
+
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	if !strings.Contains(string(data), `repo: "owner/new-project"`) {
+		t.Errorf("expected repo field to be populated, got: %s", data)
+	}
+}
+
 func TestInitNonGoProjectUsesGenericExamples(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
