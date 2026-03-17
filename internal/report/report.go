@@ -192,6 +192,19 @@ func computeIssueCost(issue rundata.IssueDetail) float64 {
 	return total
 }
 
+// renderResourceSection writes the Resource Usage block to sb when resource data is present.
+func renderResourceSection(sb *strings.Builder, rpt SprintReport) {
+	if rpt.PeakMemoryBytes == 0 && rpt.TotalCPUNanoseconds == 0 {
+		return
+	}
+	sb.WriteString("\nResource Usage\n")
+	tw := tabwriter.NewWriter(sb, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Peak memory\t%.1f MB\n", float64(rpt.PeakMemoryBytes)/1048576)
+	fmt.Fprintf(tw, "  Total CPU\t%.2f s\n", float64(rpt.TotalCPUNanoseconds)/1e9)
+	fmt.Fprintf(tw, "  Avg CPU per issue\t%.2f s\n", float64(rpt.AvgCPUNanosecondsPerIssue)/1e9)
+	_ = tw.Flush()
+}
+
 // RenderTerminal renders rpt as a tabwriter-aligned table for stdout.
 func RenderTerminal(rpt SprintReport) string {
 	var sb strings.Builder
@@ -233,14 +246,7 @@ func RenderTerminal(rpt SprintReport) string {
 	_ = tw.Flush()
 
 	// Resource usage (omitted when no resource data)
-	if rpt.PeakMemoryBytes > 0 || rpt.TotalCPUNanoseconds > 0 {
-		sb.WriteString("\nResource Usage\n")
-		tw = tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(tw, "  Peak memory\t%.1f MB\n", float64(rpt.PeakMemoryBytes)/1048576)
-		fmt.Fprintf(tw, "  Total CPU\t%.2f s\n", float64(rpt.TotalCPUNanoseconds)/1e9)
-		fmt.Fprintf(tw, "  Avg CPU per issue\t%.2f s\n", float64(rpt.AvgCPUNanosecondsPerIssue)/1e9)
-		_ = tw.Flush()
-	}
+	renderResourceSection(&sb, rpt)
 
 	// Failure reasons
 	if len(rpt.FailureReasons) > 0 {
