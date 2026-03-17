@@ -3,6 +3,7 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -23,10 +24,26 @@ type RunOpts struct {
 
 // RunResult holds the outcome of a container run.
 type RunResult struct {
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	TimedOut bool
+	ExitCode       int
+	Stdout         string
+	Stderr         string
+	TimedOut       bool
+	PeakMemoryBytes int64
+	CPUNanoseconds  int64
+}
+
+// containerStats is the minimal shape of the Docker stats API JSON used to
+// extract resource usage stats after a container stops. Field names match
+// the snake_case schema returned by GET /containers/{id}/stats?stream=false.
+type containerStats struct {
+	MemoryStats struct {
+		MaxUsage int64 `json:"max_usage"`
+	} `json:"memory_stats"`
+	CpuStats struct {
+		CpuUsage struct {
+			TotalUsage int64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+	} `json:"cpu_stats"`
 }
 
 // SplitRunner executes a command and returns stdout and stderr separately.
@@ -125,6 +142,23 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	}
 	result.Stdout = string(stdoutBytes)
 	result.Stderr = string(stderrBytes)
+
+	// 5. Docker stats API (best-effort resource stats — must run before deferred rm -f).
+	// Uses the Docker socket directly via curl because docker inspect does not expose
+	// runtime memory/CPU statistics; those come from GET /containers/{id}/stats?stream=false.
+	statsURL := "http://localhost/containers/" + name + "/stats?stream=false"
+	statsOut, statsErr := CommandRunner("curl", "--silent", "--unix-socket", "/var/run/docker.sock", statsURL)
+	if statsErr != nil {
+		logger.Warn("container stats api failed", "name", name, "error", statsErr)
+	} else {
+		var stats containerStats
+		if jsonErr := json.Unmarshal(statsOut, &stats); jsonErr != nil {
+			logger.Warn("failed to parse container stats", "name", name, "error", jsonErr)
+		} else {
+			result.PeakMemoryBytes = stats.MemoryStats.MaxUsage
+			result.CPUNanoseconds = stats.CpuStats.CpuUsage.TotalUsage
+		}
+	}
 
 	logger.Info("container finished", "name", name, "exit_code", result.ExitCode, "timed_out", result.TimedOut)
 	return result, nil

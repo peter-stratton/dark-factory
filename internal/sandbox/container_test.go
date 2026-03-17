@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const validStatsJSON = `{"memory_stats":{"max_usage":104857600},"cpu_stats":{"cpu_usage":{"total_usage":500000000}}}`
+
 // saveRunners saves the current CommandRunner, SplitRunner, and
 // CommandRunnerWithContext values and returns a restore function.
 func saveRunners() func() {
@@ -303,5 +305,143 @@ func TestRunContainerCleanupOnContextCancel(t *testing.T) {
 	}
 	if !rmCalled {
 		t.Error("docker rm was not called on context cancel")
+	}
+}
+
+func TestRunContainerInspectParsed(t *testing.T) {
+	defer saveRunners()()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "curl" {
+			return []byte(validStatsJSON), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	result, err := RunContainer(context.Background(), RunOpts{
+		Image: "test:latest",
+		Cmd:   []string{"true"},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PeakMemoryBytes != 104857600 {
+		t.Errorf("PeakMemoryBytes = %d, want 104857600", result.PeakMemoryBytes)
+	}
+	if result.CPUNanoseconds != 500000000 {
+		t.Errorf("CPUNanoseconds = %d, want 500000000", result.CPUNanoseconds)
+	}
+}
+
+func TestRunContainerInspectParseFailure(t *testing.T) {
+	defer saveRunners()()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "curl" {
+			return []byte("not valid json {{{"), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	result, err := RunContainer(context.Background(), RunOpts{
+		Image: "test:latest",
+		Cmd:   []string{"true"},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PeakMemoryBytes != 0 {
+		t.Errorf("PeakMemoryBytes = %d, want 0 on parse failure", result.PeakMemoryBytes)
+	}
+	if result.CPUNanoseconds != 0 {
+		t.Errorf("CPUNanoseconds = %d, want 0 on parse failure", result.CPUNanoseconds)
+	}
+}
+
+func TestRunContainerInspectCommandFailure(t *testing.T) {
+	defer saveRunners()()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "curl" {
+			return nil, fmt.Errorf("stats api failed")
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	result, err := RunContainer(context.Background(), RunOpts{
+		Image: "test:latest",
+		Cmd:   []string{"true"},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PeakMemoryBytes != 0 {
+		t.Errorf("PeakMemoryBytes = %d, want 0 on inspect command failure", result.PeakMemoryBytes)
+	}
+	if result.CPUNanoseconds != 0 {
+		t.Errorf("CPUNanoseconds = %d, want 0 on inspect command failure", result.CPUNanoseconds)
+	}
+}
+
+func TestRunContainerInspectAfterTimeout(t *testing.T) {
+	defer saveRunners()()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "curl" {
+			return []byte(validStatsJSON), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	result, err := RunContainer(context.Background(), RunOpts{
+		Image:   "test:latest",
+		Cmd:     []string{"sleep", "999"},
+		Timeout: 50 * time.Millisecond,
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.TimedOut {
+		t.Error("TimedOut should be true")
+	}
+	if result.PeakMemoryBytes != 104857600 {
+		t.Errorf("PeakMemoryBytes = %d, want 104857600 after timeout", result.PeakMemoryBytes)
 	}
 }
