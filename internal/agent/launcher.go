@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/phs/dark-factory/internal/agent/runner"
@@ -28,19 +30,31 @@ type RunOpts struct {
 
 // Result holds the outcome of an agent run.
 type Result struct {
-	ExitCode     int
-	Stdout       string
-	Stderr       string
-	TimedOut     bool
-	SessionID    string
-	CostUSD      float64
-	ResultText   string   // agent's final text output (from SDK result message)
-	Verdict      string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
-	ToolTrace    []string // summary of tool calls made by the agent
-	StartedAt    time.Time
-	FinishedAt   time.Time
-	ContainerLog string // bounded combined log for post-mortem; only populated on failure
+	ExitCode        int
+	Stdout          string
+	Stderr          string
+	TimedOut        bool
+	SessionID       string
+	CostUSD         float64
+	ResultText      string   // agent's final text output (from SDK result message)
+	Verdict         string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
+	ToolTrace       []string // summary of tool calls made by the agent
+	StartedAt       time.Time
+	FinishedAt      time.Time
+	ContainerLog    string // bounded combined log for post-mortem; only populated on failure
+	PeakMemoryBytes int64  // peak RSS in bytes; 0 if unavailable
+	CPUNanoseconds  int64  // total CPU time (user + system) in nanoseconds; 0 if unavailable
 }
+
+// GetrusageFn returns resource usage for child processes. Replaceable for testing.
+var GetrusageFn = func(who int, rusage *syscall.Rusage) error {
+	return syscall.Getrusage(who, rusage)
+}
+
+// goosForRusage is the GOOS value used for Maxrss unit normalization.
+// On macOS, Maxrss is in kilobytes; on Linux it is in bytes.
+// Replaceable for testing to validate both platform behaviours.
+var goosForRusage = runtime.GOOS
 
 // Runner executes a command on the host with the given environment. Replaceable for testing.
 var Runner = func(ctx context.Context, env map[string]string, name string, args ...string) (stdout, stderr []byte, exitCode int, err error) {
@@ -152,6 +166,24 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 		}
 	}
 
+	// Capture resource usage from the child process (best-effort).
+	// RUSAGE_CHILDREN reflects stats for all waited-upon children, which is
+	// valid here because Runner calls cmd.Run() which waits for the process.
+	// Skip on timeout: the process may still be running and Getrusage results
+	// would be undefined.
+	var usage syscall.Rusage
+	if err := GetrusageFn(syscall.RUSAGE_CHILDREN, &usage); err != nil {
+		logger.Warn("getrusage failed, resource stats will be zero", "error", err)
+	} else {
+		mem := int64(usage.Maxrss)
+		if goosForRusage == "darwin" {
+			mem *= 1024 // macOS reports Maxrss in kilobytes; convert to bytes
+		}
+		res.PeakMemoryBytes = mem
+		res.CPUNanoseconds = (int64(usage.Utime.Sec)+int64(usage.Stime.Sec))*1e9 +
+			(int64(usage.Utime.Usec)+int64(usage.Stime.Usec))*1e3
+	}
+
 	// Capture bounded log for post-mortem on failure only.
 	if res.TimedOut || res.ExitCode != 0 {
 		combined := string(stdout) + string(stderr)
@@ -210,12 +242,14 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	}
 
 	res := &Result{
-		ExitCode:   result.ExitCode,
-		Stdout:     result.Stdout,
-		Stderr:     result.Stderr,
-		TimedOut:   result.TimedOut,
-		StartedAt:  startedAt,
-		FinishedAt: finishedAt,
+		ExitCode:        result.ExitCode,
+		Stdout:          result.Stdout,
+		Stderr:          result.Stderr,
+		TimedOut:        result.TimedOut,
+		StartedAt:       startedAt,
+		FinishedAt:      finishedAt,
+		PeakMemoryBytes: result.PeakMemoryBytes,
+		CPUNanoseconds:  result.CPUNanoseconds,
 	}
 
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {
