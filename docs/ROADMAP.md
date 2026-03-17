@@ -857,7 +857,7 @@ accounts for changes made by prior issues.
 
 ---
 
-## Phase 19: Spring Cleaning
+## Phase 19: Spring Cleaning ✅
 
 **Goal**: The codebase has zero duplicated patterns, all agent output parsing
 uses structured formats with unified parsers, magic strings are typed constants,
@@ -1012,7 +1012,7 @@ and success rate by repo.
 
 ---
 
-## Phase 22: Analytics Overhaul
+## Phase 22: Analytics Overhaul ✅
 
 **Goal**: The `godark analyze` command and dashboard analytics page surface
 actionable metrics that answer five operator questions: is the system improving,
