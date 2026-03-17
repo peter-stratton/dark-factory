@@ -416,3 +416,34 @@ func TestQueryRuns_FieldsRoundTrip(t *testing.T) {
 		t.Errorf("AbortReason: got %q, want %q", r.AbortReason, want.AbortReason)
 	}
 }
+
+// TestQueryStepResults_ResourceFieldsRoundTrip: PeakMemoryBytes and CPUNanoseconds
+// survive write-then-query.
+func TestQueryStepResults_ResourceFieldsRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo", StartedAt: ts1})
+	writeStep(t, db, StepResultRecord{
+		RunID:           "run-1",
+		IssueNumber:     42,
+		StepName:        "implement",
+		PeakMemoryBytes: 256 * 1024 * 1024,
+		CPUNanoseconds:  2_500_000_000,
+	})
+
+	got, err := QueryStepResults(context.Background(), db, RunFilter{})
+	if err != nil {
+		t.Fatalf("QueryStepResults: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d step results, want 1", len(got))
+	}
+
+	s := got[0]
+	if s.PeakMemoryBytes != 256*1024*1024 {
+		t.Errorf("PeakMemoryBytes: got %d, want %d", s.PeakMemoryBytes, 256*1024*1024)
+	}
+	if s.CPUNanoseconds != 2_500_000_000 {
+		t.Errorf("CPUNanoseconds: got %d, want %d", s.CPUNanoseconds, 2_500_000_000)
+	}
+}

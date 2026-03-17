@@ -214,5 +214,7 @@ func stepToRecord(runID string, issueNumber int, stepName string, step rundata.S
 		Flags:           flags,
 		StartedAt:       startedAt,
 		FinishedAt:      finishedAt,
+		PeakMemoryBytes: step.PeakMemoryBytes,
+		CPUNanoseconds:  step.CPUNanoseconds,
 	}
 }
