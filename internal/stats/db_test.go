@@ -1,6 +1,8 @@
 package stats
 
 import (
+	"database/sql"
+	"errors"
 	"testing"
 )
 
@@ -102,7 +104,7 @@ func TestMigrate_ResourceColumnsExist(t *testing.T) {
 		`SELECT peak_memory_bytes, cpu_nanoseconds FROM step_results LIMIT 1`,
 	).Scan(&peakMem, &cpuNano)
 	// sql.ErrNoRows is fine — the table exists but is empty.
-	if err != nil && err.Error() != "sql: no rows in result set" {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("columns peak_memory_bytes/cpu_nanoseconds not selectable: %v", err)
 	}
 }

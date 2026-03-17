@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1292,23 +1293,10 @@ func TestStepResult_ResourceFieldsOmittedWhenZero(t *testing.T) {
 
 	// Zero int64 fields with omitempty must not appear in the JSON.
 	raw := string(data)
-	if contains(raw, "peak_memory_bytes") {
+	if strings.Contains(raw, "peak_memory_bytes") {
 		t.Errorf("peak_memory_bytes should be omitted when zero, but appears in JSON: %s", raw)
 	}
-	if contains(raw, "cpu_nanoseconds") {
+	if strings.Contains(raw, "cpu_nanoseconds") {
 		t.Errorf("cpu_nanoseconds should be omitted when zero, but appears in JSON: %s", raw)
 	}
-}
-
-// contains is a tiny helper to avoid importing strings just for this test.
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
-		func() bool {
-			for i := 0; i <= len(s)-len(sub); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-			return false
-		}())
 }
