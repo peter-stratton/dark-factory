@@ -24,6 +24,7 @@ type Report struct {
 	AvgCostPerSuccessUSD float64                `json:"avg_cost_per_success_usd"`
 	FailureReasons       map[string]int         `json:"failure_reasons"`
 	TimeoutRate          float64                `json:"timeout_rate"`
+	ResourceStats        *ResourceStats         `json:"resource_stats,omitempty"`
 }
 
 // RepoSummary holds per-repository outcome statistics.
@@ -71,6 +72,30 @@ type CostStats struct {
 	CostByStep     map[string]float64 `json:"cost_by_step"`
 }
 
+// StepResourceStats holds per-step resource usage aggregates.
+type StepResourceStats struct {
+	MaxMemoryBytes    int64 `json:"max_memory_bytes"`
+	AvgMemoryBytes    int64 `json:"avg_memory_bytes"`
+	TotalCPUNanoseconds int64 `json:"total_cpu_nanoseconds"`
+}
+
+// ResourceStats holds aggregate resource usage statistics across all issues.
+type ResourceStats struct {
+	MaxPeakMemoryBytes      int64                        `json:"max_peak_memory_bytes"`
+	AvgPeakMemoryBytes      int64                        `json:"avg_peak_memory_bytes"`
+	TotalCPUNanoseconds     int64                        `json:"total_cpu_nanoseconds"`
+	AvgCPUNanosecondsPerIssue int64                      `json:"avg_cpu_nanoseconds_per_issue"`
+	ResourceByStep          map[string]StepResourceStats `json:"resource_by_step"`
+}
+
+// stepResourceAcc accumulates resource usage data for a single named step.
+type stepResourceAcc struct {
+	maxMemory   int64
+	totalMemory int64
+	memCount    int
+	totalCPU    int64
+}
+
 // issueAcc holds mutable per-issue counters accumulated during Aggregate.
 type issueAcc struct {
 	flagCounts             map[string]int
@@ -86,6 +111,13 @@ type issueAcc struct {
 	totalSteps             int
 	totalTimeToMerge       float64
 	implementedCount       int
+	// resource fields
+	maxPeakMemory    int64
+	totalPeakMemory  int64
+	memNonZeroCount  int
+	totalCPU         int64
+	issueCount       int
+	resourceByStep   map[string]*stepResourceAcc
 }
 
 // add incorporates a single issue's data into the accumulator and the report.
@@ -167,6 +199,10 @@ func (a *issueAcc) add(report *Report, repo string, issue rundata.IssueDetail) {
 			a.implementedCount++
 		}
 	}
+
+	// Accumulate resource stats.
+	a.issueCount++
+	accumulateIssueResources(a, issue)
 }
 
 // accumulateRepoStat updates per-repository counters for a single issue outcome.
@@ -206,7 +242,10 @@ func Aggregate(runs []rundata.RunDetail) Report {
 	report.CostStats.CostByStep = make(map[string]float64)
 	report.DurationStats.DurationByStep = make(map[string]float64)
 
-	acc := issueAcc{flagCounts: make(map[string]int)}
+	acc := issueAcc{
+		flagCounts:     make(map[string]int),
+		resourceByStep: make(map[string]*stepResourceAcc),
+	}
 
 	for _, run := range runs {
 		for _, issue := range run.Issues {
@@ -269,6 +308,32 @@ func Aggregate(runs []rundata.RunDetail) Report {
 
 	// Build flag frequencies sorted by count descending, then code ascending for stability.
 	report.FlagFrequencies = buildFlagFrequencies(acc.flagCounts, report.IssueCount)
+
+	// Populate resource stats (omitted when no resource data was collected).
+	if acc.memNonZeroCount > 0 || acc.totalCPU > 0 {
+		rs := &ResourceStats{
+			MaxPeakMemoryBytes:  acc.maxPeakMemory,
+			TotalCPUNanoseconds: acc.totalCPU,
+			ResourceByStep:      make(map[string]StepResourceStats),
+		}
+		if acc.memNonZeroCount > 0 {
+			rs.AvgPeakMemoryBytes = acc.totalPeakMemory / int64(acc.memNonZeroCount)
+		}
+		if acc.issueCount > 0 {
+			rs.AvgCPUNanosecondsPerIssue = acc.totalCPU / int64(acc.issueCount)
+		}
+		for stepName, sa := range acc.resourceByStep {
+			srs := StepResourceStats{
+				MaxMemoryBytes:      sa.maxMemory,
+				TotalCPUNanoseconds: sa.totalCPU,
+			}
+			if sa.memCount > 0 {
+				srs.AvgMemoryBytes = sa.totalMemory / int64(sa.memCount)
+			}
+			rs.ResourceByStep[stepName] = srs
+		}
+		report.ResourceStats = rs
+	}
 
 	return report
 }
@@ -387,6 +452,53 @@ func categorizeFailureReason(failureReasons map[string]int, issue rundata.IssueD
 		// Fallback.
 		failureReasons["error"]++
 	}
+}
+
+// accumulateIssueResources records per-step resource usage for a single issue into acc.
+func accumulateIssueResources(acc *issueAcc, issue rundata.IssueDetail) {
+	accumulateStepResource(acc, "recon", issue.Recon.PeakMemoryBytes, issue.Recon.CPUNanoseconds)
+	accumulateStepResource(acc, "spec-generator", issue.SpecGenerator.PeakMemoryBytes, issue.SpecGenerator.CPUNanoseconds)
+	accumulateStepResource(acc, "implement", issue.Implement.PeakMemoryBytes, issue.Implement.CPUNanoseconds)
+	accumulateStepResource(acc, "quality-review", issue.QualityReview.PeakMemoryBytes, issue.QualityReview.CPUNanoseconds)
+	accumulateStepResource(acc, "functional-review", issue.FunctionalReview.PeakMemoryBytes, issue.FunctionalReview.CPUNanoseconds)
+	for _, retry := range issue.Retries {
+		accumulateStepResource(acc, "retries", retry.Retry.PeakMemoryBytes, retry.Retry.CPUNanoseconds)
+		accumulateStepResource(acc, "retries", retry.QualityReview.PeakMemoryBytes, retry.QualityReview.CPUNanoseconds)
+		accumulateStepResource(acc, "retries", retry.FunctionalReview.PeakMemoryBytes, retry.FunctionalReview.CPUNanoseconds)
+	}
+}
+
+// accumulateStepResource adds memory and CPU data for a named step into acc.
+// Zero memory values are ignored for average calculation; zero CPU is still counted for totals.
+func accumulateStepResource(acc *issueAcc, step string, memBytes, cpuNanos int64) {
+	if memBytes == 0 && cpuNanos == 0 {
+		return
+	}
+	// Global max peak memory.
+	if memBytes > acc.maxPeakMemory {
+		acc.maxPeakMemory = memBytes
+	}
+	// Global average (only count non-zero samples).
+	if memBytes > 0 {
+		acc.totalPeakMemory += memBytes
+		acc.memNonZeroCount++
+	}
+	acc.totalCPU += cpuNanos
+
+	// Per-step accumulation.
+	sa := acc.resourceByStep[step]
+	if sa == nil {
+		sa = &stepResourceAcc{}
+		acc.resourceByStep[step] = sa
+	}
+	if memBytes > sa.maxMemory {
+		sa.maxMemory = memBytes
+	}
+	if memBytes > 0 {
+		sa.totalMemory += memBytes
+		sa.memCount++
+	}
+	sa.totalCPU += cpuNanos
 }
 
 // issueElapsedSeconds returns the wall-clock duration of an issue in seconds

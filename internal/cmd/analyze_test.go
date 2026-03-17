@@ -904,3 +904,160 @@ func TestAnalyzeDB_DurationFromSteps(t *testing.T) {
 		t.Errorf("DurationStats.AvgReviewSeconds = %v, want 120.0", result.Report.DurationStats.AvgReviewSeconds)
 	}
 }
+
+// TestAnalyzeResourceUsage_NoData: Resource Usage section is absent when no resource data exists.
+func TestAnalyzeResourceUsage_NoData(t *testing.T) {
+	base := t.TempDir()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	meta := rundata.RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 1",
+		IssueNumbers: []int{1},
+		StartedAt:    ts,
+	}
+	writeRunDir(t, base, "owner", "repo", meta, []rundata.Outcome{
+		{IssueNumber: 1, Status: "implemented"},
+	})
+
+	out, err := analyzeWithReader(t, base, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(out, "Resource Usage") {
+		t.Errorf("output should not contain 'Resource Usage' when no resource data exists\nfull output:\n%s", out)
+	}
+}
+
+// TestAnalyzeResourceUsage_JSONNoData: --json omits resource_stats when no resource data.
+func TestAnalyzeResourceUsage_JSONNoData(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	if err := stats.WriteRun(ctx, db, stats.RunRecord{
+		ID: "run-1", Repo: "org/repo", Milestone: "m1", StartedAt: ts,
+	}); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	if err := stats.WriteIssueOutcome(ctx, db, stats.IssueOutcomeRecord{
+		RunID: "run-1", IssueNumber: 1, Status: "implemented",
+	}); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+	// Step with no resource data.
+	if err := stats.WriteStepResult(ctx, db, stats.StepResultRecord{
+		RunID: "run-1", IssueNumber: 1, StepName: "implement", CostUSD: 0.10,
+	}); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	out, err := analyzeWithDB(t, db, "", "", "", "", true)
+	if err != nil {
+		t.Fatalf("analyzeWithDB: %v", err)
+	}
+
+	var result struct {
+		Report analysis.Report `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput:\n%s", err, out)
+	}
+
+	if result.Report.ResourceStats != nil {
+		t.Errorf("ResourceStats = %+v, want nil when no resource data", result.Report.ResourceStats)
+	}
+}
+
+// TestAnalyzeResourceUsage_WithData: Resource Usage section appears in CLI output with resource data.
+func TestAnalyzeResourceUsage_WithData(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	if err := stats.WriteRun(ctx, db, stats.RunRecord{
+		ID: "run-1", Repo: "org/repo", Milestone: "m1", StartedAt: ts,
+	}); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	if err := stats.WriteIssueOutcome(ctx, db, stats.IssueOutcomeRecord{
+		RunID: "run-1", IssueNumber: 1, Status: "implemented",
+	}); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+	// Step with resource data: 200 MB, 2 seconds CPU.
+	if err := stats.WriteStepResult(ctx, db, stats.StepResultRecord{
+		RunID: "run-1", IssueNumber: 1, StepName: "implement",
+		PeakMemoryBytes: 200 << 20, CPUNanoseconds: 2_000_000_000,
+	}); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	out, err := analyzeWithDB(t, db, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("analyzeWithDB: %v", err)
+	}
+
+	if !strings.Contains(out, "Resource Usage") {
+		t.Errorf("output missing 'Resource Usage' section\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "200.0 MB") {
+		t.Errorf("output missing '200.0 MB'\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "2.00s") {
+		t.Errorf("output missing CPU time '2.00s'\nfull output:\n%s", out)
+	}
+}
+
+// TestAnalyzeResourceUsage_JSONWithData: --json includes resource_stats when resource data exists.
+func TestAnalyzeResourceUsage_JSONWithData(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	if err := stats.WriteRun(ctx, db, stats.RunRecord{
+		ID: "run-1", Repo: "org/repo", Milestone: "m1", StartedAt: ts,
+	}); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+	if err := stats.WriteIssueOutcome(ctx, db, stats.IssueOutcomeRecord{
+		RunID: "run-1", IssueNumber: 1, Status: "implemented",
+	}); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+	if err := stats.WriteStepResult(ctx, db, stats.StepResultRecord{
+		RunID: "run-1", IssueNumber: 1, StepName: "implement",
+		PeakMemoryBytes: 300 << 20, CPUNanoseconds: 3_000_000_000,
+	}); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	out, err := analyzeWithDB(t, db, "", "", "", "", true)
+	if err != nil {
+		t.Fatalf("analyzeWithDB: %v", err)
+	}
+
+	var result struct {
+		Report analysis.Report `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput:\n%s", err, out)
+	}
+
+	if result.Report.ResourceStats == nil {
+		t.Fatal("ResourceStats = nil, want non-nil")
+	}
+	rs := result.Report.ResourceStats
+	want300MB := int64(300 << 20)
+	if rs.MaxPeakMemoryBytes != want300MB {
+		t.Errorf("MaxPeakMemoryBytes = %d, want %d", rs.MaxPeakMemoryBytes, want300MB)
+	}
+	wantCPU := int64(3_000_000_000)
+	if rs.TotalCPUNanoseconds != wantCPU {
+		t.Errorf("TotalCPUNanoseconds = %d, want %d", rs.TotalCPUNanoseconds, wantCPU)
+	}
+	if _, ok := rs.ResourceByStep["implement"]; !ok {
+		t.Errorf("ResourceByStep missing 'implement' step; got %v", rs.ResourceByStep)
+	}
+}
