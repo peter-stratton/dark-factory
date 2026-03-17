@@ -55,6 +55,11 @@ type SprintReport struct {
 	AvgCostPerSuccessUSD float64
 	WastedCostUSD        float64
 
+	// ResourceStats fields. Zero values mean no resource data was collected.
+	PeakMemoryBytes           int64 // max single-step peak across all steps in window
+	TotalCPUNanoseconds       int64 // sum of CPU nanoseconds across all steps
+	AvgCPUNanosecondsPerIssue int64 // TotalCPUNanoseconds / IssuesProcessed
+
 	FailureReasons  map[string]int
 	NotableFailures []NotableFailure
 
@@ -97,6 +102,12 @@ func Generate(runs []stats.RunRecord, outcomes []stats.IssueOutcomeRecord, steps
 	rpt.AvgCostPerSuccessUSD = agg.AvgCostPerSuccessUSD
 	rpt.WastedCostUSD = agg.WastedCostUSD
 	rpt.FailureReasons = agg.FailureReasons
+
+	if agg.ResourceStats != nil {
+		rpt.PeakMemoryBytes = agg.ResourceStats.MaxPeakMemoryBytes
+		rpt.TotalCPUNanoseconds = agg.ResourceStats.TotalCPUNanoseconds
+		rpt.AvgCPUNanosecondsPerIssue = agg.ResourceStats.AvgCPUNanosecondsPerIssue
+	}
 
 	rpt.NotableFailures = buildNotableFailures(runDetails)
 	rpt.ShippedIssues = buildShippedIssues(runDetails)
@@ -181,6 +192,19 @@ func computeIssueCost(issue rundata.IssueDetail) float64 {
 	return total
 }
 
+// renderResourceSection writes the Resource Usage block to sb when resource data is present.
+func renderResourceSection(sb *strings.Builder, rpt SprintReport) {
+	if rpt.PeakMemoryBytes == 0 && rpt.TotalCPUNanoseconds == 0 {
+		return
+	}
+	sb.WriteString("\nResource Usage\n")
+	tw := tabwriter.NewWriter(sb, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Peak memory\t%.1f MB\n", float64(rpt.PeakMemoryBytes)/1048576)
+	fmt.Fprintf(tw, "  Total CPU\t%.2f s\n", float64(rpt.TotalCPUNanoseconds)/1e9)
+	fmt.Fprintf(tw, "  Avg CPU per issue\t%.2f s\n", float64(rpt.AvgCPUNanosecondsPerIssue)/1e9)
+	_ = tw.Flush()
+}
+
 // RenderTerminal renders rpt as a tabwriter-aligned table for stdout.
 func RenderTerminal(rpt SprintReport) string {
 	var sb strings.Builder
@@ -220,6 +244,9 @@ func RenderTerminal(rpt SprintReport) string {
 	fmt.Fprintf(tw, "  Avg per success\t$%.2f\n", rpt.AvgCostPerSuccessUSD)
 	fmt.Fprintf(tw, "  Wasted\t$%.2f\n", rpt.WastedCostUSD)
 	_ = tw.Flush()
+
+	// Resource usage (omitted when no resource data)
+	renderResourceSection(&sb, rpt)
 
 	// Failure reasons
 	if len(rpt.FailureReasons) > 0 {
@@ -312,6 +339,14 @@ func RenderMarkdown(rpt SprintReport) string {
 	fmt.Fprintf(&sb, "- **Total:** $%.2f\n", rpt.TotalCostUSD)
 	fmt.Fprintf(&sb, "- **Avg per success:** $%.2f\n", rpt.AvgCostPerSuccessUSD)
 	fmt.Fprintf(&sb, "- **Wasted:** $%.2f\n", rpt.WastedCostUSD)
+
+	// Resource usage (omitted when no resource data)
+	if rpt.PeakMemoryBytes > 0 || rpt.TotalCPUNanoseconds > 0 {
+		sb.WriteString("\n## Resource Usage\n\n")
+		fmt.Fprintf(&sb, "- **Peak memory:** %.1f MB\n", float64(rpt.PeakMemoryBytes)/1048576)
+		fmt.Fprintf(&sb, "- **Total CPU:** %.2f s\n", float64(rpt.TotalCPUNanoseconds)/1e9)
+		fmt.Fprintf(&sb, "- **Avg CPU per issue:** %.2f s\n", float64(rpt.AvgCPUNanosecondsPerIssue)/1e9)
+	}
 
 	if len(rpt.FailureReasons) > 0 {
 		sb.WriteString("\n## Failure Reasons\n\n")
@@ -428,6 +463,8 @@ func RenderHTML(rpt SprintReport) string {
 	writeHTMLRow(&sb, "Wasted", fmt.Sprintf("$%.2f", rpt.WastedCostUSD))
 	sb.WriteString("</table>\n")
 
+	renderHTMLResourceUsage(&sb, rpt)
+
 	if len(rpt.FailureReasons) > 0 {
 		sb.WriteString(`<h2 style="color:#333;border-bottom:1px solid #ddd">Failure Reasons</h2>
 <table style="border-collapse:collapse;width:100%">
@@ -445,6 +482,21 @@ func RenderHTML(rpt SprintReport) string {
 
 	sb.WriteString("</body>\n</html>\n")
 	return sb.String()
+}
+
+// renderHTMLResourceUsage writes the resource usage table section.
+// The section is omitted when no resource data exists.
+func renderHTMLResourceUsage(sb *strings.Builder, rpt SprintReport) {
+	if rpt.PeakMemoryBytes == 0 && rpt.TotalCPUNanoseconds == 0 {
+		return
+	}
+	sb.WriteString(`<h2 style="color:#333;border-bottom:1px solid #ddd">Resource Usage</h2>
+<table style="border-collapse:collapse;width:100%">
+`)
+	writeHTMLRow(sb, "Peak memory", fmt.Sprintf("%.1f MB", float64(rpt.PeakMemoryBytes)/1048576))
+	writeHTMLRow(sb, "Total CPU", fmt.Sprintf("%.2f s", float64(rpt.TotalCPUNanoseconds)/1e9))
+	writeHTMLRow(sb, "Avg CPU per issue", fmt.Sprintf("%.2f s", float64(rpt.AvgCPUNanosecondsPerIssue)/1e9))
+	sb.WriteString("</table>\n")
 }
 
 // renderHTMLNotableFailures writes the notable failures table section.
