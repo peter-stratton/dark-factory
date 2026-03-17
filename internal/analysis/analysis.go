@@ -462,6 +462,9 @@ func categorizeFailureReason(failureReasons map[string]int, issue rundata.IssueD
 }
 
 // accumulateIssueResources records per-step resource usage for a single issue into acc.
+// It also computes the per-issue peak memory (max across all steps) and commits it to the
+// global totalPeakMemory/memNonZeroCount accumulators once, so that AvgPeakMemoryBytes
+// reflects the average of per-issue peaks rather than the average of individual step readings.
 func accumulateIssueResources(acc *issueAcc, issue rundata.IssueDetail) {
 	accumulateStepResource(acc, "recon", issue.Recon.PeakMemoryBytes, issue.Recon.CPUNanoseconds)
 	accumulateStepResource(acc, "spec-generator", issue.SpecGenerator.PeakMemoryBytes, issue.SpecGenerator.CPUNanoseconds)
@@ -473,22 +476,53 @@ func accumulateIssueResources(acc *issueAcc, issue rundata.IssueDetail) {
 		accumulateStepResource(acc, "retries", retry.QualityReview.PeakMemoryBytes, retry.QualityReview.CPUNanoseconds)
 		accumulateStepResource(acc, "retries", retry.FunctionalReview.PeakMemoryBytes, retry.FunctionalReview.CPUNanoseconds)
 	}
+
+	// Compute the per-issue peak memory (max across all steps for this issue)
+	// and commit it once to the global average accumulators.
+	issuePeak := issuePeakMemory(issue)
+	if issuePeak > 0 {
+		acc.totalPeakMemory += issuePeak
+		acc.memNonZeroCount++
+	}
+}
+
+// issuePeakMemory returns the maximum PeakMemoryBytes across all steps of an issue.
+func issuePeakMemory(issue rundata.IssueDetail) int64 {
+	peak := max64(max64(max64(max64(
+		issue.Recon.PeakMemoryBytes,
+		issue.SpecGenerator.PeakMemoryBytes),
+		issue.Implement.PeakMemoryBytes),
+		issue.QualityReview.PeakMemoryBytes),
+		issue.FunctionalReview.PeakMemoryBytes)
+	for _, retry := range issue.Retries {
+		peak = max64(max64(max64(peak,
+			retry.Retry.PeakMemoryBytes),
+			retry.QualityReview.PeakMemoryBytes),
+			retry.FunctionalReview.PeakMemoryBytes)
+	}
+	return peak
+}
+
+// max64 returns the larger of two int64 values.
+func max64(a, b int64) int64 {
+	if b > a {
+		return b
+	}
+	return a
 }
 
 // accumulateStepResource adds memory and CPU data for a named step into acc.
 // Zero memory values are ignored for average calculation; zero CPU is still counted for totals.
+// Note: global totalPeakMemory/memNonZeroCount are NOT updated here — they are committed
+// per-issue by accumulateIssueResources so that AvgPeakMemoryBytes is the average of
+// per-issue peak memory values, not the average of individual step readings.
 func accumulateStepResource(acc *issueAcc, step string, memBytes, cpuNanos int64) {
 	if memBytes == 0 && cpuNanos == 0 {
 		return
 	}
-	// Global max peak memory.
+	// Global max peak memory (max of all step readings equals max of all issue peaks).
 	if memBytes > acc.maxPeakMemory {
 		acc.maxPeakMemory = memBytes
-	}
-	// Global average (only count non-zero samples).
-	if memBytes > 0 {
-		acc.totalPeakMemory += memBytes
-		acc.memNonZeroCount++
 	}
 	acc.totalCPU += cpuNanos
 

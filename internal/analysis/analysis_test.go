@@ -1431,10 +1431,10 @@ func TestAggregateResourceStats_WithData(t *testing.T) {
 		t.Errorf("MaxPeakMemoryBytes = %d, want %d", rs.MaxPeakMemoryBytes, want300MB)
 	}
 
-	// AvgPeakMemoryBytes: (200MB + 100MB + 300MB) / 3 = 200MB
-	want200MB := int64(200 << 20)
-	if rs.AvgPeakMemoryBytes != want200MB {
-		t.Errorf("AvgPeakMemoryBytes = %d, want %d", rs.AvgPeakMemoryBytes, want200MB)
+	// AvgPeakMemoryBytes: avg of per-issue peaks = (200MB + 300MB) / 2 = 250MB
+	want250MB := int64(250 << 20)
+	if rs.AvgPeakMemoryBytes != want250MB {
+		t.Errorf("AvgPeakMemoryBytes = %d, want %d", rs.AvgPeakMemoryBytes, want250MB)
 	}
 
 	// TotalCPUNanoseconds: 2s + 1s + 3s = 6s
@@ -1454,7 +1454,7 @@ func TestAggregateResourceStats_WithData(t *testing.T) {
 	if !ok {
 		t.Fatal("ResourceByStep missing 'implement'")
 	}
-	want250MB := int64(250 << 20)
+	// want250MB already declared above for AvgPeakMemoryBytes check
 	if implStep.MaxMemoryBytes != want300MB {
 		t.Errorf("implement MaxMemoryBytes = %d, want %d", implStep.MaxMemoryBytes, want300MB)
 	}
