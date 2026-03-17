@@ -32,12 +32,13 @@ type RunResult struct {
 	CPUNanoseconds  int64
 }
 
-// containerInspect is the minimal shape of docker inspect JSON used to
-// extract resource usage stats after a container stops.
-type containerInspect struct {
+// containerStats is the minimal shape of the Docker stats API JSON used to
+// extract resource usage stats after a container stops. Field names match
+// the snake_case schema returned by GET /containers/{id}/stats?stream=false.
+type containerStats struct {
 	MemoryStats struct {
-		MaxUsage int64 `json:"MaxUsage"`
-	} `json:"MemoryStats"`
+		MaxUsage int64 `json:"max_usage"`
+	} `json:"memory_stats"`
 	CpuStats struct {
 		CpuUsage struct {
 			TotalUsage int64 `json:"total_usage"`
@@ -142,17 +143,20 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	result.Stdout = string(stdoutBytes)
 	result.Stderr = string(stderrBytes)
 
-	// 5. docker inspect (best-effort resource stats — must run before deferred rm -f)
-	inspectOut, inspectErr := CommandRunner("docker", "inspect", name)
-	if inspectErr != nil {
-		logger.Warn("docker inspect failed", "name", name, "error", inspectErr)
+	// 5. Docker stats API (best-effort resource stats — must run before deferred rm -f).
+	// Uses the Docker socket directly via curl because docker inspect does not expose
+	// runtime memory/CPU statistics; those come from GET /containers/{id}/stats?stream=false.
+	statsURL := "http://localhost/containers/" + name + "/stats?stream=false"
+	statsOut, statsErr := CommandRunner("curl", "--silent", "--unix-socket", "/var/run/docker.sock", statsURL)
+	if statsErr != nil {
+		logger.Warn("container stats api failed", "name", name, "error", statsErr)
 	} else {
-		var inspects []containerInspect
-		if jsonErr := json.Unmarshal(inspectOut, &inspects); jsonErr != nil || len(inspects) == 0 {
-			logger.Warn("failed to parse docker inspect output", "name", name, "error", jsonErr)
+		var stats containerStats
+		if jsonErr := json.Unmarshal(statsOut, &stats); jsonErr != nil {
+			logger.Warn("failed to parse container stats", "name", name, "error", jsonErr)
 		} else {
-			result.PeakMemoryBytes = inspects[0].MemoryStats.MaxUsage
-			result.CPUNanoseconds = inspects[0].CpuStats.CpuUsage.TotalUsage
+			result.PeakMemoryBytes = stats.MemoryStats.MaxUsage
+			result.CPUNanoseconds = stats.CpuStats.CpuUsage.TotalUsage
 		}
 	}
 

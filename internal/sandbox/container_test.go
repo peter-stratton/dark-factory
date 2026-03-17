@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const validInspectJSON = `[{"MemoryStats":{"MaxUsage":104857600},"cpu_stats":{"cpu_usage":{"total_usage":500000000}}}]`
+const validStatsJSON = `{"memory_stats":{"max_usage":104857600},"cpu_stats":{"cpu_usage":{"total_usage":500000000}}}`
 
 // saveRunners saves the current CommandRunner, SplitRunner, and
 // CommandRunnerWithContext values and returns a restore function.
@@ -315,8 +315,8 @@ func TestRunContainerInspectParsed(t *testing.T) {
 		if len(args) > 0 && args[0] == "create" {
 			return []byte("abc123\n"), nil
 		}
-		if len(args) > 0 && args[0] == "inspect" {
-			return []byte(validInspectJSON), nil
+		if name == "curl" {
+			return []byte(validStatsJSON), nil
 		}
 		return []byte{}, nil
 	}
@@ -349,7 +349,7 @@ func TestRunContainerInspectParseFailure(t *testing.T) {
 		if len(args) > 0 && args[0] == "create" {
 			return []byte("abc123\n"), nil
 		}
-		if len(args) > 0 && args[0] == "inspect" {
+		if name == "curl" {
 			return []byte("not valid json {{{"), nil
 		}
 		return []byte{}, nil
@@ -383,8 +383,8 @@ func TestRunContainerInspectCommandFailure(t *testing.T) {
 		if len(args) > 0 && args[0] == "create" {
 			return []byte("abc123\n"), nil
 		}
-		if len(args) > 0 && args[0] == "inspect" {
-			return nil, fmt.Errorf("docker inspect failed")
+		if name == "curl" {
+			return nil, fmt.Errorf("stats api failed")
 		}
 		return []byte{}, nil
 	}
@@ -417,8 +417,8 @@ func TestRunContainerInspectAfterTimeout(t *testing.T) {
 		if len(args) > 0 && args[0] == "create" {
 			return []byte("abc123\n"), nil
 		}
-		if len(args) > 0 && args[0] == "inspect" {
-			return []byte(validInspectJSON), nil
+		if name == "curl" {
+			return []byte(validStatsJSON), nil
 		}
 		return []byte{}, nil
 	}
