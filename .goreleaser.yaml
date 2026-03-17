@@ -9,6 +9,9 @@ builds:
       - -s -w
       - -X github.com/phs/dark-factory/internal/cmd.Version={{.Version}}
       - -X github.com/phs/dark-factory/internal/cmd.BuildTime={{.Date}}
+    hooks:
+      post:
+        - cmd: sh -c 'if [ "{{ .Os }}" = "darwin" ]; then codesign --sign "${APPLE_DEVELOPER_ID_IDENTITY}" --options runtime --timestamp "{{ .Path }}"; fi'
     goos:
       - darwin
       - linux
