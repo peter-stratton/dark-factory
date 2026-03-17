@@ -66,6 +66,41 @@ func TestRun_AllPass(t *testing.T) {
 	}
 }
 
+func TestRun_AllPass_OAuthToken(t *testing.T) {
+	orig := CommandRunner
+	origEnv := EnvLookup
+	defer func() {
+		CommandRunner = orig
+		EnvLookup = origEnv
+	}()
+
+	CommandRunner = stubRunner(
+		"docker info",
+		"gh --version",
+		"gh auth",
+		"go version",
+		"python3 --version",
+	)
+	EnvLookup = func(key string) string {
+		if key == "CLAUDE_CODE_OAUTH_TOKEN" {
+			return "oauth-test"
+		}
+		return ""
+	}
+
+	var buf bytes.Buffer
+	checks := Checks("go", "")
+	passed := Run(&buf, checks)
+
+	if !passed {
+		t.Errorf("expected all checks to pass with OAuth token, output:\n%s", buf.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[PASS] Anthropic auth token set") {
+		t.Errorf("expected auth token PASS in output:\n%s", out)
+	}
+}
+
 func TestRun_SomeFail(t *testing.T) {
 	orig := CommandRunner
 	origEnv := EnvLookup
@@ -93,8 +128,8 @@ func TestRun_SomeFail(t *testing.T) {
 	if !strings.Contains(out, "[FAIL] Docker daemon running") {
 		t.Errorf("expected Docker failure in output:\n%s", out)
 	}
-	if !strings.Contains(out, "[FAIL] ANTHROPIC_API_KEY set") {
-		t.Errorf("expected API key failure in output:\n%s", out)
+	if !strings.Contains(out, "[FAIL] Anthropic auth token set") {
+		t.Errorf("expected auth token failure in output:\n%s", out)
 	}
 	if !strings.Contains(out, "[PASS] gh CLI installed") {
 		t.Errorf("expected gh CLI pass in output:\n%s", out)

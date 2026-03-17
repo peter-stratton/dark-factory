@@ -80,10 +80,10 @@ func Checks(runtime, lintCommand string) []*Check {
 			},
 		},
 		{
-			Name: "ANTHROPIC_API_KEY set",
-			Fix:  "Export ANTHROPIC_API_KEY in your shell profile or pass it in the environment.",
+			Name: "Anthropic auth token set",
+			Fix:  "Export ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in your shell profile or pass it in the environment.",
 			run: func() bool {
-				return EnvLookup("ANTHROPIC_API_KEY") != ""
+				return EnvLookup("ANTHROPIC_API_KEY") != "" || EnvLookup("CLAUDE_CODE_OAUTH_TOKEN") != ""
 			},
 		},
 	}
