@@ -12,6 +12,7 @@ builds:
     hooks:
       post:
         - cmd: sh -c 'if [ "{{ .Os }}" = "darwin" ]; then codesign --sign "${APPLE_DEVELOPER_ID_IDENTITY}" --options runtime --timestamp "{{ .Path }}"; fi'
+        - cmd: sh -c 'if [ "{{ .Os }}" = "darwin" ]; then ditto -c -k "{{ .Path }}" "{{ .Path }}.zip" && xcrun notarytool submit "{{ .Path }}.zip" --apple-id "${APPLE_ID}" --password "${APPLE_ID_PASSWORD}" --team-id "${APPLE_TEAM_ID}" --wait && rm "{{ .Path }}.zip"; fi'
     goos:
       - darwin
       - linux
