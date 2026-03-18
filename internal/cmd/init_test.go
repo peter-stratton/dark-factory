@@ -421,7 +421,7 @@ func TestInitGoProjectWritesActiveCommands(t *testing.T) {
 		"build_command: \"go build ./...\"",
 		"test_command: \"go test ./...\"",
 		"format_command: \"gofmt -l -d .\"",
-		"lint_command: \"golangci-lint run ./...\"",
+		"lint_command: \"go vet ./...\"",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("godark.yaml missing active command line: %s", want)
