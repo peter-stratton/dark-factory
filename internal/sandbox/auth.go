@@ -10,6 +10,16 @@ import (
 	"github.com/phs/dark-factory/internal/ghapp"
 )
 
+// authManagedVars are controlled exclusively by auth preference logic.
+// required_env must never add or override any of these — even when one
+// was intentionally excluded (e.g. ANTHROPIC_API_KEY excluded under
+// oauth preference) — to prevent auth_preference from being bypassed.
+var authManagedVars = map[string]struct{}{
+	"ANTHROPIC_API_KEY":       {},
+	"CLAUDE_CODE_OAUTH_TOKEN": {},
+	"GH_TOKEN":                {},
+}
+
 // CollectAuthEnv reads authentication tokens from the host environment
 // and returns a map suitable for passing as container environment variables.
 // authPreference controls which token is preferred when both are set:
@@ -44,16 +54,6 @@ func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []st
 
 	if err := collectGitHubToken(env, logger); err != nil {
 		return nil, err
-	}
-
-	// authManagedVars are controlled exclusively by auth preference logic.
-	// required_env must never add or override any of these — even when one
-	// was intentionally excluded (e.g. ANTHROPIC_API_KEY excluded under
-	// oauth preference) — to prevent auth_preference from being bypassed.
-	authManagedVars := map[string]struct{}{
-		"ANTHROPIC_API_KEY":       {},
-		"CLAUDE_CODE_OAUTH_TOKEN": {},
-		"GH_TOKEN":                {},
 	}
 
 	// Forward required env vars from the host. Values are not logged to avoid

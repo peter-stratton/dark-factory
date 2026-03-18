@@ -603,12 +603,16 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 	// Start compose services if configured, before any agent execution.
 	if cfg.DockerCompose != nil {
-		if err := sandbox.ComposeUp(ctx, dc, logger); err != nil {
+		cleanupEnvFile, err := sandbox.ComposeUp(ctx, dc, cfg.RequiredEnv, logger)
+		if err != nil {
 			return fmt.Errorf("starting compose services: %w", err)
 		}
 		// Tear down compose services when processIssues returns, regardless of
 		// how it exits (error, context cancellation, or normal completion).
 		// defer arguments are evaluated immediately, so dc is captured by value.
+		// cleanupEnvFile runs after ComposeDown (LIFO order) to remove the
+		// temporary .env file only after compose has finished with it.
+		defer cleanupEnvFile()
 		defer sandbox.ComposeDown(dc, logger)
 	}
 
