@@ -33,8 +33,8 @@ Dark Factory is licensed under the [Elastic License 2.0](LICENSE).
 **Example:** The Makefile's `build` target passes both values:
 
 ```makefile
-go build -ldflags "-X github.com/phs/dark-factory/internal/cmd.Version=$$(git describe --tags --always --dirty) \
-  -X github.com/phs/dark-factory/internal/cmd.BuildTime=$$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+go build -ldflags "-X github.com/peter-stratton/dark-factory/internal/cmd.Version=$$(git describe --tags --always --dirty) \
+  -X github.com/peter-stratton/dark-factory/internal/cmd.BuildTime=$$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
   -o bin/godark ./cmd/godark
 ```
 
@@ -75,8 +75,8 @@ builds:
       - CGO_ENABLED=0
     ldflags:
       - -s -w
-      - -X github.com/phs/dark-factory/internal/cmd.Version={{.Version}}
-      - -X github.com/phs/dark-factory/internal/cmd.BuildTime={{.Date}}
+      - -X github.com/peter-stratton/dark-factory/internal/cmd.Version={{.Version}}
+      - -X github.com/peter-stratton/dark-factory/internal/cmd.BuildTime={{.Date}}
     goos:
       - darwin
       - linux

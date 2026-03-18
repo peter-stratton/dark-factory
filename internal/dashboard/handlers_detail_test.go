@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // writeIssueFiles creates the per-issue data files under the run directory.

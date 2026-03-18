@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/github"
 )
 
 const validSpec = `# Scenario: Feature X

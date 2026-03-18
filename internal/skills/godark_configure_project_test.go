@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/skills"
+	"github.com/peter-stratton/dark-factory/internal/skills"
 )
 
 func TestConfigureProjectSkillEmbedded(t *testing.T) {

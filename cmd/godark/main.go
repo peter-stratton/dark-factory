@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/phs/dark-factory/internal/cmd"
+	"github.com/peter-stratton/dark-factory/internal/cmd"
 )
 
 func main() {

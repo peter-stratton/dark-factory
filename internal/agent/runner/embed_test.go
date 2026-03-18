@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/agent/runner"
+	"github.com/peter-stratton/dark-factory/internal/agent/runner"
 )
 
 func TestAgentRunnerPyIsEmbedded(t *testing.T) {

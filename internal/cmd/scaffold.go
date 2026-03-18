@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/phs/dark-factory/prompts"
+	"github.com/peter-stratton/dark-factory/prompts"
 	"github.com/spf13/cobra"
 )
 

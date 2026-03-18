@@ -1,8 +1,8 @@
 package agent
 
 import (
-	"github.com/phs/dark-factory/internal/quality"
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/quality"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // ResultToStep converts an agent.Result to a rundata.StepResult, computing

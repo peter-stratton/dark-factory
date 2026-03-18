@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/phs/dark-factory/internal/progress"
+	"github.com/peter-stratton/dark-factory/internal/progress"
 )
 
 // mockSender records every message passed to Send so tests can assert on them.

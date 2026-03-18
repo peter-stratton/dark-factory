@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/dashboard"
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/dashboard"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 	"log/slog"
 )
 

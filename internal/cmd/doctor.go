@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/detect"
-	"github.com/phs/dark-factory/internal/doctor"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/detect"
+	"github.com/peter-stratton/dark-factory/internal/doctor"
 	"github.com/spf13/cobra"
 )
 

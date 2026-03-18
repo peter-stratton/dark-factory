@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/phs/dark-factory/internal/lock"
+	"github.com/peter-stratton/dark-factory/internal/lock"
 	"github.com/spf13/cobra"
 )
 

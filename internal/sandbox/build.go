@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/phs/dark-factory/internal/agent/runner"
-	darkexec "github.com/phs/dark-factory/internal/exec"
+	"github.com/peter-stratton/dark-factory/internal/agent/runner"
+	darkexec "github.com/peter-stratton/dark-factory/internal/exec"
 )
 
 // CommandRunner executes a command and returns its combined output.

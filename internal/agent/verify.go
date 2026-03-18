@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/rundata"
-	"github.com/phs/dark-factory/internal/sandbox"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 // sandboxRunContainer is a testability seam for sandbox.RunContainer.

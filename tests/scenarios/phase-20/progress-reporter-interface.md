@@ -45,7 +45,7 @@ Call `PunchlistText("## Punchlist\n- item 1\n")`.
 
 ### Package has no internal imports
 Inspect the import statements in `internal/progress/reporter.go` and `internal/progress/text.go`.
-- No imports from `github.com/phs/dark-factory/internal/` packages
+- No imports from `github.com/peter-stratton/dark-factory/internal/` packages
 - Only standard library imports are used
 
 ### Architecture vet passes with new package

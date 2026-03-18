@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // writeDebugLog writes a debug.log file with the given JSON lines into the run directory.

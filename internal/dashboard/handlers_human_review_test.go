@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // TestServer_RunDetail_AwaitingReviewSection verifies that a run with

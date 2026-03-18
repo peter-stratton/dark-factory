@@ -3,7 +3,7 @@ package dashboard
 import (
 	"testing"
 
-	"github.com/phs/dark-factory/internal/analysis"
+	"github.com/peter-stratton/dark-factory/internal/analysis"
 )
 
 func TestBuildOverviewMetrics(t *testing.T) {

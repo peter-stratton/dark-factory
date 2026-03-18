@@ -71,7 +71,7 @@ ldflags.
 ### Key constraints
 
 - Modify `Makefile`:
-  - Add `-X github.com/phs/dark-factory/internal/cmd.Version=$$(git describe --tags --always --dirty)`
+  - Add `-X github.com/peter-stratton/dark-factory/internal/cmd.Version=$$(git describe --tags --always --dirty)`
     to the existing `-ldflags` string in the `build` target
 - No changes to `internal/cmd/version.go` — the `Version` variable and
   `BuildTime` variable are already defined with correct defaults
@@ -115,7 +115,7 @@ exists (created manually before this issue runs).
     later if needed)
   - Binary name: `godark`
   - Main: `./cmd/godark`
-  - Ldflags: `-s -w -X github.com/phs/dark-factory/internal/cmd.Version={{.Version}} -X github.com/phs/dark-factory/internal/cmd.BuildTime={{.Date}}`
+  - Ldflags: `-s -w -X github.com/peter-stratton/dark-factory/internal/cmd.Version={{.Version}} -X github.com/peter-stratton/dark-factory/internal/cmd.BuildTime={{.Date}}`
 - Archives: `tar.gz` format
 - Changelog: sort ascending, exclude `docs:` and `test:` prefixed commits
 - Brews section:

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/phs/dark-factory/internal/report"
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/report"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 	"github.com/spf13/cobra"
 )
 

@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/phs/dark-factory/internal/dashboard"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/rundata"
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/dashboard"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 	"github.com/spf13/cobra"
 )
 

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/rundata"
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
 func TestStepToRecord_Basic(t *testing.T) {

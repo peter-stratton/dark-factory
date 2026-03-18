@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/config"
 )
 
 // stubNotifier records every event it receives and optionally returns an error.

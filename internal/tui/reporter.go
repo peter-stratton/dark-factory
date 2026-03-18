@@ -2,7 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/phs/dark-factory/internal/progress"
+	"github.com/peter-stratton/dark-factory/internal/progress"
 )
 
 // sender is a private interface over *tea.Program to allow unit testing without

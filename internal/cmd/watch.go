@@ -10,14 +10,14 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/phs/dark-factory/internal/agent"
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/label"
-	"github.com/phs/dark-factory/internal/logging"
-	"github.com/phs/dark-factory/internal/sandbox"
-	"github.com/phs/dark-factory/internal/tui"
-	"github.com/phs/dark-factory/internal/watch"
+	"github.com/peter-stratton/dark-factory/internal/agent"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/logging"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
+	"github.com/peter-stratton/dark-factory/internal/tui"
+	"github.com/peter-stratton/dark-factory/internal/watch"
 	"github.com/spf13/cobra"
 )
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // nearlyEqual returns true if a and b differ by less than epsilon.

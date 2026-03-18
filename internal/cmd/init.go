@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/detect"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/harness/templates"
-	"github.com/phs/dark-factory/internal/label"
-	"github.com/phs/dark-factory/internal/lock"
-	"github.com/phs/dark-factory/internal/skills"
+	"github.com/peter-stratton/dark-factory/internal/detect"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/harness/templates"
+	"github.com/peter-stratton/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/lock"
+	"github.com/peter-stratton/dark-factory/internal/skills"
 	"github.com/spf13/cobra"
 )
 

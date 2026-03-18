@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/report"
-	"github.com/phs/dark-factory/internal/rundata"
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/report"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
 // makeRun creates a minimal RunRecord for testing.

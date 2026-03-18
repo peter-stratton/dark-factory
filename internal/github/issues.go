@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	darkexec "github.com/phs/dark-factory/internal/exec"
+	darkexec "github.com/peter-stratton/dark-factory/internal/exec"
 )
 
 // Issue represents a GitHub issue with the fields needed for orchestration.

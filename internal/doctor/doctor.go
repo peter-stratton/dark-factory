@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	goexec "github.com/phs/dark-factory/internal/exec"
+	goexec "github.com/peter-stratton/dark-factory/internal/exec"
 )
 
 // CommandRunner executes a command and returns its combined output.

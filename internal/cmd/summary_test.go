@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
 // TestCollectMilestones verifies unique milestones are extracted in order.

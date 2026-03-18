@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // Report holds aggregate statistics computed across multiple runs.

@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // PromptGap describes a detected correlation between a condition and

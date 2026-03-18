@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
 )
 
 // wrapRunnerJSON wraps agent text output in the ndjson final result line

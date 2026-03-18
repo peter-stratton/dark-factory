@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/patterns"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/patterns"
 )
 
 // blockerPattern matches "Blocked by: #1, #2" or "Depends on: #3" lines.

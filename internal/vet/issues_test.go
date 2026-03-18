@@ -3,7 +3,7 @@ package vet
 import (
 	"testing"
 
-	"github.com/phs/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/github"
 )
 
 func completeIssue(number int) github.Issue {

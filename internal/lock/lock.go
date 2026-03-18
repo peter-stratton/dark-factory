@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/label"
 )
 
 const (

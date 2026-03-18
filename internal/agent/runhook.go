@@ -1,6 +1,6 @@
 package agent
 
-import "github.com/phs/dark-factory/internal/rundata"
+import "github.com/peter-stratton/dark-factory/internal/rundata"
 
 // RunDataHook is an optional sink for per-step run data. ProcessIssue calls
 // these methods after each agent step. Callers should check for nil before

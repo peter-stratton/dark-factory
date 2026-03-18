@@ -1,4 +1,4 @@
-module github.com/phs/dark-factory
+module github.com/peter-stratton/dark-factory
 
 go 1.25.0
 

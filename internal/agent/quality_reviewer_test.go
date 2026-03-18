@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/config"
 )
 
 func TestQualityReview_ReturnsVerdict(t *testing.T) {

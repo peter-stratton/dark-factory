@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
 // TestReportCommandRegistered checks the report command is wired to root.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 func TestServer_Index_SummaryCards_Displayed(t *testing.T) {

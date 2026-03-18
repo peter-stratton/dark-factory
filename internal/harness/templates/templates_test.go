@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/harness/templates"
-	"github.com/phs/dark-factory/prompts"
+	"github.com/peter-stratton/dark-factory/internal/harness/templates"
+	"github.com/peter-stratton/dark-factory/prompts"
 )
 
 func TestWriteIfNotExists_FileWritten(t *testing.T) {

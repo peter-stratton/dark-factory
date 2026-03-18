@@ -11,14 +11,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/agent"
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/logging"
-	"github.com/phs/dark-factory/internal/notify"
-	"github.com/phs/dark-factory/internal/progress"
-	"github.com/phs/dark-factory/internal/rundata"
-	"github.com/phs/dark-factory/internal/sandbox"
+	"github.com/peter-stratton/dark-factory/internal/agent"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/logging"
+	"github.com/peter-stratton/dark-factory/internal/notify"
+	"github.com/peter-stratton/dark-factory/internal/progress"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 // fakeNotifier records every event received and optionally returns an error.

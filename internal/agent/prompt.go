@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/prompts"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/prompts"
 )
 
 // Prompts holds the loaded template text for each agent prompt.

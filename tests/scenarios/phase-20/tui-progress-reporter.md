@@ -43,7 +43,7 @@ Call `RunFinished(3, 1, 0, 1, 2)`.
 - `p.Send()` is called with `RunFinishedMsg{Implemented: 3, ReadyToMerge: 1, NeedsHumanReview: 0, Failed: 1, Blocked: 2}`
 
 ### RollupCreated sends RollupCreatedMsg
-Call `RollupCreated(99, "https://github.com/phs/dark-factory/pull/99", true)`.
+Call `RollupCreated(99, "https://github.com/peter-stratton/dark-factory/pull/99", true)`.
 - `p.Send()` is called with `RollupCreatedMsg{PRNumber: 99, PRURL: "...", Merged: true}`
 
 ### AllBlocked sends RunFinishedMsg with blocked counts

@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phs/dark-factory/internal/analysis"
-	"github.com/phs/dark-factory/internal/label"
-	"github.com/phs/dark-factory/internal/rundata"
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/analysis"
+	"github.com/peter-stratton/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
 // writePartial renders a partial HTML fragment with ETag support. If the

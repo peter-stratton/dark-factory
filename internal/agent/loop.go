@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/label"
-	"github.com/phs/dark-factory/internal/progress"
-	"github.com/phs/dark-factory/internal/quality"
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/progress"
+	"github.com/peter-stratton/dark-factory/internal/quality"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // OutcomeStatus represents the result of processing a single issue.

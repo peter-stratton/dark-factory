@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	gexec "github.com/phs/dark-factory/internal/exec"
-	"github.com/phs/dark-factory/internal/mdutil"
+	gexec "github.com/peter-stratton/dark-factory/internal/exec"
+	"github.com/peter-stratton/dark-factory/internal/mdutil"
 )
 
 // CommandRunner executes a command and returns its combined output.

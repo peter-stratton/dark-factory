@@ -8,10 +8,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/logging"
-	"github.com/phs/dark-factory/internal/tui"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/logging"
+	"github.com/peter-stratton/dark-factory/internal/tui"
 )
 
 func TestWatchCmd_Registered(t *testing.T) {

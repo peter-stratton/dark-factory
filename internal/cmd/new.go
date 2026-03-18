@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/harness/templates"
+	"github.com/peter-stratton/dark-factory/internal/harness/templates"
 	"github.com/spf13/cobra"
 )
 

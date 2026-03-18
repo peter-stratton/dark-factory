@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/patterns"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/patterns"
 )
 
 // issueHeadingPattern matches "## Issue N:" or "## Issue #N:" headings.

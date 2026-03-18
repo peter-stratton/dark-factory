@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/harness/layers"
+	"github.com/peter-stratton/dark-factory/internal/harness/layers"
 )
 
 // parseDef is a test helper that parses a JSON layer definition, failing on error.

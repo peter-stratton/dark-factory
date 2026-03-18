@@ -10,8 +10,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/punchlist"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/punchlist"
 )
 
 // PunchlistPromptData holds the template data for a punchlist prompt.

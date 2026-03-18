@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/patterns"
-	"github.com/phs/dark-factory/internal/vet"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/patterns"
+	"github.com/peter-stratton/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

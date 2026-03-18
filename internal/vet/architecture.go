@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/harness/layers"
+	"github.com/peter-stratton/dark-factory/internal/harness/layers"
 )
 
 // ValidateArchitecture checks a layer Definition for structural correctness.

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/phs/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/config"
 )
 
 // Event describes a notification to be sent. Type matches one of the event

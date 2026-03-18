@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
 )
 
 // rebaseTestConfig returns a config suitable for runPreMergeRebasePhase tests.

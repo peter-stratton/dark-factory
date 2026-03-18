@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phs/dark-factory/internal/agent"
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/label"
-	"github.com/phs/dark-factory/internal/orchestrator"
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/agent"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/orchestrator"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 const defaultPollInterval = 60 * time.Second

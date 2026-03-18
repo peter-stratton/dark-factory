@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/mdutil"
-	"github.com/phs/dark-factory/internal/patterns"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/mdutil"
+	"github.com/peter-stratton/dark-factory/internal/patterns"
 )
 
 // relatesToPattern matches "Relates to: Issue #N" lines, capturing all #N refs.

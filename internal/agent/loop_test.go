@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/progress"
-	"github.com/phs/dark-factory/internal/label"
-	"github.com/phs/dark-factory/internal/quality"
-	"github.com/phs/dark-factory/internal/rundata"
-	"github.com/phs/dark-factory/internal/sandbox"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/progress"
+	"github.com/peter-stratton/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/quality"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 // setupSandboxDockerStubs stubs sandbox.CommandRunner, sandbox.CommandRunnerWithContext,

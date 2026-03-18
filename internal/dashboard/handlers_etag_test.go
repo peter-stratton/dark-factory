@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 func TestPartial_ETag_304_WhenUnchanged(t *testing.T) {

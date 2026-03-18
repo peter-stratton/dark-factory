@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/phs/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/config"
 )
 
 // DockerConfig holds the resolved configuration for Dockerfile generation.

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/label"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/label"
 )
 
 // newTestLocker creates a Locker with a temp-dir lock file path for isolation.

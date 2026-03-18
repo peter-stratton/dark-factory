@@ -20,7 +20,7 @@ structure. The binary should compile and print help text.
 
 ### Key constraints
 
-- Module path: `github.com/phs/dark-factory`
+- Module path: `github.com/peter-stratton/dark-factory`
 - Entry point: `cmd/godark/main.go`
 - Use Cobra for CLI framework
 - Subcommands to stub (no implementation yet): `run`, `status`, `vet`

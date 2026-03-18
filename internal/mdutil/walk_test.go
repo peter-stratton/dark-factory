@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/mdutil"
+	"github.com/peter-stratton/dark-factory/internal/mdutil"
 )
 
 func TestWalkMarkdownFiles_OnlyMarkdownFiles(t *testing.T) {

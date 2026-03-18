@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/phs/dark-factory/internal/harness/layers"
-	"github.com/phs/dark-factory/internal/vet"
+	"github.com/peter-stratton/dark-factory/internal/harness/layers"
+	"github.com/peter-stratton/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
 )
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	darkexec "github.com/phs/dark-factory/internal/exec"
+	darkexec "github.com/peter-stratton/dark-factory/internal/exec"
 	"gopkg.in/yaml.v3"
 )
 

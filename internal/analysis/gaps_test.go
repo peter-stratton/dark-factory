@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 func TestDetectGapsNilRuns(t *testing.T) {

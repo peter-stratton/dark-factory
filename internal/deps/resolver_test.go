@@ -3,7 +3,7 @@ package deps
 import (
 	"testing"
 
-	"github.com/phs/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/github"
 )
 
 func TestParseDeps_SimpleBlockedBy(t *testing.T) {

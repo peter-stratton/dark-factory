@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/phs/dark-factory/internal/agent/runner"
-	"github.com/phs/dark-factory/internal/sandbox"
+	"github.com/peter-stratton/dark-factory/internal/agent/runner"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 // RunOpts configures an agent invocation.

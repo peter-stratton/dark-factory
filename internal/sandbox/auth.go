@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/ghapp"
+	"github.com/peter-stratton/dark-factory/internal/ghapp"
 )
 
 // authManagedVars are controlled exclusively by auth preference logic.

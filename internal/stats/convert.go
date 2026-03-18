@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phs/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
 
 // ToRunDetails converts flat stats DB records into []rundata.RunDetail suitable

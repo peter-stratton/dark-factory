@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/phs/dark-factory/internal/vet"
+	"github.com/peter-stratton/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
 )
 

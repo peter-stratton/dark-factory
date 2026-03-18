@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/skills"
+	"github.com/peter-stratton/dark-factory/internal/skills"
 )
 
 func readSkill(t *testing.T, name string) string {

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/phs/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/spf13/cobra"
 )
 

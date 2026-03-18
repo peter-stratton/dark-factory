@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
 )
 
 // Implement runs the implementer agent for a fresh issue implementation.

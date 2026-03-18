@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phs/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/config"
 )
 
 // stubPollInterval replaces checksPollInterval with a very short duration for

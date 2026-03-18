@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phs/dark-factory/internal/stats"
+	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
 // generateSummary is a testability seam: replaced in tests to stub the Claude API call.

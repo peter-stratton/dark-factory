@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/phs/dark-factory/internal/agent"
-	"github.com/phs/dark-factory/internal/config"
-	"github.com/phs/dark-factory/internal/github"
-	"github.com/phs/dark-factory/internal/notify"
-	"github.com/phs/dark-factory/internal/orchestrator"
-	"github.com/phs/dark-factory/internal/progress"
+	"github.com/peter-stratton/dark-factory/internal/agent"
+	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/notify"
+	"github.com/peter-stratton/dark-factory/internal/orchestrator"
+	"github.com/peter-stratton/dark-factory/internal/progress"
 )
 
 // stubProgressReporter records IssueCompleted calls for assertions.
