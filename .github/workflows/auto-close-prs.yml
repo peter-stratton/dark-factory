@@ -6,7 +6,7 @@ on:
 
 jobs:
   close-external:
-    if: github.event.pull_request.user.login != 'peter-stratton'
+    if: github.event.pull_request.user.login != 'peter-stratton' && github.event.pull_request.user.login != 'godark-runner[bot]'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
