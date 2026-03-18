@@ -35,6 +35,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
+{{- if .HasCompose}}
+# Install Docker CLI for compose support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    docker.io \
+    docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+{{- end}}
 {{if eq .RuntimeName "go"}}
 # Install Go
 RUN curl -fsSL https://go.dev/dl/go{{.RuntimeVersion}}.linux-amd64.tar.gz \
@@ -192,6 +199,7 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		ExtraPackages   []string
 		InstallCommands []string
 		SandboxEnv      []envVar
+		HasCompose      bool
 	}{
 		Image:           cfg.Image,
 		RuntimeName:     runtimeName,
@@ -201,6 +209,7 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		ExtraPackages:   cfg.ExtraPackages,
 		InstallCommands: cfg.InstallCommands,
 		SandboxEnv:      sortedEnv,
+		HasCompose:      cfg.ComposeFile != "",
 	}
 
 	var buf bytes.Buffer
