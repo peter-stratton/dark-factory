@@ -243,7 +243,7 @@ func detectCommandsForDir(dir string) *detectedCommands {
 	// Add language-specific format/lint suggestions.
 	if dp.Runtime.Name == "go" {
 		dc.format = "gofmt -l -d ."
-		dc.lint = "golangci-lint run ./..."
+		dc.lint = "go vet ./..."
 	}
 	return dc
 }
