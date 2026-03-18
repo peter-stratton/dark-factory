@@ -671,6 +671,9 @@ func validateDockerCompose(dc *DockerCompose) error {
 	if dc.File == "" {
 		return fmt.Errorf("docker_compose.file must not be empty when docker_compose block is present")
 	}
+	if dc.ProjectName == ".." {
+		return fmt.Errorf("docker_compose.project_name %q is not a safe path component", dc.ProjectName)
+	}
 	if dc.ProjectName != "" && !safeModuleName.MatchString(dc.ProjectName) {
 		return fmt.Errorf("docker_compose.project_name %q contains unsafe characters", dc.ProjectName)
 	}

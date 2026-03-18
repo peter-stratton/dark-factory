@@ -2127,6 +2127,26 @@ docker_compose:
 	}
 }
 
+// TestDockerComposeDotDotProjectName verifies that validation rejects ".." as
+// a project_name value, which passes the regex but is an unsafe path component.
+func TestDockerComposeDotDotProjectName(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  project_name: ".."
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for project_name \"..\" , got nil")
+	}
+	if !strings.Contains(err.Error(), "docker_compose.project_name") {
+		t.Errorf("error %q does not mention docker_compose.project_name", err.Error())
+	}
+}
+
 // TestDockerComposeAbsentBlock verifies that a config without a docker_compose
 // block results in a nil DockerCompose field (feature disabled).
 func TestDockerComposeAbsentBlock(t *testing.T) {
