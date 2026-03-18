@@ -15,11 +15,12 @@ import (
 
 // RunOpts configures a container run.
 type RunOpts struct {
-	Image   string
-	Cmd     []string
-	Env     map[string]string
-	Timeout time.Duration
-	Mount   string // host:container bind mount
+	Image             string
+	Cmd               []string
+	Env               map[string]string
+	Timeout           time.Duration
+	Mount             string // host:container bind mount
+	MountDockerSocket bool   // mount /var/run/docker.sock into the container
 }
 
 // RunResult holds the outcome of a container run.
@@ -93,6 +94,9 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	}
 	if opts.Mount != "" {
 		createArgs = append(createArgs, "-v", opts.Mount)
+	}
+	if opts.MountDockerSocket {
+		createArgs = append(createArgs, "-v", "/var/run/docker.sock:/var/run/docker.sock")
 	}
 	createArgs = append(createArgs, opts.Image)
 	createArgs = append(createArgs, opts.Cmd...)
