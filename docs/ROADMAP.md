@@ -1208,3 +1208,6 @@ already-running infrastructure without managing containers itself.
   with a different strategy, restart fresh, or escalate; implement only if
   retry data from recon agent runs shows a persistent pattern of stuck loops
   that strictness decay doesn't resolve
+- Docs site: add macOS `caffeinate` guidance — recommend `caffeinate -s godark
+  run ...` for long/overnight runs to prevent macOS sleep from suspending
+  Docker containers, dropping network connections, and stalling agent processes
