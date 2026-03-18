@@ -606,6 +606,10 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		if err := sandbox.ComposeUp(ctx, dc, logger); err != nil {
 			return fmt.Errorf("starting compose services: %w", err)
 		}
+		// Tear down compose services when processIssues returns, regardless of
+		// how it exits (error, context cancellation, or normal completion).
+		// defer arguments are evaluated immediately, so dc is captured by value.
+		defer sandbox.ComposeDown(dc, logger)
 	}
 
 	// Wire up the RunDataHook from the pre-created writer (may be nil).
