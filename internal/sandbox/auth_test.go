@@ -141,6 +141,9 @@ func TestCollectAuthEnv_GHTokenFromEnv(t *testing.T) {
 		return nil, fmt.Errorf("should not be called")
 	})()
 
+	t.Setenv("GODARK_APP_ID", "")
+	t.Setenv("GODARK_APP_INSTALLATION_ID", "")
+	t.Setenv("GODARK_APP_PRIVATE_KEY_PATH", "")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "gho_from_env")
@@ -162,6 +165,9 @@ func TestCollectAuthEnv_GHTokenFallback(t *testing.T) {
 		return nil, fmt.Errorf("unexpected command: %s %v", name, args)
 	})()
 
+	t.Setenv("GODARK_APP_ID", "")
+	t.Setenv("GODARK_APP_INSTALLATION_ID", "")
+	t.Setenv("GODARK_APP_PRIVATE_KEY_PATH", "")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
@@ -180,6 +186,9 @@ func TestCollectAuthEnv_GHTokenMissing(t *testing.T) {
 		return nil, fmt.Errorf("not logged in")
 	})()
 
+	t.Setenv("GODARK_APP_ID", "")
+	t.Setenv("GODARK_APP_INSTALLATION_ID", "")
+	t.Setenv("GODARK_APP_PRIVATE_KEY_PATH", "")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-key")
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
