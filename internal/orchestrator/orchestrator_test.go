@@ -2555,6 +2555,200 @@ func TestProcessIssues_ComposeProjectNamePassed(t *testing.T) {
 	}
 }
 
+// hasComposeDown returns true if any recorded call is `docker compose ... down
+// --volumes`.
+func hasComposeDown(calls [][]string) bool {
+	for _, call := range calls {
+		if len(call) < 2 || call[0] != "docker" || call[1] != "compose" {
+			continue
+		}
+		var foundDown, foundVolumes bool
+		for _, a := range call[2:] {
+			if a == "down" {
+				foundDown = true
+			}
+			if a == "--volumes" {
+				foundVolumes = true
+			}
+		}
+		if foundDown && foundVolumes {
+			return true
+		}
+	}
+	return false
+}
+
+// TestProcessIssues_ComposeDownCalledAfterNormalRun verifies that
+// docker compose down --volumes is called after a successful run.
+func TestProcessIssues_ComposeDownCalledAfterNormalRun(t *testing.T) {
+	allIssues := []github.Issue{{Number: 1, Title: "task"}}
+
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
+	})
+
+	var composeCalls [][]string
+	origSandboxRunner := sandbox.CommandRunner
+	t.Cleanup(func() { sandbox.CommandRunner = origSandboxRunner })
+	sandbox.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		composeCalls = append(composeCalls, append([]string{name}, args...))
+		return []byte("ok"), nil
+	}
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.DockerCompose = &config.DockerCompose{
+		File:        "docker-compose.test.yml",
+		ProjectName: "myapp",
+	}
+
+	captureStdout(t, func() {
+		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		if err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if !hasComposeDown(composeCalls) {
+		t.Errorf("expected docker compose down --volumes to be called, got calls: %v", composeCalls)
+	}
+}
+
+// TestProcessIssues_ComposeDownCalledAfterRunFailure verifies that
+// docker compose down --volumes is called even when the run encounters an
+// agent failure (deferred cleanup runs regardless of exit path).
+func TestProcessIssues_ComposeDownCalledAfterRunFailure(t *testing.T) {
+	allIssues := []github.Issue{{Number: 1, Title: "task"}}
+
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+	})
+
+	var composeCalls [][]string
+	origSandboxRunner := sandbox.CommandRunner
+	t.Cleanup(func() { sandbox.CommandRunner = origSandboxRunner })
+	sandbox.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		composeCalls = append(composeCalls, append([]string{name}, args...))
+		return []byte("ok"), nil
+	}
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.DockerCompose = &config.DockerCompose{
+		File:        "docker-compose.test.yml",
+		ProjectName: "myapp",
+	}
+
+	captureStdout(t, func() {
+		// The run may return nil even on agent failures (failing is a valid
+		// outcome, not a processIssues error).
+		_ = processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+	})
+
+	if !hasComposeDown(composeCalls) {
+		t.Errorf("expected docker compose down --volumes to be called after agent failure, got calls: %v", composeCalls)
+	}
+}
+
+// TestProcessIssues_ComposeDownCalledAfterContextCancellation verifies that
+// docker compose down --volumes is called when the context is cancelled before
+// the run processes any issues.
+func TestProcessIssues_ComposeDownCalledAfterContextCancellation(t *testing.T) {
+	allIssues := []github.Issue{{Number: 1, Title: "task"}}
+
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
+	})
+
+	var composeCalls [][]string
+	origSandboxRunner := sandbox.CommandRunner
+	t.Cleanup(func() { sandbox.CommandRunner = origSandboxRunner })
+	sandbox.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		composeCalls = append(composeCalls, append([]string{name}, args...))
+		return []byte("ok"), nil
+	}
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.DockerCompose = &config.DockerCompose{
+		File:        "docker-compose.test.yml",
+		ProjectName: "myapp",
+	}
+
+	// Use a pre-cancelled context. ComposeUp ignores the context, so it will
+	// succeed. The inner issue loop will detect the cancellation and exit via
+	// goto done, after which the deferred ComposeDown fires.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	captureStdout(t, func() {
+		_ = processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+	})
+
+	if !hasComposeDown(composeCalls) {
+		t.Errorf("expected docker compose down --volumes to be called after context cancellation, got calls: %v", composeCalls)
+	}
+}
+
+// TestProcessIssues_ComposeDownFailureLogsWarning verifies that when
+// docker compose down fails, the error is logged as a warning and the run
+// exit status is not changed (processIssues still returns nil).
+func TestProcessIssues_ComposeDownFailureLogsWarning(t *testing.T) {
+	allIssues := []github.Issue{{Number: 1, Title: "task"}}
+
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
+	})
+
+	origSandboxRunner := sandbox.CommandRunner
+	t.Cleanup(func() { sandbox.CommandRunner = origSandboxRunner })
+	sandbox.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "compose" {
+			for _, a := range args {
+				if a == "down" {
+					return []byte("down failed"), fmt.Errorf("exit status 1")
+				}
+			}
+		}
+		return []byte("ok"), nil
+	}
+
+	cfg := testConfig()
+	cfg.NoSandbox = true
+	cfg.DockerCompose = &config.DockerCompose{
+		File:        "docker-compose.test.yml",
+		ProjectName: "myapp",
+	}
+
+	handler := &recordingHandler{}
+	logger := slog.New(handler)
+
+	var runErr error
+	captureStdout(t, func() {
+		runErr = processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, logger, progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+	})
+
+	// The run must still succeed despite the compose down failure.
+	if runErr != nil {
+		t.Errorf("expected processIssues to return nil when compose down fails, got: %v", runErr)
+	}
+
+	// A warning must have been logged.
+	var foundWarn bool
+	for _, r := range handler.records {
+		if r.Level == slog.LevelWarn {
+			msg := r.Message
+			if strings.Contains(msg, "compose") || strings.Contains(msg, "down") {
+				foundWarn = true
+				break
+			}
+		}
+	}
+	if !foundWarn {
+		t.Error("expected a warning log record about compose down failure")
+	}
+}
+
 func TestRefreshAndCategorize_ReturnsCorrectSplit(t *testing.T) {
 	// Issue 3 is blocked by #1. After #1 closes, #3 becomes processable.
 	allIssues := []github.Issue{
