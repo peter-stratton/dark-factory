@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -2203,6 +2204,72 @@ docker_compose:
 	}
 	if !strings.Contains(err.Error(), "docker_compose.file") {
 		t.Errorf("error %q does not mention docker_compose.file", err.Error())
+	}
+}
+
+// --- ResolveProjectName tests ---
+
+func TestResolveProjectName_NoPrefix(t *testing.T) {
+	got := ResolveProjectName("", 42)
+	if got != "godark-42" {
+		t.Errorf("ResolveProjectName(%q, 42) = %q, want %q", "", got, "godark-42")
+	}
+}
+
+func TestResolveProjectName_WithPrefix(t *testing.T) {
+	got := ResolveProjectName("myapp", 42)
+	if got != "myapp-42" {
+		t.Errorf("ResolveProjectName(%q, 42) = %q, want %q", "myapp", got, "myapp-42")
+	}
+}
+
+func TestResolveProjectName_PrefixWithSpaces(t *testing.T) {
+	got := ResolveProjectName("My App", 42)
+	// "My App" → lowercase "my app" → "my-app" → "my-app-42"
+	if got != "my-app-42" {
+		t.Errorf("ResolveProjectName(%q, 42) = %q, want %q", "My App", got, "my-app-42")
+	}
+}
+
+func TestResolveProjectName_NameValidity(t *testing.T) {
+	tests := []struct {
+		prefix string
+		issue  int
+	}{
+		{"", 42},
+		{"myapp", 99},
+		{"My App", 1},
+		{"my_project", 543},
+	}
+	validChars := regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	for _, tc := range tests {
+		got := ResolveProjectName(tc.prefix, tc.issue)
+		if !validChars.MatchString(got) {
+			t.Errorf("ResolveProjectName(%q, %d) = %q: contains invalid characters", tc.prefix, tc.issue, got)
+		}
+	}
+}
+
+func TestResolveProjectName_DistinctPerIssue(t *testing.T) {
+	prefix := "myapp"
+	names := make(map[string]bool)
+	for _, issue := range []int{1, 2, 42, 100, 543} {
+		name := ResolveProjectName(prefix, issue)
+		if names[name] {
+			t.Errorf("ResolveProjectName(%q, %d) produced duplicate name %q", prefix, issue, name)
+		}
+		names[name] = true
+	}
+}
+
+func TestResolveProjectName_EmptyPrefixDistinctPerIssue(t *testing.T) {
+	names := make(map[string]bool)
+	for _, issue := range []int{1, 2, 42, 100, 543} {
+		name := ResolveProjectName("", issue)
+		if names[name] {
+			t.Errorf("ResolveProjectName(%q, %d) produced duplicate name %q", "", issue, name)
+		}
+		names[name] = true
 	}
 }
 
