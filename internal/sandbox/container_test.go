@@ -196,6 +196,102 @@ func TestRunContainerMount(t *testing.T) {
 	}
 }
 
+func TestRunContainerDockerSocketMountEnabled(t *testing.T) {
+	defer saveRunners()()
+
+	var createArgs string
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			createArgs = strings.Join(args, " ")
+			return []byte("abc123\n"), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	_, err := RunContainer(context.Background(), RunOpts{
+		Image:             "test:latest",
+		Cmd:               []string{"docker", "ps"},
+		MountDockerSocket: true,
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(createArgs, "-v /var/run/docker.sock:/var/run/docker.sock") {
+		t.Errorf("docker create missing socket mount, got: %s", createArgs)
+	}
+}
+
+func TestRunContainerDockerSocketMountDisabled(t *testing.T) {
+	defer saveRunners()()
+
+	var createArgs string
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			createArgs = strings.Join(args, " ")
+			return []byte("abc123\n"), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	_, err := RunContainer(context.Background(), RunOpts{
+		Image: "test:latest",
+		Cmd:   []string{"ls"},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(createArgs, "docker.sock") {
+		t.Errorf("docker create should not include socket mount, got: %s", createArgs)
+	}
+}
+
+func TestRunContainerBothMounts(t *testing.T) {
+	defer saveRunners()()
+
+	var createArgs string
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			createArgs = strings.Join(args, " ")
+			return []byte("abc123\n"), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	_, err := RunContainer(context.Background(), RunOpts{
+		Image:             "test:latest",
+		Cmd:               []string{"ls"},
+		Mount:             "/host/path:/container/path",
+		MountDockerSocket: true,
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(createArgs, "-v /host/path:/container/path") {
+		t.Errorf("docker create missing workspace mount, got: %s", createArgs)
+	}
+	if !strings.Contains(createArgs, "-v /var/run/docker.sock:/var/run/docker.sock") {
+		t.Errorf("docker create missing socket mount, got: %s", createArgs)
+	}
+}
+
 func TestRunContainerTimeout(t *testing.T) {
 	defer saveRunners()()
 
