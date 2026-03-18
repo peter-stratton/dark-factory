@@ -23,7 +23,7 @@ func New() *TextReporter {
 }
 
 // RunStarted is a no-op for TextReporter; the orchestrator emits this via structured logging.
-func (r *TextReporter) RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string, issues []IssueSummary) {
+func (r *TextReporter) RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup, identity string, issues []IssueSummary) {
 }
 
 // IssueStarted is a no-op for TextReporter; the orchestrator emits this via structured logging.

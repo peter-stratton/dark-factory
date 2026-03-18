@@ -25,6 +25,7 @@ type Model struct {
 	milestone  string
 	timestamp  string
 	baseBranch string
+	identity   string
 	autoMerge  *autoMerge
 
 	// Aggregate counts — updated as issues progress.
@@ -238,6 +239,7 @@ func (m *Model) handleRunStarted(msg RunStartedMsg) {
 	m.milestone = msg.Milestone
 	m.timestamp = msg.Timestamp
 	m.baseBranch = msg.BaseBranch
+	m.identity = msg.Identity
 	if msg.MergeFeature != "" || msg.MergeRollup != "" {
 		m.autoMerge = &autoMerge{
 			feature: msg.MergeFeature,

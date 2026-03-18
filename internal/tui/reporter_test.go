@@ -165,7 +165,7 @@ func TestRunStartedSendsMessage(t *testing.T) {
 		{Number: 1, Title: "first"},
 		{Number: 2, Title: "second"},
 	}
-	r.RunStarted("owner/repo", "v1.0", "2026-03-14T10:00:00Z", "main", "feat", "rollup", issues)
+	r.RunStarted("owner/repo", "v1.0", "2026-03-14T10:00:00Z", "main", "feat", "rollup", "godark-runner[bot]", issues)
 
 	if len(s.msgs) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(s.msgs))
@@ -188,6 +188,22 @@ func TestRunStartedSendsMessage(t *testing.T) {
 	}
 	if msg.MergeRollup != "rollup" {
 		t.Errorf("MergeRollup: got %q, want %q", msg.MergeRollup, "rollup")
+	}
+	if msg.Identity != "godark-runner[bot]" {
+		t.Errorf("Identity: got %q, want %q", msg.Identity, "godark-runner[bot]")
+	}
+}
+
+func TestRunStartedPopulatesIdentity(t *testing.T) {
+	r, s := newTestReporter()
+	r.RunStarted("owner/repo", "v1.0", "", "", "", "", "octocat", nil)
+
+	msg, ok := s.msgs[0].(RunStartedMsg)
+	if !ok {
+		t.Fatalf("expected RunStartedMsg, got %T", s.msgs[0])
+	}
+	if msg.Identity != "octocat" {
+		t.Errorf("Identity: got %q, want %q", msg.Identity, "octocat")
 	}
 }
 

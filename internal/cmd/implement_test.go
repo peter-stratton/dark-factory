@@ -30,7 +30,7 @@ type stubIssueCompleted struct {
 	costUSD     float64
 }
 
-func (r *stubProgressReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
+func (r *stubProgressReporter) RunStarted(_, _, _, _, _, _, _ string, _ []progress.IssueSummary) {}
 func (r *stubProgressReporter) IssueStarted(_ int, _ string)                                   {}
 func (r *stubProgressReporter) IssueStageChanged(_ int, _ string)                              {}
 func (r *stubProgressReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64) {

@@ -29,6 +29,7 @@ type RunMeta struct {
 	IssueNumbers []int             `json:"issue_numbers"`
 	IssueDeps    []IssueDep        `json:"issue_deps,omitempty"`
 	IssueTitles  map[string]string `json:"issue_titles,omitempty"`
+	Identity     string            `json:"identity,omitempty"`
 	StartedAt    time.Time         `json:"started_at"`
 	FinishedAt   *time.Time        `json:"finished_at,omitempty"`
 	Summary      *RunSummary       `json:"summary,omitempty"`
@@ -332,6 +333,28 @@ func (w *Writer) WriteIssueTitles(titles map[string]string) error {
 	meta.IssueTitles = titles
 	if err := writeJSON(path, meta); err != nil {
 		return fmt.Errorf("updating run.json with issue titles: %w", err)
+	}
+	return nil
+}
+
+// WriteIdentity updates run.json with the authenticated identity string.
+// It reads the current run.json, sets Identity, and writes it back.
+func (w *Writer) WriteIdentity(identity string) error {
+	path := filepath.Join(w.dir, "run.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading run.json: %w", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("parsing run.json: %w", err)
+	}
+
+	meta.Identity = identity
+	if err := writeJSON(path, meta); err != nil {
+		return fmt.Errorf("updating run.json with identity: %w", err)
 	}
 	return nil
 }

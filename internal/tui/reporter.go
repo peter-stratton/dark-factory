@@ -27,7 +27,7 @@ func NewTUIReporter(p *tea.Program) *TUIReporter {
 }
 
 // RunStarted sends RunStartedMsg with run header metadata and the full issue list.
-func (r *TUIReporter) RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string, issues []progress.IssueSummary) {
+func (r *TUIReporter) RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup, identity string, issues []progress.IssueSummary) {
 	tuiIssues := make([]RunStartedIssue, len(issues))
 	for i, iss := range issues {
 		tuiIssues[i] = RunStartedIssue{Number: iss.Number, Title: iss.Title}
@@ -39,6 +39,7 @@ func (r *TUIReporter) RunStarted(repo, milestone, timestamp, baseBranch, mergeFe
 		BaseBranch:   baseBranch,
 		MergeFeature: mergeFeature,
 		MergeRollup:  mergeRollup,
+		Identity:     identity,
 		Issues:       tuiIssues,
 	})
 }

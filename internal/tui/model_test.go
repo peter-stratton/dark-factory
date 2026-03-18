@@ -83,6 +83,48 @@ func TestRenderHeaderMinimal(t *testing.T) {
 	}
 }
 
+func TestRenderHeaderShowsIdentity(t *testing.T) {
+	m := Model{
+		repo:      "owner/repo",
+		milestone: "Phase 10",
+		identity:  "godark-runner[bot]",
+	}
+	got := stripANSI(renderHeader(m))
+
+	if !strings.Contains(got, "as:") {
+		t.Errorf("renderHeader identity: label %q not found in output\ngot: %q", "as:", got)
+	}
+	if !strings.Contains(got, "godark-runner[bot]") {
+		t.Errorf("renderHeader identity: value %q not found in output\ngot: %q", "godark-runner[bot]", got)
+	}
+}
+
+func TestRenderHeaderOmitsIdentityWhenEmpty(t *testing.T) {
+	m := Model{
+		repo:      "owner/repo",
+		milestone: "Phase 10",
+		identity:  "",
+	}
+	got := stripANSI(renderHeader(m))
+
+	if strings.Contains(got, "as:") {
+		t.Errorf("renderHeader: %q should be absent when identity is empty\ngot: %q", "as:", got)
+	}
+}
+
+func TestHandleRunStartedSetsIdentity(t *testing.T) {
+	m := Model{}
+	m.handleRunStarted(RunStartedMsg{
+		Repo:      "owner/repo",
+		Milestone: "Phase 10",
+		Identity:  "octocat",
+	})
+
+	if m.identity != "octocat" {
+		t.Errorf("identity: got %q, want %q", m.identity, "octocat")
+	}
+}
+
 // --- Summary tests ---
 
 func TestRenderSummaryZeroState(t *testing.T) {

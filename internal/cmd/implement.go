@@ -260,8 +260,14 @@ func implementIssues(
 			Title:  issueTitles[strconv.Itoa(num)],
 		}
 	}
+	identity := sandbox.ResolveIdentity(logger)
+	if writer != nil {
+		if err := writer.WriteIdentity(identity); err != nil {
+			logger.Warn("failed to write identity to run metadata", "error", err)
+		}
+	}
 	reporter.RunStarted(cfg.Repo, "", runTimestamp, cfg.BaseBranch,
-		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), summaries)
+		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), identity, summaries)
 
 	for _, issueNumber := range issueNums {
 		if ctx.Err() != nil {

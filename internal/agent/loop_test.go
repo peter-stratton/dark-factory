@@ -4706,7 +4706,7 @@ func (r *mockReporter) IssueStageChanged(number int, stage string) {
 		stage  string
 	}{number, stage})
 }
-func (r *mockReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
+func (r *mockReporter) RunStarted(_, _, _, _, _, _, _ string, _ []progress.IssueSummary) {}
 func (r *mockReporter) IssueStarted(_ int, _ string)              {}
 func (r *mockReporter) IssueCompleted(_ int, _ string, _ string, _, _ int, _ string, _ float64) {
 }

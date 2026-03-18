@@ -911,6 +911,100 @@ func TestIssueTitlesMissingInOldDataDeserializesCleanly(t *testing.T) {
 	}
 }
 
+func TestWriteIdentityUpdatesRunJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	if err := w.WriteIdentity("godark-runner[bot]"); err != nil {
+		t.Fatalf("WriteIdentity() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.Identity != "godark-runner[bot]" {
+		t.Errorf("Identity: got %q, want %q", meta.Identity, "godark-runner[bot]")
+	}
+}
+
+func TestWriteIdentityPreservesExistingRunJSONFields(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1, 2})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	if err := w.WriteIdentity("octocat"); err != nil {
+		t.Fatalf("WriteIdentity() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.Repo != "owner/repo" {
+		t.Errorf("Repo: got %q, want %q", meta.Repo, "owner/repo")
+	}
+	if meta.Milestone != "Phase 7" {
+		t.Errorf("Milestone: got %q, want %q", meta.Milestone, "Phase 7")
+	}
+	if len(meta.IssueNumbers) != 2 {
+		t.Errorf("IssueNumbers: got %v, want [1 2]", meta.IssueNumbers)
+	}
+}
+
+func TestIdentityOmittedWhenNeverWritten(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	_ = w
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if _, ok := raw["identity"]; ok {
+		t.Error("identity key should be omitted from JSON when WriteIdentity was never called")
+	}
+}
+
+func TestIdentityMissingInOldDataDeserializesCleanly(t *testing.T) {
+	// Simulate old run.json without identity field.
+	oldJSON := []byte(`{"repo":"owner/repo","milestone":"Phase 7","issue_numbers":[1],"started_at":"2024-01-01T00:00:00Z"}`)
+
+	var meta RunMeta
+	if err := json.Unmarshal(oldJSON, &meta); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+
+	if meta.Identity != "" {
+		t.Errorf("Identity = %q, want empty string for old data without identity", meta.Identity)
+	}
+}
+
 func TestPathTraversalRejected(t *testing.T) {
 	cases := []string{
 		"../evil/../../path",
