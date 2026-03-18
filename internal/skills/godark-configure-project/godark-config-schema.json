@@ -220,6 +220,24 @@
         "project_name": {
           "type": "string",
           "description": "Optional prefix for the compose project name. Auto-generated when empty."
+        },
+        "services": {
+          "type": "array",
+          "description": "Descriptions of compose services injected into agent prompts for context",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Service name as defined in the compose file"
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description of what this service provides (e.g. 'PostgreSQL 16 test database on port 5432')"
+              }
+            },
+            "required": ["name"]
+          }
         }
       },
       "required": ["file"]

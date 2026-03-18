@@ -80,8 +80,18 @@ findings for user confirmation before writing.
 
 6. **Detect Docker Compose usage** — Check for `docker-compose.yml`,
    `docker-compose.yaml`, `docker-compose*.yml`, or `compose.yml` files at
-   any level of the project tree. If found, note that integration tests run
-   via Compose likely require `no_sandbox: true` in the runtime config.
+   any level of the project tree. If found:
+   - Read the compose file and extract the `services:` block.
+   - For each service, note its name and try to infer a short description
+     from the `image:` field, port mappings, and any comments. For example,
+     `image: postgres:16` with `ports: ["5432:5432"]` →
+     `"PostgreSQL 16 test database on port 5432"`.
+   - Prepare a `docker_compose:` block with:
+     - `file:` — the path to the compose file (relative to project root)
+     - `project_name:` — leave empty unless the compose file sets one
+     - `services:` — list of `{name, description}` entries for each service
+   - If multiple compose files exist, prefer the one that looks test-oriented
+     (e.g. `docker-compose.test.yml`) or ask the user which one to use.
 
 7. **Present findings** — Display a structured summary of all detected
    configuration. For each section, show the proposed `godark.yaml` snippet:
@@ -91,8 +101,8 @@ findings for user confirmation before writing.
      and `generated_paths`
    - **Required environment** — list proposed `required_env` variables
    - **CI checks** — list proposed `wait_for_checks` names
-   - **Docker Compose** — note if detected and explain the `no_sandbox`
-     recommendation
+   - **Docker Compose** — show the proposed `docker_compose:` block with
+     file path and service descriptions
 
    For each section, ask the user to confirm, edit, or skip before writing.
    Do not write anything until the user has reviewed and approved the findings.
@@ -154,8 +164,13 @@ wait_for_checks:
     - lint
     - build
 
-runtime:
-  no_sandbox: true  # required for integration tests run via Docker Compose
+docker_compose:
+  file: docker-compose.test.yml
+  services:
+    - name: postgres
+      description: "PostgreSQL 16 test database on port 5432"
+    - name: redis
+      description: "Redis 7 cache on port 6379"
 ```
 
 ## Rules
@@ -173,6 +188,7 @@ runtime:
 - If no environment variable requirements are detected, do not add
   `required_env`.
 - If no CI workflows are found, do not add `wait_for_checks`.
-- Suggest `no_sandbox: true` only when Docker Compose is detected; do not
-  add it automatically without user confirmation.
+- When Docker Compose is detected, populate the `docker_compose:` block
+  with service descriptions inferred from the compose file. Do not add it
+  automatically without user confirmation.
 - Skip `node_modules/`, `.git/`, and other vendor directories when scanning.

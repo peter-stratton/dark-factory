@@ -90,6 +90,17 @@ prompts:
 # Default branch of the repository (auto-detected from GitHub if omitted)
 # default_branch: main
 
+# Docker Compose integration (optional)
+# When set, godark manages compose services alongside the sandbox.
+# docker_compose:
+#   file: docker-compose.test.yml     # path to compose file (required)
+#   project_name: ""                  # optional prefix (auto-generated if empty)
+#   services:                         # optional: describe services for agent context
+#     - name: postgres
+#       description: "PostgreSQL 16 test database on port 5432"
+#     - name: redis
+#       description: "Redis 7 cache on port 6379"
+
 # Agent timeout (Go duration format: "30m", "1h", etc.)
 # agent_timeout: "30m"
 `
