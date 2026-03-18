@@ -589,14 +589,23 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 	}
 
+	// Compute DockerConfig for image build and compose startup.
+	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+
 	// Build Docker image once if using sandbox mode.
 	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
 		tag, err := sandbox.BuildImage(ctx, dc, logger)
 		if err != nil {
 			return fmt.Errorf("building Docker image: %w", err)
 		}
 		cfg.Docker.Image = tag
+	}
+
+	// Start compose services if configured, before any agent execution.
+	if cfg.DockerCompose != nil {
+		if err := sandbox.ComposeUp(ctx, dc, logger); err != nil {
+			return fmt.Errorf("starting compose services: %w", err)
+		}
 	}
 
 	// Wire up the RunDataHook from the pre-created writer (may be nil).
