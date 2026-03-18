@@ -842,3 +842,52 @@ func TestDockerConfigFromConfigComposeRoundTrip(t *testing.T) {
 		t.Errorf("SandboxEnv[FOO] = %q, want bar", dc.SandboxEnv["FOO"])
 	}
 }
+
+func TestGenerateDockerfileDockerCLIInstalledWhenComposeConfigured(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.ComposeFile = "docker-compose.test.yml"
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "docker.io") {
+		t.Error("Dockerfile missing docker.io when compose is configured")
+	}
+	if !strings.Contains(df, "docker-compose-plugin") {
+		t.Error("Dockerfile missing docker-compose-plugin when compose is configured")
+	}
+}
+
+func TestGenerateDockerfileDockerCLIOmittedWhenComposeNotConfigured(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	// ComposeFile is empty — Docker CLI must not be installed
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(df, "docker.io") {
+		t.Error("Dockerfile should not contain docker.io when compose is not configured")
+	}
+	if strings.Contains(df, "docker-compose-plugin") {
+		t.Error("Dockerfile should not contain docker-compose-plugin when compose is not configured")
+	}
+}
+
+func TestGenerateDockerfileDockerCLIAlongsideExtraPackages(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.ComposeFile = "docker-compose.test.yml"
+	cfg.ExtraPackages = []string{"chromium"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "docker.io") {
+		t.Error("Dockerfile missing docker.io when compose is configured alongside extra packages")
+	}
+	if !strings.Contains(df, "chromium") {
+		t.Error("Dockerfile missing extra package chromium when compose is configured")
+	}
+}
