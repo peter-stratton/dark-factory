@@ -39,7 +39,7 @@ func TestDockerConfigFromConfig(t *testing.T) {
 		ExtraPackages: []string{"vim", "jq"},
 	}
 	runtime := config.Runtime{Name: "go", Version: "1.26.0"}
-	dc := DockerConfigFromConfig(docker, runtime, map[string]string{"GOOS": "linux"})
+	dc := DockerConfigFromConfig(docker, runtime, map[string]string{"GOOS": "linux"}, nil)
 
 	if dc.Image != "debian:bookworm" {
 		t.Errorf("Image = %q, want debian:bookworm", dc.Image)
@@ -68,7 +68,7 @@ func TestDockerConfigFromConfig(t *testing.T) {
 }
 
 func TestDockerConfigFromConfigDefaults(t *testing.T) {
-	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil)
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
 	def := DefaultDockerConfig()
 
 	if dc.Image != def.Image {
@@ -736,7 +736,7 @@ func TestDockerConfigFromConfigInstallCommands(t *testing.T) {
 			"curl -sSfL https://golangci-lint.run/install.sh | sh -s v2.10.1",
 		},
 	}
-	dc := DockerConfigFromConfig(docker, config.Runtime{}, nil)
+	dc := DockerConfigFromConfig(docker, config.Runtime{}, nil, nil)
 
 	if len(dc.InstallCommands) != 1 {
 		t.Fatalf("InstallCommands len = %d, want 1", len(dc.InstallCommands))
@@ -748,7 +748,7 @@ func TestDockerConfigFromConfigInstallCommands(t *testing.T) {
 
 func TestDockerConfigFromConfigInstallCommandsEmpty(t *testing.T) {
 	// Empty install_commands in config should leave DockerConfig.InstallCommands nil.
-	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil)
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
 	if len(dc.InstallCommands) != 0 {
 		t.Errorf("InstallCommands = %v, want empty", dc.InstallCommands)
 	}
@@ -792,5 +792,102 @@ func TestImageTagChangesWithRuntime(t *testing.T) {
 	tagNode := ImageTag(dfNode)
 	if tagGo == tagNode {
 		t.Error("image tags should differ when runtime changes")
+	}
+}
+
+func TestDockerConfigFromConfigComposeConfigured(t *testing.T) {
+	compose := &config.DockerCompose{
+		File:        "docker-compose.test.yml",
+		ProjectName: "myproject",
+	}
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, compose)
+
+	if dc.ComposeFile != "docker-compose.test.yml" {
+		t.Errorf("ComposeFile = %q, want docker-compose.test.yml", dc.ComposeFile)
+	}
+	if dc.ComposeProjectName != "myproject" {
+		t.Errorf("ComposeProjectName = %q, want myproject", dc.ComposeProjectName)
+	}
+}
+
+func TestDockerConfigFromConfigComposeAbsent(t *testing.T) {
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
+
+	if dc.ComposeFile != "" {
+		t.Errorf("ComposeFile = %q, want empty string", dc.ComposeFile)
+	}
+	if dc.ComposeProjectName != "" {
+		t.Errorf("ComposeProjectName = %q, want empty string", dc.ComposeProjectName)
+	}
+}
+
+func TestDockerConfigFromConfigComposeRoundTrip(t *testing.T) {
+	compose := &config.DockerCompose{
+		File:        "infra/compose.yml",
+		ProjectName: "ci",
+	}
+	docker := config.Docker{Image: "ubuntu:22.04"}
+	dc := DockerConfigFromConfig(docker, config.Runtime{Name: "go", Version: "1.26.0"}, map[string]string{"FOO": "bar"}, compose)
+
+	if dc.Image != "ubuntu:22.04" {
+		t.Errorf("Image = %q, want ubuntu:22.04", dc.Image)
+	}
+	if dc.ComposeFile != "infra/compose.yml" {
+		t.Errorf("ComposeFile = %q, want infra/compose.yml", dc.ComposeFile)
+	}
+	if dc.ComposeProjectName != "ci" {
+		t.Errorf("ComposeProjectName = %q, want ci", dc.ComposeProjectName)
+	}
+	if dc.SandboxEnv["FOO"] != "bar" {
+		t.Errorf("SandboxEnv[FOO] = %q, want bar", dc.SandboxEnv["FOO"])
+	}
+}
+
+func TestGenerateDockerfileDockerCLIInstalledWhenComposeConfigured(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.ComposeFile = "docker-compose.test.yml"
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "docker.io") {
+		t.Error("Dockerfile missing docker.io when compose is configured")
+	}
+	if !strings.Contains(df, "docker-compose-plugin") {
+		t.Error("Dockerfile missing docker-compose-plugin when compose is configured")
+	}
+}
+
+func TestGenerateDockerfileDockerCLIOmittedWhenComposeNotConfigured(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	// ComposeFile is empty — Docker CLI must not be installed
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(df, "docker.io") {
+		t.Error("Dockerfile should not contain docker.io when compose is not configured")
+	}
+	if strings.Contains(df, "docker-compose-plugin") {
+		t.Error("Dockerfile should not contain docker-compose-plugin when compose is not configured")
+	}
+}
+
+func TestGenerateDockerfileDockerCLIAlongsideExtraPackages(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.ComposeFile = "docker-compose.test.yml"
+	cfg.ExtraPackages = []string{"chromium"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "docker.io") {
+		t.Error("Dockerfile missing docker.io when compose is configured alongside extra packages")
+	}
+	if !strings.Contains(df, "chromium") {
+		t.Error("Dockerfile missing extra package chromium when compose is configured")
 	}
 }

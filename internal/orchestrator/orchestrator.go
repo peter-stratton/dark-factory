@@ -315,7 +315,7 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Log
 	}
 
 	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
 		tag, err := sandbox.BuildImage(ctx, dc, logger)
 		if err != nil {
 			return nil, nil, fmt.Errorf("building Docker image: %w", err)
@@ -589,14 +589,31 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 	}
 
+	// Compute DockerConfig for image build and compose startup.
+	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+
 	// Build Docker image once if using sandbox mode.
 	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
 		tag, err := sandbox.BuildImage(ctx, dc, logger)
 		if err != nil {
 			return fmt.Errorf("building Docker image: %w", err)
 		}
 		cfg.Docker.Image = tag
+	}
+
+	// Start compose services if configured, before any agent execution.
+	if cfg.DockerCompose != nil {
+		cleanupEnvFile, err := sandbox.ComposeUp(ctx, dc, cfg.RequiredEnv, logger)
+		if err != nil {
+			return fmt.Errorf("starting compose services: %w", err)
+		}
+		// Tear down compose services when processIssues returns, regardless of
+		// how it exits (error, context cancellation, or normal completion).
+		// defer arguments are evaluated immediately, so dc is captured by value.
+		// cleanupEnvFile runs after ComposeDown (LIFO order) to remove the
+		// temporary .env file only after compose has finished with it.
+		defer cleanupEnvFile()
+		defer sandbox.ComposeDown(dc, logger)
 	}
 
 	// Wire up the RunDataHook from the pre-created writer (may be nil).

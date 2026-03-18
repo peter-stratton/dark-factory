@@ -3,6 +3,7 @@ package doctor
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func TestRun_AllPass(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	checks := Checks("go", "")
+	checks := Checks("go", "", false)
 	passed := Run(&buf, checks)
 
 	if !passed {
@@ -89,7 +90,7 @@ func TestRun_AllPass_OAuthToken(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	checks := Checks("go", "")
+	checks := Checks("go", "", false)
 	passed := Run(&buf, checks)
 
 	if !passed {
@@ -118,7 +119,7 @@ func TestRun_SomeFail(t *testing.T) {
 	EnvLookup = func(key string) string { return "" } // API key missing
 
 	var buf bytes.Buffer
-	checks := Checks("", "") // no runtime check, no lint command
+	checks := Checks("", "", false) // no runtime check, no lint command
 	passed := Run(&buf, checks)
 
 	if passed {
@@ -152,7 +153,7 @@ func TestRun_NoShortCircuit(t *testing.T) {
 	EnvLookup = func(key string) string { return "" }
 
 	var buf bytes.Buffer
-	checks := Checks("go", "")
+	checks := Checks("go", "", false)
 	passed := Run(&buf, checks)
 
 	if passed {
@@ -168,7 +169,7 @@ func TestRun_NoShortCircuit(t *testing.T) {
 func TestChecks_WithRuntime(t *testing.T) {
 	runtimes := []string{"go", "flutter", "node", "rust", "elixir", "python"}
 	for _, rt := range runtimes {
-		checks := Checks(rt, "")
+		checks := Checks(rt, "", false)
 		// With a runtime we expect 6 checks (4 base + runtime toolchain + python3).
 		if len(checks) != 6 {
 			t.Errorf("runtime=%s: expected 6 checks, got %d", rt, len(checks))
@@ -187,7 +188,7 @@ func TestChecks_WithRuntime(t *testing.T) {
 }
 
 func TestChecks_NoRuntime(t *testing.T) {
-	checks := Checks("", "")
+	checks := Checks("", "", false)
 	// Without a runtime: 5 checks (4 base + python3).
 	if len(checks) != 5 {
 		t.Errorf("expected 5 checks without runtime, got %d", len(checks))
@@ -195,7 +196,7 @@ func TestChecks_NoRuntime(t *testing.T) {
 }
 
 func TestChecks_UnknownRuntime(t *testing.T) {
-	checks := Checks("cobol", "")
+	checks := Checks("cobol", "", false)
 	// Unknown runtime falls back to 5 checks (no toolchain check added).
 	if len(checks) != 5 {
 		t.Errorf("expected 5 checks for unknown runtime, got %d", len(checks))
@@ -203,7 +204,7 @@ func TestChecks_UnknownRuntime(t *testing.T) {
 }
 
 func TestChecks_GolangciLint_Included(t *testing.T) {
-	checks := Checks("", "golangci-lint run ./...")
+	checks := Checks("", "golangci-lint run ./...", false)
 	// With golangci-lint in lint_command: 6 checks (5 base + golangci-lint).
 	if len(checks) != 6 {
 		t.Errorf("expected 6 checks with golangci-lint lint_command, got %d", len(checks))
@@ -220,7 +221,7 @@ func TestChecks_GolangciLint_Included(t *testing.T) {
 }
 
 func TestChecks_GolangciLint_NotIncluded(t *testing.T) {
-	checks := Checks("", "staticcheck ./...")
+	checks := Checks("", "staticcheck ./...", false)
 	// Without golangci-lint in lint_command: 5 checks (no golangci-lint check).
 	if len(checks) != 5 {
 		t.Errorf("expected 5 checks without golangci-lint lint_command, got %d", len(checks))
@@ -250,7 +251,7 @@ func TestRun_GolangciLint_Pass(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	checks := Checks("", "golangci-lint run ./...")
+	checks := Checks("", "golangci-lint run ./...", false)
 	passed := Run(&buf, checks)
 
 	if !passed {
@@ -285,7 +286,7 @@ func TestRun_GolangciLint_Fail(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	checks := Checks("", "golangci-lint run ./...")
+	checks := Checks("", "golangci-lint run ./...", false)
 	passed := Run(&buf, checks)
 
 	if passed {
@@ -297,6 +298,166 @@ func TestRun_GolangciLint_Fail(t *testing.T) {
 	}
 	if !strings.Contains(out, "brew install golangci-lint") {
 		t.Errorf("expected brew install hint in fix message:\n%s", out)
+	}
+}
+
+func TestChecks_ComposeConfigured_AddsTwo(t *testing.T) {
+	checksWithout := Checks("", "", false)
+	checksWith := Checks("", "", true)
+	if len(checksWith) != len(checksWithout)+2 {
+		t.Errorf("expected 2 extra checks when composeConfigured=true, got %d without and %d with",
+			len(checksWithout), len(checksWith))
+	}
+	foundSocket := false
+	foundCompose := false
+	for _, c := range checksWith {
+		if c.Name == "Docker socket accessible" {
+			foundSocket = true
+		}
+		if c.Name == "docker compose CLI available" {
+			foundCompose = true
+		}
+	}
+	if !foundSocket {
+		t.Error("expected 'Docker socket accessible' check when composeConfigured=true")
+	}
+	if !foundCompose {
+		t.Error("expected 'docker compose CLI available' check when composeConfigured=true")
+	}
+}
+
+func TestChecks_NoCompose_SkipsChecks(t *testing.T) {
+	checks := Checks("", "", false)
+	for _, c := range checks {
+		if c.Name == "Docker socket accessible" {
+			t.Error("expected 'Docker socket accessible' to be absent when composeConfigured=false")
+		}
+		if c.Name == "docker compose CLI available" {
+			t.Error("expected 'docker compose CLI available' to be absent when composeConfigured=false")
+		}
+	}
+}
+
+func TestRun_Compose_SocketExists(t *testing.T) {
+	orig := CommandRunner
+	origStat := SocketStat
+	origEnv := EnvLookup
+	defer func() {
+		CommandRunner = orig
+		SocketStat = origStat
+		EnvLookup = origEnv
+	}()
+
+	CommandRunner = stubRunner(
+		"docker info",
+		"gh --version",
+		"gh auth",
+		"python3 --version",
+		"docker compose",
+	)
+	SocketStat = func(path string) error { return nil }
+	EnvLookup = func(key string) string {
+		if key == "ANTHROPIC_API_KEY" {
+			return "sk-test"
+		}
+		return ""
+	}
+
+	var buf bytes.Buffer
+	checks := Checks("", "", true)
+	passed := Run(&buf, checks)
+
+	if !passed {
+		t.Errorf("expected all checks to pass, output:\n%s", buf.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[PASS] Docker socket accessible") {
+		t.Errorf("expected socket PASS in output:\n%s", out)
+	}
+	if !strings.Contains(out, "[PASS] docker compose CLI available") {
+		t.Errorf("expected compose CLI PASS in output:\n%s", out)
+	}
+}
+
+func TestRun_Compose_SocketMissing(t *testing.T) {
+	orig := CommandRunner
+	origStat := SocketStat
+	origEnv := EnvLookup
+	defer func() {
+		CommandRunner = orig
+		SocketStat = origStat
+		EnvLookup = origEnv
+	}()
+
+	CommandRunner = stubRunner(
+		"docker info",
+		"gh --version",
+		"gh auth",
+		"python3 --version",
+		"docker compose",
+	)
+	SocketStat = func(path string) error { return os.ErrNotExist }
+	EnvLookup = func(key string) string {
+		if key == "ANTHROPIC_API_KEY" {
+			return "sk-test"
+		}
+		return ""
+	}
+
+	var buf bytes.Buffer
+	checks := Checks("", "", true)
+	passed := Run(&buf, checks)
+
+	if passed {
+		t.Error("expected Run to return false when socket is missing")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[FAIL] Docker socket accessible") {
+		t.Errorf("expected socket FAIL in output:\n%s", out)
+	}
+	if !strings.Contains(out, "/var/run/docker.sock") {
+		t.Errorf("expected fix message to mention /var/run/docker.sock:\n%s", out)
+	}
+}
+
+func TestRun_Compose_CLIMissing(t *testing.T) {
+	orig := CommandRunner
+	origStat := SocketStat
+	origEnv := EnvLookup
+	defer func() {
+		CommandRunner = orig
+		SocketStat = origStat
+		EnvLookup = origEnv
+	}()
+
+	// docker compose fails, socket passes.
+	CommandRunner = stubRunner(
+		"docker info",
+		"gh --version",
+		"gh auth",
+		"python3 --version",
+	)
+	SocketStat = func(path string) error { return nil }
+	EnvLookup = func(key string) string {
+		if key == "ANTHROPIC_API_KEY" {
+			return "sk-test"
+		}
+		return ""
+	}
+
+	var buf bytes.Buffer
+	checks := Checks("", "", true)
+	passed := Run(&buf, checks)
+
+	if passed {
+		t.Error("expected Run to return false when docker compose CLI is missing")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[FAIL] docker compose CLI available") {
+		t.Errorf("expected compose CLI FAIL in output:\n%s", out)
+	}
+	if !strings.Contains(out, "docker compose") {
+		t.Errorf("expected fix message to mention docker compose:\n%s", out)
 	}
 }
 

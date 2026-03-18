@@ -158,7 +158,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		}
 
 		if !cfg.NoSandbox {
-			dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
+			dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
 			tag, err := sandbox.BuildImage(cmd.Context(), dc, logger)
 			if err != nil {
 				return fmt.Errorf("building Docker image: %w", err)

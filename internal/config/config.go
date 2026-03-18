@@ -260,6 +260,10 @@ type Config struct {
 	// Notify holds zero or more notification provider configurations.
 	// An absent or empty list disables all notifications.
 	Notify []NotifyProviderConfig `yaml:"notify"`
+
+	// DockerCompose configures Docker Compose integration for test environments.
+	// Nil means the feature is disabled (opt-in).
+	DockerCompose *DockerCompose `yaml:"docker_compose"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -271,6 +275,18 @@ type Docker struct {
 	NodeVersion     string   `yaml:"node_version"`
 	ExtraPackages   []string `yaml:"extra_packages"`
 	InstallCommands []string `yaml:"install_commands"`
+}
+
+// DockerCompose holds configuration for Docker Compose integration.
+// When non-nil, godark uses the specified compose file to manage test
+// environment containers alongside the sandbox.
+type DockerCompose struct {
+	// File is the path to the Docker Compose file (e.g. "docker-compose.test.yml").
+	// Required when the docker_compose block is present.
+	File string `yaml:"file"`
+	// ProjectName is an optional prefix for the compose project name.
+	// When empty, Docker Compose auto-generates a project name.
+	ProjectName string `yaml:"project_name"`
 }
 
 // Prompts holds paths to prompt template files.
@@ -352,6 +368,26 @@ func (c *Config) ResolveBranch(milestone string, issueNums []int) string {
 		return "godark/issues-" + strings.Join(parts, "-")
 	}
 	return ""
+}
+
+// ResolveProjectName returns the docker compose project name for a given issue.
+// When prefix is empty it returns "godark-<issueNumber>".
+// When prefix is non-empty it is sanitized (lowercased, separators replaced with
+// hyphens, non-alphanumeric/hyphen characters stripped, repeated hyphens collapsed,
+// leading/trailing hyphens removed) and returns "<sanitized-prefix>-<issueNumber>".
+// The result is always a valid docker compose -p argument.
+func ResolveProjectName(prefix string, issueNumber int) string {
+	if prefix == "" {
+		return fmt.Sprintf("godark-%d", issueNumber)
+	}
+	s := strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(prefix))
+	s = invalidBranchChars.ReplaceAllString(s, "-")
+	s = repeatedHyphens.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if s == "" {
+		return fmt.Sprintf("godark-%d", issueNumber)
+	}
+	return fmt.Sprintf("%s-%d", s, issueNumber)
 }
 
 // EffectiveBaseBranch returns BaseBranch, defaulting to "main" when empty.
@@ -494,6 +530,9 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if err := validateNotify(cfg.Notify); err != nil {
+		return err
+	}
+	if err := validateDockerCompose(cfg.DockerCompose); err != nil {
 		return err
 	}
 	return nil
@@ -639,6 +678,33 @@ func validateTruncationLimits(t TruncationLimits) error {
 	}
 	if t.PRDiff <= 0 {
 		return fmt.Errorf("truncation.pr_diff must be a positive integer, got %d", t.PRDiff)
+	}
+	return nil
+}
+
+// validateDockerCompose ensures DockerCompose fields are valid when set.
+// file is required and must be a safe relative path; project_name, if set,
+// must match the safe name pattern.
+func validateDockerCompose(dc *DockerCompose) error {
+	if dc == nil {
+		return nil
+	}
+	if dc.File == "" {
+		return fmt.Errorf("docker_compose.file must not be empty when docker_compose block is present")
+	}
+	if strings.HasPrefix(dc.File, "/") {
+		return fmt.Errorf("docker_compose.file %q must be a relative path", dc.File)
+	}
+	for _, component := range strings.Split(dc.File, "/") {
+		if component == ".." {
+			return fmt.Errorf("docker_compose.file %q must not contain path traversal components", dc.File)
+		}
+	}
+	if dc.ProjectName == ".." {
+		return fmt.Errorf("docker_compose.project_name %q is not a safe path component", dc.ProjectName)
+	}
+	if dc.ProjectName != "" && !safeModuleName.MatchString(dc.ProjectName) {
+		return fmt.Errorf("docker_compose.project_name %q contains unsafe characters", dc.ProjectName)
 	}
 	return nil
 }

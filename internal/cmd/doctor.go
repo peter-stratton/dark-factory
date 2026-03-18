@@ -31,13 +31,15 @@ Checks performed:
 			runtime = dp.Runtime.Name
 		}
 
-		// Best-effort config load to obtain lint_command.
+		// Best-effort config load to obtain lint_command and compose config.
 		lintCommand := ""
+		composeConfigured := false
 		if cfg, err := config.Load("godark.yaml", config.CLIFlags{}); err == nil {
 			lintCommand = cfg.LintCommand
+			composeConfigured = cfg.DockerCompose != nil
 		}
 
-		checks := doctor.Checks(runtime, lintCommand)
+		checks := doctor.Checks(runtime, lintCommand, composeConfigured)
 		passed := doctor.Run(os.Stdout, checks)
 		if !passed {
 			return fmt.Errorf("pre-flight checks failed")
