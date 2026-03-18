@@ -153,10 +153,10 @@ func TestConfigureProjectSkillDetectsDockerCompose(t *testing.T) {
 	}
 }
 
-func TestConfigureProjectSkillNotesNoSandbox(t *testing.T) {
+func TestConfigureProjectSkillPopulatesDockerCompose(t *testing.T) {
 	content := readSkill(t, "godark-configure-project")
-	if !strings.Contains(content, "no_sandbox") {
-		t.Error("skill does not note that no_sandbox: true may be needed for Docker Compose integration tests")
+	if !strings.Contains(content, "docker_compose:") {
+		t.Error("skill does not populate docker_compose config block when compose files are detected")
 	}
 }
 
