@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
+	"strings"
 )
 
 // ComposeUp runs `docker compose up -d` for the configured compose file and
@@ -42,9 +44,21 @@ func ComposeUp(_ context.Context, dc DockerConfig, requiredEnv []string, logger 
 			os.Remove(envFilePath) //nolint:errcheck // best-effort cleanup
 		}
 
-		for k, v := range envVars {
+		keys := make([]string, 0, len(envVars))
+		for k := range envVars {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			v := envVars[k]
+			// Docker Compose env-file format does not support multi-line values.
+			// Skip any value containing a newline to prevent line injection.
+			if strings.ContainsAny(v, "\n\r") {
+				continue
+			}
 			if _, err := fmt.Fprintf(f, "%s=%s\n", k, v); err != nil {
-				f.Close()          //nolint:errcheck
+				f.Close()              //nolint:errcheck
 				os.Remove(envFilePath) //nolint:errcheck
 				return func() {}, fmt.Errorf("writing compose env file: %w", err)
 			}
