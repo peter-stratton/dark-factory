@@ -370,6 +370,26 @@ func (c *Config) ResolveBranch(milestone string, issueNums []int) string {
 	return ""
 }
 
+// ResolveProjectName returns the docker compose project name for a given issue.
+// When prefix is empty it returns "godark-<issueNumber>".
+// When prefix is non-empty it is sanitized (lowercased, separators replaced with
+// hyphens, non-alphanumeric/hyphen characters stripped, repeated hyphens collapsed,
+// leading/trailing hyphens removed) and returns "<sanitized-prefix>-<issueNumber>".
+// The result is always a valid docker compose -p argument.
+func ResolveProjectName(prefix string, issueNumber int) string {
+	if prefix == "" {
+		return fmt.Sprintf("godark-%d", issueNumber)
+	}
+	s := strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(prefix))
+	s = invalidBranchChars.ReplaceAllString(s, "-")
+	s = repeatedHyphens.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if s == "" {
+		return fmt.Sprintf("godark-%d", issueNumber)
+	}
+	return fmt.Sprintf("%s-%d", s, issueNumber)
+}
+
 // EffectiveBaseBranch returns BaseBranch, defaulting to "main" when empty.
 func (c *Config) EffectiveBaseBranch() string {
 	if c.BaseBranch == "" {
