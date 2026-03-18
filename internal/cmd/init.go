@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/phs/dark-factory/internal/config"
 	"github.com/phs/dark-factory/internal/detect"
 	"github.com/phs/dark-factory/internal/github"
 	"github.com/phs/dark-factory/internal/harness/templates"
@@ -16,18 +17,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// detectedCommands holds auto-detected build/test commands for config generation.
+// detectedCommands holds auto-detected build/test commands and runtime for config generation.
 type detectedCommands struct {
-	build  string
-	test   string
-	format string
-	lint   string
+	build   string
+	test    string
+	format  string
+	lint    string
+	runtime config.Runtime
 }
 
 // buildDefaultConfig constructs the default godark.yaml config string.
 // When detected is non-nil, build/test/format/lint commands are written as
 // active (uncommented) fields. Otherwise they remain commented-out placeholders.
+// When a runtime was detected, a runtime: block is also written.
 func buildDefaultConfig(detected *detectedCommands) string {
+	var runtimeBlock string
+	if detected != nil && detected.runtime.Name != "" {
+		runtimeBlock = "# Runtime toolchain (auto-detected — verify for your project)\nruntime:\n"
+		runtimeBlock += fmt.Sprintf("  name: %s\n", detected.runtime.Name)
+		if detected.runtime.Version != "" {
+			runtimeBlock += fmt.Sprintf("  version: %q\n", detected.runtime.Version)
+		}
+		runtimeBlock += "\n"
+	}
+
 	var commandBlock string
 	if detected != nil && (detected.build != "" || detected.test != "") {
 		commandBlock = "# Build, test, format, and lint commands (auto-detected — verify for your project)\n"
@@ -68,7 +81,7 @@ auto_merge:
   feature: none
   rollup: none
 
-` + commandBlock + `
+` + runtimeBlock + commandBlock + `
 # Paths (defaults shown — override to customize)
 # roadmap_path: docs/ROADMAP.md
 # planning_dir: docs/planning/
@@ -236,9 +249,18 @@ func detectCommandsForDir(dir string) *detectedCommands {
 	if err != nil {
 		return nil
 	}
+	rt := dp.Runtime
+	// Normalize Go versions to three components (e.g. "1.21" → "1.21.0") so
+	// the Dockerfile template's patch-version requirement is satisfied.
+	if rt.Name == "go" && rt.Version != "" {
+		if parts := strings.Split(rt.Version, "."); len(parts) == 2 {
+			rt.Version = rt.Version + ".0"
+		}
+	}
 	dc := &detectedCommands{
-		build: dp.BuildCommand,
-		test:  dp.TestCommand,
+		build:   dp.BuildCommand,
+		test:    dp.TestCommand,
+		runtime: rt,
 	}
 	// Add language-specific format/lint suggestions.
 	if dp.Runtime.Name == "go" {
