@@ -9,14 +9,16 @@ import (
 
 // DockerConfig holds the resolved configuration for Dockerfile generation.
 type DockerConfig struct {
-	Image           string
-	Runtime         config.Runtime
-	NodeVersion     string
-	User            string
-	ExtraPackages   []string
-	InstallCommands []string
-	Mount           string
-	SandboxEnv      map[string]string
+	Image              string
+	Runtime            config.Runtime
+	NodeVersion        string
+	User               string
+	ExtraPackages      []string
+	InstallCommands    []string
+	Mount              string
+	SandboxEnv         map[string]string
+	ComposeFile        string
+	ComposeProjectName string
 }
 
 // DefaultDockerConfig returns a DockerConfig with sensible defaults.
@@ -28,9 +30,10 @@ func DefaultDockerConfig() DockerConfig {
 	}
 }
 
-// DockerConfigFromConfig maps a config.Docker, config.Runtime, and sandbox environment
-// variables into a DockerConfig, applying defaults for any zero-value fields.
-func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandboxEnv map[string]string) DockerConfig {
+// DockerConfigFromConfig maps a config.Docker, config.Runtime, sandbox environment
+// variables, and an optional config.DockerCompose into a DockerConfig, applying
+// defaults for any zero-value fields. compose may be nil (feature disabled).
+func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandboxEnv map[string]string, compose *config.DockerCompose) DockerConfig {
 	dc := DefaultDockerConfig()
 	if docker.Image != "" {
 		dc.Image = docker.Image
@@ -52,6 +55,10 @@ func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandbo
 		dc.InstallCommands = docker.InstallCommands
 	}
 	dc.SandboxEnv = sandboxEnv
+	if compose != nil {
+		dc.ComposeFile = compose.File
+		dc.ComposeProjectName = compose.ProjectName
+	}
 	return dc
 }
 

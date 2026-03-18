@@ -315,7 +315,7 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Log
 	}
 
 	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
 		tag, err := sandbox.BuildImage(ctx, dc, logger)
 		if err != nil {
 			return nil, nil, fmt.Errorf("building Docker image: %w", err)
@@ -591,7 +591,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 	// Build Docker image once if using sandbox mode.
 	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv)
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
 		tag, err := sandbox.BuildImage(ctx, dc, logger)
 		if err != nil {
 			return fmt.Errorf("building Docker image: %w", err)
