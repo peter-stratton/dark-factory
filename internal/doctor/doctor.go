@@ -18,6 +18,13 @@ var CommandRunner goexec.CommandRunnerFunc = goexec.Default
 // Replaceable for testing.
 var EnvLookup = os.Getenv
 
+// SocketStat reports whether the path exists and is accessible.
+// Replaceable for testing.
+var SocketStat = func(path string) error {
+	_, err := os.Stat(path)
+	return err
+}
+
 // CheckTimeout is the per-check deadline enforced by Run.
 // Overridable in tests.
 var CheckTimeout = 15 * time.Second
@@ -53,7 +60,9 @@ func runtimeVersionCmd(runtime string) (string, []string) {
 // Checks returns the full ordered list of pre-flight checks. If runtime is
 // non-empty, a toolchain availability check for that runtime is included.
 // If lintCommand contains "golangci-lint", a check for that tool is appended.
-func Checks(runtime, lintCommand string) []*Check {
+// If composeConfigured is true, checks for Docker socket accessibility and
+// the docker compose CLI are appended.
+func Checks(runtime, lintCommand string, composeConfigured bool) []*Check {
 	checks := []*Check{
 		{
 			Name: "Docker daemon running",
@@ -120,6 +129,24 @@ func Checks(runtime, lintCommand string) []*Check {
 			Fix:  "Install golangci-lint: `brew install golangci-lint` or see https://golangci-lint.run/usage/install/",
 			run: func() bool {
 				_, err := CommandRunner("golangci-lint", "--version")
+				return err == nil
+			},
+		})
+	}
+
+	if composeConfigured {
+		checks = append(checks, &Check{
+			Name: "Docker socket accessible",
+			Fix:  "/var/run/docker.sock is not accessible. Ensure the Docker daemon is running on the host and the socket is mounted into the container (e.g. add `-v /var/run/docker.sock:/var/run/docker.sock` to your docker run flags).",
+			run: func() bool {
+				return SocketStat("/var/run/docker.sock") == nil
+			},
+		})
+		checks = append(checks, &Check{
+			Name: "docker compose CLI available",
+			Fix:  "The `docker compose` plugin is not installed. Install Docker Desktop or the compose plugin manually: https://docs.docker.com/compose/install/",
+			run: func() bool {
+				_, err := CommandRunner("docker", "compose", "version")
 				return err == nil
 			},
 		})
