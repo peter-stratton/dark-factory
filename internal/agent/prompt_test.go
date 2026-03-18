@@ -1135,3 +1135,116 @@ func TestSpecGeneratorPrompt_KeepsNarrowScenarioDirRule(t *testing.T) {
 		t.Error("spec_generator prompt must not contain the broad 'Do NOT modify files in' ScenarioDir rule from SharedRules")
 	}
 }
+
+func TestImplementerPrompt_ComposeServicesPresent(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:     1,
+		IssueTitle:      "Test Issue",
+		Repo:            "owner/repo",
+		BuildCommand:    "make build",
+		TestCommand:     "make test",
+		ProtectedPaths:  "CLAUDE.md",
+		ScenarioDir:     "tests/scenarios/",
+		ReviewDir:       "tests/review/",
+		Slug:            "test-issue",
+		ComposeServices: "- postgres: PostgreSQL on localhost:5432\n- redis: Redis on localhost:6379\n",
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "postgres") {
+		t.Error("implementer prompt should contain service name 'postgres' when ComposeServices is set")
+	}
+	if !strings.Contains(rendered, "PostgreSQL on localhost:5432") {
+		t.Error("implementer prompt should contain service description when ComposeServices is set")
+	}
+	if !strings.Contains(rendered, "Docker Compose services") {
+		t.Error("implementer prompt should contain 'Docker Compose services' heading when ComposeServices is set")
+	}
+}
+
+func TestImplementerPrompt_ComposeServicesAbsent(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:     1,
+		IssueTitle:      "Test Issue",
+		Repo:            "owner/repo",
+		BuildCommand:    "make build",
+		TestCommand:     "make test",
+		ProtectedPaths:  "CLAUDE.md",
+		ScenarioDir:     "tests/scenarios/",
+		ReviewDir:       "tests/review/",
+		Slug:            "test-issue",
+		ComposeServices: "",
+	}
+	rendered, err := RenderPrompt(p.Implementer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "Docker Compose services") {
+		t.Error("implementer prompt should not contain 'Docker Compose services' heading when ComposeServices is empty")
+	}
+}
+
+func TestReviewerPrompt_ComposeServicesPresent(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:     1,
+		IssueTitle:      "Test Issue",
+		Repo:            "owner/repo",
+		PRNumber:        10,
+		BuildCommand:    "make build",
+		TestCommand:     "make test",
+		ProtectedPaths:  "CLAUDE.md",
+		ScenarioDir:     "tests/scenarios/",
+		ReviewDir:       "tests/review/",
+		ComposeServices: "- traefik: Local reverse proxy — API at http://api.localhost\n",
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "traefik") {
+		t.Error("reviewer prompt should contain service name 'traefik' when ComposeServices is set")
+	}
+	if !strings.Contains(rendered, "Docker Compose services") {
+		t.Error("reviewer prompt should contain 'Docker Compose services' heading when ComposeServices is set")
+	}
+}
+
+func TestReviewerPrompt_ComposeServicesAbsent(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:     1,
+		IssueTitle:      "Test Issue",
+		Repo:            "owner/repo",
+		PRNumber:        10,
+		BuildCommand:    "make build",
+		TestCommand:     "make test",
+		ProtectedPaths:  "CLAUDE.md",
+		ScenarioDir:     "tests/scenarios/",
+		ReviewDir:       "tests/review/",
+		ComposeServices: "",
+	}
+	rendered, err := RenderPrompt(p.Reviewer, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(rendered, "Docker Compose services") {
+		t.Error("reviewer prompt should not contain 'Docker Compose services' heading when ComposeServices is empty")
+	}
+}

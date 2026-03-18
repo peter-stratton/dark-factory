@@ -49,6 +49,9 @@ type PromptData struct {
 	// ModuleContext describes the configured modules and their dependency
 	// relationships. Empty when no modules are configured.
 	ModuleContext string
+	// ComposeServices describes the Docker Compose services available in the
+	// test environment. Empty when no services are configured.
+	ComposeServices string
 	// ReviewFeedback holds human reviewer comments injected directly into the
 	// retry prompt. Non-empty only for watch-initiated fix cycles.
 	ReviewFeedback string

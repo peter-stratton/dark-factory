@@ -10,6 +10,13 @@ when reading code and planning your approach.
 
 {{.ReconBrief}}
 {{- end}}
+{{- if .ComposeServices}}
+
+## Docker Compose services
+
+The following services are available in the test environment:
+{{.ComposeServices}}
+{{- end}}
 
 Issue title: {{.IssueTitle}}
 Issue body:

@@ -150,6 +150,7 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ArchitectureJSON:       readFileOrEmpty(cfg.ArchitectureJSON),
 		ConventionsDocContent:  readFileOrEmpty(cfg.ConventionsDoc),
 		ModuleContext:          buildModuleContext(cfg.Modules),
+		ComposeServices:        buildComposeServices(cfg.DockerCompose),
 		BaseBranch:             cfg.BaseBranch,
 		SharedRules:            buildSharedRules(protectedPaths, cfg.ScenarioDir),
 	}
@@ -196,6 +197,26 @@ func buildModuleContext(modules map[string]config.Module) string {
 			sb.WriteString(" (depends_on: ")
 			sb.WriteString(strings.Join(mod.DependsOn, ", "))
 			sb.WriteString(")")
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// buildComposeServices renders a human-readable summary of configured
+// Docker Compose services for use in prompt templates.
+// Returns empty string when no services are configured.
+func buildComposeServices(dc *config.DockerCompose) string {
+	if dc == nil || len(dc.Services) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, svc := range dc.Services {
+		sb.WriteString("- ")
+		sb.WriteString(svc.Name)
+		if svc.Description != "" {
+			sb.WriteString(": ")
+			sb.WriteString(svc.Description)
 		}
 		sb.WriteString("\n")
 	}

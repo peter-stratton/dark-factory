@@ -3,6 +3,13 @@ You are a code reviewer. Validate PR #{{.PRNumber}} against the scenario specs a
 Issue title: {{.IssueTitle}}
 Issue body:
 {{.IssueBody}}
+{{- if .ComposeServices}}
+
+## Docker Compose services
+
+The following services are available in the test environment:
+{{.ComposeServices}}
+{{- end}}
 
 Steps:
 1. Check out the PR: gh pr checkout {{.PRNumber}} --repo {{.Repo}}
