@@ -2186,3 +2186,41 @@ docker_compose:
 		t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "my-tests")
 	}
 }
+
+// TestDockerComposeAbsoluteFilePath verifies that validation rejects an absolute
+// path for docker_compose.file.
+func TestDockerComposeAbsoluteFilePath(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: /etc/passwd
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for absolute docker_compose.file, got nil")
+	}
+	if !strings.Contains(err.Error(), "docker_compose.file") {
+		t.Errorf("error %q does not mention docker_compose.file", err.Error())
+	}
+}
+
+// TestDockerComposeTraversalFilePath verifies that validation rejects a file path
+// containing ".." path traversal components.
+func TestDockerComposeTraversalFilePath(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: "../../etc/shadow"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for path traversal in docker_compose.file, got nil")
+	}
+	if !strings.Contains(err.Error(), "docker_compose.file") {
+		t.Errorf("error %q does not mention docker_compose.file", err.Error())
+	}
+}
