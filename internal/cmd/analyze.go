@@ -326,6 +326,7 @@ func printAnalyzeReport(w io.Writer, report analysis.Report, gaps []analysis.Pro
 	fmt.Fprintf(w, "  Avg time to merge:      %s\n", formatDuration(report.DurationStats.AvgTimeToMergeSeconds))
 
 	printDurationByStep(w, report)
+	printResourceUsage(w, report)
 	printRepoStats(w, report)
 	printVerifyStats(w, report)
 	printPromptGaps(w, gaps)
@@ -401,6 +402,77 @@ func printDurationByStep(w io.Writer, report analysis.Report) {
 		fmt.Fprintf(tw, "  %s\t%s\t%.1f%%\n", s.name, formatDuration(s.seconds), pct)
 	}
 	_ = tw.Flush()
+}
+
+// printResourceUsage writes the "Resource Usage" section to w.
+// The section is omitted when report.ResourceStats is nil (no resource data).
+func printResourceUsage(w io.Writer, report analysis.Report) {
+	if report.ResourceStats == nil {
+		return
+	}
+	rs := report.ResourceStats
+	fmt.Fprintf(w, "\nResource Usage\n")
+	fmt.Fprintf(w, "  Max peak memory:    %s\n", formatBytes(rs.MaxPeakMemoryBytes))
+	fmt.Fprintf(w, "  Avg peak memory:    %s\n", formatBytes(rs.AvgPeakMemoryBytes))
+	fmt.Fprintf(w, "  Total CPU time:     %s\n", formatNanoseconds(rs.TotalCPUNanoseconds))
+	fmt.Fprintf(w, "  Avg CPU per issue:  %s\n", formatNanoseconds(rs.AvgCPUNanosecondsPerIssue))
+
+	if len(rs.ResourceByStep) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nResource Usage by Step\n")
+	type stepResource struct {
+		name string
+		srs  analysis.StepResourceStats
+	}
+	steps := make([]stepResource, 0, len(rs.ResourceByStep))
+	for name, srs := range rs.ResourceByStep {
+		steps = append(steps, stepResource{name, srs})
+	}
+	sort.Slice(steps, func(i, j int) bool {
+		return steps[i].name < steps[j].name
+	})
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Step\tMax Memory\tAvg Memory\tTotal CPU\n")
+	for _, s := range steps {
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n",
+			s.name,
+			formatBytes(s.srs.MaxMemoryBytes),
+			formatBytes(s.srs.AvgMemoryBytes),
+			formatNanoseconds(s.srs.TotalCPUNanoseconds),
+		)
+	}
+	_ = tw.Flush()
+}
+
+// formatBytes formats a byte count as a human-readable string (e.g. "1.2 MB").
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+// formatNanoseconds formats a nanosecond count as a human-readable string.
+func formatNanoseconds(ns int64) string {
+	switch {
+	case ns >= int64(time.Hour):
+		return fmt.Sprintf("%.2fh", float64(ns)/float64(time.Hour))
+	case ns >= int64(time.Minute):
+		return fmt.Sprintf("%.2fm", float64(ns)/float64(time.Minute))
+	case ns >= int64(time.Second):
+		return fmt.Sprintf("%.2fs", float64(ns)/float64(time.Second))
+	case ns >= int64(time.Millisecond):
+		return fmt.Sprintf("%.2fms", float64(ns)/float64(time.Millisecond))
+	default:
+		return fmt.Sprintf("%dns", ns)
+	}
 }
 
 // printRepoStats writes the "Success by Repo" section to w.

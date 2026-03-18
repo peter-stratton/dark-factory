@@ -113,6 +113,8 @@ type TimelineStepView struct {
 	MarkerClass    string // "success", "danger", "warning", "info", "neutral"
 	Duration       string // formatted duration, e.g. "42s" or "—"
 	Cost           string // formatted cost, e.g. "$0.0042" or "—"
+	PeakMemory     string // formatted peak memory, e.g. "123.4 MB" or "—"
+	CPUTime        string // formatted CPU time, e.g. "1.23s" or "—"
 	Verdict        string // "Passed", "Failed", "Flagged", "Error", "—"
 	VerdictClass   string // badge class suffix
 	Flags          []rundata.Flag
@@ -667,6 +669,8 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 		MarkerClass:  markerClass,
 		Duration:     formatDuration(step.DurationSeconds),
 		Cost:         formatCost(step.CostUSD),
+		PeakMemory:   formatMemoryMB(step.PeakMemoryBytes),
+		CPUTime:      formatCPUSecs(step.CPUNanoseconds),
 		Verdict:      verdict,
 		VerdictClass: verdictClass,
 		Flags:        step.Flags,
@@ -725,6 +729,8 @@ func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
 		MarkerClass:    markerClass,
 		Duration:       "—",
 		Cost:           "—",
+		PeakMemory:     "—",
+		CPUTime:        "—",
 		Verdict:        verdict,
 		VerdictClass:   verdictClass,
 		HasOutput:      output != "",
@@ -753,6 +759,22 @@ func formatDuration(seconds float64) string {
 	mins := int(d.Minutes())
 	secs := int(d.Seconds()) % 60
 	return fmt.Sprintf("%dm%ds", mins, secs)
+}
+
+// formatMemoryMB formats bytes as MB with 1 decimal place, or "—" for zero.
+func formatMemoryMB(bytes int64) string {
+	if bytes == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f MB", float64(bytes)/1048576)
+}
+
+// formatCPUSecs formats nanoseconds as seconds with 2 decimal places, or "—" for zero.
+func formatCPUSecs(nanos int64) string {
+	if nanos == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%.2fs", float64(nanos)/1e9)
 }
 
 // OutcomeRow is one row in the outcome distribution table on the analysis page.

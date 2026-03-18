@@ -3,6 +3,7 @@ package stats
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // migrate creates the stats tables if they do not already exist.
@@ -57,5 +58,24 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration transaction: %w", err)
+	}
+
+	// ALTER TABLE statements must run outside a transaction so that
+	// "duplicate column name" errors can be suppressed per-statement for idempotency.
+	alterStmts := []string{
+		`ALTER TABLE step_results ADD COLUMN peak_memory_bytes INTEGER DEFAULT 0`,
+		`ALTER TABLE step_results ADD COLUMN cpu_nanoseconds INTEGER DEFAULT 0`,
+	}
+	for _, stmt := range alterStmts {
+		if _, err := db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("execute migration: %w", err)
+			}
+			// column already exists — idempotent
+		}
+	}
+
+	return nil
 }

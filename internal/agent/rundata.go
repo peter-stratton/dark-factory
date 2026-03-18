@@ -9,11 +9,13 @@ import (
 // DurationSeconds from the timing fields captured during execution.
 func ResultToStep(r *Result) rundata.StepResult {
 	step := rundata.StepResult{
-		Output:    r.ResultText,
-		TimedOut:  r.TimedOut,
-		CostUSD:   r.CostUSD,
-		ToolTrace: r.ToolTrace,
-		SessionID: r.SessionID,
+		Output:          r.ResultText,
+		TimedOut:        r.TimedOut,
+		CostUSD:         r.CostUSD,
+		ToolTrace:       r.ToolTrace,
+		SessionID:       r.SessionID,
+		PeakMemoryBytes: r.PeakMemoryBytes,
+		CPUNanoseconds:  r.CPUNanoseconds,
 	}
 	if !r.StartedAt.IsZero() {
 		t := r.StartedAt

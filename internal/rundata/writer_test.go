@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1233,5 +1234,69 @@ func TestIssueDir(t *testing.T) {
 	want := filepath.Join(w.Dir(), "issues", "5")
 	if got != want {
 		t.Errorf("IssueDir(5) = %q, want %q", got, want)
+	}
+}
+
+func TestStepResult_ResourceFieldsSerialization(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 24", []int{544})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{
+		CostUSD:         0.05,
+		PeakMemoryBytes: 256 * 1024 * 1024,
+		CPUNanoseconds:  1_500_000_000,
+	}
+	if err := w.WriteImplementResult(544, step); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "544", "implement.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading implement.json: %v", err)
+	}
+
+	var written StepResult
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing implement.json: %v", err)
+	}
+
+	if written.PeakMemoryBytes != step.PeakMemoryBytes {
+		t.Errorf("PeakMemoryBytes = %d, want %d", written.PeakMemoryBytes, step.PeakMemoryBytes)
+	}
+	if written.CPUNanoseconds != step.CPUNanoseconds {
+		t.Errorf("CPUNanoseconds = %d, want %d", written.CPUNanoseconds, step.CPUNanoseconds)
+	}
+}
+
+func TestStepResult_ResourceFieldsOmittedWhenZero(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 24", []int{544})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// StepResult with zero resource fields.
+	step := StepResult{CostUSD: 0.01}
+	if err := w.WriteImplementResult(544, step); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "544", "implement.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading implement.json: %v", err)
+	}
+
+	// Zero int64 fields with omitempty must not appear in the JSON.
+	raw := string(data)
+	if strings.Contains(raw, "peak_memory_bytes") {
+		t.Errorf("peak_memory_bytes should be omitted when zero, but appears in JSON: %s", raw)
+	}
+	if strings.Contains(raw, "cpu_nanoseconds") {
+		t.Errorf("cpu_nanoseconds should be omitted when zero, but appears in JSON: %s", raw)
 	}
 }

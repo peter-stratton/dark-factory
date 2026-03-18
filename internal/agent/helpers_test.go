@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"syscall"
 	"testing"
 
 	"github.com/phs/dark-factory/internal/config"
@@ -57,6 +58,24 @@ func stubRunnerFunc(t *testing.T, fn func(ctx context.Context, env map[string]st
 	orig := Runner
 	t.Cleanup(func() { Runner = orig })
 	Runner = fn
+}
+
+// stubGetrusageFn replaces GetrusageFn with a custom function for tests that
+// need to control Getrusage return values or inject errors.
+func stubGetrusageFn(t *testing.T, fn func(who int, rusage *syscall.Rusage) error) {
+	t.Helper()
+	orig := GetrusageFn
+	t.Cleanup(func() { GetrusageFn = orig })
+	GetrusageFn = fn
+}
+
+// stubGOOS overrides goosForRusage for the duration of the test, allowing
+// both macOS and Linux normalization paths to be exercised on any platform.
+func stubGOOS(t *testing.T, goos string) {
+	t.Helper()
+	orig := goosForRusage
+	t.Cleanup(func() { goosForRusage = orig })
+	goosForRusage = goos
 }
 
 // stubGuardRunner replaces GuardRunner with the given function for the

@@ -383,3 +383,35 @@ func TestWriteStepResult_EmptyFlags(t *testing.T) {
 		t.Errorf("expected empty flags slice, got %v", gotFlags)
 	}
 }
+
+func TestWriteStepResult_ResourceFields(t *testing.T) {
+	db := openTestDB(t)
+
+	step := StepResultRecord{
+		RunID:           "run-res",
+		IssueNumber:     10,
+		StepName:        "implement",
+		PeakMemoryBytes: 512 * 1024 * 1024,
+		CPUNanoseconds:  3_000_000_000,
+	}
+
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	var gotPeakMem, gotCPUNano int64
+	err := db.db.QueryRow(
+		`SELECT peak_memory_bytes, cpu_nanoseconds FROM step_results
+		 WHERE run_id = ? AND issue_number = ? AND step_name = ?`,
+		step.RunID, step.IssueNumber, step.StepName,
+	).Scan(&gotPeakMem, &gotCPUNano)
+	if err != nil {
+		t.Fatalf("SELECT resource fields: %v", err)
+	}
+	if gotPeakMem != step.PeakMemoryBytes {
+		t.Errorf("peak_memory_bytes: got %d, want %d", gotPeakMem, step.PeakMemoryBytes)
+	}
+	if gotCPUNano != step.CPUNanoseconds {
+		t.Errorf("cpu_nanoseconds: got %d, want %d", gotCPUNano, step.CPUNanoseconds)
+	}
+}

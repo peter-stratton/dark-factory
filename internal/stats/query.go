@@ -106,7 +106,7 @@ func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueO
 func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResultRecord, error) {
 	where, args := buildRunJoinWhere(filter)
 	const stepResultsBase = `SELECT sr.run_id, sr.issue_number, sr.step_name, sr.cost_usd, sr.duration_seconds,
-	             sr.flags, sr.started_at, sr.finished_at
+	             sr.flags, sr.started_at, sr.finished_at, sr.peak_memory_bytes, sr.cpu_nanoseconds
 	      FROM step_results sr
 	      INNER JOIN runs r ON r.id = sr.run_id`
 	q := stepResultsBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
@@ -123,7 +123,7 @@ func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResu
 		var flagsJSON, startedAt, finishedAt string
 		if scanErr := rows.Scan(
 			&s.RunID, &s.IssueNumber, &s.StepName, &s.CostUSD, &s.DurationSeconds,
-			&flagsJSON, &startedAt, &finishedAt,
+			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan step result: %w", scanErr)
 		}

@@ -1379,3 +1379,195 @@ func TestAggregateAvgTimeToMergeZeroWhenNoImplemented(t *testing.T) {
 		t.Errorf("AvgTimeToMergeSeconds = %f, want 0.0", got.DurationStats.AvgTimeToMergeSeconds)
 	}
 }
+
+// TestAggregateResourceStats_NoData: runs without resource data produce nil ResourceStats.
+func TestAggregateResourceStats_NoData(t *testing.T) {
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{CostUSD: 1.0},
+					QualityReview: rundata.StepResult{CostUSD: 0.5},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.ResourceStats != nil {
+		t.Errorf("ResourceStats = %+v, want nil when no resource data", got.ResourceStats)
+	}
+}
+
+// TestAggregateResourceStats_WithData: resource stats are computed correctly from step results.
+func TestAggregateResourceStats_WithData(t *testing.T) {
+	// issue 1: implement 200MB / 2s CPU, quality-review 100MB / 1s CPU
+	// issue 2: implement 300MB / 3s CPU, no quality-review resource data
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement:     rundata.StepResult{PeakMemoryBytes: 200 << 20, CPUNanoseconds: 2_000_000_000},
+					QualityReview: rundata.StepResult{PeakMemoryBytes: 100 << 20, CPUNanoseconds: 1_000_000_000},
+				},
+				{
+					Implement: rundata.StepResult{PeakMemoryBytes: 300 << 20, CPUNanoseconds: 3_000_000_000},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.ResourceStats == nil {
+		t.Fatal("ResourceStats = nil, want non-nil")
+	}
+	rs := got.ResourceStats
+
+	// MaxPeakMemoryBytes: 300MB
+	want300MB := int64(300 << 20)
+	if rs.MaxPeakMemoryBytes != want300MB {
+		t.Errorf("MaxPeakMemoryBytes = %d, want %d", rs.MaxPeakMemoryBytes, want300MB)
+	}
+
+	// AvgPeakMemoryBytes: avg of per-issue peaks = (200MB + 300MB) / 2 = 250MB
+	want250MB := int64(250 << 20)
+	if rs.AvgPeakMemoryBytes != want250MB {
+		t.Errorf("AvgPeakMemoryBytes = %d, want %d", rs.AvgPeakMemoryBytes, want250MB)
+	}
+
+	// TotalCPUNanoseconds: 2s + 1s + 3s = 6s
+	wantTotalCPU := int64(6_000_000_000)
+	if rs.TotalCPUNanoseconds != wantTotalCPU {
+		t.Errorf("TotalCPUNanoseconds = %d, want %d", rs.TotalCPUNanoseconds, wantTotalCPU)
+	}
+
+	// AvgCPUNanosecondsPerIssue: 6s / 2 = 3s
+	wantAvgCPU := int64(3_000_000_000)
+	if rs.AvgCPUNanosecondsPerIssue != wantAvgCPU {
+		t.Errorf("AvgCPUNanosecondsPerIssue = %d, want %d", rs.AvgCPUNanosecondsPerIssue, wantAvgCPU)
+	}
+
+	// Per-step: implement — max 300MB, avg (200+300)/2=250MB, CPU 5s
+	implStep, ok := rs.ResourceByStep["implement"]
+	if !ok {
+		t.Fatal("ResourceByStep missing 'implement'")
+	}
+	// want250MB already declared above for AvgPeakMemoryBytes check
+	if implStep.MaxMemoryBytes != want300MB {
+		t.Errorf("implement MaxMemoryBytes = %d, want %d", implStep.MaxMemoryBytes, want300MB)
+	}
+	if implStep.AvgMemoryBytes != want250MB {
+		t.Errorf("implement AvgMemoryBytes = %d, want %d", implStep.AvgMemoryBytes, want250MB)
+	}
+	wantImplCPU := int64(5_000_000_000)
+	if implStep.TotalCPUNanoseconds != wantImplCPU {
+		t.Errorf("implement TotalCPUNanoseconds = %d, want %d", implStep.TotalCPUNanoseconds, wantImplCPU)
+	}
+
+	// Per-step: quality-review — max 100MB, avg 100MB, CPU 1s
+	qrStep, ok := rs.ResourceByStep["quality-review"]
+	if !ok {
+		t.Fatal("ResourceByStep missing 'quality-review'")
+	}
+	want100MB := int64(100 << 20)
+	if qrStep.MaxMemoryBytes != want100MB {
+		t.Errorf("quality-review MaxMemoryBytes = %d, want %d", qrStep.MaxMemoryBytes, want100MB)
+	}
+	if qrStep.AvgMemoryBytes != want100MB {
+		t.Errorf("quality-review AvgMemoryBytes = %d, want %d", qrStep.AvgMemoryBytes, want100MB)
+	}
+	wantQRCPU := int64(1_000_000_000)
+	if qrStep.TotalCPUNanoseconds != wantQRCPU {
+		t.Errorf("quality-review TotalCPUNanoseconds = %d, want %d", qrStep.TotalCPUNanoseconds, wantQRCPU)
+	}
+}
+
+// TestAggregateResourceStats_MixedData: some runs have resource data, some don't;
+// aggregation only counts non-zero samples.
+func TestAggregateResourceStats_MixedData(t *testing.T) {
+	// issue 1: has resource data; issue 2: no resource data
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement: rundata.StepResult{PeakMemoryBytes: 400 << 20, CPUNanoseconds: 4_000_000_000},
+				},
+				{
+					Implement: rundata.StepResult{CostUSD: 1.0}, // no resource data
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.ResourceStats == nil {
+		t.Fatal("ResourceStats = nil, want non-nil")
+	}
+	rs := got.ResourceStats
+
+	// Max should be 400MB (only one non-zero sample).
+	want400MB := int64(400 << 20)
+	if rs.MaxPeakMemoryBytes != want400MB {
+		t.Errorf("MaxPeakMemoryBytes = %d, want %d", rs.MaxPeakMemoryBytes, want400MB)
+	}
+	// Avg should also be 400MB (only one non-zero sample, not divided by 2).
+	if rs.AvgPeakMemoryBytes != want400MB {
+		t.Errorf("AvgPeakMemoryBytes = %d, want %d (only one non-zero sample)", rs.AvgPeakMemoryBytes, want400MB)
+	}
+	// AvgCPU: 4s / 2 issues = 2s
+	wantAvgCPU := int64(2_000_000_000)
+	if rs.AvgCPUNanosecondsPerIssue != wantAvgCPU {
+		t.Errorf("AvgCPUNanosecondsPerIssue = %d, want %d", rs.AvgCPUNanosecondsPerIssue, wantAvgCPU)
+	}
+}
+
+// TestAggregateResourceStats_RetrySteps: resource data from retry steps is aggregated.
+func TestAggregateResourceStats_RetrySteps(t *testing.T) {
+	runs := []rundata.RunDetail{
+		{
+			Issues: []rundata.IssueDetail{
+				{
+					Implement: rundata.StepResult{PeakMemoryBytes: 100 << 20, CPUNanoseconds: 1_000_000_000},
+					Retries: []rundata.RetryDetail{
+						{
+							Retry:         rundata.StepResult{PeakMemoryBytes: 50 << 20, CPUNanoseconds: 500_000_000},
+							QualityReview: rundata.StepResult{CPUNanoseconds: 200_000_000},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := Aggregate(runs)
+
+	if got.ResourceStats == nil {
+		t.Fatal("ResourceStats = nil, want non-nil")
+	}
+	rs := got.ResourceStats
+
+	// TotalCPU: 1s + 0.5s + 0.2s = 1.7s
+	wantCPU := int64(1_700_000_000)
+	if rs.TotalCPUNanoseconds != wantCPU {
+		t.Errorf("TotalCPUNanoseconds = %d, want %d", rs.TotalCPUNanoseconds, wantCPU)
+	}
+
+	// "retries" step should appear in ResourceByStep.
+	retriesStep, ok := rs.ResourceByStep["retries"]
+	if !ok {
+		t.Fatal("ResourceByStep missing 'retries'")
+	}
+	// Retry step max memory = 50MB (quality-review had 0 memory).
+	want50MB := int64(50 << 20)
+	if retriesStep.MaxMemoryBytes != want50MB {
+		t.Errorf("retries MaxMemoryBytes = %d, want %d", retriesStep.MaxMemoryBytes, want50MB)
+	}
+	// Retry CPU = 0.5s + 0.2s = 0.7s
+	wantRetryCPU := int64(700_000_000)
+	if retriesStep.TotalCPUNanoseconds != wantRetryCPU {
+		t.Errorf("retries TotalCPUNanoseconds = %d, want %d", retriesStep.TotalCPUNanoseconds, wantRetryCPU)
+	}
+}
