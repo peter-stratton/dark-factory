@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Add docker_compose config block and validation
+## Issue 556: Add docker_compose config block and validation
 
 ### Description
 
@@ -46,9 +46,9 @@ use and optionally what project name prefix to apply.
 
 ---
 
-## Issue: Map docker_compose config through DockerConfig
+## Issue 557: Map docker_compose config through DockerConfig
 
-**Blocked by**: Add docker_compose config block and validation
+**Blocked by**: #556
 
 ### Description
 
@@ -75,9 +75,9 @@ Wire the new `DockerCompose` config through the `DockerConfig` struct in
 
 ---
 
-## Issue: Mount Docker socket into sandbox container
+## Issue 558: Mount Docker socket into sandbox container
 
-**Blocked by**: Map docker_compose config through DockerConfig
+**Blocked by**: #557
 
 ### Description
 
@@ -108,9 +108,9 @@ with the host Docker daemon.
 
 ---
 
-## Issue: Install Docker CLI in sandbox image
+## Issue 559: Install Docker CLI in sandbox image
 
-**Blocked by**: Map docker_compose config through DockerConfig
+**Blocked by**: #557
 
 ### Description
 
@@ -138,9 +138,9 @@ plugin in the sandbox container image so compose commands can be executed.
 
 ---
 
-## Issue: Run docker-compose up before agent execution
+## Issue 560: Run docker-compose up before agent execution
 
-**Blocked by**: Mount Docker socket into sandbox container, Install Docker CLI in sandbox image
+**Blocked by**: #558, #559
 
 ### Description
 
@@ -174,9 +174,9 @@ host network. The agent's tests connect to them via localhost ports.
 
 ---
 
-## Issue: Run docker-compose down in deferred cleanup
+## Issue 561: Run docker-compose down in deferred cleanup
 
-**Blocked by**: Run docker-compose up before agent execution
+**Blocked by**: #560
 
 ### Description
 
@@ -209,9 +209,9 @@ context cancellation, or agent crashes.
 
 ---
 
-## Issue: Auto-generate unique project names per issue
+## Issue 562: Auto-generate unique project names per issue
 
-**Blocked by**: Add docker_compose config block and validation
+**Blocked by**: #556
 
 ### Description
 
@@ -241,9 +241,9 @@ between issues in the same run.
 
 ---
 
-## Issue: Forward required_env to compose containers
+## Issue 563: Forward required_env to compose containers
 
-**Blocked by**: Run docker-compose up before agent execution
+**Blocked by**: #560
 
 ### Description
 
@@ -275,9 +275,9 @@ URLs) need to be available inside compose containers. Pass them through to
 
 ---
 
-## Issue: Update godark doctor for Docker socket and compose
+## Issue 564: Update godark doctor for Docker socket and compose
 
-**Blocked by**: Map docker_compose config through DockerConfig
+**Blocked by**: #557
 
 ### Description
 

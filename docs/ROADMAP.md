@@ -1167,6 +1167,10 @@ already-running infrastructure without managing containers itself.
   etc.)
 - Update `godark doctor` to check Docker socket accessibility
 
+**Issues**: #556–#564
+
+**Planning doc**: `docs/planning/phase-25-docker-socket-mount-and-compose-lifecycle.md`
+
 ---
 
 ### Future considerations (not yet scoped)
