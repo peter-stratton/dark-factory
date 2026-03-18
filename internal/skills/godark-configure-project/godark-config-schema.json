@@ -208,6 +208,21 @@
       "items": {
         "$ref": "#/$defs/NotifyProviderConfig"
       }
+    },
+    "docker_compose": {
+      "type": "object",
+      "description": "Docker Compose integration for test environments. Absent/null means disabled.",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Path to the Docker Compose file (e.g. 'docker-compose.test.yml'). Required when block is present."
+        },
+        "project_name": {
+          "type": "string",
+          "description": "Optional prefix for the compose project name. Auto-generated when empty."
+        }
+      },
+      "required": ["file"]
     }
   },
   "required": ["repo"],

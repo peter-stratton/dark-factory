@@ -663,13 +663,22 @@ func validateTruncationLimits(t TruncationLimits) error {
 }
 
 // validateDockerCompose ensures DockerCompose fields are valid when set.
-// file is required; project_name, if set, must match the safe name pattern.
+// file is required and must be a safe relative path; project_name, if set,
+// must match the safe name pattern.
 func validateDockerCompose(dc *DockerCompose) error {
 	if dc == nil {
 		return nil
 	}
 	if dc.File == "" {
 		return fmt.Errorf("docker_compose.file must not be empty when docker_compose block is present")
+	}
+	if strings.HasPrefix(dc.File, "/") {
+		return fmt.Errorf("docker_compose.file %q must be a relative path", dc.File)
+	}
+	for _, component := range strings.Split(dc.File, "/") {
+		if component == ".." {
+			return fmt.Errorf("docker_compose.file %q must not contain path traversal components", dc.File)
+		}
 	}
 	if dc.ProjectName == ".." {
 		return fmt.Errorf("docker_compose.project_name %q is not a safe path component", dc.ProjectName)
