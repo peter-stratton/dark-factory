@@ -287,3 +287,60 @@ func TestBuildModuleContext_AlphaOrdering(t *testing.T) {
 		t.Errorf("alpha should appear before zebra in output: %q", got)
 	}
 }
+
+// --- buildComposeServices ---
+
+func TestBuildComposeServices_Nil(t *testing.T) {
+	got := buildComposeServices(nil)
+	if got != "" {
+		t.Errorf("buildComposeServices(nil) = %q, want empty", got)
+	}
+}
+
+func TestBuildComposeServices_Empty(t *testing.T) {
+	dc := &config.DockerCompose{File: "docker-compose.yml"}
+	got := buildComposeServices(dc)
+	if got != "" {
+		t.Errorf("buildComposeServices with no services = %q, want empty", got)
+	}
+}
+
+func TestBuildComposeServices_TwoServices(t *testing.T) {
+	dc := &config.DockerCompose{
+		File: "docker-compose.yml",
+		Services: []config.ComposeService{
+			{Name: "postgres", Description: "PostgreSQL on localhost:5432"},
+			{Name: "redis", Description: "Redis on localhost:6379"},
+		},
+	}
+	got := buildComposeServices(dc)
+	if !strings.Contains(got, "postgres") {
+		t.Errorf("output missing postgres: %q", got)
+	}
+	if !strings.Contains(got, "PostgreSQL on localhost:5432") {
+		t.Errorf("output missing postgres description: %q", got)
+	}
+	if !strings.Contains(got, "redis") {
+		t.Errorf("output missing redis: %q", got)
+	}
+	if !strings.Contains(got, "Redis on localhost:6379") {
+		t.Errorf("output missing redis description: %q", got)
+	}
+}
+
+func TestBuildComposeServices_DescriptionOptional(t *testing.T) {
+	dc := &config.DockerCompose{
+		File: "docker-compose.yml",
+		Services: []config.ComposeService{
+			{Name: "postgres"},
+		},
+	}
+	got := buildComposeServices(dc)
+	if !strings.Contains(got, "postgres") {
+		t.Errorf("output missing service name: %q", got)
+	}
+	// Should not contain a trailing colon or empty description after name.
+	if strings.Contains(got, "postgres:") {
+		t.Errorf("output should not have colon after name when description is empty: %q", got)
+	}
+}

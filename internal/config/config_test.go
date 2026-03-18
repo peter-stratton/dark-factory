@@ -2291,3 +2291,112 @@ docker_compose:
 		t.Errorf("error %q does not mention docker_compose.file", err.Error())
 	}
 }
+
+// TestDockerComposeServicesParsesTwoServices verifies that a docker_compose
+// block with two services is parsed and both entries are populated.
+func TestDockerComposeServicesParsesTwoServices(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  services:
+    - name: postgres
+      description: "PostgreSQL on localhost:5432"
+    - name: redis
+      description: "Redis on localhost:6379"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DockerCompose == nil {
+		t.Fatal("DockerCompose is nil, want non-nil")
+	}
+	if len(cfg.DockerCompose.Services) != 2 {
+		t.Fatalf("len(Services) = %d, want 2", len(cfg.DockerCompose.Services))
+	}
+	if cfg.DockerCompose.Services[0].Name != "postgres" {
+		t.Errorf("Services[0].Name = %q, want %q", cfg.DockerCompose.Services[0].Name, "postgres")
+	}
+	if cfg.DockerCompose.Services[0].Description != "PostgreSQL on localhost:5432" {
+		t.Errorf("Services[0].Description = %q, want %q", cfg.DockerCompose.Services[0].Description, "PostgreSQL on localhost:5432")
+	}
+	if cfg.DockerCompose.Services[1].Name != "redis" {
+		t.Errorf("Services[1].Name = %q, want %q", cfg.DockerCompose.Services[1].Name, "redis")
+	}
+	if cfg.DockerCompose.Services[1].Description != "Redis on localhost:6379" {
+		t.Errorf("Services[1].Description = %q, want %q", cfg.DockerCompose.Services[1].Description, "Redis on localhost:6379")
+	}
+}
+
+// TestDockerComposeServicesEmptyNameRejected verifies that validation rejects
+// a service entry with no name field.
+func TestDockerComposeServicesEmptyNameRejected(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  services:
+    - description: "no name provided"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for empty service name, got nil")
+	}
+	if !strings.Contains(err.Error(), "docker_compose.services[0]") {
+		t.Errorf("error %q does not mention docker_compose.services[0]", err.Error())
+	}
+}
+
+// TestDockerComposeServicesDescriptionOptional verifies that a service entry
+// with a name but no description passes validation.
+func TestDockerComposeServicesDescriptionOptional(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  services:
+    - name: postgres
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.DockerCompose.Services) != 1 {
+		t.Fatalf("len(Services) = %d, want 1", len(cfg.DockerCompose.Services))
+	}
+	if cfg.DockerCompose.Services[0].Name != "postgres" {
+		t.Errorf("Services[0].Name = %q, want %q", cfg.DockerCompose.Services[0].Name, "postgres")
+	}
+	if cfg.DockerCompose.Services[0].Description != "" {
+		t.Errorf("Services[0].Description = %q, want empty", cfg.DockerCompose.Services[0].Description)
+	}
+}
+
+// TestDockerComposeServicesAbsent verifies that a docker_compose block without
+// a services array results in a nil/empty Services slice.
+func TestDockerComposeServicesAbsent(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DockerCompose == nil {
+		t.Fatal("DockerCompose is nil, want non-nil")
+	}
+	if len(cfg.DockerCompose.Services) != 0 {
+		t.Errorf("len(Services) = %d, want 0 when services absent", len(cfg.DockerCompose.Services))
+	}
+}

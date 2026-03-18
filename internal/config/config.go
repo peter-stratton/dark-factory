@@ -277,6 +277,13 @@ type Docker struct {
 	InstallCommands []string `yaml:"install_commands"`
 }
 
+// ComposeService describes a single Docker Compose service for injection
+// into agent prompts.
+type ComposeService struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+}
+
 // DockerCompose holds configuration for Docker Compose integration.
 // When non-nil, godark uses the specified compose file to manage test
 // environment containers alongside the sandbox.
@@ -287,6 +294,9 @@ type DockerCompose struct {
 	// ProjectName is an optional prefix for the compose project name.
 	// When empty, Docker Compose auto-generates a project name.
 	ProjectName string `yaml:"project_name"`
+	// Services describes the compose services available in the test environment.
+	// Optional — when absent, agents receive no compose service context.
+	Services []ComposeService `yaml:"services"`
 }
 
 // Prompts holds paths to prompt template files.
@@ -705,6 +715,11 @@ func validateDockerCompose(dc *DockerCompose) error {
 	}
 	if dc.ProjectName != "" && !safeModuleName.MatchString(dc.ProjectName) {
 		return fmt.Errorf("docker_compose.project_name %q contains unsafe characters", dc.ProjectName)
+	}
+	for i, svc := range dc.Services {
+		if svc.Name == "" {
+			return fmt.Errorf("docker_compose.services[%d]: name must not be empty", i)
+		}
 	}
 	return nil
 }
