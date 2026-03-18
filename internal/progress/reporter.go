@@ -10,8 +10,9 @@ type IssueSummary struct {
 // ProgressReporter receives progress events from the orchestrator.
 type ProgressReporter interface {
 	// RunStarted signals the beginning of a run with metadata and the full
-	// list of issues that will be processed.
-	RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup string, issues []IssueSummary)
+	// list of issues that will be processed. identity is the GitHub identity
+	// (e.g. "godark-runner[bot]" or a username) that will author PRs.
+	RunStarted(repo, milestone, timestamp, baseBranch, mergeFeature, mergeRollup, identity string, issues []IssueSummary)
 	// IssueStarted signals that processing has begun for an issue.
 	IssueStarted(issueNumber int, title string)
 	// IssueStageChanged signals a stage transition for an in-progress issue.

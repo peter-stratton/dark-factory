@@ -134,8 +134,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 	for i, iss := range issues {
 		issueSummaries[i] = progress.IssueSummary{Number: iss.Number, Title: iss.Title}
 	}
+	// Resolve identity best-effort so the TUI header shows it from the start.
+	identity := sandbox.ResolveIdentity(logger)
 	reporter.RunStarted(cfg.Repo, milestone, runTimestamp, cfg.BaseBranch,
-		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), issueSummaries)
+		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), identity, issueSummaries)
 
 	// Step 5: Print or process.
 	if dryRun {
@@ -574,6 +576,13 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
 	if err != nil {
 		return fmt.Errorf("collecting auth: %w", err)
+	}
+	// Persist the resolved identity to run metadata (best-effort).
+	if writer != nil {
+		identity := sandbox.ResolveIdentity(logger)
+		if err := writer.WriteIdentity(identity); err != nil {
+			logger.Warn("failed to write identity to run metadata", "error", err)
+		}
 	}
 
 	// Load prompt templates once.

@@ -53,6 +53,7 @@ type RunStartedMsg struct {
 	BaseBranch   string
 	MergeFeature string
 	MergeRollup  string
+	Identity     string
 	Issues       []RunStartedIssue
 }
 

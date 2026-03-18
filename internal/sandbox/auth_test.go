@@ -330,3 +330,52 @@ func TestCollectAuthEnv_RequiredEnvNotLogged(t *testing.T) {
 		t.Error("log should not contain raw CLOUDSMITH_TOKEN value")
 	}
 }
+
+func TestResolveIdentity_PersonalToken(t *testing.T) {
+	// No GitHub App env vars set.
+	t.Setenv("GODARK_APP_ID", "")
+	t.Setenv("GODARK_APP_INSTALLATION_ID", "")
+	t.Setenv("GODARK_APP_PRIVATE_KEY_PATH", "")
+
+	defer stubCommandRunner(func(name string, args ...string) ([]byte, error) {
+		if name == "gh" && len(args) >= 2 && args[0] == "api" && args[1] == "/user" {
+			return []byte("octocat\n"), nil
+		}
+		return nil, fmt.Errorf("unexpected command: %s %v", name, args)
+	})()
+
+	got := ResolveIdentity(slog.Default())
+	if got != "octocat" {
+		t.Errorf("ResolveIdentity = %q, want %q", got, "octocat")
+	}
+}
+
+func TestResolveIdentity_PersonalToken_Failure(t *testing.T) {
+	t.Setenv("GODARK_APP_ID", "")
+	t.Setenv("GODARK_APP_INSTALLATION_ID", "")
+	t.Setenv("GODARK_APP_PRIVATE_KEY_PATH", "")
+
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return nil, fmt.Errorf("not logged in")
+	})()
+
+	got := ResolveIdentity(slog.Default())
+	if got != "unknown" {
+		t.Errorf("ResolveIdentity = %q, want %q", got, "unknown")
+	}
+}
+
+func TestResolveIdentity_PersonalToken_EmptyOutput(t *testing.T) {
+	t.Setenv("GODARK_APP_ID", "")
+	t.Setenv("GODARK_APP_INSTALLATION_ID", "")
+	t.Setenv("GODARK_APP_PRIVATE_KEY_PATH", "")
+
+	defer stubCommandRunner(func(string, ...string) ([]byte, error) {
+		return []byte("   \n"), nil
+	})()
+
+	got := ResolveIdentity(slog.Default())
+	if got != "unknown" {
+		t.Errorf("ResolveIdentity = %q, want %q", got, "unknown")
+	}
+}

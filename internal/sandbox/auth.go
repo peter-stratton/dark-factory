@@ -77,6 +77,32 @@ func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []st
 	return env, nil
 }
 
+// ResolveIdentity returns the GitHub identity string for the configured auth.
+// For GitHub App auth, returns "godark-runner[bot]". For personal token auth,
+// calls gh api /user to retrieve the login name. Returns "unknown" on any error.
+func ResolveIdentity(logger *slog.Logger) string {
+	appCfg, err := ghapp.LoadFromEnv()
+	if err != nil {
+		logger.Warn("failed to load GitHub App config for identity resolution", "error", err)
+		return "unknown"
+	}
+	if appCfg != nil {
+		return "godark-runner[bot]"
+	}
+
+	out, err := CommandRunner("gh", "api", "/user", "--jq", ".login")
+	if err != nil {
+		logger.Warn("failed to resolve GitHub identity", "error", err)
+		return "unknown"
+	}
+	login := strings.TrimSpace(string(out))
+	if login == "" {
+		logger.Warn("GitHub identity resolved to empty string")
+		return "unknown"
+	}
+	return login
+}
+
 // collectGitHubToken resolves a GitHub token and sets it in env.
 // Priority: GitHub App installation token > GH_TOKEN env var > gh CLI auth.
 func collectGitHubToken(env map[string]string, logger *slog.Logger) error {

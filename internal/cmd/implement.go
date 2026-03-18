@@ -253,15 +253,15 @@ func implementIssues(
 	if writer != nil {
 		runTimestamp = filepath.Base(writer.Dir())
 	}
-	summaries := make([]progress.IssueSummary, len(issueNums))
-	for i, num := range issueNums {
-		summaries[i] = progress.IssueSummary{
-			Number: num,
-			Title:  issueTitles[strconv.Itoa(num)],
+	summaries := buildIssueSummaries(issueNums, issueTitles)
+	identity := sandbox.ResolveIdentity(logger)
+	if writer != nil {
+		if err := writer.WriteIdentity(identity); err != nil {
+			logger.Warn("failed to write identity to run metadata", "error", err)
 		}
 	}
 	reporter.RunStarted(cfg.Repo, "", runTimestamp, cfg.BaseBranch,
-		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), summaries)
+		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), identity, summaries)
 
 	for _, issueNumber := range issueNums {
 		if ctx.Err() != nil {
@@ -322,6 +322,18 @@ func implementIssues(
 	finalizePunchlistEntries(ctx, punchlistEntries, writer, prompts, cfg, authEnv, logger, punchlistPath, reporter)
 
 	return nil
+}
+
+// buildIssueSummaries constructs a slice of IssueSummary for the given issue numbers.
+func buildIssueSummaries(issueNums []int, issueTitles map[string]string) []progress.IssueSummary {
+	summaries := make([]progress.IssueSummary, len(issueNums))
+	for i, num := range issueNums {
+		summaries[i] = progress.IssueSummary{
+			Number: num,
+			Title:  issueTitles[strconv.Itoa(num)],
+		}
+	}
+	return summaries
 }
 
 // writeIssueDialogue fetches PR comment bodies and writes dialogue to the run data writer.

@@ -66,5 +66,11 @@ func renderHeaderLine2(m Model) string {
 		)
 	}
 
+	if m.identity != "" {
+		parts = append(parts,
+			headerLabelStyle.Render("as: ")+headerValueStyle.Render(m.identity),
+		)
+	}
+
 	return strings.Join(parts, styledSep)
 }
