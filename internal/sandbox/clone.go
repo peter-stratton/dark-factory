@@ -11,8 +11,8 @@ func CloneScript(repo, branch, workDir string) (string, error) {
 	}
 	script := `set -e
 gh auth setup-git
-git config --global user.name "dark-factory"
-git config --global user.email "dark-factory@noreply"
+git config --global user.name "${GODARK_GIT_AUTHOR_NAME:-dark-factory}"
+git config --global user.email "${GODARK_GIT_AUTHOR_EMAIL:-dark-factory@noreply}"
 ` + fmt.Sprintf("git clone https://github.com/%s.git %s\n", repo, workDir)
 
 	if branch != "" {

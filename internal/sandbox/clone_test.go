@@ -37,11 +37,15 @@ func TestCloneScript_NoBranch(t *testing.T) {
 
 func TestCloneScript_GitConfig(t *testing.T) {
 	script := mustCloneScript(t, "owner/repo", "", "/workspace")
-	if !strings.Contains(script, `git config --global user.name "dark-factory"`) {
+	if !strings.Contains(script, `git config --global user.name`) {
 		t.Fatalf("missing user.name config in:\n%s", script)
 	}
-	if !strings.Contains(script, `git config --global user.email "dark-factory@noreply"`) {
+	if !strings.Contains(script, `git config --global user.email`) {
 		t.Fatalf("missing user.email config in:\n%s", script)
+	}
+	// Default values used when env vars are unset.
+	if !strings.Contains(script, "dark-factory") {
+		t.Fatalf("missing default author name in:\n%s", script)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/phs/dark-factory/internal/ghapp"
 )
 
 // CollectAuthEnv reads authentication tokens from the host environment
@@ -40,19 +42,8 @@ func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []st
 		return nil, fmt.Errorf("missing authentication: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN")
 	}
 
-	// GitHub token: try env first, then gh CLI fallback.
-	if v := os.Getenv("GH_TOKEN"); v != "" {
-		env["GH_TOKEN"] = v
-	} else {
-		out, err := CommandRunner("gh", "auth", "token")
-		if err != nil {
-			return nil, fmt.Errorf("missing GitHub token: set GH_TOKEN or run gh auth login")
-		}
-		token := strings.TrimSpace(string(out))
-		if token == "" {
-			return nil, fmt.Errorf("missing GitHub token: set GH_TOKEN or run gh auth login")
-		}
-		env["GH_TOKEN"] = token
+	if err := collectGitHubToken(env, logger); err != nil {
+		return nil, err
 	}
 
 	// authManagedVars are controlled exclusively by auth preference logic.
@@ -84,4 +75,44 @@ func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []st
 	logger.Info("collected auth env", "keys", keys)
 
 	return env, nil
+}
+
+// collectGitHubToken resolves a GitHub token and sets it in env.
+// Priority: GitHub App installation token > GH_TOKEN env var > gh CLI auth.
+func collectGitHubToken(env map[string]string, logger *slog.Logger) error {
+	appCfg, err := ghapp.LoadFromEnv()
+	if err != nil {
+		return err
+	}
+	if appCfg != nil {
+		token, err := appCfg.InstallationToken()
+		if err != nil {
+			return fmt.Errorf("generating GitHub App token: %w", err)
+		}
+		env["GH_TOKEN"] = token
+		env["GODARK_GIT_AUTHOR_NAME"] = "godark-runner[bot]"
+		env["GODARK_GIT_AUTHOR_EMAIL"] = fmt.Sprintf("%s+godark-runner[bot]@users.noreply.github.com", appCfg.AppID)
+		// Set on host process so gh CLI commands outside the container also use the app token.
+		if err := os.Setenv("GH_TOKEN", token); err != nil {
+			return fmt.Errorf("setting GH_TOKEN: %w", err)
+		}
+		logger.Info("using GitHub App installation token")
+		return nil
+	}
+
+	if v := os.Getenv("GH_TOKEN"); v != "" {
+		env["GH_TOKEN"] = v
+		return nil
+	}
+
+	out, err := CommandRunner("gh", "auth", "token")
+	if err != nil {
+		return fmt.Errorf("missing GitHub token: set GH_TOKEN or run gh auth login")
+	}
+	token := strings.TrimSpace(string(out))
+	if token == "" {
+		return fmt.Errorf("missing GitHub token: set GH_TOKEN or run gh auth login")
+	}
+	env["GH_TOKEN"] = token
+	return nil
 }
