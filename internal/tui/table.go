@@ -63,21 +63,36 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 	marker := markerFor(row, spin)
 	num := rowNumberStyle.Render(fmt.Sprintf("#%d", row.number))
 
-	// Reserve space for badge (~12 chars with padding) and gutters.
+	badge := badgeFor(row)
+
+	// When an error message is present, reserve additional space for it so
+	// the total line stays within width. Error display is capped at errCap
+	// runes to prevent the title from being truncated to nothing on narrow
+	// terminals.
+	const errCap = 50
+	errReserved := 0
+	if row.errMsg != "" {
+		n := len([]rune(row.errMsg))
+		if n > errCap {
+			n = errCap
+		}
+		errReserved = n + 1 // +1 for leading space separator
+	}
+
+	// Reserve space for badge (~12 chars with padding), gutters, and any
+	// error message. The badge column shifts left when an error is present.
 	badgeReserved := 14
-	titleWidth := width - 22 - badgeReserved
+	titleWidth := width - 22 - badgeReserved - errReserved
 	if titleWidth < 10 {
 		titleWidth = 10
 	}
 	title := rowTitleStyle.Render(truncate(row.title, titleWidth))
 
-	badge := badgeFor(row)
-
 	left := marker + " " + num + " " + title
 	leftWidth := lipgloss.Width(left)
 
 	// Pad between title and badge so badges align at a consistent column.
-	badgeCol := width - badgeReserved
+	badgeCol := width - badgeReserved - errReserved
 	if badgeCol < leftWidth+2 {
 		badgeCol = leftWidth + 2
 	}
@@ -89,7 +104,10 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 	line := left + strings.Repeat(" ", gap) + badge
 
 	if row.errMsg != "" {
-		line += " " + rowErrStyle.Render(row.errMsg)
+		errMaxWidth := width - lipgloss.Width(line) - 1
+		if errMaxWidth > 0 {
+			line += " " + rowErrStyle.Render(truncate(row.errMsg, errMaxWidth))
+		}
 	}
 
 	return line

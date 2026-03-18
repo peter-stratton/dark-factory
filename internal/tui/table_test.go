@@ -185,6 +185,38 @@ func TestRenderTableFailedRow(t *testing.T) {
 	}
 }
 
+func TestRenderTableFailedRowErrMsgTruncated(t *testing.T) {
+	longErr := strings.Repeat("e", 200)
+	rows := []issueRow{
+		{number: 42, title: "fix the bug", status: "failed", stage: "failed", errMsg: longErr},
+	}
+	spin := newTestSpinner()
+	got := stripANSI(renderTable(rows, spin, 80))
+
+	if !strings.Contains(got, "…") {
+		t.Errorf("renderTable long errMsg: expected ellipsis in %q", got)
+	}
+	if strings.Contains(got, longErr) {
+		t.Errorf("renderTable long errMsg: full 200-char error should be truncated")
+	}
+}
+
+func TestRenderTableSuccessHasNoError(t *testing.T) {
+	rows := []issueRow{
+		{number: 42, title: "fix the bug", status: "implemented", stage: "merged", errMsg: ""},
+	}
+	spin := newTestSpinner()
+	got := stripANSI(renderTable(rows, spin, 80))
+
+	if !strings.Contains(got, markerCompleted) {
+		t.Errorf("renderTable success: marker %q not found in %q", markerCompleted, got)
+	}
+	// No error text should appear for a successful issue.
+	if strings.Contains(got, "error") || strings.Contains(got, "…") {
+		t.Errorf("renderTable success: unexpected error text in %q", got)
+	}
+}
+
 func TestRenderTableTitleTruncation(t *testing.T) {
 	title := strings.Repeat("x", 120)
 	rows := []issueRow{
