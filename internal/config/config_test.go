@@ -2065,3 +2065,124 @@ auto_merge:
 		t.Errorf("AutoMerge.Rollup = %q, want %q", cfg.AutoMerge.Rollup, RollupNone)
 	}
 }
+
+// TestDockerComposeValidConfig verifies that a docker_compose block with a
+// file field is parsed and the struct is populated.
+func TestDockerComposeValidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DockerCompose == nil {
+		t.Fatal("DockerCompose is nil, want non-nil")
+	}
+	if cfg.DockerCompose.File != "docker-compose.test.yml" {
+		t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+	}
+}
+
+// TestDockerComposeMissingFile verifies that validation rejects a docker_compose
+// block with no file field.
+func TestDockerComposeMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  project_name: myproject
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for missing docker_compose.file, got nil")
+	}
+	if !strings.Contains(err.Error(), "docker_compose.file") {
+		t.Errorf("error %q does not mention docker_compose.file", err.Error())
+	}
+}
+
+// TestDockerComposeUnsafeProjectName verifies that validation rejects an
+// unsafe project_name value.
+func TestDockerComposeUnsafeProjectName(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  project_name: "../bad"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for unsafe docker_compose.project_name, got nil")
+	}
+	if !strings.Contains(err.Error(), "docker_compose.project_name") {
+		t.Errorf("error %q does not mention docker_compose.project_name", err.Error())
+	}
+}
+
+// TestDockerComposeDotDotProjectName verifies that validation rejects ".." as
+// a project_name value, which passes the regex but is an unsafe path component.
+func TestDockerComposeDotDotProjectName(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  project_name: ".."
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for project_name \"..\" , got nil")
+	}
+	if !strings.Contains(err.Error(), "docker_compose.project_name") {
+		t.Errorf("error %q does not mention docker_compose.project_name", err.Error())
+	}
+}
+
+// TestDockerComposeAbsentBlock verifies that a config without a docker_compose
+// block results in a nil DockerCompose field (feature disabled).
+func TestDockerComposeAbsentBlock(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DockerCompose != nil {
+		t.Errorf("DockerCompose = %+v, want nil", cfg.DockerCompose)
+	}
+}
+
+// TestDockerComposeValidProjectName verifies that a safe project_name value
+// passes validation without error.
+func TestDockerComposeValidProjectName(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  project_name: my-tests
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DockerCompose == nil {
+		t.Fatal("DockerCompose is nil, want non-nil")
+	}
+	if cfg.DockerCompose.ProjectName != "my-tests" {
+		t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "my-tests")
+	}
+}
