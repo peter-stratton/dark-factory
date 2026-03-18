@@ -510,6 +510,81 @@ func TestInitRepoFlagPopulatesNewConfig(t *testing.T) {
 	}
 }
 
+func TestInitGoProjectWritesRuntimeBlock(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	// go.mod with a two-component version — should be normalized to three.
+	if err := os.WriteFile("go.mod", []byte("module example.com/test\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	content := string(data)
+
+	if !strings.Contains(content, "runtime:") {
+		t.Error("godark.yaml missing runtime: block")
+	}
+	if !strings.Contains(content, "name: go") {
+		t.Error("godark.yaml missing runtime name")
+	}
+	// Version should be normalized from "1.21" to "1.21.0".
+	if !strings.Contains(content, `version: "1.21.0"`) {
+		t.Errorf("godark.yaml missing normalized runtime version, got:\n%s", content)
+	}
+}
+
+func TestInitGoProjectThreeComponentVersionUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	// go.mod with a three-component version — should be written as-is.
+	if err := os.WriteFile("go.mod", []byte("module example.com/test\n\ngo 1.22.3\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	if !strings.Contains(string(data), `version: "1.22.3"`) {
+		t.Errorf("godark.yaml should preserve three-component version, got:\n%s", data)
+	}
+}
+
+func TestInitNonGoProjectNoRuntimeBlock(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	// No marker files — detection fails, no runtime block should be written.
+	runInit(t)
+
+	data, err := os.ReadFile("godark.yaml")
+	if err != nil {
+		t.Fatalf("godark.yaml not created: %v", err)
+	}
+
+	content := string(data)
+	if strings.Contains(content, "runtime:") {
+		t.Error("godark.yaml should not contain runtime: block when detection fails")
+	}
+}
+
 func TestInitNonGoProjectUsesGenericExamples(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
