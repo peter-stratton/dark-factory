@@ -1071,7 +1071,7 @@ per-repo efficiency replace low-value metrics.
 
 ---
 
-## Phase 23: Watch & Daemon Mode
+## Phase 23: Watch & Daemon Mode ✅
 
 **Goal**: `godark watch` is validated end-to-end and handles both
 `CHANGES_REQUESTED` and `APPROVED` reviews reliably. A new `--watch` flag on
@@ -1119,7 +1119,7 @@ manually re-run after human approvals.
 
 ---
 
-## Phase 24: Container Resource Tracking
+## Phase 24: Container Resource Tracking ✅
 
 **Goal**: Every agent container execution records peak memory and CPU usage.
 These metrics flow through run data, the stats database, the analyze command,
@@ -1146,7 +1146,7 @@ bounded concurrency.
 
 ---
 
-## Phase 25: Docker Socket Mount & Compose Lifecycle
+## Phase 25: Docker Socket Mount & Compose Lifecycle ✅
 
 **Goal**: Projects with `docker-compose` test infrastructure can run integration
 tests inside the sandbox. godark manages the compose lifecycle (up before agent,

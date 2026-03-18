@@ -143,6 +143,9 @@ what was built and how users experience it. These live in
 | 19 | [Spring Cleaning](docs/phase-overviews/phase-19-spring-cleaning.md) — unified verdict parsing, typed constants, shared helpers, CLI consolidation |
 | 20 | [Terminal UI](docs/phase-overviews/phase-20-terminal-ui.md) — Bubble Tea TUI, progress reporter, adaptive colors, hybrid output mode |
 | 21 | [Analytics Persistence](docs/phase-overviews/phase-21-analytics-persistence.md) — SQLite stats store, retry recovery rate, cost/duration breakdown, repo stats, flag-based prompt gaps |
+| 23 | [Watch & Daemon Mode](docs/phase-overviews/phase-23-watch-and-daemon-mode.md) — shared watch package, daemon mode, external merge detection, watch TUI and dashboard |
+| 24 | [Container Resource Tracking](docs/phase-overviews/phase-24-container-resource-tracking.md) — Docker stats capture, per-step memory/CPU, analyze output, dashboard columns, host mode |
+| 25 | [Docker Socket Mount & Compose Lifecycle](docs/phase-overviews/phase-25-docker-socket-mount-and-compose-lifecycle.md) — compose config, socket mount, up/down lifecycle, env forwarding, doctor checks |
 
 To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
 
