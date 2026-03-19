@@ -17,14 +17,18 @@ var doctorCmd = &cobra.Command{
 variables are in place. Prints a pass/fail checklist and exits non-zero if
 any check fails.
 
-Checks performed:
+Default checks (sandbox mode):
   • Docker daemon running
-  • gh CLI installed
-  • gh CLI authenticated
-  • ANTHROPIC_API_KEY environment variable set
-  • Detected runtime toolchain available (if a project is detected)
-  • Python 3 available`,
+  • gh CLI installed and authenticated
+  • Anthropic auth token set
+
+With --no-sandbox, additional host toolchain checks are included:
+  • Detected runtime toolchain available
+  • Python 3 available
+  • Lint tools available (if configured)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		noSandbox, _ := cmd.Flags().GetBool("no-sandbox")
+
 		// Best-effort runtime detection from the current directory.
 		runtime := ""
 		if dp, err := detect.DetectRuntime("."); err == nil {
@@ -39,7 +43,12 @@ Checks performed:
 			composeConfigured = cfg.DockerCompose != nil
 		}
 
-		checks := doctor.Checks(runtime, lintCommand, composeConfigured)
+		checks := doctor.Checks(doctor.Opts{
+			Runtime:           runtime,
+			LintCommand:       lintCommand,
+			ComposeConfigured: composeConfigured,
+			NoSandbox:         noSandbox,
+		})
 		passed := doctor.Run(os.Stdout, checks)
 		if !passed {
 			return fmt.Errorf("pre-flight checks failed")
@@ -49,5 +58,6 @@ Checks performed:
 }
 
 func init() {
+	doctorCmd.Flags().Bool("no-sandbox", false, "Include host toolchain checks for --no-sandbox mode")
 	rootCmd.AddCommand(doctorCmd)
 }

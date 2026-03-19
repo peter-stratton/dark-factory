@@ -57,22 +57,38 @@ func runtimeVersionCmd(runtime string) (string, []string) {
 	}
 }
 
-// Checks returns the full ordered list of pre-flight checks. If runtime is
-// non-empty, a toolchain availability check for that runtime is included.
-// If lintCommand contains "golangci-lint", a check for that tool is appended.
-// If composeConfigured is true, checks for Docker socket accessibility and
-// the docker compose CLI are appended.
-func Checks(runtime, lintCommand string, composeConfigured bool) []*Check {
-	checks := []*Check{
-		{
+// Opts controls which checks are included.
+type Opts struct {
+	Runtime           string // detected runtime name (e.g. "go")
+	LintCommand       string // configured lint command
+	ComposeConfigured bool   // docker_compose block is present
+	NoSandbox         bool   // check host toolchain instead of Docker
+}
+
+// Checks returns the full ordered list of pre-flight checks.
+//
+// By default, only host-level requirements are checked: Docker, gh CLI, and
+// an Anthropic auth token. When NoSandbox is true, additional checks verify
+// that the runtime toolchain, Python 3, and any lint tools are available on
+// the host (since there is no container to provide them).
+//
+// Compose checks are always conditional on ComposeConfigured.
+func Checks(opts Opts) []*Check {
+	var checks []*Check
+
+	if !opts.NoSandbox {
+		checks = append(checks, &Check{
 			Name: "Docker daemon running",
 			Fix:  "Start Docker Desktop or the Docker daemon (e.g. `sudo systemctl start docker`).",
 			run: func() bool {
 				_, err := CommandRunner("docker", "info")
 				return err == nil
 			},
-		},
-		{
+		})
+	}
+
+	checks = append(checks,
+		&Check{
 			Name: "gh CLI installed",
 			Fix:  "Install the GitHub CLI: https://cli.github.com",
 			run: func() bool {
@@ -80,7 +96,7 @@ func Checks(runtime, lintCommand string, composeConfigured bool) []*Check {
 				return err == nil
 			},
 		},
-		{
+		&Check{
 			Name: "gh CLI authenticated",
 			Fix:  "Run `gh auth login` to authenticate.",
 			run: func() bool {
@@ -88,53 +104,57 @@ func Checks(runtime, lintCommand string, composeConfigured bool) []*Check {
 				return err == nil
 			},
 		},
-		{
+		&Check{
 			Name: "Anthropic auth token set",
 			Fix:  "Export ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in your shell profile or pass it in the environment.",
 			run: func() bool {
 				return EnvLookup("ANTHROPIC_API_KEY") != "" || EnvLookup("CLAUDE_CODE_OAUTH_TOKEN") != ""
 			},
 		},
-	}
+	)
 
-	if runtime != "" {
-		bin, args := runtimeVersionCmd(runtime)
-		if bin != "" {
-			rt := runtime // capture for closure
-			b := bin
-			a := args
+	// The remaining checks are only relevant in --no-sandbox mode, where the
+	// host must provide the runtime toolchain and lint tools directly.
+	if opts.NoSandbox {
+		if opts.Runtime != "" {
+			bin, args := runtimeVersionCmd(opts.Runtime)
+			if bin != "" {
+				rt := opts.Runtime
+				b := bin
+				a := args
+				checks = append(checks, &Check{
+					Name: fmt.Sprintf("%s toolchain available", rt),
+					Fix:  fmt.Sprintf("Install the %s toolchain and ensure it is on your PATH.", rt),
+					run: func() bool {
+						_, err := CommandRunner(b, a...)
+						return err == nil
+					},
+				})
+			}
+		}
+
+		checks = append(checks, &Check{
+			Name: "Python 3 available",
+			Fix:  "Install Python 3: https://www.python.org/downloads/",
+			run: func() bool {
+				_, err := CommandRunner("python3", "--version")
+				return err == nil
+			},
+		})
+
+		if strings.Contains(opts.LintCommand, "golangci-lint") {
 			checks = append(checks, &Check{
-				Name: fmt.Sprintf("%s toolchain available", rt),
-				Fix:  fmt.Sprintf("Install the %s toolchain and ensure it is on your PATH.", rt),
+				Name: "golangci-lint installed",
+				Fix:  "Install golangci-lint: `brew install golangci-lint` or see https://golangci-lint.run/usage/install/",
 				run: func() bool {
-					_, err := CommandRunner(b, a...)
+					_, err := CommandRunner("golangci-lint", "--version")
 					return err == nil
 				},
 			})
 		}
 	}
 
-	checks = append(checks, &Check{
-		Name: "Python 3 available",
-		Fix:  "Install Python 3: https://www.python.org/downloads/",
-		run: func() bool {
-			_, err := CommandRunner("python3", "--version")
-			return err == nil
-		},
-	})
-
-	if strings.Contains(lintCommand, "golangci-lint") {
-		checks = append(checks, &Check{
-			Name: "golangci-lint installed",
-			Fix:  "Install golangci-lint: `brew install golangci-lint` or see https://golangci-lint.run/usage/install/",
-			run: func() bool {
-				_, err := CommandRunner("golangci-lint", "--version")
-				return err == nil
-			},
-		})
-	}
-
-	if composeConfigured {
+	if opts.ComposeConfigured {
 		checks = append(checks, &Check{
 			Name: "Docker socket accessible",
 			Fix:  "/var/run/docker.sock is not accessible. Ensure the Docker daemon is running on the host and the socket is mounted into the container (e.g. add `-v /var/run/docker.sock:/var/run/docker.sock` to your docker run flags).",
