@@ -659,7 +659,7 @@ Merge serialization ensures `main` stays linear.
 - Per-issue log files for concurrent debuggability
 - Active workers indicator and concurrent status badges in dashboard
 
-**Issues**: TBD
+**Issues**: #593–#602
 
 **Planning doc**: `docs/planning/phase-14-bounded-concurrency.md`
 

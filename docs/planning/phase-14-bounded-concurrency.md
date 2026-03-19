@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Add concurrency config block with max_workers field
+## Issue 593: Add concurrency config block with max_workers field
 
 ### Description
 
@@ -47,9 +47,9 @@ restructuring the config.
 
 ---
 
-## Issue: Add --with-compose flag and concurrent mode logic
+## Issue 597: Add --with-compose flag and concurrent mode logic
 
-**Blocked by**: Add concurrency config block with max_workers field
+**Blocked by**: #593
 
 ### Description
 
@@ -95,7 +95,7 @@ established CLI flag pattern (see `parseCLIFlags()` in `cmdutil.go`).
 
 ---
 
-## Issue: Per-issue log files
+## Issue 594: Per-issue log files
 
 ### Description
 
@@ -134,7 +134,7 @@ easier even in serial mode.
 
 ---
 
-## Issue: Extract per-issue processing into worker function
+## Issue 595: Extract per-issue processing into worker function
 
 ### Description
 
@@ -173,9 +173,9 @@ cost, and determining the outcome status.
 
 ---
 
-## Issue: Wave barrier dispatcher with concurrent workers
+## Issue 598: Wave barrier dispatcher with concurrent workers
 
-**Blocked by**: Add concurrency config block with max_workers field, Extract per-issue processing into worker function
+**Blocked by**: #593, #595
 
 ### Description
 
@@ -216,9 +216,9 @@ the main goroutine after the wave completes — not by workers.
 
 ---
 
-## Issue: Post-wave merge serializer and failure abort
+## Issue 599: Post-wave merge serializer and failure abort
 
-**Blocked by**: Wave barrier dispatcher with concurrent workers
+**Blocked by**: #598
 
 ### Description
 
@@ -263,7 +263,7 @@ issues are reported in the run summary.
 
 ---
 
-## Issue: Merge coordinator prompt template
+## Issue 596: Merge coordinator prompt template
 
 ### Description
 
@@ -303,9 +303,9 @@ which uses the full implementer context and is slower than necessary.
 
 ---
 
-## Issue: Merge coordinator agent function and wiring
+## Issue 600: Merge coordinator agent function and wiring
 
-**Blocked by**: Merge coordinator prompt template
+**Blocked by**: #596
 
 ### Description
 
@@ -353,9 +353,9 @@ replacing one function call in `runPreMergeRebasePhase`.
 
 ---
 
-## Issue: TUI concurrent status display
+## Issue 601: TUI concurrent status display
 
-**Blocked by**: Wave barrier dispatcher with concurrent workers
+**Blocked by**: #598
 
 ### Description
 
@@ -392,9 +392,9 @@ once, and a worker count in the summary bar.
 
 ---
 
-## Issue: Dashboard concurrent status display
+## Issue 602: Dashboard concurrent status display
 
-**Blocked by**: Wave barrier dispatcher with concurrent workers
+**Blocked by**: #598
 
 ### Description
 
