@@ -34,6 +34,7 @@ Auto-detected from project marker files if not set.
 |-------|---------|---------|
 | `build_command` | Compile the project | `go build ./...`, `flutter build` |
 | `test_command` | Run the test suite | `go test ./...`, `flutter test` |
+| `format_command` | Auto-format source files | `go fmt ./...`, `dart format .` |
 | `lint_command` | Check formatting and lint rules | `dart format --set-exit-if-changed .` |
 | `generate_command` | Run code generation before build | `dart run build_runner build` |
 
@@ -47,7 +48,8 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | `max_retries` | Review/fix cycles before escalating to human | `3` |
 | `agent_timeout` | Max wall-clock time per agent run | `30m` |
 | `auto_merge.feature` | Merge strategy for feature PRs after approval: `none`, `low_risk`, `all` | `none` |
-| `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `none` |
+| `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `manual` |
+| `base_branch` | Base branch for feature PRs. Auto-generated when omitted: `godark/phase-N` for milestone runs, `godark/issue-N` for implement runs. Set to `main` to merge directly to the default branch without a rollup PR. | auto-generated |
 | `default_branch` | Default branch of the repo (auto-detected from GitHub if omitted) | auto-detect / `main` |
 | `no_sandbox` | Run agents on host instead of Docker | `false` |
 
@@ -94,15 +96,19 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 
 ### Rollup modes (`auto_merge.rollup`)
 
-When godark runs against a non-default base branch, a rollup PR merges the base
-branch into the default branch after all feature PRs are done. The `rollup` field controls
-what godark does with that rollup PR:
+When godark runs against a non-default base branch (which happens automatically
+unless `base_branch` is set to the default branch), a rollup PR merges the base
+branch into the default branch after all feature PRs are done. The `rollup` field
+controls what godark does with that rollup PR:
 
 | Mode | Feature PRs → base branch | Base branch → main |
 |---|---|---|
 | `none` | godark merges | human does everything (inspects branch, opens PR manually) |
-| `manual` | godark merges | godark opens PR, human reviews and merges |
+| `manual` (default) | godark merges | godark opens PR, human reviews and merges |
 | `auto` | godark merges | godark opens PR and merges |
+
+To disable rollup PRs and merge feature branches directly to the default branch,
+set `base_branch: main` (or your repo's default branch name) in `godark.yaml`.
 
 ### Risk thresholds (for `auto_merge.feature: low_risk`)
 
@@ -139,6 +145,38 @@ notify:
       chat_id: ${TELEGRAM_CHAT_ID}
 ```
 
+### Runtime
+
+| Field | Purpose | Example |
+|-------|---------|---------|
+| `runtime.name` | Project toolchain | `go`, `node`, `flutter`, `rust`, `python` |
+| `runtime.version` | Toolchain version (auto-detected if empty) | `1.23`, `20` |
+
+The runtime determines which language tools are installed in the sandbox container.
+
+### Docker Compose
+
+If the project uses Docker Compose for local services (databases, caches, etc.),
+declare them so agents know what's available during development and testing.
+
+```yaml
+docker_compose:
+  file: docker-compose.yml
+  project_name: myproject
+  services:
+    - name: postgres
+      description: PostgreSQL 15 on port 5432, database "app_dev"
+    - name: redis
+      description: Redis 7 on port 6379, no auth
+```
+
+| Field | Purpose |
+|-------|---------|
+| `docker_compose.file` | Path to the compose file (required when block is present) |
+| `docker_compose.project_name` | Project name prefix for containers (optional) |
+| `docker_compose.services[].name` | Service name as defined in the compose file |
+| `docker_compose.services[].description` | What the service provides (ports, credentials, database names) |
+
 ### Docker sandbox
 
 | Field | Purpose |
@@ -148,6 +186,16 @@ notify:
 | `docker.extra_packages` | Additional apt packages to install |
 | `docker.install_commands` | Shell commands to run during image build (after runtime setup) |
 | `docker.node_version` | Node.js major version to install (default: `20`) |
+
+## Run history and artifacts
+
+godark stores run data on the host machine at `~/.godark/`:
+
+- `stats.db` — SQLite database with cost, duration, and outcome trends across all runs
+- `runs/{owner}/{repo}/{timestamp}/run.json` — per-run record with issue numbers, timing, and pass/fail summary
+
+When debugging a failed implementation, check the most recent run.json for the
+repo to see which issues were attempted and their outcomes.
 
 ## Common troubleshooting
 

@@ -647,16 +647,17 @@ Merge serialization ensures `main` stays linear.
 
 **Milestone**: `Phase 14` | **Label**: `phase-14`
 
-- Worker pool with configurable max concurrency (default 1)
+- Worker pool with configurable max concurrency (`concurrency.max_workers`, default 1)
+- Wave barrier scheduling: process independent issues in parallel, wait for wave, merge all, re-resolve dependencies, next wave
 - Dependency-aware scheduling from existing topological sort
-- Per-worker sandbox containers and isolated git worktrees
+- Per-worker sandbox containers with isolated git worktrees
+- Concurrent/integration run modes: compose skipped when `max_workers > 1`; `--with-compose` forces single-worker integration mode
 - Single-goroutine merge serializer (squash-merge, rebase, signal next)
-- Rebase conflict re-queue for fix cycle
+- Merge coordinator agent — on-demand agent that rebases and resolves conflicts when post-wave merges fail, bounded by `max_rebase_attempts`
+- New `merge_coordinator` prompt template and agent role with focused rebase/conflict-resolution permissions
 - Thread-safe run data writer (mutex or per-issue writers)
 - Per-issue log files for concurrent debuggability
 - Active workers indicator and concurrent status badges in dashboard
-- GitHub API rate limit backpressure
-- Anthropic API concurrency limit awareness
 
 **Issues**: TBD
 
