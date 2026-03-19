@@ -34,6 +34,7 @@ Auto-detected from project marker files if not set.
 |-------|---------|---------|
 | `build_command` | Compile the project | `go build ./...`, `flutter build` |
 | `test_command` | Run the test suite | `go test ./...`, `flutter test` |
+| `format_command` | Auto-format source files | `go fmt ./...`, `dart format .` |
 | `lint_command` | Check formatting and lint rules | `dart format --set-exit-if-changed .` |
 | `generate_command` | Run code generation before build | `dart run build_runner build` |
 
@@ -143,6 +144,38 @@ notify:
       bot_token: ${TELEGRAM_BOT_TOKEN}
       chat_id: ${TELEGRAM_CHAT_ID}
 ```
+
+### Runtime
+
+| Field | Purpose | Example |
+|-------|---------|---------|
+| `runtime.name` | Project toolchain | `go`, `node`, `flutter`, `rust`, `python` |
+| `runtime.version` | Toolchain version (auto-detected if empty) | `1.23`, `20` |
+
+The runtime determines which language tools are installed in the sandbox container.
+
+### Docker Compose
+
+If the project uses Docker Compose for local services (databases, caches, etc.),
+declare them so agents know what's available during development and testing.
+
+```yaml
+docker_compose:
+  file: docker-compose.yml
+  project_name: myproject
+  services:
+    - name: postgres
+      description: PostgreSQL 15 on port 5432, database "app_dev"
+    - name: redis
+      description: Redis 7 on port 6379, no auth
+```
+
+| Field | Purpose |
+|-------|---------|
+| `docker_compose.file` | Path to the compose file (required when block is present) |
+| `docker_compose.project_name` | Project name prefix for containers (optional) |
+| `docker_compose.services[].name` | Service name as defined in the compose file |
+| `docker_compose.services[].description` | What the service provides (ports, credentials, database names) |
 
 ### Docker sandbox
 
