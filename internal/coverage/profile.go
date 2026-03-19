@@ -58,9 +58,7 @@ func ParseProfile(data string, modulePath string) []ProfileBlock {
 		rangePart := fileRange[colonIdx+1:]
 
 		// Strip module prefix.
-		if strings.HasPrefix(file, prefix) {
-			file = file[len(prefix):]
-		}
+		file = strings.TrimPrefix(file, prefix)
 
 		// Parse "startLine.startCol,endLine.endCol"
 		commaIdx := strings.Index(rangePart, ",")
