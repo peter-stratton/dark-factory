@@ -133,8 +133,8 @@ func TestGenerateDockerfileGoRuntimeWithVersion(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(df, "go1.22.4.linux-amd64.tar.gz") {
-		t.Error("Dockerfile missing custom Go version URL")
+	if !strings.Contains(df, "go1.22.4.linux-${ARCH}.tar.gz") {
+		t.Error("Dockerfile missing architecture-aware Go version URL")
 	}
 }
 
@@ -311,8 +311,8 @@ func TestGenerateDockerfileGoRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(df, "go1.26.0.linux-amd64.tar.gz") {
-		t.Error("Go Dockerfile missing expected tarball URL")
+	if !strings.Contains(df, "go1.26.0.linux-${ARCH}.tar.gz") {
+		t.Error("Go Dockerfile missing architecture-aware tarball URL")
 	}
 }
 
@@ -854,8 +854,8 @@ func TestGenerateDockerfileDockerCLIInstalledWhenComposeConfigured(t *testing.T)
 	if !strings.Contains(df, "docker.io") {
 		t.Error("Dockerfile missing docker.io when compose is configured")
 	}
-	if !strings.Contains(df, "docker-compose-plugin") {
-		t.Error("Dockerfile missing docker-compose-plugin when compose is configured")
+	if !strings.Contains(df, "docker-compose-linux-${ARCH}") {
+		t.Error("Dockerfile missing docker-compose binary download when compose is configured")
 	}
 }
 
@@ -870,8 +870,8 @@ func TestGenerateDockerfileDockerCLIOmittedWhenComposeNotConfigured(t *testing.T
 	if strings.Contains(df, "docker.io") {
 		t.Error("Dockerfile should not contain docker.io when compose is not configured")
 	}
-	if strings.Contains(df, "docker-compose-plugin") {
-		t.Error("Dockerfile should not contain docker-compose-plugin when compose is not configured")
+	if strings.Contains(df, "docker-compose-linux") {
+		t.Error("Dockerfile should not contain docker-compose download when compose is not configured")
 	}
 }
 

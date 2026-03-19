@@ -36,15 +36,20 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 {{- if .HasCompose}}
-# Install Docker CLI for compose support
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io \
-    docker-compose-plugin \
-    && rm -rf /var/lib/apt/lists/*
+# Install Docker CLI and Compose v2 plugin (architecture-aware)
+RUN apt-get update && apt-get install -y --no-install-recommends docker.io \
+    && rm -rf /var/lib/apt/lists/* \
+    && ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "arm64" ]; then ARCH=aarch64; else ARCH=x86_64; fi \
+    && mkdir -p /usr/local/lib/docker/cli-plugins \
+    && curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${ARCH} \
+         -o /usr/local/lib/docker/cli-plugins/docker-compose \
+    && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 {{- end}}
 {{if eq .RuntimeName "go"}}
-# Install Go
-RUN curl -fsSL https://go.dev/dl/go{{.RuntimeVersion}}.linux-amd64.tar.gz \
+# Install Go (architecture-aware)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL https://go.dev/dl/go{{.RuntimeVersion}}.linux-${ARCH}.tar.gz \
       | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
 {{else if eq .RuntimeName "flutter"}}
