@@ -187,3 +187,15 @@ When an issue is too large, split it along natural boundaries:
 
 Each sub-issue should be independently deployable and testable. Use `Blocked by`
 dependencies to enforce ordering.
+
+## CRITICAL — Next step
+
+When this skill completes, suggest the user run `/godark-create-issues` next.
+Do NOT attempt to create GitHub issues yourself — the skill contains specific
+formatting, validation, and dependency-ordering directives that must be followed
+exactly. The full workflow order is:
+
+1. `/godark-create-milestone`
+2. `/godark-create-planning-doc` (this skill)
+3. `/godark-create-issues`
+4. `/godark-create-scenarios`
