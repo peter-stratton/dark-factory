@@ -154,6 +154,16 @@ notify:
 | `docker.install_commands` | Shell commands to run during image build (after runtime setup) |
 | `docker.node_version` | Node.js major version to install (default: `20`) |
 
+## Run history and artifacts
+
+godark stores run data on the host machine at `~/.godark/`:
+
+- `stats.db` — SQLite database with cost, duration, and outcome trends across all runs
+- `runs/{owner}/{repo}/{timestamp}/run.json` — per-run record with issue numbers, timing, and pass/fail summary
+
+When debugging a failed implementation, check the most recent run.json for the
+repo to see which issues were attempted and their outcomes.
+
 ## Common troubleshooting
 
 **CI fails on formatting** — Add `lint_command` to godark.yaml (e.g.,
