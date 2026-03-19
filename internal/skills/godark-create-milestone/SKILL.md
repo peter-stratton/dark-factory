@@ -43,9 +43,13 @@ Help the user define a phased roadmap for their project and write it to
 
 5. **Create milestones** — For each phase, run:
    ```
-   gh milestone create "<Phase Name>" --repo <repo>
+   gh milestone create "Phase N: <Name>" --repo <repo>
    ```
-   If the milestone already exists, skip it and note that in the output.
+   The milestone title **must** use the full "Phase N: Name" format from the
+   roadmap heading (e.g., `Phase 1: Experimentation Service Integration`).
+   This prefix is required for `godark vet issues --tag phase-N` to resolve
+   the milestone. If the milestone already exists, skip it and note that in
+   the output.
 
 6. **Print summary** — List the phases, milestone names, and file path.
 
@@ -62,7 +66,7 @@ Help the user define a phased roadmap for their project and write it to
 
 **Goal**: <What's true when this phase is complete.>
 
-**Milestone**: `<Phase Name>` | **Label**: `phase-1`
+**Milestone**: `Phase 1: <Name>` | **Label**: `phase-1`
 
 - <Issue slug — brief description of a work item>
 - <Issue slug — brief description of a work item>
