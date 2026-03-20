@@ -26,6 +26,60 @@ type detectedCommands struct {
 	runtime config.Runtime
 }
 
+// configTail is the static portion of the default godark.yaml that follows the
+// auto-detected runtime and command blocks.
+const configTail = `
+# Paths (defaults shown — override to customize)
+# roadmap_path: docs/ROADMAP.md
+# planning_dir: docs/planning/
+# scenario_dir: tests/scenarios/
+
+# Patch coverage enforcement (optional)
+# When set, the verify step computes patch coverage after tests pass and fails
+# if the percentage of covered changed lines is below patch_target.
+# coverage:
+#   patch_target: 80          # 1-100, percentage of changed lines that must be covered
+#   test_command: ""           # optional override (must write -coverprofile=/tmp/cov.out)
+
+# Prompt templates
+prompts:
+  implementer: prompts/implementer.txt
+  implementer_retry: prompts/implementer_retry.txt
+  reviewer: prompts/reviewer.txt
+
+# Default branch of the repository (auto-detected from GitHub if omitted)
+# default_branch: main
+
+# Docker Compose integration (optional)
+# When set, godark manages compose services alongside the sandbox.
+# docker_compose:
+#   file: docker-compose.test.yml     # path to compose file (required)
+#   project_name: ""                  # optional prefix (auto-generated if empty)
+#   services:                         # optional: describe services for agent context
+#     - name: postgres
+#       description: "PostgreSQL 16 test database on port 5432"
+#     - name: redis
+#       description: "Redis 7 cache on port 6379"
+
+# Host services (optional)
+# Declare services running on the host that agents need to know about.
+# godark verifies health checks before processing but does not start/stop them.
+# host_services:
+#   - name: supabase
+#     description: "Supabase local stack (Postgres, Auth, Realtime, Studio)"
+#     health_check:
+#       command: "curl -sf http://localhost:54321/rest/v1/"
+#       timeout: "10s"
+#       retries: 5
+#   - name: wrangler
+#     description: "Cloudflare Workers local dev (R2, KV, DO)"
+#     health_check:
+#       command: "curl -sf http://localhost:8787/"
+
+# Agent timeout (Go duration format: "30m", "1h", etc.)
+# agent_timeout: "30m"
+`
+
 // buildDefaultConfig constructs the default godark.yaml config string.
 // When detected is non-nil, build/test/format/lint commands are written as
 // active (uncommented) fields. Otherwise they remain commented-out placeholders.
@@ -81,57 +135,7 @@ auto_merge:
   feature: none
   rollup: none
 
-` + runtimeBlock + commandBlock + `
-# Paths (defaults shown — override to customize)
-# roadmap_path: docs/ROADMAP.md
-# planning_dir: docs/planning/
-# scenario_dir: tests/scenarios/
-
-# Patch coverage enforcement (optional)
-# When set, the verify step computes patch coverage after tests pass and fails
-# if the percentage of covered changed lines is below patch_target.
-# coverage:
-#   patch_target: 80          # 1-100, percentage of changed lines that must be covered
-#   test_command: ""           # optional override (must write -coverprofile=/tmp/cov.out)
-
-# Prompt templates
-prompts:
-  implementer: prompts/implementer.txt
-  implementer_retry: prompts/implementer_retry.txt
-  reviewer: prompts/reviewer.txt
-
-# Default branch of the repository (auto-detected from GitHub if omitted)
-# default_branch: main
-
-# Docker Compose integration (optional)
-# When set, godark manages compose services alongside the sandbox.
-# docker_compose:
-#   file: docker-compose.test.yml     # path to compose file (required)
-#   project_name: ""                  # optional prefix (auto-generated if empty)
-#   services:                         # optional: describe services for agent context
-#     - name: postgres
-#       description: "PostgreSQL 16 test database on port 5432"
-#     - name: redis
-#       description: "Redis 7 cache on port 6379"
-
-# Host services (optional)
-# Declare services running on the host that agents need to know about.
-# godark verifies health checks before processing but does not start/stop them.
-# host_services:
-#   - name: supabase
-#     description: "Supabase local stack (Postgres, Auth, Realtime, Studio)"
-#     health_check:
-#       command: "curl -sf http://localhost:54321/rest/v1/"
-#       timeout: "10s"
-#       retries: 5
-#   - name: wrangler
-#     description: "Cloudflare Workers local dev (R2, KV, DO)"
-#     health_check:
-#       command: "curl -sf http://localhost:8787/"
-
-# Agent timeout (Go duration format: "30m", "1h", etc.)
-# agent_timeout: "30m"
-`
+` + runtimeBlock + commandBlock + configTail
 }
 
 var initCmd = &cobra.Command{
