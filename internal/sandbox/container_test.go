@@ -11,21 +11,25 @@ import (
 
 const validStatsJSON = `{"memory_stats":{"max_usage":104857600},"cpu_stats":{"cpu_usage":{"total_usage":500000000}}}`
 
-// saveRunners saves the current CommandRunner, SplitRunner, and
-// CommandRunnerWithContext values and returns a restore function.
+// saveRunners saves the current CommandRunner, SplitRunner,
+// CommandRunnerWithContext, and StatsInterval values and returns a restore
+// function.
 func saveRunners() func() {
 	origCmd := CommandRunner
 	origSplit := SplitRunner
 	origCtx := CommandRunnerWithContext
+	origInterval := StatsInterval
 	return func() {
 		CommandRunner = origCmd
 		SplitRunner = origSplit
 		CommandRunnerWithContext = origCtx
+		StatsInterval = origInterval
 	}
 }
 
 func TestRunContainerSuccess(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var calls []string
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -77,6 +81,7 @@ func TestRunContainerSuccess(t *testing.T) {
 
 func TestRunContainerFailedCommand(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
 		if args[0] == "create" {
@@ -105,6 +110,7 @@ func TestRunContainerFailedCommand(t *testing.T) {
 
 func TestRunContainerStderrCapture(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
 		if args[0] == "create" {
@@ -136,6 +142,7 @@ func TestRunContainerStderrCapture(t *testing.T) {
 
 func TestRunContainerEnvironmentVariables(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var createArgs string
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -167,6 +174,7 @@ func TestRunContainerEnvironmentVariables(t *testing.T) {
 
 func TestRunContainerMount(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var createArgs string
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -198,6 +206,7 @@ func TestRunContainerMount(t *testing.T) {
 
 func TestRunContainerDockerSocketMountEnabled(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var createArgs string
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -229,6 +238,7 @@ func TestRunContainerDockerSocketMountEnabled(t *testing.T) {
 
 func TestRunContainerDockerSocketMountDisabled(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var createArgs string
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -259,6 +269,7 @@ func TestRunContainerDockerSocketMountDisabled(t *testing.T) {
 
 func TestRunContainerBothMounts(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var createArgs string
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -294,6 +305,7 @@ func TestRunContainerBothMounts(t *testing.T) {
 
 func TestRunContainerTimeout(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var stopCalled bool
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -332,6 +344,7 @@ func TestRunContainerTimeout(t *testing.T) {
 
 func TestRunContainerCleanupOnStartFailure(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var rmCalled bool
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -361,6 +374,7 @@ func TestRunContainerCleanupOnStartFailure(t *testing.T) {
 
 func TestRunContainerCleanupOnContextCancel(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	var stopCalled, rmCalled bool
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
@@ -406,6 +420,7 @@ func TestRunContainerCleanupOnContextCancel(t *testing.T) {
 
 func TestRunContainerInspectParsed(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "create" {
@@ -440,6 +455,7 @@ func TestRunContainerInspectParsed(t *testing.T) {
 
 func TestRunContainerInspectParseFailure(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "create" {
@@ -474,6 +490,7 @@ func TestRunContainerInspectParseFailure(t *testing.T) {
 
 func TestRunContainerInspectCommandFailure(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "create" {
@@ -508,6 +525,7 @@ func TestRunContainerInspectCommandFailure(t *testing.T) {
 
 func TestRunContainerInspectAfterTimeout(t *testing.T) {
 	defer saveRunners()()
+	StatsInterval = time.Millisecond
 
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "create" {

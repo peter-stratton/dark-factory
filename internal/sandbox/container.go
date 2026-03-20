@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,6 +48,10 @@ type containerStats struct {
 	} `json:"cpu_stats"`
 }
 
+// StatsInterval controls how often the background goroutine polls the Docker
+// stats API while a container is running. Replaceable for testing.
+var StatsInterval = 5 * time.Second
+
 // SplitRunner executes a command and returns stdout and stderr separately.
 // Replaceable for testing.
 var SplitRunner = func(name string, args ...string) (stdout, stderr []byte, err error) {
@@ -66,6 +71,68 @@ func generateContainerName() string {
 		b[i] = charset[rand.Intn(len(charset))]
 	}
 	return fmt.Sprintf("godark-%s", string(b))
+}
+
+// statsPoller polls the Docker stats API in a background goroutine and tracks
+// peak memory and CPU usage. Call stop() to signal the goroutine, wait for it
+// to finish, and retrieve the high-water marks.
+type statsPoller struct {
+	done chan struct{}
+	wg   sync.WaitGroup
+	mu   sync.Mutex
+	mem  int64
+	cpu  int64
+}
+
+func startStatsPoller(containerName string) *statsPoller {
+	sp := &statsPoller{done: make(chan struct{})}
+	sp.wg.Add(1)
+	go sp.run(containerName)
+	return sp
+}
+
+func (sp *statsPoller) run(containerName string) {
+	defer sp.wg.Done()
+	statsURL := "http://localhost/containers/" + containerName + "/stats?stream=false"
+	ticker := time.NewTicker(StatsInterval)
+	defer ticker.Stop()
+	sp.poll(statsURL) // immediate first sample
+	for {
+		select {
+		case <-sp.done:
+			sp.poll(statsURL) // one last sample before exiting
+			return
+		case <-ticker.C:
+			sp.poll(statsURL)
+		}
+	}
+}
+
+func (sp *statsPoller) poll(url string) {
+	out, err := CommandRunner("curl", "--silent", "--unix-socket", "/var/run/docker.sock", url)
+	if err != nil {
+		return
+	}
+	var s containerStats
+	if json.Unmarshal(out, &s) != nil {
+		return
+	}
+	sp.mu.Lock()
+	if s.MemoryStats.MaxUsage > sp.mem {
+		sp.mem = s.MemoryStats.MaxUsage
+	}
+	if s.CpuStats.CpuUsage.TotalUsage > sp.cpu {
+		sp.cpu = s.CpuStats.CpuUsage.TotalUsage
+	}
+	sp.mu.Unlock()
+}
+
+func (sp *statsPoller) stop() (peakMem, peakCPU int64) {
+	close(sp.done)
+	sp.wg.Wait()
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	return sp.mem, sp.cpu
 }
 
 // RunContainer creates a Docker container from the given image, runs a command
@@ -114,11 +181,21 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 		return nil, fmt.Errorf("docker start: %w\noutput: %s", err, out)
 	}
 
-	// 3. docker wait (with context timeout)
+	// 3. Start background stats poller. The Docker stats API only returns
+	// non-zero cgroup counters while the container is running; once it exits
+	// the kernel tears down the cgroup and the counters reset to zero.
+	// We poll periodically and keep the high-water marks.
+	sp := startStatsPoller(name)
+
+	// 4. docker wait (with context timeout)
 	result := &RunResult{}
 	waitStart := time.Now()
 	out, err = CommandRunnerWithContext(ctx, "docker", "wait", name)
 	wallElapsed := time.Since(waitStart)
+
+	// Signal the stats poller to stop and take a final sample.
+	peakMem, peakCPU := sp.stop()
+
 	if ctx.Err() != nil || (opts.Timeout > 0 && wallElapsed > opts.Timeout+30*time.Second) {
 		// Timed out or cancelled — stop the container. The wall-clock check
 		// is a safety net for cases where the context deadline is unreliable
@@ -139,7 +216,7 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 		result.ExitCode = code
 	}
 
-	// 4. docker logs (separate stdout/stderr)
+	// 5. docker logs (separate stdout/stderr)
 	stdoutBytes, stderrBytes, err := SplitRunner("docker", "logs", name)
 	if err != nil {
 		logger.Warn("failed to retrieve container logs", "name", name, "error", err)
@@ -147,22 +224,9 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	result.Stdout = string(stdoutBytes)
 	result.Stderr = string(stderrBytes)
 
-	// 5. Docker stats API (best-effort resource stats — must run before deferred rm -f).
-	// Uses the Docker socket directly via curl because docker inspect does not expose
-	// runtime memory/CPU statistics; those come from GET /containers/{id}/stats?stream=false.
-	statsURL := "http://localhost/containers/" + name + "/stats?stream=false"
-	statsOut, statsErr := CommandRunner("curl", "--silent", "--unix-socket", "/var/run/docker.sock", statsURL)
-	if statsErr != nil {
-		logger.Warn("container stats api failed", "name", name, "error", statsErr)
-	} else {
-		var stats containerStats
-		if jsonErr := json.Unmarshal(statsOut, &stats); jsonErr != nil {
-			logger.Warn("failed to parse container stats", "name", name, "error", jsonErr)
-		} else {
-			result.PeakMemoryBytes = stats.MemoryStats.MaxUsage
-			result.CPUNanoseconds = stats.CpuStats.CpuUsage.TotalUsage
-		}
-	}
+	// 6. Apply collected resource stats.
+	result.PeakMemoryBytes = peakMem
+	result.CPUNanoseconds = peakCPU
 
 	logger.Info("container finished", "name", name, "exit_code", result.ExitCode, "timed_out", result.TimedOut)
 	return result, nil
