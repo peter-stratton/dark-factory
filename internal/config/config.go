@@ -264,6 +264,11 @@ type Config struct {
 	// DockerCompose configures Docker Compose integration for test environments.
 	// Nil means the feature is disabled (opt-in).
 	DockerCompose *DockerCompose `yaml:"docker_compose"`
+
+	// HostServices declares services running on the host that must be
+	// reachable before processing begins. The orchestrator verifies health
+	// checks but does not manage service lifecycle. Nil means no host services.
+	HostServices []HostService `yaml:"host_services"`
 }
 
 // Docker holds Docker sandbox configuration.
@@ -297,6 +302,27 @@ type DockerCompose struct {
 	// Services describes the compose services available in the test environment.
 	// Optional — when absent, agents receive no compose service context.
 	Services []ComposeService `yaml:"services"`
+}
+
+// HostServiceHealthCheck configures health checking for a host service.
+type HostServiceHealthCheck struct {
+	// Command is the shell command to run (via "sh -c"). Required.
+	Command string `yaml:"command"`
+	// Timeout is the maximum duration for each health check attempt.
+	// Default: "5s".
+	Timeout string `yaml:"timeout"`
+	// Retries is the number of attempts before declaring the service
+	// unreachable. Default: 3.
+	Retries int `yaml:"retries"`
+}
+
+// HostService describes a service running on the host machine that agents
+// need to know about. The orchestrator verifies reachability before
+// processing issues and injects service descriptions into agent prompts.
+type HostService struct {
+	Name        string                  `yaml:"name"`
+	Description string                  `yaml:"description"`
+	HealthCheck *HostServiceHealthCheck `yaml:"health_check"`
 }
 
 // Prompts holds paths to prompt template files.
@@ -545,6 +571,9 @@ func validate(cfg *Config) error {
 	if err := validateDockerCompose(cfg.DockerCompose); err != nil {
 		return err
 	}
+	if err := validateHostServices(cfg.HostServices); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -739,6 +768,33 @@ func validateNotify(notify []NotifyProviderConfig) error {
 		}
 		if !validNotifyProviders[n.Provider] {
 			return fmt.Errorf("notify[%d]: unknown provider %q", i, n.Provider)
+		}
+	}
+	return nil
+}
+
+// validateHostServices ensures HostService entries are valid when present.
+func validateHostServices(services []HostService) error {
+	for i, svc := range services {
+		if svc.Name == "" {
+			return fmt.Errorf("host_services[%d]: name must not be empty", i)
+		}
+		if svc.HealthCheck != nil {
+			if svc.HealthCheck.Command == "" {
+				return fmt.Errorf("host_services[%d] (%s): health_check.command must not be empty", i, svc.Name)
+			}
+			if svc.HealthCheck.Timeout != "" {
+				d, err := time.ParseDuration(svc.HealthCheck.Timeout)
+				if err != nil {
+					return fmt.Errorf("host_services[%d] (%s): health_check.timeout %q is not a valid duration: %w", i, svc.Name, svc.HealthCheck.Timeout, err)
+				}
+				if d <= 0 {
+					return fmt.Errorf("host_services[%d] (%s): health_check.timeout must be positive, got %q", i, svc.Name, svc.HealthCheck.Timeout)
+				}
+			}
+			if svc.HealthCheck.Retries < 0 {
+				return fmt.Errorf("host_services[%d] (%s): health_check.retries must not be negative, got %d", i, svc.Name, svc.HealthCheck.Retries)
+			}
 		}
 	}
 	return nil

@@ -291,15 +291,15 @@ func TestBuildModuleContext_AlphaOrdering(t *testing.T) {
 // --- buildComposeServices ---
 
 func TestBuildComposeServices_Nil(t *testing.T) {
-	got := buildComposeServices(nil)
+	got := buildComposeServices(nil, nil)
 	if got != "" {
-		t.Errorf("buildComposeServices(nil) = %q, want empty", got)
+		t.Errorf("buildComposeServices(nil, nil) = %q, want empty", got)
 	}
 }
 
 func TestBuildComposeServices_Empty(t *testing.T) {
 	dc := &config.DockerCompose{File: "docker-compose.yml"}
-	got := buildComposeServices(dc)
+	got := buildComposeServices(dc, nil)
 	if got != "" {
 		t.Errorf("buildComposeServices with no services = %q, want empty", got)
 	}
@@ -313,7 +313,7 @@ func TestBuildComposeServices_TwoServices(t *testing.T) {
 			{Name: "redis", Description: "Redis on localhost:6379"},
 		},
 	}
-	got := buildComposeServices(dc)
+	got := buildComposeServices(dc, nil)
 	if !strings.Contains(got, "postgres") {
 		t.Errorf("output missing postgres: %q", got)
 	}
@@ -335,12 +335,67 @@ func TestBuildComposeServices_DescriptionOptional(t *testing.T) {
 			{Name: "postgres"},
 		},
 	}
-	got := buildComposeServices(dc)
+	got := buildComposeServices(dc, nil)
 	if !strings.Contains(got, "postgres") {
 		t.Errorf("output missing service name: %q", got)
 	}
 	// Should not contain a trailing colon or empty description after name.
 	if strings.Contains(got, "postgres:") {
+		t.Errorf("output should not have colon after name when description is empty: %q", got)
+	}
+}
+
+func TestBuildComposeServices_HostServicesOnly(t *testing.T) {
+	hostServices := []config.HostService{
+		{Name: "supabase", Description: "Supabase local stack"},
+	}
+	got := buildComposeServices(nil, hostServices)
+	if !strings.Contains(got, "supabase") {
+		t.Errorf("output missing host service name: %q", got)
+	}
+	if !strings.Contains(got, "(host)") {
+		t.Errorf("output missing (host) suffix: %q", got)
+	}
+}
+
+func TestBuildComposeServices_ComposeAndHostServicesCombined(t *testing.T) {
+	dc := &config.DockerCompose{
+		File: "docker-compose.yml",
+		Services: []config.ComposeService{
+			{Name: "redis", Description: "Redis on localhost:6379"},
+		},
+	}
+	hostServices := []config.HostService{
+		{Name: "supabase", Description: "Supabase local stack"},
+	}
+	got := buildComposeServices(dc, hostServices)
+	if !strings.Contains(got, "redis") {
+		t.Errorf("output missing compose service: %q", got)
+	}
+	if !strings.Contains(got, "supabase") {
+		t.Errorf("output missing host service: %q", got)
+	}
+	// Only host services should have (host) suffix.
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "redis") && strings.Contains(line, "(host)") {
+			t.Errorf("compose service should not have (host) suffix: %q", line)
+		}
+		if strings.Contains(line, "supabase") && !strings.Contains(line, "(host)") {
+			t.Errorf("host service should have (host) suffix: %q", line)
+		}
+	}
+}
+
+func TestBuildComposeServices_HostServiceDescriptionOptional(t *testing.T) {
+	hostServices := []config.HostService{
+		{Name: "wrangler"},
+	}
+	got := buildComposeServices(nil, hostServices)
+	if !strings.Contains(got, "wrangler") {
+		t.Errorf("output missing host service name: %q", got)
+	}
+	if strings.Contains(got, "wrangler:") {
 		t.Errorf("output should not have colon after name when description is empty: %q", got)
 	}
 }

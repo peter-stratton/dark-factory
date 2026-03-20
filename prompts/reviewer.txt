@@ -5,7 +5,7 @@ Issue body:
 {{.IssueBody}}
 {{- if .ComposeServices}}
 
-## Docker Compose services
+## Available services
 
 The following services are available in the test environment:
 {{.ComposeServices}}

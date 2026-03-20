@@ -114,6 +114,21 @@ prompts:
 #     - name: redis
 #       description: "Redis 7 cache on port 6379"
 
+# Host services (optional)
+# Declare services running on the host that agents need to know about.
+# godark verifies health checks before processing but does not start/stop them.
+# host_services:
+#   - name: supabase
+#     description: "Supabase local stack (Postgres, Auth, Realtime, Studio)"
+#     health_check:
+#       command: "curl -sf http://localhost:54321/rest/v1/"
+#       timeout: "10s"
+#       retries: 5
+#   - name: wrangler
+#     description: "Cloudflare Workers local dev (R2, KV, DO)"
+#     health_check:
+#       command: "curl -sf http://localhost:8787/"
+
 # Agent timeout (Go duration format: "30m", "1h", etc.)
 # agent_timeout: "30m"
 `

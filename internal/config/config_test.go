@@ -2400,3 +2400,135 @@ docker_compose:
 		t.Errorf("len(Services) = %d, want 0 when services absent", len(cfg.DockerCompose.Services))
 	}
 }
+
+// --- host_services validation ---
+
+func TestHostServicesValidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+host_services:
+  - name: supabase
+    description: "Supabase local stack"
+    health_check:
+      command: "curl -sf http://localhost:54321/rest/v1/"
+      timeout: "10s"
+      retries: 5
+  - name: wrangler
+    description: "Cloudflare Workers local dev"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.HostServices) != 2 {
+		t.Fatalf("len(HostServices) = %d, want 2", len(cfg.HostServices))
+	}
+	if cfg.HostServices[0].Name != "supabase" {
+		t.Errorf("HostServices[0].Name = %q, want %q", cfg.HostServices[0].Name, "supabase")
+	}
+	if cfg.HostServices[0].HealthCheck == nil {
+		t.Fatal("HostServices[0].HealthCheck is nil, want non-nil")
+	}
+	if cfg.HostServices[0].HealthCheck.Retries != 5 {
+		t.Errorf("HostServices[0].HealthCheck.Retries = %d, want 5", cfg.HostServices[0].HealthCheck.Retries)
+	}
+	// Second service has no health_check — should be nil.
+	if cfg.HostServices[1].HealthCheck != nil {
+		t.Errorf("HostServices[1].HealthCheck should be nil for description-only service")
+	}
+}
+
+func TestHostServicesMissingName(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+host_services:
+  - description: "No name"
+    health_check:
+      command: "curl -sf http://localhost:8080/"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for missing host_services name, got nil")
+	}
+	if !strings.Contains(err.Error(), "name must not be empty") {
+		t.Errorf("error %q does not mention name", err.Error())
+	}
+}
+
+func TestHostServicesHealthCheckMissingCommand(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+host_services:
+  - name: supabase
+    health_check:
+      timeout: "5s"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for missing health_check.command, got nil")
+	}
+	if !strings.Contains(err.Error(), "health_check.command must not be empty") {
+		t.Errorf("error %q does not mention command", err.Error())
+	}
+}
+
+func TestHostServicesInvalidTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+host_services:
+  - name: supabase
+    health_check:
+      command: "curl -sf http://localhost:54321/"
+      timeout: "not-a-duration"
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "health_check.timeout") {
+		t.Errorf("error %q does not mention timeout", err.Error())
+	}
+}
+
+func TestHostServicesNegativeRetries(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+host_services:
+  - name: supabase
+    health_check:
+      command: "curl -sf http://localhost:54321/"
+      retries: -1
+`)
+
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for negative retries, got nil")
+	}
+	if !strings.Contains(err.Error(), "retries must not be negative") {
+		t.Errorf("error %q does not mention retries", err.Error())
+	}
+}
+
+func TestHostServicesNilIsValid(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.HostServices) != 0 {
+		t.Errorf("len(HostServices) = %d, want 0 when absent", len(cfg.HostServices))
+	}
+}

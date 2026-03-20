@@ -150,7 +150,7 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ArchitectureJSON:       readFileOrEmpty(cfg.ArchitectureJSON),
 		ConventionsDocContent:  readFileOrEmpty(cfg.ConventionsDoc),
 		ModuleContext:          buildModuleContext(cfg.Modules),
-		ComposeServices:        buildComposeServices(cfg.DockerCompose),
+		ComposeServices:        buildComposeServices(cfg.DockerCompose, cfg.HostServices),
 		BaseBranch:             cfg.BaseBranch,
 		SharedRules:            buildSharedRules(protectedPaths, cfg.ScenarioDir),
 	}
@@ -204,21 +204,37 @@ func buildModuleContext(modules map[string]config.Module) string {
 }
 
 // buildComposeServices renders a human-readable summary of configured
-// Docker Compose services for use in prompt templates.
+// Docker Compose services and host services for use in prompt templates.
 // Returns empty string when no services are configured.
-func buildComposeServices(dc *config.DockerCompose) string {
-	if dc == nil || len(dc.Services) == 0 {
+func buildComposeServices(dc *config.DockerCompose, hostServices []config.HostService) string {
+	hasCompose := dc != nil && len(dc.Services) > 0
+	hasHost := len(hostServices) > 0
+	if !hasCompose && !hasHost {
 		return ""
 	}
 	var sb strings.Builder
-	for _, svc := range dc.Services {
-		sb.WriteString("- ")
-		sb.WriteString(svc.Name)
-		if svc.Description != "" {
-			sb.WriteString(": ")
-			sb.WriteString(svc.Description)
+	if hasCompose {
+		for _, svc := range dc.Services {
+			sb.WriteString("- ")
+			sb.WriteString(svc.Name)
+			if svc.Description != "" {
+				sb.WriteString(": ")
+				sb.WriteString(svc.Description)
+			}
+			sb.WriteString("\n")
 		}
-		sb.WriteString("\n")
+	}
+	if hasHost {
+		for _, svc := range hostServices {
+			sb.WriteString("- ")
+			sb.WriteString(svc.Name)
+			if svc.Description != "" {
+				sb.WriteString(": ")
+				sb.WriteString(svc.Description)
+			}
+			sb.WriteString(" (host)")
+			sb.WriteString("\n")
+		}
 	}
 	return sb.String()
 }

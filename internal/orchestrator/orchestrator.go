@@ -601,6 +601,13 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		cfg.Docker.Image = tag
 	}
 
+	// Verify host services are reachable before any agent execution.
+	if len(cfg.HostServices) > 0 {
+		if err := sandbox.CheckHostServices(ctx, cfg.HostServices, logger); err != nil {
+			return fmt.Errorf("host service health check: %w", err)
+		}
+	}
+
 	// Start compose services if configured, before any agent execution.
 	if cfg.DockerCompose != nil {
 		cleanupEnvFile, err := sandbox.ComposeUp(ctx, dc, cfg.RequiredEnv, logger)

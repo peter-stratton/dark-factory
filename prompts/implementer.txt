@@ -12,7 +12,7 @@ when reading code and planning your approach.
 {{- end}}
 {{- if .ComposeServices}}
 
-## Docker Compose services
+## Available services
 
 The following services are available in the test environment:
 {{.ComposeServices}}

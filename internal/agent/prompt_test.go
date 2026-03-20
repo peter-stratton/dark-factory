@@ -1163,8 +1163,8 @@ func TestImplementerPrompt_ComposeServicesPresent(t *testing.T) {
 	if !strings.Contains(rendered, "PostgreSQL on localhost:5432") {
 		t.Error("implementer prompt should contain service description when ComposeServices is set")
 	}
-	if !strings.Contains(rendered, "Docker Compose services") {
-		t.Error("implementer prompt should contain 'Docker Compose services' heading when ComposeServices is set")
+	if !strings.Contains(rendered, "Available services") {
+		t.Error("implementer prompt should contain 'Available services' heading when ComposeServices is set")
 	}
 }
 
@@ -1189,8 +1189,8 @@ func TestImplementerPrompt_ComposeServicesAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPrompt() error = %v", err)
 	}
-	if strings.Contains(rendered, "Docker Compose services") {
-		t.Error("implementer prompt should not contain 'Docker Compose services' heading when ComposeServices is empty")
+	if strings.Contains(rendered, "Available services") {
+		t.Error("implementer prompt should not contain 'Available services' heading when ComposeServices is empty")
 	}
 }
 
@@ -1218,8 +1218,8 @@ func TestReviewerPrompt_ComposeServicesPresent(t *testing.T) {
 	if !strings.Contains(rendered, "traefik") {
 		t.Error("reviewer prompt should contain service name 'traefik' when ComposeServices is set")
 	}
-	if !strings.Contains(rendered, "Docker Compose services") {
-		t.Error("reviewer prompt should contain 'Docker Compose services' heading when ComposeServices is set")
+	if !strings.Contains(rendered, "Available services") {
+		t.Error("reviewer prompt should contain 'Available services' heading when ComposeServices is set")
 	}
 }
 
@@ -1244,7 +1244,7 @@ func TestReviewerPrompt_ComposeServicesAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPrompt() error = %v", err)
 	}
-	if strings.Contains(rendered, "Docker Compose services") {
-		t.Error("reviewer prompt should not contain 'Docker Compose services' heading when ComposeServices is empty")
+	if strings.Contains(rendered, "Available services") {
+		t.Error("reviewer prompt should not contain 'Available services' heading when ComposeServices is empty")
 	}
 }
