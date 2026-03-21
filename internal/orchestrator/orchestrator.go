@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/deps"
 	"github.com/peter-stratton/dark-factory/internal/dialogue"
 	gexec "github.com/peter-stratton/dark-factory/internal/exec"
+	"github.com/peter-stratton/dark-factory/internal/ghapp"
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
 	"github.com/peter-stratton/dark-factory/internal/lock"
@@ -283,6 +285,7 @@ func ReResolveAndProcess(
 		return false, fmt.Errorf("acquiring run lock: %w", err)
 	}
 	defer func() {
+		refreshHostGHToken(logger)
 		if releaseErr := locker.Release(issueNums); releaseErr != nil {
 			logger.Warn("failed to release run lock", "error", releaseErr)
 		}
@@ -292,6 +295,25 @@ func ReResolveAndProcess(
 	finalizeResolveRun(ctx, statsDB, cfg, writer, implemented, failed, abortReason, notifiers, logger)
 
 	return attempted > 0, nil
+}
+
+// refreshHostGHToken generates a fresh GitHub App installation token and
+// updates the host process environment. This ensures that host-side gh CLI
+// calls (e.g. lock release, label removal) succeed even if the original
+// token has expired during a long run. No-op when GitHub App auth is not
+// configured.
+func refreshHostGHToken(logger *slog.Logger) {
+	token, err := ghapp.RefreshToken()
+	if err != nil {
+		logger.Warn("failed to refresh GitHub App token before lock release", "error", err)
+		return
+	}
+	if token == "" {
+		return
+	}
+	if err := os.Setenv("GH_TOKEN", token); err != nil {
+		logger.Warn("failed to update host GH_TOKEN", "error", err)
+	}
 }
 
 // prepareResolveEnv sets up auth, prompts, lifecycle labels, and (when
@@ -655,6 +677,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	var allLockedNums []int
 	defer func() {
 		if len(allLockedNums) > 0 {
+			refreshHostGHToken(logger)
 			if err := locker.Release(allLockedNums); err != nil {
 				logger.Warn("failed to release run lock", "error", err)
 			}

@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/peter-stratton/dark-factory/internal/agent"
 	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/ghapp"
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
 	"github.com/peter-stratton/dark-factory/internal/lock"
@@ -180,6 +181,11 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return fmt.Errorf("acquiring run lock: %w", err)
 		}
 		defer func() {
+			// Refresh the GitHub App token before releasing the lock so the
+			// gh CLI call succeeds even if the original token has expired.
+			if token, err := ghapp.RefreshToken(); err == nil && token != "" {
+				_ = os.Setenv("GH_TOKEN", token)
+			}
 			if err := locker.Release(issueNums); err != nil {
 				logger.Warn("failed to release run lock", "error", err)
 			}
