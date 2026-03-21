@@ -20,12 +20,20 @@ var GuardRunner gexec.CommandRunnerFunc = func(name string, args ...string) ([]b
 }
 
 // FindPR returns the PR number for the given branch in the given repo,
-// or 0 if no PR is found.
+// or 0 if no PR is found. Authentication and network errors are returned
+// as errors rather than being treated as "no PR found".
 func FindPR(repo, branch string) (int, error) {
 	out, err := GuardRunner("gh", "pr", "view", branch, "--repo", repo, "--json", "number")
 	if err != nil {
-		// gh pr view exits non-zero when no PR exists
-		return 0, nil
+		combined := strings.ToLower(string(out))
+		// gh pr view exits non-zero for multiple reasons. Only treat "no pull
+		// requests found" as a clean zero; surface auth/network failures so
+		// callers can distinguish infrastructure errors from missing PRs.
+		if strings.Contains(combined, "no pull requests found") ||
+			strings.Contains(combined, "could not resolve to a pullrequest") {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("gh pr view: %w\noutput: %s", err, out)
 	}
 
 	var result struct {

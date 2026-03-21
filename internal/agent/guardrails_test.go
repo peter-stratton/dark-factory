@@ -22,9 +22,9 @@ func TestFindPR_ReturnsPRNumber(t *testing.T) {
 	}
 }
 
-func TestFindPR_ReturnsZeroOnError(t *testing.T) {
+func TestFindPR_ReturnsZeroWhenNoPR(t *testing.T) {
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
-		return nil, fmt.Errorf("no PR found")
+		return []byte("no pull requests found for branch \"test-branch\""), fmt.Errorf("exit status 1")
 	})
 
 	num, err := FindPR("owner/repo", "test-branch")
@@ -33,6 +33,23 @@ func TestFindPR_ReturnsZeroOnError(t *testing.T) {
 	}
 	if num != 0 {
 		t.Errorf("FindPR() = %d, want 0", num)
+	}
+}
+
+func TestFindPR_ReturnsErrorOnAuthFailure(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return []byte("HTTP 401: Bad credentials"), fmt.Errorf("exit status 1")
+	})
+
+	num, err := FindPR("owner/repo", "test-branch")
+	if err == nil {
+		t.Fatal("expected error on auth failure, got nil")
+	}
+	if num != 0 {
+		t.Errorf("FindPR() = %d, want 0", num)
+	}
+	if !strings.Contains(err.Error(), "gh pr view") {
+		t.Errorf("error = %v, want 'gh pr view' prefix", err)
 	}
 }
 

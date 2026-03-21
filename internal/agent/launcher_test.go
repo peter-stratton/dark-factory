@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"syscall"
 	"testing"
@@ -11,9 +10,9 @@ import (
 
 func TestRun_NoSandbox_InvokesPython3(t *testing.T) {
 	var capturedName string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedName = name
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	opts := RunOpts{Prompt: "test prompt"}
@@ -32,9 +31,9 @@ func TestRun_NoSandbox_InvokesPython3(t *testing.T) {
 
 func TestRun_NoSandbox_ScriptPathAsArg(t *testing.T) {
 	var capturedArgs []string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedArgs = args
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	_, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
@@ -52,9 +51,9 @@ func TestRun_NoSandbox_ScriptPathAsArg(t *testing.T) {
 
 func TestRun_NoSandbox_PromptInEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedEnv = env
-		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	opts := RunOpts{Prompt: "my special prompt"}
@@ -70,9 +69,9 @@ func TestRun_NoSandbox_PromptInEnv(t *testing.T) {
 
 func TestRun_NoSandbox_RoleInEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedEnv = env
-		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	opts := RunOpts{Prompt: "test", Role: "implementer"}
@@ -88,9 +87,9 @@ func TestRun_NoSandbox_RoleInEnv(t *testing.T) {
 
 func TestRun_NoSandbox_AuthEnvForwarded(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedEnv = env
-		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	opts := RunOpts{
@@ -108,9 +107,9 @@ func TestRun_NoSandbox_AuthEnvForwarded(t *testing.T) {
 }
 
 func TestRun_NoSandbox_ParsesStructuredResult(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		out := "some message line\n" + `{"session_id":"sess-123","result":"Implementation complete","cost_usd":0.42,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	opts := RunOpts{Prompt: "test"}
@@ -128,9 +127,9 @@ func TestRun_NoSandbox_ParsesStructuredResult(t *testing.T) {
 }
 
 func TestRun_NoSandbox_ErrorResult(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		out := `{"session_id":"sess-456","result":"error","cost_usd":0,"is_error":true}`
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	opts := RunOpts{Prompt: "test"}
@@ -148,8 +147,8 @@ func TestRun_NoSandbox_ErrorResult(t *testing.T) {
 }
 
 func TestRun_NoSandbox_NonZeroExit(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte("out"), []byte("err"), 1, nil
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+		return []byte("out"), []byte("err"), 1, nil, nil
 	})
 
 	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
@@ -162,9 +161,9 @@ func TestRun_NoSandbox_NonZeroExit(t *testing.T) {
 }
 
 func TestRun_NoSandbox_Timeout(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		<-ctx.Done()
-		return []byte("partial"), []byte(""), 0, ctx.Err()
+		return []byte("partial"), []byte(""), 0, nil, ctx.Err()
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -181,9 +180,9 @@ func TestRun_NoSandbox_Timeout(t *testing.T) {
 
 func TestRun_NoSandbox_NoDangerouslySkipPermissions(t *testing.T) {
 	var capturedArgs []string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedArgs = append([]string{name}, args...)
-		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	_, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
@@ -198,9 +197,9 @@ func TestRun_NoSandbox_NoDangerouslySkipPermissions(t *testing.T) {
 }
 
 func TestRun_NoSandbox_ParsesVerdict(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		out := `{"session_id":"","result":"text","cost_usd":0,"is_error":false,"verdict":"APPROVED"}`
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
@@ -213,10 +212,10 @@ func TestRun_NoSandbox_ParsesVerdict(t *testing.T) {
 }
 
 func TestRun_NoSandbox_NoVerdictField_EmptyVerdict(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		// Implementer output — no verdict field.
 		out := `{"session_id":"","result":"Implementation done","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
@@ -229,9 +228,9 @@ func TestRun_NoSandbox_NoVerdictField_EmptyVerdict(t *testing.T) {
 }
 
 func TestRun_NoSandbox_ParsesToolTrace(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		out := `{"session_id":"","result":"done","cost_usd":0,"is_error":false,"tool_trace":["Read foo.go","Edit bar.go"]}`
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
@@ -251,9 +250,9 @@ func TestRun_NoSandbox_ParsesToolTrace(t *testing.T) {
 
 func TestRun_NoSandbox_PromptNotInArgs(t *testing.T) {
 	var capturedArgs []string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedArgs = append([]string{name}, args...)
-		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	const prompt = "my unique prompt text"
@@ -269,8 +268,8 @@ func TestRun_NoSandbox_PromptNotInArgs(t *testing.T) {
 }
 
 func TestRun_NoSandbox_TimingPopulated(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	before := time.Now()
@@ -295,8 +294,8 @@ func TestRun_NoSandbox_TimingPopulated(t *testing.T) {
 }
 
 func TestRun_NoSandbox_DurationPositive(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
@@ -311,9 +310,9 @@ func TestRun_NoSandbox_DurationPositive(t *testing.T) {
 }
 
 func TestRun_NoSandbox_TimedOut_HasTiming(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		<-ctx.Done()
-		return []byte("partial"), []byte(""), 0, ctx.Err()
+		return []byte("partial"), []byte(""), 0, nil, ctx.Err()
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -335,17 +334,16 @@ func TestRun_NoSandbox_TimedOut_HasTiming(t *testing.T) {
 }
 
 func TestRun_NoSandbox_ResourceStats_Populated_MacOS(t *testing.T) {
-	// Scenario: Host mode captures resource stats (macOS platform).
+	// Scenario: Host mode captures resource stats via ProcessState rusage (macOS platform).
 	// Maxrss = 204800 KB on macOS → PeakMemoryBytes = 209715200 (204800 * 1024).
 	// Utime = 2s + Stime = 1s → CPUNanoseconds = 3000000000.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
-	})
-	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
-		rusage.Maxrss = 204800
-		rusage.Utime = syscall.Timeval{Sec: 2, Usec: 0}
-		rusage.Stime = syscall.Timeval{Sec: 1, Usec: 0}
-		return nil
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+		ru := &syscall.Rusage{
+			Maxrss: 204800,
+			Utime:  syscall.Timeval{Sec: 2, Usec: 0},
+			Stime:  syscall.Timeval{Sec: 1, Usec: 0},
+		}
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, ru, nil
 	})
 	stubGOOS(t, "darwin")
 
@@ -364,36 +362,29 @@ func TestRun_NoSandbox_ResourceStats_Populated_MacOS(t *testing.T) {
 	}
 }
 
-func TestRun_NoSandbox_ResourceStats_GetrusageFailure_ZeroAndNoError(t *testing.T) {
-	// Scenario: Getrusage failure returns zero values and no error.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
-	})
-	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
-		return errors.New("getrusage: operation not permitted")
+func TestRun_NoSandbox_ResourceStats_NilRusage_ZeroAndNoError(t *testing.T) {
+	// Scenario: Runner returns nil rusage (e.g. process failed to start).
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	result, err := Run(context.Background(), RunOpts{Prompt: "test"}, true, testLogger(t))
 	if err != nil {
-		t.Fatalf("Run() returned error on getrusage failure = %v", err)
+		t.Fatalf("Run() returned error on nil rusage = %v", err)
 	}
 	if result.PeakMemoryBytes != 0 {
-		t.Errorf("PeakMemoryBytes = %d, want 0 on getrusage failure", result.PeakMemoryBytes)
+		t.Errorf("PeakMemoryBytes = %d, want 0 on nil rusage", result.PeakMemoryBytes)
 	}
 	if result.CPUNanoseconds != 0 {
-		t.Errorf("CPUNanoseconds = %d, want 0 on getrusage failure", result.CPUNanoseconds)
+		t.Errorf("CPUNanoseconds = %d, want 0 on nil rusage", result.CPUNanoseconds)
 	}
 }
 
 func TestRun_NoSandbox_ResourceStats_PlatformNormalization_MacOS(t *testing.T) {
 	// Scenario: Platform normalization on macOS.
 	// Maxrss = 1024 KB on macOS → PeakMemoryBytes = 1048576 (1024 * 1024).
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
-	})
-	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
-		rusage.Maxrss = 1024
-		return nil
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, &syscall.Rusage{Maxrss: 1024}, nil
 	})
 	stubGOOS(t, "darwin")
 
@@ -411,12 +402,8 @@ func TestRun_NoSandbox_ResourceStats_PlatformNormalization_MacOS(t *testing.T) {
 func TestRun_NoSandbox_ResourceStats_PlatformNormalization_Linux(t *testing.T) {
 	// Scenario: Platform normalization on Linux.
 	// Maxrss = 1048576 bytes on Linux → PeakMemoryBytes = 1048576 (no conversion).
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
-		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
-	})
-	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
-		rusage.Maxrss = 1048576
-		return nil
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+		return []byte(`{"session_id":"","result":"done","cost_usd":0,"is_error":false}`), []byte(""), 0, &syscall.Rusage{Maxrss: 1048576}, nil
 	})
 	stubGOOS(t, "linux")
 
@@ -432,15 +419,10 @@ func TestRun_NoSandbox_ResourceStats_PlatformNormalization_Linux(t *testing.T) {
 }
 
 func TestRun_NoSandbox_ResourceStats_SkippedOnTimeout(t *testing.T) {
-	// On timeout the process may still be running, so resource fields should be zero.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	// On timeout the Runner returns nil rusage, so resource fields should be zero.
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		<-ctx.Done()
-		return []byte("partial"), []byte(""), 0, ctx.Err()
-	})
-	getrusageCalled := false
-	stubGetrusageFn(t, func(who int, rusage *syscall.Rusage) error {
-		getrusageCalled = true
-		return nil
+		return []byte("partial"), []byte(""), 0, nil, ctx.Err()
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -452,9 +434,6 @@ func TestRun_NoSandbox_ResourceStats_SkippedOnTimeout(t *testing.T) {
 	}
 	if !result.TimedOut {
 		t.Error("expected TimedOut = true")
-	}
-	if getrusageCalled {
-		t.Error("GetrusageFn should not be called on timeout")
 	}
 	if result.PeakMemoryBytes != 0 {
 		t.Errorf("PeakMemoryBytes = %d, want 0 on timeout", result.PeakMemoryBytes)

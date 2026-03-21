@@ -3,14 +3,15 @@ package agent
 import (
 	"context"
 	"strings"
+	"syscall"
 	"testing"
 )
 
 func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	prompts := &Prompts{
@@ -36,9 +37,9 @@ func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 
 func TestGenerateSpec_SetsSpecGeneratorRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil
+		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
 	})
 
 	prompts := &Prompts{

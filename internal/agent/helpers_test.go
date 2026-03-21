@@ -42,31 +42,22 @@ func stubRunner(t *testing.T) *[]string {
 	t.Cleanup(func() { Runner = orig })
 
 	var captured []string
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		captured = append([]string{name}, args...)
 		// Return a valid final JSON line so parseRunnerOutput succeeds.
 		out := env["GODARK_PROMPT"] + "\n" + `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	}
 	return &captured
 }
 
 // stubRunnerFunc replaces Runner with a custom function for tests that need
 // to control the return values.
-func stubRunnerFunc(t *testing.T, fn func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error)) {
+func stubRunnerFunc(t *testing.T, fn func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error)) {
 	t.Helper()
 	orig := Runner
 	t.Cleanup(func() { Runner = orig })
 	Runner = fn
-}
-
-// stubGetrusageFn replaces GetrusageFn with a custom function for tests that
-// need to control Getrusage return values or inject errors.
-func stubGetrusageFn(t *testing.T, fn func(who int, rusage *syscall.Rusage) error) {
-	t.Helper()
-	orig := GetrusageFn
-	t.Cleanup(func() { GetrusageFn = orig })
-	GetrusageFn = fn
 }
 
 // stubGOOS overrides goosForRusage for the duration of the test, allowing

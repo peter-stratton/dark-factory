@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"syscall"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
@@ -260,9 +261,9 @@ func TestGenerateAcceptanceTests_LogsSuccessWithCount(t *testing.T) {
 	logger := slog.New(cap)
 
 	// Stub Runner to return a valid JSON array.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		resultJSON := `{"session_id":"","result":"[\"Test one\",\"Test two\"]","cost_usd":0,"is_error":false}`
-		return []byte(resultJSON), []byte(""), 0, nil
+		return []byte(resultJSON), []byte(""), 0, nil, nil
 	})
 	// Stub punchlist CommandRunner (FetchPRDiff) to avoid real gh call.
 	origCmd := punchlist.CommandRunner
@@ -303,9 +304,9 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 	logger := slog.New(cap)
 
 	// Stub Runner to return unparseable output.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		resultJSON := `{"session_id":"","result":"not a json array","cost_usd":0,"is_error":false}`
-		return []byte(resultJSON), []byte(""), 0, nil
+		return []byte(resultJSON), []byte(""), 0, nil, nil
 	})
 	origCmd := punchlist.CommandRunner
 	defer func() { punchlist.CommandRunner = origCmd }()

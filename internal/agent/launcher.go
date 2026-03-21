@@ -47,18 +47,16 @@ type Result struct {
 	CPUNanoseconds  int64  // total CPU time (user + system) in nanoseconds; 0 if unavailable
 }
 
-// GetrusageFn returns resource usage for child processes. Replaceable for testing.
-var GetrusageFn = func(who int, rusage *syscall.Rusage) error {
-	return syscall.Getrusage(who, rusage)
-}
-
 // goosForRusage is the GOOS value used for Maxrss unit normalization.
 // On macOS, Maxrss is in kilobytes; on Linux it is in bytes.
 // Replaceable for testing to validate both platform behaviours.
 var goosForRusage = runtime.GOOS
 
 // Runner executes a command on the host with the given environment. Replaceable for testing.
-var Runner = func(ctx context.Context, env map[string]string, name string, args ...string) (stdout, stderr []byte, exitCode int, err error) {
+// The returned *syscall.Rusage comes from cmd.ProcessState (populated by wait4) and
+// contains accurate per-child resource usage including peak RSS. This is more reliable
+// than a separate getrusage(RUSAGE_CHILDREN) call, which returns 0 for Maxrss on macOS.
+var Runner = func(ctx context.Context, env map[string]string, name string, args ...string) (stdout, stderr []byte, exitCode int, rusage *syscall.Rusage, err error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if len(env) > 0 {
 		cmd.Env = os.Environ()
@@ -77,7 +75,12 @@ var Runner = func(ctx context.Context, env map[string]string, name string, args 
 			err = nil // non-zero exit is not an error for us
 		}
 	}
-	return outBuf, errBuf, code, err
+	if cmd.ProcessState != nil {
+		if ru, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok {
+			rusage = ru
+		}
+	}
+	return outBuf, errBuf, code, rusage, err
 }
 
 // writerFunc adapts a function to the io.Writer interface.
@@ -109,6 +112,11 @@ func refreshGHToken(env map[string]string, logger *slog.Logger) {
 		return // no GitHub App configured, nothing to refresh
 	}
 	env["GH_TOKEN"] = token
+	// Update the host process environment so gh CLI commands that run outside
+	// the container (e.g. FindPR, EnsureClosesRef) also use the fresh token.
+	if err := os.Setenv("GH_TOKEN", token); err != nil {
+		logger.Warn("failed to update host GH_TOKEN", "error", err)
+	}
 	logger.Info("refreshed GitHub App installation token")
 }
 
@@ -155,7 +163,7 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 	refreshGHToken(env, logger)
 
 	startedAt := time.Now()
-	stdout, stderr, exitCode, err := Runner(ctx, env, "python3", tmpFile.Name())
+	stdout, stderr, exitCode, rusage, err := Runner(ctx, env, "python3", tmpFile.Name())
 	finishedAt := time.Now()
 	if ctx.Err() != nil {
 		return &Result{TimedOut: true, Stdout: string(stdout), Stderr: string(stderr), StartedAt: startedAt, FinishedAt: finishedAt}, nil
@@ -184,21 +192,18 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 	}
 
 	// Capture resource usage from the child process (best-effort).
-	// RUSAGE_CHILDREN reflects stats for all waited-upon children, which is
-	// valid here because Runner calls cmd.Run() which waits for the process.
-	// Skip on timeout: the process may still be running and Getrusage results
-	// would be undefined.
-	var usage syscall.Rusage
-	if err := GetrusageFn(syscall.RUSAGE_CHILDREN, &usage); err != nil {
-		logger.Warn("getrusage failed, resource stats will be zero", "error", err)
-	} else {
-		mem := int64(usage.Maxrss)
+	// The rusage comes from cmd.ProcessState (populated by wait4), which gives
+	// accurate per-child stats including peak RSS. This is more reliable than
+	// a separate getrusage(RUSAGE_CHILDREN) call, which returns 0 for Maxrss
+	// on macOS.
+	if rusage != nil {
+		mem := int64(rusage.Maxrss)
 		if goosForRusage == "darwin" {
 			mem *= 1024 // macOS reports Maxrss in kilobytes; convert to bytes
 		}
 		res.PeakMemoryBytes = mem
-		res.CPUNanoseconds = (int64(usage.Utime.Sec)+int64(usage.Stime.Sec))*1e9 +
-			(int64(usage.Utime.Usec)+int64(usage.Stime.Usec))*1e3
+		res.CPUNanoseconds = (int64(rusage.Utime.Sec)+int64(rusage.Stime.Sec))*1e9 +
+			(int64(rusage.Utime.Usec)+int64(rusage.Stime.Usec))*1e3
 	}
 
 	// Capture bounded log for post-mortem on failure only.

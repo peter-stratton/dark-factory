@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
@@ -214,10 +215,10 @@ func TestRunPreMergeRebasePhase_ConflictingUpdateBranchFails_ImplementerFixes(t 
 	}
 
 	retryCallCount := 0
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		retryCallCount++
 		out := wrapRunnerJSON("conflict fix output")
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	stubGuardRunner(t, standardRebaseGuard())
@@ -256,9 +257,9 @@ func TestRunPreMergeRebasePhase_ExhaustsAttempts_NeedsHumanReview(t *testing.T) 
 		return []byte(""), nil
 	}
 
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		out := wrapRunnerJSON("conflict fix attempted but conflicts remain")
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	stubGuardRunner(t, standardRebaseGuard())
@@ -298,10 +299,10 @@ func TestRunPreMergeRebasePhase_MultipleAttempts(t *testing.T) {
 		return []byte(""), nil
 	}
 
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, error) {
+	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
 		retryCallCount++
 		out := wrapRunnerJSON("conflict fix output")
-		return []byte(out), []byte(""), 0, nil
+		return []byte(out), []byte(""), 0, nil, nil
 	})
 
 	stubGuardRunner(t, standardRebaseGuard())
