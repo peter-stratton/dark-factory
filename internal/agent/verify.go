@@ -105,6 +105,8 @@ func sandboxCommandRunner(image, repo, branch string, authEnv map[string]string,
 		for k, v := range authEnv {
 			env[k] = v
 		}
+		// Refresh GitHub App token so verify containers get a fresh token.
+		refreshGHToken(env, logger)
 		opts := sandbox.RunOpts{
 			Image: image,
 			Cmd:   []string{"sh", "-c", script},
