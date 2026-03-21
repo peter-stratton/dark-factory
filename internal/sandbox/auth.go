@@ -85,6 +85,9 @@ func collectGitHubToken(env map[string]string, logger *slog.Logger) error {
 		return err
 	}
 	if appCfg != nil {
+		// Store the config so tokens can be refreshed before each container launch.
+		ghapp.SetActiveConfig(appCfg)
+
 		token, err := appCfg.InstallationToken()
 		if err != nil {
 			return fmt.Errorf("generating GitHub App token: %w", err)

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,6 +28,28 @@ type Config struct {
 	AppID          string
 	InstallationID string
 	PrivateKeyPath string
+}
+
+// activeConfig holds the GitHub App config set during auth collection.
+// Used by RefreshToken to mint fresh installation tokens on demand.
+// Access is atomic because multiple agent goroutines may call RefreshToken
+// concurrently.
+var activeConfig atomic.Pointer[Config]
+
+// SetActiveConfig stores the GitHub App config for later token refresh.
+func SetActiveConfig(cfg *Config) {
+	activeConfig.Store(cfg)
+}
+
+// RefreshToken generates a fresh GitHub App installation token using the
+// stored config. Returns ("", nil) when no GitHub App config is active
+// (i.e. the run is using a PAT or gh CLI auth instead).
+func RefreshToken() (string, error) {
+	cfg := activeConfig.Load()
+	if cfg == nil {
+		return "", nil
+	}
+	return cfg.InstallationToken()
 }
 
 // LoadFromEnv reads GitHub App credentials from environment variables.

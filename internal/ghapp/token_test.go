@@ -150,3 +150,59 @@ func TestInstallationToken_EndToEnd(t *testing.T) {
 		t.Errorf("token = %q, want %q", token, "ghs_end_to_end_token")
 	}
 }
+
+func TestRefreshToken_NoConfig(t *testing.T) {
+	old := activeConfig.Load()
+	t.Cleanup(func() { activeConfig.Store(old) })
+
+	SetActiveConfig(nil)
+	token, err := RefreshToken()
+	if err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+	if token != "" {
+		t.Errorf("token = %q, want empty when no config set", token)
+	}
+}
+
+func TestRefreshToken_WithConfig(t *testing.T) {
+	orig := CommandRunner
+	t.Cleanup(func() { CommandRunner = orig })
+
+	old := activeConfig.Load()
+	t.Cleanup(func() { activeConfig.Store(old) })
+
+	// Generate a test key and write it to a temp file.
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	keyPath := filepath.Join(t.TempDir(), "test.pem")
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatalf("writing key: %v", err)
+	}
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		resp := installationTokenResponse{Token: "ghs_refreshed_token"} //nolint:gosec // test fixture
+		data, _ := json.Marshal(resp)
+		return data, nil
+	}
+
+	SetActiveConfig(&Config{
+		AppID:          "12345",
+		InstallationID: "67890",
+		PrivateKeyPath: keyPath,
+	})
+
+	token, err := RefreshToken()
+	if err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+	if token != "ghs_refreshed_token" { //nolint:gosec // test fixture
+		t.Errorf("token = %q, want %q", token, "ghs_refreshed_token")
+	}
+}

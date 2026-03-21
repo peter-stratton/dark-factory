@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent/runner"
+	"github.com/peter-stratton/dark-factory/internal/ghapp"
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
@@ -98,6 +99,19 @@ func Run(ctx context.Context, opts RunOpts, noSandbox bool, logger *slog.Logger)
 	return runSandbox(ctx, opts, logger)
 }
 
+func refreshGHToken(env map[string]string, logger *slog.Logger) {
+	token, err := ghapp.RefreshToken()
+	if err != nil {
+		logger.Warn("failed to refresh GitHub App token, using existing token", "error", err)
+		return
+	}
+	if token == "" {
+		return // no GitHub App configured, nothing to refresh
+	}
+	env["GH_TOKEN"] = token
+	logger.Info("refreshed GitHub App installation token")
+}
+
 func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, error) {
 	logger.Info("running agent on host", "timeout", opts.Timeout)
 
@@ -136,6 +150,9 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 	if opts.Role != "" {
 		env["GODARK_ROLE"] = opts.Role
 	}
+
+	// Refresh GitHub App token so each agent invocation gets a fresh 1-hour token.
+	refreshGHToken(env, logger)
 
 	startedAt := time.Now()
 	stdout, stderr, exitCode, err := Runner(ctx, env, "python3", tmpFile.Name())
@@ -211,6 +228,9 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	if opts.Role != "" {
 		env["GODARK_ROLE"] = opts.Role
 	}
+
+	// Refresh GitHub App token so each container gets a fresh 1-hour token.
+	refreshGHToken(env, logger)
 
 	agentCmd := "cd " + workDir + " && python3 /usr/local/bin/agent_runner.py"
 	cloneScript, err := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
