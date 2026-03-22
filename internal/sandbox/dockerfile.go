@@ -84,7 +84,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code
-RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @anthropic-ai/claude-code{{if .ClaudeCodeVersion}}@{{.ClaudeCodeVersion}}{{end}}
 {{range .SandboxEnv}}
 ENV {{.Key}}={{.Value}}
 {{- end}}
@@ -196,25 +196,27 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 	})
 
 	data := struct {
-		Image           string
-		RuntimeName     string
-		RuntimeVersion  string
-		NodeVersion     string
-		User            string
-		ExtraPackages   []string
-		InstallCommands []string
-		SandboxEnv      []envVar
-		HasCompose      bool
+		Image             string
+		RuntimeName       string
+		RuntimeVersion    string
+		NodeVersion       string
+		ClaudeCodeVersion string
+		User              string
+		ExtraPackages     []string
+		InstallCommands   []string
+		SandboxEnv        []envVar
+		HasCompose        bool
 	}{
-		Image:           cfg.Image,
-		RuntimeName:     runtimeName,
-		RuntimeVersion:  runtimeVersion,
-		NodeVersion:     cfg.NodeVersion,
-		User:            cfg.User,
-		ExtraPackages:   cfg.ExtraPackages,
-		InstallCommands: cfg.InstallCommands,
-		SandboxEnv:      sortedEnv,
-		HasCompose:      cfg.ComposeFile != "",
+		Image:             cfg.Image,
+		RuntimeName:       runtimeName,
+		RuntimeVersion:    runtimeVersion,
+		NodeVersion:       cfg.NodeVersion,
+		ClaudeCodeVersion: cfg.ClaudeCodeVersion,
+		User:              cfg.User,
+		ExtraPackages:     cfg.ExtraPackages,
+		InstallCommands:   cfg.InstallCommands,
+		SandboxEnv:        sortedEnv,
+		HasCompose:        cfg.ComposeFile != "",
 	}
 
 	var buf bytes.Buffer

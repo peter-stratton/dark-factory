@@ -891,3 +891,57 @@ func TestGenerateDockerfileDockerCLIAlongsideExtraPackages(t *testing.T) {
 		t.Error("Dockerfile missing extra package chromium when compose is configured")
 	}
 }
+
+func TestGenerateDockerfileClaudeCodeVersionPinned(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.ClaudeCodeVersion = "2.1.81"
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "npm install -g @anthropic-ai/claude-code@2.1.81"
+	if !strings.Contains(df, want) {
+		t.Errorf("Dockerfile missing pinned claude-code version: want %q", want)
+	}
+}
+
+func TestGenerateDockerfileClaudeCodeVersionUnpinned(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	// ClaudeCodeVersion is empty — should install latest (no @version suffix).
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(df, "claude-code@") {
+		t.Error("Dockerfile should not pin claude-code version when ClaudeCodeVersion is empty")
+	}
+	if !strings.Contains(df, "npm install -g @anthropic-ai/claude-code") {
+		t.Error("Dockerfile missing claude-code install")
+	}
+}
+
+func TestDockerConfigFromConfigDetectsClaudeCodeVersion(t *testing.T) {
+	// Stub the version detector to return a known version.
+	orig := detectClaudeCodeVersion
+	t.Cleanup(func() { detectClaudeCodeVersion = orig })
+	detectClaudeCodeVersion = func() string { return "2.1.81" }
+
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
+	if dc.ClaudeCodeVersion != "2.1.81" {
+		t.Errorf("ClaudeCodeVersion = %q, want %q", dc.ClaudeCodeVersion, "2.1.81")
+	}
+}
+
+func TestDockerConfigFromConfigDetectionFailureFallsBackToLatest(t *testing.T) {
+	// Stub the version detector to simulate failure.
+	orig := detectClaudeCodeVersion
+	t.Cleanup(func() { detectClaudeCodeVersion = orig })
+	detectClaudeCodeVersion = func() string { return "" }
+
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
+	if dc.ClaudeCodeVersion != "" {
+		t.Errorf("ClaudeCodeVersion = %q, want empty (latest fallback)", dc.ClaudeCodeVersion)
+	}
+}
