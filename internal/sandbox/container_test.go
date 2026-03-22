@@ -11,6 +11,10 @@ import (
 
 const validStatsJSON = `{"memory_stats":{"max_usage":104857600},"cpu_stats":{"cpu_usage":{"total_usage":500000000}}}`
 
+// validStatsJSONCgroupsV2 simulates Docker stats on cgroups v2 where
+// max_usage is absent and only usage is reported.
+const validStatsJSONCgroupsV2 = `{"memory_stats":{"usage":83886080},"cpu_stats":{"cpu_usage":{"total_usage":400000000}}}`
+
 // saveRunners saves the current CommandRunner, SplitRunner,
 // CommandRunnerWithContext, and StatsInterval values and returns a restore
 // function.
@@ -450,6 +454,41 @@ func TestRunContainerInspectParsed(t *testing.T) {
 	}
 	if result.CPUNanoseconds != 500000000 {
 		t.Errorf("CPUNanoseconds = %d, want 500000000", result.CPUNanoseconds)
+	}
+}
+
+func TestRunContainerStatsCgroupsV2(t *testing.T) {
+	defer saveRunners()()
+	StatsInterval = time.Millisecond
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		if name == "curl" {
+			return []byte(validStatsJSONCgroupsV2), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	result, err := RunContainer(context.Background(), RunOpts{
+		Image: "test:latest",
+		Cmd:   []string{"true"},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PeakMemoryBytes != 83886080 {
+		t.Errorf("PeakMemoryBytes = %d, want 83886080 (cgroups v2 usage fallback)", result.PeakMemoryBytes)
+	}
+	if result.CPUNanoseconds != 400000000 {
+		t.Errorf("CPUNanoseconds = %d, want 400000000", result.CPUNanoseconds)
 	}
 }
 

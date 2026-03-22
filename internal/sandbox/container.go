@@ -37,9 +37,17 @@ type RunResult struct {
 // containerStats is the minimal shape of the Docker stats API JSON used to
 // extract resource usage stats after a container stops. Field names match
 // the snake_case schema returned by GET /containers/{id}/stats?stream=false.
+//
+// Memory reporting differs between cgroup versions:
+//   - cgroups v1: memory_stats.max_usage (lifetime high-water mark)
+//   - cgroups v2: memory_stats.usage only (no max_usage field)
+//
+// The poller tracks the high-water mark of whichever field is available,
+// preferring max_usage when present, falling back to usage for cgroups v2.
 type containerStats struct {
 	MemoryStats struct {
 		MaxUsage int64 `json:"max_usage"`
+		Usage    int64 `json:"usage"`
 	} `json:"memory_stats"`
 	CpuStats struct {
 		CpuUsage struct {
@@ -117,9 +125,16 @@ func (sp *statsPoller) poll(url string) {
 	if json.Unmarshal(out, &s) != nil {
 		return
 	}
+	// Prefer max_usage (cgroups v1 lifetime high-water mark) when available;
+	// fall back to usage (cgroups v2 current usage) and let the poller track
+	// the peak across samples.
+	memSample := s.MemoryStats.MaxUsage
+	if memSample == 0 {
+		memSample = s.MemoryStats.Usage
+	}
 	sp.mu.Lock()
-	if s.MemoryStats.MaxUsage > sp.mem {
-		sp.mem = s.MemoryStats.MaxUsage
+	if memSample > sp.mem {
+		sp.mem = memSample
 	}
 	if s.CpuStats.CpuUsage.TotalUsage > sp.cpu {
 		sp.cpu = s.CpuStats.CpuUsage.TotalUsage
