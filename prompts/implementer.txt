@@ -4,9 +4,10 @@ Then implement GitHub issue #{{.IssueNumber}} in the {{.Repo}} repository.
 
 ## Pre-implementation context (recon brief)
 
-The following is a summary of relevant files, signatures, and architectural
-notes gathered by the recon agent before implementation. Use it as context
-when reading code and planning your approach.
+The following brief contains **verbatim code snippets** from key files gathered
+by the recon agent. These snippets are your primary reference — do NOT re-read
+files that are already quoted in the brief below. Only read additional files
+that the brief does not cover. This saves context for writing code.
 
 {{.ReconBrief}}
 {{- end}}
