@@ -428,7 +428,7 @@ func TestSandboxCommandRunner_UsesCorrectImage(t *testing.T) {
 		return &sandbox.RunResult{ExitCode: 0, Stdout: "ok"}, nil
 	})
 
-	runner := sandboxCommandRunner("myimage:latest", "owner/repo", "feature-branch", nil, slog.Default())
+	runner := sandboxCommandRunner("myimage:latest", "owner/repo", "feature-branch", nil, false, slog.Default())
 	_, _, _, err := runner(context.Background(), "go build ./...")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -446,7 +446,7 @@ func TestSandboxCommandRunner_RepoAndBranchPassedViaEnv(t *testing.T) {
 		return &sandbox.RunResult{ExitCode: 0}, nil
 	})
 
-	runner := sandboxCommandRunner("img:tag", "owner/myrepo", "pr-branch-42", nil, slog.Default())
+	runner := sandboxCommandRunner("img:tag", "owner/myrepo", "pr-branch-42", nil, false, slog.Default())
 	_, _, _, err := runner(context.Background(), "go test ./...")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -467,7 +467,7 @@ func TestSandboxCommandRunner_CommandPassedViaEnv(t *testing.T) {
 		return &sandbox.RunResult{ExitCode: 0}, nil
 	})
 
-	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, false, slog.Default())
 	const cmd = "go build ./..."
 	_, _, _, err := runner(context.Background(), cmd)
 	if err != nil {
@@ -484,7 +484,7 @@ func TestSandboxCommandRunner_ReturnsStdoutAndStderr(t *testing.T) {
 		return &sandbox.RunResult{ExitCode: 0, Stdout: "build ok\n", Stderr: "warning: x\n"}, nil
 	})
 
-	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, false, slog.Default())
 	stdout, stderr, exitCode, err := runner(context.Background(), "go build ./...")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -506,7 +506,7 @@ func TestSandboxCommandRunner_NonZeroExitCode(t *testing.T) {
 		return &sandbox.RunResult{ExitCode: 2, Stdout: "", Stderr: "build failed\n"}, nil
 	})
 
-	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, false, slog.Default())
 	_, _, exitCode, err := runner(context.Background(), "go build ./...")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -522,7 +522,7 @@ func TestSandboxCommandRunner_ContainerError(t *testing.T) {
 		return nil, fmt.Errorf("docker create failed")
 	})
 
-	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, false, slog.Default())
 	_, _, exitCode, err := runner(context.Background(), "go build ./...")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -540,7 +540,7 @@ func TestSandboxCommandRunner_CheckIsPassedWhenExitZero(t *testing.T) {
 		return &sandbox.RunResult{ExitCode: 0, Stdout: "ok"}, nil
 	})
 
-	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, false, slog.Default())
 	checks := []Check{{Name: "build", Command: "go build ./..."}}
 	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
@@ -554,7 +554,7 @@ func TestSandboxCommandRunner_CheckFailsWhenExitNonZero(t *testing.T) {
 		return &sandbox.RunResult{ExitCode: 1, Stderr: "error output"}, nil
 	})
 
-	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, slog.Default())
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, false, slog.Default())
 	checks := []Check{{Name: "build", Command: "go build ./..."}}
 	result := RunVerify(context.Background(), checks, runner, config.TruncationLimits{VerifyOutput: 4096})
 
@@ -794,5 +794,39 @@ func TestRunRollupVerify_ExhaustsRetries(t *testing.T) {
 		if !writtenResults[i].FixAttempted {
 			t.Errorf("expected writtenResults[%d].FixAttempted=true", i)
 		}
+	}
+}
+
+func TestSandboxCommandRunner_MountDockerSocket(t *testing.T) {
+	var capturedOpts sandbox.RunOpts
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		capturedOpts = opts
+		return &sandbox.RunResult{ExitCode: 0, Stdout: "ok"}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, true, slog.Default())
+	_, _, _, err := runner(context.Background(), "go test ./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !capturedOpts.MountDockerSocket {
+		t.Error("MountDockerSocket = false, want true when compose is configured")
+	}
+}
+
+func TestSandboxCommandRunner_NoMountDockerSocketByDefault(t *testing.T) {
+	var capturedOpts sandbox.RunOpts
+	stubSandboxRunContainer(t, func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		capturedOpts = opts
+		return &sandbox.RunResult{ExitCode: 0, Stdout: "ok"}, nil
+	})
+
+	runner := sandboxCommandRunner("img:tag", "owner/repo", "branch", nil, false, slog.Default())
+	_, _, _, err := runner(context.Background(), "go test ./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedOpts.MountDockerSocket {
+		t.Error("MountDockerSocket = true, want false when compose is not configured")
 	}
 }

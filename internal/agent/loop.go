@@ -290,7 +290,7 @@ func runVerifyPhase(
 		if cfg.NoSandbox {
 			verifyRunner = newHostRunner()
 		} else {
-			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
+			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
 		}
 
 		moduleFailed := false
@@ -389,7 +389,7 @@ func runVerifyPhase(
 		if cfg.NoSandbox {
 			verifyRunner = newHostRunner()
 		} else {
-			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
+			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
 		}
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
 		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)

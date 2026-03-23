@@ -272,13 +272,14 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 	env["GODARK_DENIED_COMMANDS"] = strings.Join(cfg.DeniedCommands, ",")
 
 	return RunOpts{
-		Prompt:  rendered,
-		Role:    role,
-		Env:     env,
-		Image:   cfg.Docker.Image,
-		Repo:    cfg.Repo,
-		WorkDir: "/workspace",
-		Timeout: timeout,
+		Prompt:            rendered,
+		Role:              role,
+		Env:               env,
+		Image:             cfg.Docker.Image,
+		Repo:              cfg.Repo,
+		WorkDir:           "/workspace",
+		Timeout:           timeout,
+		MountDockerSocket: cfg.DockerCompose != nil,
 	}, nil
 }
 

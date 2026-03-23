@@ -94,7 +94,7 @@ func truncateVerifyOutput(b []byte, limit int) string {
 // inside a Docker container. The container clones the repo, checks out the
 // PR branch, and runs the verify command via sh. The verify command is passed
 // through the GODARK_VERIFY_CMD environment variable to avoid shell quoting issues.
-func sandboxCommandRunner(image, repo, branch string, authEnv map[string]string, logger *slog.Logger) CommandRunner {
+func sandboxCommandRunner(image, repo, branch string, authEnv map[string]string, mountDockerSocket bool, logger *slog.Logger) CommandRunner {
 	return func(ctx context.Context, command string) ([]byte, []byte, int, error) {
 		script := "#!/bin/sh\nset -e\ngh auth setup-git\ngit clone \"https://github.com/${GODARK_REPO}.git\" /workspace && cd /workspace && git checkout \"${GODARK_BRANCH}\" && sh -c \"$GODARK_VERIFY_CMD\"\n"
 		env := map[string]string{
@@ -108,9 +108,10 @@ func sandboxCommandRunner(image, repo, branch string, authEnv map[string]string,
 		// Refresh GitHub App token so verify containers get a fresh token.
 		refreshGHToken(env, logger)
 		opts := sandbox.RunOpts{
-			Image: image,
-			Cmd:   []string{"sh", "-c", script},
-			Env:   env,
+			Image:             image,
+			Cmd:               []string{"sh", "-c", script},
+			Env:               env,
+			MountDockerSocket: mountDockerSocket,
 		}
 		result, err := sandboxRunContainer(ctx, opts, logger)
 		if err != nil {
@@ -173,7 +174,7 @@ func RunRollupVerify(
 	if cfg.NoSandbox {
 		verifyRunner = newHostRunner()
 	} else {
-		verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, logger)
+		verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
 	}
 
 	logger.Info("running rollup verify step", "check_count", len(verifyChecks))

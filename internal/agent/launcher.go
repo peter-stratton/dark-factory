@@ -19,14 +19,15 @@ import (
 
 // RunOpts configures an agent invocation.
 type RunOpts struct {
-	Prompt  string
-	Role    string
-	Env     map[string]string
-	Image   string
-	Repo    string
-	Branch  string
-	WorkDir string
-	Timeout time.Duration
+	Prompt            string
+	Role              string
+	Env               map[string]string
+	Image             string
+	Repo              string
+	Branch            string
+	WorkDir           string
+	Timeout           time.Duration
+	MountDockerSocket bool // mount /var/run/docker.sock into sandbox container
 }
 
 // Result holds the outcome of an agent run.
@@ -245,10 +246,11 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	entrypoint := sandbox.EntrypointScript(cloneScript, agentCmd)
 
 	sandboxOpts := sandbox.RunOpts{
-		Image:   opts.Image,
-		Cmd:     []string{"sh", "-c", entrypoint},
-		Env:     env,
-		Timeout: opts.Timeout,
+		Image:             opts.Image,
+		Cmd:               []string{"sh", "-c", entrypoint},
+		Env:               env,
+		Timeout:           opts.Timeout,
+		MountDockerSocket: opts.MountDockerSocket,
 	}
 
 	startedAt := time.Now()
