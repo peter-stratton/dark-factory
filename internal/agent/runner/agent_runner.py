@@ -23,6 +23,8 @@ import json
 import os
 import random
 import sys
+import time
+import traceback
 
 import claude_agent_sdk
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage
@@ -31,6 +33,12 @@ from claude_agent_sdk.types import (
     PostToolUseHookInput,
     PreToolUseHookInput,
 )
+
+
+def _log_diagnostic(event: str, **fields) -> None:
+    """Write a structured diagnostic line to stderr."""
+    entry = {"diagnostic": event, "timestamp": datetime.datetime.utcnow().isoformat() + "Z", **fields}
+    print(json.dumps(entry, default=str), file=sys.stderr, flush=True)
 
 # Role-scoped tool permissions. Each role maps to allowed_tools and optionally
 # disallowed_tools. disallowed_tools are hard-denied even if allowed_tools
@@ -261,6 +269,15 @@ async def main() -> None:
 
     permissions = _ROLE_PERMISSIONS[role]
 
+    # Startup diagnostics — versions and environment.
+    _log_diagnostic(
+        "startup",
+        role=role,
+        sdk_version=getattr(claude_agent_sdk, "__version__", "unknown"),
+        session_resume=bool(session_id),
+        prompt_bytes=len(prompt),
+    )
+
     env: dict = {}
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         env["CLAUDE_CODE_OAUTH_TOKEN"] = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
@@ -377,18 +394,38 @@ async def main() -> None:
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
+        query_start = time.monotonic()
         try:
             await _collect_messages(options)
+            elapsed = time.monotonic() - query_start
+            _log_diagnostic("query_success", attempt=attempt + 1, elapsed_seconds=round(elapsed, 2), tool_calls=len(tool_trace))
             break  # success
         except Exception as exc:
+            elapsed = time.monotonic() - query_start
             last_exc = exc
+
+            # Build rich error diagnostic with exception chain.
+            exc_info: dict = {
+                "attempt": attempt + 1,
+                "elapsed_seconds": round(elapsed, 2),
+                "tool_calls_before_failure": len(tool_trace),
+                "exception_type": type(exc).__qualname__,
+                "exception": repr(exc),
+            }
+            # Capture nested exceptions from ExceptionGroups.
+            if hasattr(exc, "exceptions"):
+                exc_info["nested_exceptions"] = [
+                    {"type": type(e).__qualname__, "message": str(e)}
+                    for e in exc.exceptions  # type: ignore[attr-defined]
+                ]
+            # Capture full traceback for first failure only (avoid log spam).
+            if attempt == 0:
+                exc_info["traceback"] = traceback.format_exception(exc)
+            _log_diagnostic("query_failure", **exc_info)
 
             # Session resume failure — fall back to fresh session, then retry.
             if session_id and options.resume:
-                warning = {
-                    "warning": f"session resume failed, falling back to fresh session: {exc!r}",
-                }
-                print(json.dumps(warning), file=sys.stderr, flush=True)
+                _log_diagnostic("session_resume_fallback", reason=repr(exc))
                 options.resume = None
                 continue
 
@@ -397,11 +434,7 @@ async def main() -> None:
 
             # Exponential backoff with jitter: base * 2^attempt + random(0, base)
             delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)
-            warning = {
-                "warning": f"transient error (attempt {attempt + 1}/{max_retries + 1}), "
-                           f"retrying in {delay:.1f}s: {exc!r}",
-            }
-            print(json.dumps(warning), file=sys.stderr, flush=True)
+            _log_diagnostic("retry_backoff", attempt=attempt + 1, delay_seconds=round(delay, 1))
             await asyncio.sleep(delay)
 
     # Use the full accumulated assistant text as the result so the dashboard

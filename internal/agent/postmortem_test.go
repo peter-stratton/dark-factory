@@ -199,6 +199,45 @@ func TestAnalyzeFailure_ContainerExitCode(t *testing.T) {
 	}
 }
 
+func TestAnalyzeFailure_ZeroToolCalls(t *testing.T) {
+	// Simulate a log with many stream-closed errors but no tool call audit lines.
+	var sb strings.Builder
+	for i := 0; i < 20; i++ {
+		sb.WriteString("error: Stream closed\n")
+		sb.WriteString("  at sendRequest (cli.js:7552:133)\n")
+	}
+	result := AnalyzeFailure(sb.String(), 0)
+
+	found := false
+	for _, p := range result.Patterns {
+		if p.Code == "zero_tool_calls" {
+			found = true
+			if p.Severity != "high" {
+				t.Errorf("zero_tool_calls severity = %q, want %q", p.Severity, "high")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected zero_tool_calls pattern, not found")
+	}
+}
+
+func TestAnalyzeFailure_ZeroToolCallsNotFiredWithToolCalls(t *testing.T) {
+	// Stream-closed errors present but tool calls also succeeded — not a startup failure.
+	var sb strings.Builder
+	for i := 0; i < 20; i++ {
+		sb.WriteString("error: Stream closed\n")
+	}
+	sb.WriteString(`{"tool": "Read", "input_summary": "{}", "timestamp": "2026-03-24T12:00:00Z"}` + "\n")
+	result := AnalyzeFailure(sb.String(), 0)
+
+	for _, p := range result.Patterns {
+		if p.Code == "zero_tool_calls" {
+			t.Error("zero_tool_calls should not fire when tool calls are present")
+		}
+	}
+}
+
 // TestBoundLog_TruncatesToMaxLines verifies that boundLog keeps only the last N lines.
 func TestBoundLog_TruncatesToMaxLines(t *testing.T) {
 	var lines []string

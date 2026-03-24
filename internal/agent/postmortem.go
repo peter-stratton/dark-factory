@@ -23,16 +23,29 @@ func AnalyzeFailure(log string, exitCode int) rundata.FailureAnalysis {
 	var patterns []rundata.FailurePattern
 
 	// Pattern: stream_closed — API connection drops.
-	if n := countContaining(lines, "stream closed"); n > 0 {
+	streamClosedCount := countContaining(lines, "stream closed")
+	if streamClosedCount > 0 {
 		severity := "medium"
-		if n >= 50 {
+		if streamClosedCount >= 50 {
 			severity = "high"
 		}
 		patterns = append(patterns, rundata.FailurePattern{
 			Code:     "stream_closed",
-			Count:    n,
+			Count:    streamClosedCount,
 			Severity: severity,
-			Message:  fmt.Sprintf("%d stream disconnects detected — likely context exhaustion or API instability", n),
+			Message:  fmt.Sprintf("%d stream disconnects detected — likely context exhaustion or API instability", streamClosedCount),
+		})
+	}
+
+	// Pattern: zero_tool_calls — stream died before any tool execution.
+	// Detected by high stream_closed count with no tool audit log lines.
+	toolCallCount := countContaining(lines, `"tool":`)
+	if streamClosedCount >= 10 && toolCallCount == 0 {
+		patterns = append(patterns, rundata.FailurePattern{
+			Code:     "zero_tool_calls",
+			Count:    1,
+			Severity: "high",
+			Message:  "agent never completed a single tool call — CLI transport failure on startup",
 		})
 	}
 
