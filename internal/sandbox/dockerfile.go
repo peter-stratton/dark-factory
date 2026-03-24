@@ -91,7 +91,7 @@ RUN {{.}}
 {{- end}}
 
 # Install Claude Agent SDK (bundles Claude Code CLI)
-RUN pip install claude-agent-sdk
+RUN pip install claude-agent-sdk{{if .SDKVersion}}=={{.SDKVersion}}{{end}}
 
 # Copy agent runner
 COPY agent_runner.py /usr/local/bin/agent_runner.py
@@ -201,6 +201,7 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		RuntimeName       string
 		RuntimeVersion    string
 		NodeVersion       string
+		SDKVersion        string
 		User              string
 		ExtraPackages     []string
 		InstallCommands   []string
@@ -211,6 +212,7 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		RuntimeName:       runtimeName,
 		RuntimeVersion:    runtimeVersion,
 		NodeVersion:       cfg.NodeVersion,
+		SDKVersion:        cfg.SDKVersion,
 		User:              cfg.User,
 		ExtraPackages:     cfg.ExtraPackages,
 		InstallCommands:   cfg.InstallCommands,

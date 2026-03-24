@@ -901,3 +901,54 @@ func TestGenerateDockerfileDockerCLIAlongsideExtraPackages(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileSDKVersionPinned(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.SDKVersion = "0.1.50"
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "pip install claude-agent-sdk==0.1.50") {
+		t.Error("Dockerfile missing pinned SDK version")
+	}
+}
+
+func TestGenerateDockerfileSDKVersionUnpinned(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	// SDKVersion empty — should install latest without pin.
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(df, "claude-agent-sdk==") {
+		t.Error("Dockerfile should not pin SDK version when SDKVersion is empty")
+	}
+	if !strings.Contains(df, "pip install claude-agent-sdk") {
+		t.Error("Dockerfile missing SDK install")
+	}
+}
+
+func TestDockerConfigFromConfigResolvesSDKVersion(t *testing.T) {
+	orig := resolveSDKVersion
+	t.Cleanup(func() { resolveSDKVersion = orig })
+	resolveSDKVersion = func() string { return "0.1.50" }
+
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
+	if dc.SDKVersion != "0.1.50" {
+		t.Errorf("SDKVersion = %q, want %q", dc.SDKVersion, "0.1.50")
+	}
+}
+
+func TestDockerConfigFromConfigSDKResolutionFailure(t *testing.T) {
+	orig := resolveSDKVersion
+	t.Cleanup(func() { resolveSDKVersion = orig })
+	resolveSDKVersion = func() string { return "" }
+
+	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
+	if dc.SDKVersion != "" {
+		t.Errorf("SDKVersion = %q, want empty (fallback to latest)", dc.SDKVersion)
+	}
+}
+
