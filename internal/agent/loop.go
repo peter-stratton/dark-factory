@@ -877,6 +877,26 @@ func runFunctionalReviewCycle(
 			}
 			return StatusImplemented, true, attempt, nil
 
+		case "BLOCKED_BY_PROTECTED_PATH":
+			// The implementer correctly refused to edit a protected path. This cannot
+			// be resolved by retrying — short-circuit immediately and escalate.
+			if hook != nil {
+				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
+					logger.Warn("failed to write functional review result", "error", err)
+				}
+			}
+			if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+				logger.Warn("failed to label PR", "error", err)
+			}
+			applyLifecycleLabel(label.AwaitingHumanReview)
+			comment := "Implementation blocked by protected path constraint. " +
+				"All other acceptance criteria are met. Human intervention needed to edit the protected path."
+			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum),
+				"--repo", cfg.Repo, "--body", comment); err != nil {
+				logger.Warn("failed to comment on PR", "error", err)
+			}
+			return StatusNeedsHumanReview, false, attempt, nil
+
 		case "CHANGES_REQUESTED":
 			retriesLeft := maxAttempts - attempt - 1
 			if retriesLeft <= 0 {

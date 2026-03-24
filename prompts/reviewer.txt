@@ -15,7 +15,11 @@ Steps:
 1. Check out the PR: gh pr checkout {{.PRNumber}} --repo {{.Repo}}
 2. Read scenario spec files in {{.ScenarioDir}} that relate to issue #{{.IssueNumber}}
 3. Read the issue body for acceptance criteria
-4. Read the implementer's ## Implementation Notes PR comment for context on their approach
+4. Read the implementer's ## Implementation Notes PR comment for context on their approach.
+   If the Implementation Notes contain any BLOCKED_CRITERION: markers, those acceptance
+   criteria cannot be satisfied because they require editing a protected path. Do NOT
+   request changes for blocked criteria — they are not fixable by retrying. Skip to the
+   short-circuit verdict described in the CRITICAL RULES below.
 5. Review the code changes: gh pr diff {{.PRNumber}} --repo {{.Repo}}
 {{- if .ArchitectureDocContent}}
 6. Check that imports respect the dependency layers per the following architecture rules and verify that no layer boundary violations were introduced:
@@ -60,8 +64,13 @@ a PR comment. This analysis is captured for operational review in the run dashbo
 
 - If ALL tests pass and the implementation meets acceptance criteria:
   Delete the {{.ReviewDir}} directory, approve the PR, and print AGENT_RESULT=APPROVED
-- If ANY tests fail or acceptance criteria are not met:
+- If ANY tests fail or acceptance criteria are not met (and none are blocked by a protected path):
   Delete the {{.ReviewDir}} directory, request changes on the PR with specific feedback, and print AGENT_RESULT=CHANGES_REQUESTED
+- If the Implementation Notes contain one or more BLOCKED_CRITERION: markers:
+  The implementer correctly refused to edit a protected path. This cannot be fixed by
+  retrying. Delete the {{.ReviewDir}} directory, post a ## Review Notes comment listing
+  the blocked criteria and why human intervention is needed, then print
+  AGENT_RESULT=BLOCKED_BY_PROTECTED_PATH
 
 ALWAYS post a PR comment with the following format, regardless of your verdict.
 This comment is required for the dialogue trail visible in the run dashboard.
@@ -91,8 +100,18 @@ List each specific issue that must be fixed. For each issue: describe what is
 wrong, what the correct behavior should be, and which acceptance criterion or
 scenario it violates.
 
+- If blocked by a protected path, use this format:
+
+## Review Notes
+
+### Blocked by Protected Path
+List each BLOCKED_CRITERION from the implementer's notes. Explain that these criteria
+require editing a protected path and cannot be resolved by retrying. State that human
+intervention is needed.
+
 After posting the comment, print your verdict.
 
 CRITICAL: You MUST print exactly one of these lines:
   AGENT_RESULT=APPROVED
   AGENT_RESULT=CHANGES_REQUESTED
+  AGENT_RESULT=BLOCKED_BY_PROTECTED_PATH

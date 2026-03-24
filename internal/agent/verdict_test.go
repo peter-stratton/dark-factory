@@ -76,6 +76,31 @@ func TestParseReviewResult_OldFormatNotMatched(t *testing.T) {
 	}
 }
 
+func TestParseReviewResult_BlockedByProtectedPath(t *testing.T) {
+	stdout := "some output\nAGENT_RESULT=BLOCKED_BY_PROTECTED_PATH\nmore output"
+	got := ParseReviewResult(stdout)
+	if got != "BLOCKED_BY_PROTECTED_PATH" {
+		t.Errorf("ParseReviewResult() = %q, want %q", got, "BLOCKED_BY_PROTECTED_PATH")
+	}
+}
+
+func TestParseReviewResult_BlockedByProtectedPathBeforeApproved(t *testing.T) {
+	// BLOCKED_BY_PROTECTED_PATH on first line should win even if APPROVED appears later.
+	stdout := "AGENT_RESULT=BLOCKED_BY_PROTECTED_PATH\nAGENT_RESULT=APPROVED\n"
+	got := ParseReviewResult(stdout)
+	if got != "BLOCKED_BY_PROTECTED_PATH" {
+		t.Errorf("ParseReviewResult() = %q, want %q (first match should win)", got, "BLOCKED_BY_PROTECTED_PATH")
+	}
+}
+
+func TestParseReviewResult_BlockedByProtectedPathCaseInsensitive(t *testing.T) {
+	stdout := "agent_result=blocked_by_protected_path\n"
+	got := ParseReviewResult(stdout)
+	if got != "BLOCKED_BY_PROTECTED_PATH" {
+		t.Errorf("ParseReviewResult() = %q, want %q", got, "BLOCKED_BY_PROTECTED_PATH")
+	}
+}
+
 // --- ParseQualityResult verdict tests ---
 
 func TestParseQualityResult_Approved(t *testing.T) {
