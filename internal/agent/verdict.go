@@ -11,7 +11,7 @@ func ParseVerdict(stdout, keyword string) string {
 	kw := strings.ToUpper(keyword)
 	for _, line := range strings.Split(upper, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.Contains(line, "BLOCKED_BY_PROTECTED_PATH") && strings.Contains(line, kw) {
+		if strings.Contains(line, "BLOCKED_BY_PROTECTED_PATH") && strings.Contains(line, kw) && strings.Contains(line, "RESULT") {
 			return "BLOCKED_BY_PROTECTED_PATH"
 		}
 		if strings.Contains(line, "APPROVED") && strings.Contains(line, kw) && strings.Contains(line, "RESULT") {

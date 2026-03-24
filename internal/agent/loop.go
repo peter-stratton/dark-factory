@@ -889,8 +889,7 @@ func runFunctionalReviewCycle(
 				logger.Warn("failed to label PR", "error", err)
 			}
 			applyLifecycleLabel(label.AwaitingHumanReview)
-			comment := "Implementation blocked by protected path constraint. " +
-				"All other acceptance criteria are met. Human intervention needed to edit the protected path."
+			comment := "Implementation blocked by a protected path constraint. Human intervention needed."
 			if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum),
 				"--repo", cfg.Repo, "--body", comment); err != nil {
 				logger.Warn("failed to comment on PR", "error", err)
