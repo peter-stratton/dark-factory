@@ -3,8 +3,6 @@ package sandbox
 import (
 	"crypto/sha256"
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
 )
@@ -14,7 +12,6 @@ type DockerConfig struct {
 	Image              string
 	Runtime            config.Runtime
 	NodeVersion        string
-	ClaudeCodeVersion  string // e.g. "2.1.81"; empty means "latest"
 	User               string
 	ExtraPackages      []string
 	InstallCommands    []string
@@ -57,29 +54,12 @@ func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandbo
 	if len(docker.InstallCommands) > 0 {
 		dc.InstallCommands = docker.InstallCommands
 	}
-	dc.ClaudeCodeVersion = detectClaudeCodeVersion()
 	dc.SandboxEnv = sandboxEnv
 	if compose != nil {
 		dc.ComposeFile = compose.File
 		dc.ComposeProjectName = compose.ProjectName
 	}
 	return dc
-}
-
-// detectClaudeCodeVersion runs "claude --version" on the host and returns the
-// semver string (e.g. "2.1.81"). Returns "" if the command fails or the output
-// cannot be parsed, which causes the Dockerfile to install the latest version.
-var detectClaudeCodeVersion = func() string {
-	out, err := exec.Command("claude", "--version").Output()
-	if err != nil {
-		return ""
-	}
-	// Output format: "2.1.81 (Claude Code)\n"
-	version := strings.TrimSpace(string(out))
-	if i := strings.IndexByte(version, ' '); i > 0 {
-		version = version[:i]
-	}
-	return version
 }
 
 // ImageTag returns a deterministic image tag derived from the Dockerfile content.

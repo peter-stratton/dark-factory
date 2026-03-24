@@ -23,7 +23,6 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/orchestrator"
 	"github.com/peter-stratton/dark-factory/internal/progress"
 	"github.com/peter-stratton/dark-factory/internal/punchlist"
-	"github.com/peter-stratton/dark-factory/internal/pypi"
 	"github.com/peter-stratton/dark-factory/internal/rundata"
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
 	"github.com/peter-stratton/dark-factory/internal/stats"
@@ -145,8 +144,6 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			logger.Warn("failed to initialize notifiers, continuing without notifications", "error", notifyErr)
 			notifiers = nil
 		}
-
-		pypi.WarnIfSDKOutdated(os.Stderr, logger)
 
 		authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
 		if err != nil {

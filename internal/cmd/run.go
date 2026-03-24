@@ -18,7 +18,6 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/logging"
 	"github.com/peter-stratton/dark-factory/internal/orchestrator"
 	"github.com/peter-stratton/dark-factory/internal/progress"
-	"github.com/peter-stratton/dark-factory/internal/pypi"
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
 	"github.com/peter-stratton/dark-factory/internal/tui"
 	"github.com/peter-stratton/dark-factory/internal/watch"
@@ -89,8 +88,6 @@ Use "godark implement" to process individual issues by number.`,
 		if err != nil {
 			return fmt.Errorf("creating logger: %w", err)
 		}
-
-		pypi.WarnIfSDKOutdated(os.Stderr, logger)
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

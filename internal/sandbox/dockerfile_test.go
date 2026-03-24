@@ -93,13 +93,12 @@ func TestGenerateDockerfileDefault(t *testing.T) {
 		contain string
 	}{
 		{"base image", "FROM ubuntu:22.04"},
-		{"claude-code", "npm install -g @anthropic-ai/claude-code"},
 		{"user directive", "USER devloop"},
 		{"workdir", "WORKDIR /workspace"},
 		{"node install", "setup_20.x"},
 		{"useradd", "useradd -m -s /bin/bash devloop"},
 		{"python3 install", "python3"},
-		{"pip sdk install", "pip install 'claude-agent-sdk>=0.1.0,<0.2.0'"},
+		{"pip sdk install", "pip install claude-agent-sdk"},
 		{"copy agent runner", "COPY agent_runner.py /usr/local/bin/agent_runner.py"},
 	}
 	for _, c := range checks {
@@ -288,8 +287,8 @@ func TestGenerateDockerfileIncludesPipInstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(df, "pip install 'claude-agent-sdk>=0.1.0,<0.2.0'") {
-		t.Error("Dockerfile missing pinned claude-agent-sdk install")
+	if !strings.Contains(df, "pip install claude-agent-sdk") {
+		t.Error("Dockerfile missing claude-agent-sdk install")
 	}
 }
 
@@ -650,8 +649,8 @@ func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("runtime %q: unexpected error: %v", rt.Name, err)
 		}
-		if !strings.Contains(df, "npm install -g @anthropic-ai/claude-code") {
-			t.Errorf("runtime %q: Dockerfile missing Claude Code install", rt.Name)
+		if !strings.Contains(df, "pip install claude-agent-sdk") {
+			t.Errorf("runtime %q: Dockerfile missing Claude Agent SDK install", rt.Name)
 		}
 	}
 }
@@ -687,12 +686,12 @@ func TestGenerateDockerfileInstallCommandsOrder(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	claudeCodePos := strings.Index(df, "npm install -g @anthropic-ai/claude-code")
+	sdkPos := strings.Index(df, "pip install claude-agent-sdk")
 	installCmdPos := strings.Index(df, "RUN curl -sSfL https://example.com/install.sh | sh")
 	userPos := strings.Index(df, "USER devloop")
 
-	if claudeCodePos < 0 {
-		t.Fatal("Dockerfile missing Claude Code install")
+	if sdkPos < 0 {
+		t.Fatal("Dockerfile missing Claude Agent SDK install")
 	}
 	if installCmdPos < 0 {
 		t.Fatal("Dockerfile missing install command")
@@ -700,8 +699,8 @@ func TestGenerateDockerfileInstallCommandsOrder(t *testing.T) {
 	if userPos < 0 {
 		t.Fatal("Dockerfile missing USER directive")
 	}
-	if installCmdPos < claudeCodePos {
-		t.Error("install command appears before Claude Code install")
+	if installCmdPos > sdkPos {
+		t.Error("install command appears after SDK install")
 	}
 	if installCmdPos > userPos {
 		t.Error("install command appears after USER directive (must run as root)")
@@ -892,56 +891,3 @@ func TestGenerateDockerfileDockerCLIAlongsideExtraPackages(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfileClaudeCodeVersionPinned(t *testing.T) {
-	cfg := DefaultDockerConfig()
-	cfg.ClaudeCodeVersion = "2.1.81"
-
-	df, err := GenerateDockerfile(cfg, slog.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := "npm install -g @anthropic-ai/claude-code@2.1.81"
-	if !strings.Contains(df, want) {
-		t.Errorf("Dockerfile missing pinned claude-code version: want %q", want)
-	}
-}
-
-func TestGenerateDockerfileClaudeCodeVersionUnpinned(t *testing.T) {
-	cfg := DefaultDockerConfig()
-	// ClaudeCodeVersion is empty — should install latest (no @version suffix).
-
-	df, err := GenerateDockerfile(cfg, slog.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.Contains(df, "claude-code@") {
-		t.Error("Dockerfile should not pin claude-code version when ClaudeCodeVersion is empty")
-	}
-	if !strings.Contains(df, "npm install -g @anthropic-ai/claude-code") {
-		t.Error("Dockerfile missing claude-code install")
-	}
-}
-
-func TestDockerConfigFromConfigDetectsClaudeCodeVersion(t *testing.T) {
-	// Stub the version detector to return a known version.
-	orig := detectClaudeCodeVersion
-	t.Cleanup(func() { detectClaudeCodeVersion = orig })
-	detectClaudeCodeVersion = func() string { return "2.1.81" }
-
-	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
-	if dc.ClaudeCodeVersion != "2.1.81" {
-		t.Errorf("ClaudeCodeVersion = %q, want %q", dc.ClaudeCodeVersion, "2.1.81")
-	}
-}
-
-func TestDockerConfigFromConfigDetectionFailureFallsBackToLatest(t *testing.T) {
-	// Stub the version detector to simulate failure.
-	orig := detectClaudeCodeVersion
-	t.Cleanup(func() { detectClaudeCodeVersion = orig })
-	detectClaudeCodeVersion = func() string { return "" }
-
-	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
-	if dc.ClaudeCodeVersion != "" {
-		t.Errorf("ClaudeCodeVersion = %q, want empty (latest fallback)", dc.ClaudeCodeVersion)
-	}
-}

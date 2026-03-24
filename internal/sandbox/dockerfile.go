@@ -83,8 +83,6 @@ RUN curl -fsSL https://deb.nodesource.com/setup_{{.NodeVersion}}.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code
-RUN npm install -g @anthropic-ai/claude-code{{if .ClaudeCodeVersion}}@{{.ClaudeCodeVersion}}{{end}}
 {{range .SandboxEnv}}
 ENV {{.Key}}={{.Value}}
 {{- end}}
@@ -92,8 +90,8 @@ ENV {{.Key}}={{.Value}}
 RUN {{.}}
 {{- end}}
 
-# Install Python agent runner dependencies
-RUN pip install 'claude-agent-sdk>=0.1.0,<0.2.0'
+# Install Claude Agent SDK (bundles Claude Code CLI)
+RUN pip install claude-agent-sdk
 
 # Copy agent runner
 COPY agent_runner.py /usr/local/bin/agent_runner.py
@@ -200,7 +198,6 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		RuntimeName       string
 		RuntimeVersion    string
 		NodeVersion       string
-		ClaudeCodeVersion string
 		User              string
 		ExtraPackages     []string
 		InstallCommands   []string
@@ -211,7 +208,6 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		RuntimeName:       runtimeName,
 		RuntimeVersion:    runtimeVersion,
 		NodeVersion:       cfg.NodeVersion,
-		ClaudeCodeVersion: cfg.ClaudeCodeVersion,
 		User:              cfg.User,
 		ExtraPackages:     cfg.ExtraPackages,
 		InstallCommands:   cfg.InstallCommands,
