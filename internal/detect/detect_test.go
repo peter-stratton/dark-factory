@@ -313,6 +313,158 @@ func TestDetectRuntime_ElixirLongerAtomKeyNotMatched(t *testing.T) {
 	}
 }
 
+func TestDetectRuntime_Gradle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "build.gradle"), "plugins { id 'java' }\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "gradle" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "gradle")
+	}
+	if got.TestCommand != "./gradlew test" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "./gradlew test")
+	}
+}
+
+func TestDetectRuntime_GradleKts(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "build.gradle.kts"), "plugins { java }\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "gradle" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "gradle")
+	}
+	if got.TestCommand != "./gradlew test" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "./gradlew test")
+	}
+}
+
+func TestDetectRuntime_Maven(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pom.xml"), "<project></project>\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "maven" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "maven")
+	}
+	if got.TestCommand != "mvn test" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "mvn test")
+	}
+	if got.BuildCommand != "mvn package -DskipTests" {
+		t.Errorf("BuildCommand = %q, want %q", got.BuildCommand, "mvn package -DskipTests")
+	}
+}
+
+func TestDetectRuntime_DotnetCsproj(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "MyApp.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "dotnet" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "dotnet")
+	}
+	if got.TestCommand != "dotnet test" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "dotnet test")
+	}
+	if got.BuildCommand != "dotnet build" {
+		t.Errorf("BuildCommand = %q, want %q", got.BuildCommand, "dotnet build")
+	}
+}
+
+func TestDetectRuntime_DotnetSln(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "MyApp.sln"), "\nMicrosoft Visual Studio Solution File\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "dotnet" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "dotnet")
+	}
+	if got.TestCommand != "dotnet test" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "dotnet test")
+	}
+}
+
+func TestDetectRuntime_Ruby(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Gemfile"), "source 'https://rubygems.org'\ngem 'rspec'\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "ruby" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "ruby")
+	}
+	if got.TestCommand != "bundle exec rspec" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "bundle exec rspec")
+	}
+	if got.BuildCommand != "" {
+		t.Errorf("BuildCommand = %q, want empty", got.BuildCommand)
+	}
+}
+
+func TestDetectRuntime_MakefileWithTestTarget(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Makefile"), ".PHONY: build test\n\nbuild:\n\tgo build ./...\n\ntest:\n\tgo test ./...\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "make" {
+		t.Errorf("Runtime.Name = %q, want %q", got.Runtime.Name, "make")
+	}
+	if got.TestCommand != "make test" {
+		t.Errorf("TestCommand = %q, want %q", got.TestCommand, "make test")
+	}
+	if got.BuildCommand != "make build" {
+		t.Errorf("BuildCommand = %q, want %q", got.BuildCommand, "make build")
+	}
+}
+
+func TestDetectRuntime_MakefileWithoutTestTarget(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Makefile"), ".PHONY: build\n\nbuild:\n\tgo build ./...\n")
+
+	_, err := DetectRuntime(dir)
+	if err == nil {
+		t.Fatal("expected error for Makefile without test target, got nil")
+	}
+	if !strings.Contains(err.Error(), "could not detect project type") {
+		t.Errorf("error %q does not contain %q", err.Error(), "could not detect project type")
+	}
+}
+
+func TestDetectRuntime_GradleBeforeMaven(t *testing.T) {
+	// Gradle (build.gradle) has higher priority than Maven (pom.xml).
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "build.gradle"), "plugins { id 'java' }\n")
+	writeFile(t, filepath.Join(dir, "pom.xml"), "<project></project>\n")
+
+	got, err := DetectRuntime(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Runtime.Name != "gradle" {
+		t.Errorf("Runtime.Name = %q, want gradle (Gradle should win over Maven)", got.Runtime.Name)
+	}
+}
+
 // writeFile is a test helper that creates a file with the given content.
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()

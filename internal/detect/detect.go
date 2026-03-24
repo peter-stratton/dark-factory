@@ -85,9 +85,84 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 		}, nil
 	}
 
+	// 7. Gradle — build.gradle or build.gradle.kts
+	if _, err := os.Stat(filepath.Join(repoPath, "build.gradle")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "gradle"},
+			BuildCommand: "",
+			TestCommand:  "./gradlew test",
+		}, nil
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "build.gradle.kts")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "gradle"},
+			BuildCommand: "",
+			TestCommand:  "./gradlew test",
+		}, nil
+	}
+
+	// 8. Maven — pom.xml
+	if _, err := os.Stat(filepath.Join(repoPath, "pom.xml")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "maven"},
+			BuildCommand: "mvn package -DskipTests",
+			TestCommand:  "mvn test",
+		}, nil
+	}
+
+	// 9. .NET — *.csproj or *.sln
+	if matches, err := filepath.Glob(filepath.Join(repoPath, "*.csproj")); err == nil && len(matches) > 0 {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "dotnet"},
+			BuildCommand: "dotnet build",
+			TestCommand:  "dotnet test",
+		}, nil
+	}
+	if matches, err := filepath.Glob(filepath.Join(repoPath, "*.sln")); err == nil && len(matches) > 0 {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "dotnet"},
+			BuildCommand: "dotnet build",
+			TestCommand:  "dotnet test",
+		}, nil
+	}
+
+	// 10. Ruby — Gemfile
+	if _, err := os.Stat(filepath.Join(repoPath, "Gemfile")); err == nil {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "ruby"},
+			BuildCommand: "",
+			TestCommand:  "bundle exec rspec",
+		}, nil
+	}
+
+	// 11. Make — Makefile with a "test:" target
+	if hasMakeTestTarget(filepath.Join(repoPath, "Makefile")) {
+		return &DetectedProject{
+			Runtime:      config.Runtime{Name: "make"},
+			BuildCommand: "make build",
+			TestCommand:  "make test",
+		}, nil
+	}
+
 	return nil, fmt.Errorf("could not detect project type: no known marker files found in %s", repoPath)
 }
 
+
+// hasMakeTestTarget returns true if the given Makefile contains a "test:" target line.
+func hasMakeTestTarget(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "test:") {
+			return true
+		}
+	}
+	return false
+}
 
 // parseGoMod extracts the Go version from go.mod content.
 // Returns an empty string if no "go <version>" directive is found.

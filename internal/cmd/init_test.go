@@ -585,6 +585,49 @@ func TestInitNonGoProjectNoRuntimeBlock(t *testing.T) {
 	}
 }
 
+func TestInitWarnsWhenNoTestCommandDetected(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	errBuf := new(bytes.Buffer)
+	initCmd.SetErr(errBuf)
+	defer initCmd.SetErr(nil)
+
+	// No marker files — detection fails, test command is empty.
+	runInit(t)
+
+	if !strings.Contains(errBuf.String(), "warning: no test command detected") {
+		t.Error("expected warning about missing test command on stderr")
+	}
+	if !strings.Contains(errBuf.String(), "test_command") {
+		t.Error("expected warning to mention test_command")
+	}
+}
+
+func TestInitNoWarningWhenTestCommandDetected(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	errBuf := new(bytes.Buffer)
+	initCmd.SetErr(errBuf)
+	defer initCmd.SetErr(nil)
+
+	// Go project — test command is detected.
+	if err := os.WriteFile("go.mod", []byte("module example.com/test\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	runInit(t)
+
+	if strings.Contains(errBuf.String(), "warning: no test command detected") {
+		t.Error("unexpected warning about missing test command when test command was detected")
+	}
+}
+
 func TestInitNonGoProjectUsesGenericExamples(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()

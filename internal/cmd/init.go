@@ -244,6 +244,9 @@ func writeDefaultConfig(cmd *cobra.Command) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", configPath)
+	if detected == nil || detected.test == "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: no test command detected — set test_command in %s to enable quality checks\n", configPath)
+	}
 	return nil
 }
 
