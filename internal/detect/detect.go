@@ -70,35 +70,17 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 	}
 
 	// 6. Python — pyproject.toml (preferred) or requirements.txt (fallback)
-	if _, err := os.Stat(filepath.Join(repoPath, "pyproject.toml")); err == nil {
-		return &DetectedProject{
-			Runtime:      config.Runtime{Name: "python"},
-			BuildCommand: "",
-			TestCommand:  "pytest",
-		}, nil
-	}
-	if _, err := os.Stat(filepath.Join(repoPath, "requirements.txt")); err == nil {
-		return &DetectedProject{
-			Runtime:      config.Runtime{Name: "python"},
-			BuildCommand: "",
-			TestCommand:  "pytest",
-		}, nil
+	_, errPy1 := os.Stat(filepath.Join(repoPath, "pyproject.toml"))
+	_, errPy2 := os.Stat(filepath.Join(repoPath, "requirements.txt"))
+	if errPy1 == nil || errPy2 == nil {
+		return &DetectedProject{Runtime: config.Runtime{Name: "python"}, BuildCommand: "", TestCommand: "pytest"}, nil
 	}
 
 	// 7. Gradle — build.gradle or build.gradle.kts
-	if _, err := os.Stat(filepath.Join(repoPath, "build.gradle")); err == nil {
-		return &DetectedProject{
-			Runtime:      config.Runtime{Name: "gradle"},
-			BuildCommand: "",
-			TestCommand:  "./gradlew test",
-		}, nil
-	}
-	if _, err := os.Stat(filepath.Join(repoPath, "build.gradle.kts")); err == nil {
-		return &DetectedProject{
-			Runtime:      config.Runtime{Name: "gradle"},
-			BuildCommand: "",
-			TestCommand:  "./gradlew test",
-		}, nil
+	_, errG1 := os.Stat(filepath.Join(repoPath, "build.gradle"))
+	_, errG2 := os.Stat(filepath.Join(repoPath, "build.gradle.kts"))
+	if errG1 == nil || errG2 == nil {
+		return &DetectedProject{Runtime: config.Runtime{Name: "gradle"}, BuildCommand: "", TestCommand: "./gradlew test"}, nil
 	}
 
 	// 8. Maven — pom.xml
@@ -111,19 +93,10 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 	}
 
 	// 9. .NET — *.csproj or *.sln
-	if matches, err := filepath.Glob(filepath.Join(repoPath, "*.csproj")); err == nil && len(matches) > 0 {
-		return &DetectedProject{
-			Runtime:      config.Runtime{Name: "dotnet"},
-			BuildCommand: "dotnet build",
-			TestCommand:  "dotnet test",
-		}, nil
-	}
-	if matches, err := filepath.Glob(filepath.Join(repoPath, "*.sln")); err == nil && len(matches) > 0 {
-		return &DetectedProject{
-			Runtime:      config.Runtime{Name: "dotnet"},
-			BuildCommand: "dotnet build",
-			TestCommand:  "dotnet test",
-		}, nil
+	csprojMatches, _ := filepath.Glob(filepath.Join(repoPath, "*.csproj"))
+	slnMatches, _ := filepath.Glob(filepath.Join(repoPath, "*.sln"))
+	if len(csprojMatches) > 0 || len(slnMatches) > 0 {
+		return &DetectedProject{Runtime: config.Runtime{Name: "dotnet"}, BuildCommand: "dotnet build", TestCommand: "dotnet test"}, nil
 	}
 
 	// 10. Ruby — Gemfile
