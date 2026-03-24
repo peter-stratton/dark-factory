@@ -166,3 +166,7 @@ Dark Factory is licensed under the [Elastic License 2.0](LICENSE). Free for
 commercial use — the only restriction is you can't resell it as a hosted
 service. See the [Licensing & Adoption](https://godarkfactory.com/docs/licensing)
 page for details.
+
+## Links
+
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/dark-factory)
