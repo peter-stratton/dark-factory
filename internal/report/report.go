@@ -322,30 +322,34 @@ func RenderTerminal(rpt SprintReport) string {
 		}
 	}
 
-	// Period comparison
-	if rpt.PriorPeriod != nil && rpt.PriorPeriod.TotalRuns > 0 {
-		fmt.Fprintf(&sb, "\nCompared to Prior Period (%s – %s)\n",
-			formatDate(rpt.PriorPeriod.Since), formatDate(rpt.PriorPeriod.Until))
-		tw = tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(tw, "  Success rate\t%.1f%% → %.1f%%\t%s\n",
-			rpt.PriorPeriod.SuccessRate*100, rpt.SuccessRate*100,
-			formatRateDelta(rpt.SuccessRate-rpt.PriorPeriod.SuccessRate))
-		fmt.Fprintf(tw, "  First-pass rate\t%.1f%% → %.1f%%\t%s\n",
-			rpt.PriorPeriod.FirstPassRate*100, rpt.FirstPassRate*100,
-			formatRateDelta(rpt.FirstPassRate-rpt.PriorPeriod.FirstPassRate))
-		fmt.Fprintf(tw, "  Issues processed\t%d → %d\t%s\n",
-			rpt.PriorPeriod.IssuesProcessed, rpt.IssuesProcessed,
-			formatIntDelta(rpt.IssuesProcessed-rpt.PriorPeriod.IssuesProcessed))
-		fmt.Fprintf(tw, "  Total cost\t$%.2f → $%.2f\t%s\n",
-			rpt.PriorPeriod.TotalCostUSD, rpt.TotalCostUSD,
-			formatCostDelta(rpt.TotalCostUSD-rpt.PriorPeriod.TotalCostUSD))
-		fmt.Fprintf(tw, "  Avg per success\t$%.2f → $%.2f\t%s\n",
-			rpt.PriorPeriod.AvgCostPerSuccessUSD, rpt.AvgCostPerSuccessUSD,
-			formatCostDelta(rpt.AvgCostPerSuccessUSD-rpt.PriorPeriod.AvgCostPerSuccessUSD))
-		_ = tw.Flush()
-	}
+	renderTerminalComparison(&sb, rpt)
 
 	return sb.String()
+}
+
+func renderTerminalComparison(sb *strings.Builder, rpt SprintReport) {
+	if rpt.PriorPeriod == nil || rpt.PriorPeriod.TotalRuns == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\nCompared to Prior Period (%s – %s)\n",
+		formatDate(rpt.PriorPeriod.Since), formatDate(rpt.PriorPeriod.Until))
+	tw := tabwriter.NewWriter(sb, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "  Success rate\t%.1f%% → %.1f%%\t%s\n",
+		rpt.PriorPeriod.SuccessRate*100, rpt.SuccessRate*100,
+		formatRateDelta(rpt.SuccessRate-rpt.PriorPeriod.SuccessRate))
+	fmt.Fprintf(tw, "  First-pass rate\t%.1f%% → %.1f%%\t%s\n",
+		rpt.PriorPeriod.FirstPassRate*100, rpt.FirstPassRate*100,
+		formatRateDelta(rpt.FirstPassRate-rpt.PriorPeriod.FirstPassRate))
+	fmt.Fprintf(tw, "  Issues processed\t%d → %d\t%s\n",
+		rpt.PriorPeriod.IssuesProcessed, rpt.IssuesProcessed,
+		formatIntDelta(rpt.IssuesProcessed-rpt.PriorPeriod.IssuesProcessed))
+	fmt.Fprintf(tw, "  Total cost\t$%.2f → $%.2f\t%s\n",
+		rpt.PriorPeriod.TotalCostUSD, rpt.TotalCostUSD,
+		formatCostDelta(rpt.TotalCostUSD-rpt.PriorPeriod.TotalCostUSD))
+	fmt.Fprintf(tw, "  Avg per success\t$%.2f → $%.2f\t%s\n",
+		rpt.PriorPeriod.AvgCostPerSuccessUSD, rpt.AvgCostPerSuccessUSD,
+		formatCostDelta(rpt.AvgCostPerSuccessUSD-rpt.PriorPeriod.AvgCostPerSuccessUSD))
+	_ = tw.Flush()
 }
 
 // RenderMarkdown renders rpt as Markdown suitable for Slack or a wiki.
@@ -409,57 +413,65 @@ func RenderMarkdown(rpt SprintReport) string {
 		}
 	}
 
-	if len(rpt.ShippedIssues) > 0 {
-		fmt.Fprintf(&sb, "\n## What was Shipped (%d issues)\n\n", len(rpt.ShippedIssues))
-		if isMultiRepo(rpt.ShippedIssues) {
-			repos, grouped := groupShippedByRepo(rpt.ShippedIssues)
-			for _, repo := range repos {
-				fmt.Fprintf(&sb, "### %s\n\n", repo)
-				for _, si := range grouped[repo] {
-					if si.PRNumber > 0 && si.Repo != "" {
-						prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
-						fmt.Fprintf(&sb, "- [#%d](%s) — %s\n", si.IssueNumber, prURL, si.Title)
-					} else {
-						fmt.Fprintf(&sb, "- #%d — %s\n", si.IssueNumber, si.Title)
-					}
-				}
-				sb.WriteString("\n")
-			}
-		} else {
-			for _, si := range rpt.ShippedIssues {
-				if si.PRNumber > 0 && si.Repo != "" {
-					prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
-					fmt.Fprintf(&sb, "- [#%d](%s) — %s\n", si.IssueNumber, prURL, si.Title)
-				} else {
-					fmt.Fprintf(&sb, "- #%d — %s\n", si.IssueNumber, si.Title)
-				}
-			}
-		}
-	}
-
-	if rpt.PriorPeriod != nil && rpt.PriorPeriod.TotalRuns > 0 {
-		fmt.Fprintf(&sb, "\n## Compared to Prior Period (%s – %s)\n\n",
-			formatDate(rpt.PriorPeriod.Since), formatDate(rpt.PriorPeriod.Until))
-		sb.WriteString("| Metric | Prior | Current | Delta |\n")
-		sb.WriteString("|--------|-------|---------|-------|\n")
-		fmt.Fprintf(&sb, "| Success rate | %.1f%% | %.1f%% | %s |\n",
-			rpt.PriorPeriod.SuccessRate*100, rpt.SuccessRate*100,
-			formatRateDelta(rpt.SuccessRate-rpt.PriorPeriod.SuccessRate))
-		fmt.Fprintf(&sb, "| First-pass rate | %.1f%% | %.1f%% | %s |\n",
-			rpt.PriorPeriod.FirstPassRate*100, rpt.FirstPassRate*100,
-			formatRateDelta(rpt.FirstPassRate-rpt.PriorPeriod.FirstPassRate))
-		fmt.Fprintf(&sb, "| Issues processed | %d | %d | %s |\n",
-			rpt.PriorPeriod.IssuesProcessed, rpt.IssuesProcessed,
-			formatIntDelta(rpt.IssuesProcessed-rpt.PriorPeriod.IssuesProcessed))
-		fmt.Fprintf(&sb, "| Total cost | $%.2f | $%.2f | %s |\n",
-			rpt.PriorPeriod.TotalCostUSD, rpt.TotalCostUSD,
-			formatCostDelta(rpt.TotalCostUSD-rpt.PriorPeriod.TotalCostUSD))
-		fmt.Fprintf(&sb, "| Avg per success | $%.2f | $%.2f | %s |\n",
-			rpt.PriorPeriod.AvgCostPerSuccessUSD, rpt.AvgCostPerSuccessUSD,
-			formatCostDelta(rpt.AvgCostPerSuccessUSD-rpt.PriorPeriod.AvgCostPerSuccessUSD))
-	}
+	renderMarkdownShipped(&sb, rpt)
+	renderMarkdownComparison(&sb, rpt)
 
 	return sb.String()
+}
+
+func renderMarkdownShipped(sb *strings.Builder, rpt SprintReport) {
+	if len(rpt.ShippedIssues) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n## What was Shipped (%d issues)\n\n", len(rpt.ShippedIssues))
+	if isMultiRepo(rpt.ShippedIssues) {
+		repos, grouped := groupShippedByRepo(rpt.ShippedIssues)
+		for _, repo := range repos {
+			fmt.Fprintf(sb, "### %s\n\n", repo)
+			for _, si := range grouped[repo] {
+				renderMarkdownShippedItem(sb, si)
+			}
+			sb.WriteString("\n")
+		}
+	} else {
+		for _, si := range rpt.ShippedIssues {
+			renderMarkdownShippedItem(sb, si)
+		}
+	}
+}
+
+func renderMarkdownShippedItem(sb *strings.Builder, si ShippedIssue) {
+	if si.PRNumber > 0 && si.Repo != "" {
+		prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
+		fmt.Fprintf(sb, "- [#%d](%s) — %s\n", si.IssueNumber, prURL, si.Title)
+	} else {
+		fmt.Fprintf(sb, "- #%d — %s\n", si.IssueNumber, si.Title)
+	}
+}
+
+func renderMarkdownComparison(sb *strings.Builder, rpt SprintReport) {
+	if rpt.PriorPeriod == nil || rpt.PriorPeriod.TotalRuns == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n## Compared to Prior Period (%s – %s)\n\n",
+		formatDate(rpt.PriorPeriod.Since), formatDate(rpt.PriorPeriod.Until))
+	sb.WriteString("| Metric | Prior | Current | Delta |\n")
+	sb.WriteString("|--------|-------|---------|-------|\n")
+	fmt.Fprintf(sb, "| Success rate | %.1f%% | %.1f%% | %s |\n",
+		rpt.PriorPeriod.SuccessRate*100, rpt.SuccessRate*100,
+		formatRateDelta(rpt.SuccessRate-rpt.PriorPeriod.SuccessRate))
+	fmt.Fprintf(sb, "| First-pass rate | %.1f%% | %.1f%% | %s |\n",
+		rpt.PriorPeriod.FirstPassRate*100, rpt.FirstPassRate*100,
+		formatRateDelta(rpt.FirstPassRate-rpt.PriorPeriod.FirstPassRate))
+	fmt.Fprintf(sb, "| Issues processed | %d | %d | %s |\n",
+		rpt.PriorPeriod.IssuesProcessed, rpt.IssuesProcessed,
+		formatIntDelta(rpt.IssuesProcessed-rpt.PriorPeriod.IssuesProcessed))
+	fmt.Fprintf(sb, "| Total cost | $%.2f | $%.2f | %s |\n",
+		rpt.PriorPeriod.TotalCostUSD, rpt.TotalCostUSD,
+		formatCostDelta(rpt.TotalCostUSD-rpt.PriorPeriod.TotalCostUSD))
+	fmt.Fprintf(sb, "| Avg per success | $%.2f | $%.2f | %s |\n",
+		rpt.PriorPeriod.AvgCostPerSuccessUSD, rpt.AvgCostPerSuccessUSD,
+		formatCostDelta(rpt.AvgCostPerSuccessUSD-rpt.PriorPeriod.AvgCostPerSuccessUSD))
 }
 
 // RenderHTML renders rpt as self-contained inline-styled HTML suitable for email.
