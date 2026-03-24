@@ -585,8 +585,11 @@ a:hover {
   color: var(--text-muted);
 }
 
-/* Quality flag tooltip (CSS-only) */
-.quality-flag[data-tooltip]:hover::after {
+/* Generic CSS-only tooltip */
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]:hover::after {
   content: attr(data-tooltip);
   position: absolute;
   bottom: calc(100% + 6px);
