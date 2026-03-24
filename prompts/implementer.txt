@@ -80,5 +80,13 @@ List any non-obvious decisions or trade-offs made during implementation.
 ### Known Limitations
 Note anything incomplete, deferred, or that the reviewer should be aware of.
 
+### Blocked Criteria
+If any acceptance criterion cannot be satisfied because it requires editing a protected path,
+list each blocked criterion here. Use this exact marker format for each one:
+
+  BLOCKED_CRITERION: <criterion summary> (requires editing protected path: <path>)
+
+If no criteria are blocked by a protected path constraint, omit this section entirely.
+
 ### Architecture
 Describe which layers were touched and how dependencies were respected{{if .ArchitectureDocContent}} (per architecture rules above){{end}}.

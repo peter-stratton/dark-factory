@@ -42,3 +42,9 @@ After fixing:
 4. Push to the PR branch
 5. Post a new PR comment explaining what you changed and how you addressed
    each reviewer challenge, using the ## Implementation Notes format
+
+   If any acceptance criterion still cannot be satisfied because it requires
+   editing a protected path, include a ### Blocked Criteria section with this
+   exact marker format for each blocked criterion:
+
+     BLOCKED_CRITERION: <criterion summary> (requires editing protected path: <path>)

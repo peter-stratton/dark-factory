@@ -50,7 +50,7 @@ func BuildImage(ctx context.Context, cfg DockerConfig, logger *slog.Logger) (str
 	defer os.RemoveAll(tmpDir)
 
 	dfPath := filepath.Join(tmpDir, "Dockerfile")
-	if err := os.WriteFile(dfPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(dfPath, []byte(content), 0o644); err != nil { // #nosec G703 -- dfPath is filepath.Join(tmpDir, "Dockerfile"), hardcoded filename, no traversal risk
 		return "", fmt.Errorf("writing Dockerfile: %w", err)
 	}
 
