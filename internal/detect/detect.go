@@ -123,14 +123,14 @@ func DetectRuntime(repoPath string) (*DetectedProject, error) {
 
 // hasMakeTestTarget returns true if the given Makefile contains a "test:" target line.
 func hasMakeTestTarget(path string) bool {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return false
 	}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "test:") {
+		if strings.HasPrefix(scanner.Text(), "test:") {
 			return true
 		}
 	}
