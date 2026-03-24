@@ -157,7 +157,7 @@ func buildNotableFailures(runDetails []rundata.RunDetail) []NotableFailure {
 	return result
 }
 
-// buildShippedIssues returns all implemented issues sorted by issue number.
+// buildShippedIssues returns all implemented issues sorted by repo then issue number.
 func buildShippedIssues(runDetails []rundata.RunDetail) []ShippedIssue {
 	var result []ShippedIssue
 	for _, rd := range runDetails {
@@ -176,9 +176,41 @@ func buildShippedIssues(runDetails []rundata.RunDetail) []ShippedIssue {
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
+		if result[i].Repo != result[j].Repo {
+			return result[i].Repo < result[j].Repo
+		}
 		return result[i].IssueNumber < result[j].IssueNumber
 	})
 	return result
+}
+
+// groupShippedByRepo groups shipped issues by repo, preserving order.
+// Returns repo names in sorted order and a map of repo to issues.
+func groupShippedByRepo(issues []ShippedIssue) ([]string, map[string][]ShippedIssue) {
+	grouped := make(map[string][]ShippedIssue)
+	for _, si := range issues {
+		grouped[si.Repo] = append(grouped[si.Repo], si)
+	}
+	repos := make([]string, 0, len(grouped))
+	for r := range grouped {
+		repos = append(repos, r)
+	}
+	sort.Strings(repos)
+	return repos, grouped
+}
+
+// isMultiRepo returns true when shipped issues span more than one repository.
+func isMultiRepo(issues []ShippedIssue) bool {
+	if len(issues) == 0 {
+		return false
+	}
+	first := issues[0].Repo
+	for _, si := range issues[1:] {
+		if si.Repo != first {
+			return true
+		}
+	}
+	return false
 }
 
 // computeIssueCost sums the cost of all steps (including retries) for an issue.
@@ -275,8 +307,18 @@ func RenderTerminal(rpt SprintReport) string {
 	// Shipped issues
 	if len(rpt.ShippedIssues) > 0 {
 		fmt.Fprintf(&sb, "\nWhat was Shipped (%d issues)\n", len(rpt.ShippedIssues))
-		for _, si := range rpt.ShippedIssues {
-			fmt.Fprintf(&sb, "  #%d — %s\n", si.IssueNumber, si.Title)
+		if isMultiRepo(rpt.ShippedIssues) {
+			repos, grouped := groupShippedByRepo(rpt.ShippedIssues)
+			for _, repo := range repos {
+				fmt.Fprintf(&sb, "\n  %s\n", repo)
+				for _, si := range grouped[repo] {
+					fmt.Fprintf(&sb, "    #%d — %s\n", si.IssueNumber, si.Title)
+				}
+			}
+		} else {
+			for _, si := range rpt.ShippedIssues {
+				fmt.Fprintf(&sb, "  #%d — %s\n", si.IssueNumber, si.Title)
+			}
 		}
 	}
 
@@ -369,12 +411,28 @@ func RenderMarkdown(rpt SprintReport) string {
 
 	if len(rpt.ShippedIssues) > 0 {
 		fmt.Fprintf(&sb, "\n## What was Shipped (%d issues)\n\n", len(rpt.ShippedIssues))
-		for _, si := range rpt.ShippedIssues {
-			if si.PRNumber > 0 && si.Repo != "" {
-				prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
-				fmt.Fprintf(&sb, "- [#%d](%s) — %s\n", si.IssueNumber, prURL, si.Title)
-			} else {
-				fmt.Fprintf(&sb, "- #%d — %s\n", si.IssueNumber, si.Title)
+		if isMultiRepo(rpt.ShippedIssues) {
+			repos, grouped := groupShippedByRepo(rpt.ShippedIssues)
+			for _, repo := range repos {
+				fmt.Fprintf(&sb, "### %s\n\n", repo)
+				for _, si := range grouped[repo] {
+					if si.PRNumber > 0 && si.Repo != "" {
+						prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
+						fmt.Fprintf(&sb, "- [#%d](%s) — %s\n", si.IssueNumber, prURL, si.Title)
+					} else {
+						fmt.Fprintf(&sb, "- #%d — %s\n", si.IssueNumber, si.Title)
+					}
+				}
+				sb.WriteString("\n")
+			}
+		} else {
+			for _, si := range rpt.ShippedIssues {
+				if si.PRNumber > 0 && si.Repo != "" {
+					prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
+					fmt.Fprintf(&sb, "- [#%d](%s) — %s\n", si.IssueNumber, prURL, si.Title)
+				} else {
+					fmt.Fprintf(&sb, "- #%d — %s\n", si.IssueNumber, si.Title)
+				}
 			}
 		}
 	}
@@ -532,18 +590,36 @@ func renderHTMLShippedIssues(sb *strings.Builder, issues []ShippedIssue) {
 		return
 	}
 	fmt.Fprintf(sb, `<h2 style="color:#333;border-bottom:1px solid #ddd">What was Shipped (%d issues)</h2>
-<ul>
 `, len(issues))
-	for _, si := range issues {
-		if si.PRNumber > 0 && si.Repo != "" {
-			prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
-			fmt.Fprintf(sb, `<li><a href="%s">#%d</a> — %s</li>
-`, html.EscapeString(prURL), si.IssueNumber, html.EscapeString(si.Title))
-		} else {
-			fmt.Fprintf(sb, "<li>#%d — %s</li>\n", si.IssueNumber, html.EscapeString(si.Title))
+	if isMultiRepo(issues) {
+		repos, grouped := groupShippedByRepo(issues)
+		for _, repo := range repos {
+			fmt.Fprintf(sb, `<h3 style="color:#555;margin-top:16px">%s</h3>
+<ul>
+`, html.EscapeString(repo))
+			for _, si := range grouped[repo] {
+				renderHTMLShippedItem(sb, si)
+			}
+			sb.WriteString("</ul>\n")
 		}
+	} else {
+		sb.WriteString("<ul>\n")
+		for _, si := range issues {
+			renderHTMLShippedItem(sb, si)
+		}
+		sb.WriteString("</ul>\n")
 	}
-	sb.WriteString("</ul>\n")
+}
+
+// renderHTMLShippedItem writes a single shipped issue list item.
+func renderHTMLShippedItem(sb *strings.Builder, si ShippedIssue) {
+	if si.PRNumber > 0 && si.Repo != "" {
+		prURL := fmt.Sprintf("https://github.com/%s/pull/%d", si.Repo, si.PRNumber)
+		fmt.Fprintf(sb, `<li><a href="%s">#%d</a> — %s</li>
+`, html.EscapeString(prURL), si.IssueNumber, html.EscapeString(si.Title))
+	} else {
+		fmt.Fprintf(sb, "<li>#%d — %s</li>\n", si.IssueNumber, html.EscapeString(si.Title))
+	}
 }
 
 // renderHTMLPriorPeriod writes the period comparison table section.
