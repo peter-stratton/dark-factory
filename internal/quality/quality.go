@@ -44,7 +44,7 @@ func CheckDuration(duration time.Duration, threshold time.Duration) *Flag {
 
 // CheckToolTrace inspects the tool trace for evidence of a diff read and test run.
 // Returns no_diff_read if no Read or "gh pr diff" call is found.
-// Returns no_tests_run if testCommand is not found in the trace.
+// Returns no_tests_run if the test runner signature is not found in any Bash trace entry.
 // If testCommand is empty or checkTestRun is false, the test run check is skipped.
 func CheckToolTrace(toolTrace []string, testCommand string, checkTestRun bool) []Flag {
 	var flags []Flag
@@ -52,11 +52,13 @@ func CheckToolTrace(toolTrace []string, testCommand string, checkTestRun bool) [
 	diffRead := false
 	testsRun := !checkTestRun || testCommand == ""
 
+	sig := testRunnerSignature(testCommand)
+
 	for _, entry := range toolTrace {
 		if strings.Contains(entry, "Read") || strings.Contains(entry, "gh pr diff") {
 			diffRead = true
 		}
-		if !testsRun && strings.Contains(entry, testCommand) {
+		if !testsRun && matchesSignature(entry, sig) {
 			testsRun = true
 		}
 	}
@@ -94,6 +96,8 @@ func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string,
 
 	dir := strings.TrimRight(reviewDir, "/")
 
+	sig := testRunnerSignature(testCommand)
+
 	for _, entry := range toolTrace {
 		if !testsWritten && strings.Contains(entry, dir+"/") {
 			if strings.Contains(entry, "Write") {
@@ -102,7 +106,7 @@ func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string,
 				testsWritten = true
 			}
 		}
-		if !testsRun && strings.Contains(entry, testCommand) {
+		if !testsRun && matchesSignature(entry, sig) {
 			testsRun = true
 		}
 	}
@@ -121,6 +125,76 @@ func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string,
 	}
 
 	return flags
+}
+
+// testRunnerSignature extracts the core test runner tokens from a configured
+// test command. It strips cd prefixes, directory targets, and shell operators
+// to produce the minimal set of tokens that identify the test runner.
+//
+// Examples:
+//
+//	"cd service && go test ./..."       -> ["go", "test"]
+//	"npm test"                          -> ["npm", "test"]
+//	"pytest tests/"                     -> ["pytest"]
+//	"cargo test"                        -> ["cargo", "test"]
+//	"dart test test/"                   -> ["dart", "test"]
+//	"cd src && python -m pytest"        -> ["python", "-m", "pytest"]
+func testRunnerSignature(testCommand string) []string {
+	if testCommand == "" {
+		return nil
+	}
+
+	// Take the last segment after && (the actual test command, not cd prefix).
+	parts := strings.Split(testCommand, "&&")
+	cmd := strings.TrimSpace(parts[len(parts)-1])
+
+	tokens := strings.Fields(cmd)
+
+	// Collect tokens that form the runner invocation, stopping at directory
+	// targets, redirects, or pipe operators.
+	var sig []string
+	for _, tok := range tokens {
+		// Skip directory-like arguments (./..., tests/, src/foo).
+		if strings.HasPrefix(tok, "./") || strings.HasPrefix(tok, "../") {
+			continue
+		}
+		// Skip if it looks like a path with a trailing slash.
+		if strings.HasSuffix(tok, "/") {
+			continue
+		}
+		// Stop at shell operators.
+		if tok == "|" || tok == ">" || tok == ">>" || tok == "2>&1" || tok == ";" {
+			break
+		}
+		sig = append(sig, tok)
+		// Most test runners are identified by 1-3 tokens. Once we have enough
+		// to be distinctive, stop. We keep going for patterns like
+		// "python -m pytest" (3 tokens).
+		if len(sig) >= 3 {
+			break
+		}
+	}
+
+	return sig
+}
+
+// matchesSignature returns true if a tool trace entry contains all tokens from
+// the test runner signature. Tokens are matched as substrings of the entry so
+// that agents using absolute paths, extra flags, or redirects still match.
+func matchesSignature(entry string, sig []string) bool {
+	if len(sig) == 0 {
+		return false
+	}
+	// Only check Bash entries - test commands run through the shell.
+	if !strings.HasPrefix(entry, "Bash:") && !strings.HasPrefix(entry, "Bash ") {
+		return false
+	}
+	for _, tok := range sig {
+		if !strings.Contains(entry, tok) {
+			return false
+		}
+	}
+	return true
 }
 
 // isBashWrite returns true if entry looks like a Bash command that creates a

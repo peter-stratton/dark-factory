@@ -186,6 +186,27 @@ func TestCheckToolTrace(t *testing.T) {
 			checkTestRun: false,
 			wantCodes:    []string{"no_diff_read"},
 		},
+		{
+			name:         "agent uses absolute path instead of cd prefix",
+			trace:        []string{"Read: main.go", "Bash: cd /workspace/service && go test -v ./... 2>&1"},
+			testCommand:  "cd service && go test ./...",
+			checkTestRun: true,
+			wantCodes:    nil,
+		},
+		{
+			name:         "agent adds extra flags to test command",
+			trace:        []string{"Read: main.go", "Bash: go test -v -timeout 30s -tags integration ./... 2>&1"},
+			testCommand:  "go test ./...",
+			checkTestRun: true,
+			wantCodes:    nil,
+		},
+		{
+			name:         "agent runs pytest with extra flags",
+			trace:        []string{"Read: main.py", "Bash: pytest -xvs tests/ --tb=short 2>&1"},
+			testCommand:  "pytest tests/",
+			checkTestRun: true,
+			wantCodes:    nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -283,6 +304,146 @@ func TestCheckReviewTestExecution(t *testing.T) {
 			gotCodes := flagCodes(got)
 			if !codesEqual(gotCodes, tt.wantCodes) {
 				t.Errorf("got flags %v, want %v", gotCodes, tt.wantCodes)
+			}
+		})
+	}
+}
+
+func TestTestRunnerSignature(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		want    []string
+	}{
+		{
+			name:    "go test with cd prefix",
+			command: "cd service && go test ./...",
+			want:    []string{"go", "test"},
+		},
+		{
+			name:    "npm test",
+			command: "npm test",
+			want:    []string{"npm", "test"},
+		},
+		{
+			name:    "pytest with dir target",
+			command: "pytest tests/",
+			want:    []string{"pytest"},
+		},
+		{
+			name:    "cargo test",
+			command: "cargo test",
+			want:    []string{"cargo", "test"},
+		},
+		{
+			name:    "dart test with dir",
+			command: "dart test test/",
+			want:    []string{"dart", "test"},
+		},
+		{
+			name:    "python -m pytest",
+			command: "cd src && python -m pytest",
+			want:    []string{"python", "-m", "pytest"},
+		},
+		{
+			name:    "go test with relative path",
+			command: "go test ./internal/...",
+			want:    []string{"go", "test"},
+		},
+		{
+			name:    "empty command",
+			command: "",
+			want:    nil,
+		},
+		{
+			name:    "flutter test",
+			command: "flutter test",
+			want:    []string{"flutter", "test"},
+		},
+		{
+			name:    "command with redirect",
+			command: "go test ./... 2>&1",
+			want:    []string{"go", "test"},
+		},
+		{
+			name:    "command with pipe",
+			command: "go test ./... | head -20",
+			want:    []string{"go", "test"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := testRunnerSignature(tt.command)
+			if !codesEqual(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchesSignature(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+		sig   []string
+		want  bool
+	}{
+		{
+			name:  "exact match",
+			entry: "Bash: go test ./...",
+			sig:   []string{"go", "test"},
+			want:  true,
+		},
+		{
+			name:  "absolute path with flags",
+			entry: "Bash: cd /workspace/service && go test -v -timeout 30s ./... 2>&1",
+			sig:   []string{"go", "test"},
+			want:  true,
+		},
+		{
+			name:  "npm test with extra args",
+			entry: "Bash: npm test -- --coverage 2>&1",
+			sig:   []string{"npm", "test"},
+			want:  true,
+		},
+		{
+			name:  "pytest with flags",
+			entry: "Bash: pytest -xvs tests/ 2>&1",
+			sig:   []string{"pytest"},
+			want:  true,
+		},
+		{
+			name:  "non-bash entry ignored",
+			entry: "Read: go test output.txt",
+			sig:   []string{"go", "test"},
+			want:  false,
+		},
+		{
+			name:  "partial match not enough",
+			entry: "Bash: go build ./...",
+			sig:   []string{"go", "test"},
+			want:  false,
+		},
+		{
+			name:  "empty signature",
+			entry: "Bash: go test ./...",
+			sig:   nil,
+			want:  false,
+		},
+		{
+			name:  "python -m pytest",
+			entry: "Bash: python -m pytest tests/ -v 2>&1",
+			sig:   []string{"python", "-m", "pytest"},
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchesSignature(tt.entry, tt.sig)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
