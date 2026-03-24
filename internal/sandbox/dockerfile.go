@@ -93,6 +93,10 @@ RUN {{.}}
 # Install Claude Agent SDK (bundles Claude Code CLI)
 RUN pip install claude-agent-sdk{{if .SDKVersion}}=={{.SDKVersion}}{{end}}
 
+# Work around SDK stdin timeout (default 60s kills hooks on long runs).
+# See: https://github.com/anthropics/claude-agent-sdk-python/issues/730
+ENV CLAUDE_CODE_STREAM_CLOSE_TIMEOUT=3600000
+
 # Copy agent runner
 COPY agent_runner.py /usr/local/bin/agent_runner.py
 
