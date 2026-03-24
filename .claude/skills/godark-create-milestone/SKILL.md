@@ -87,3 +87,15 @@ Help the user define a phased roadmap for their project and write it to
 - If a roadmap already exists, ask the user whether to replace it or append new
   phases.
 - Do not create GitHub issues — that is handled by `/godark-create-issues`.
+
+## CRITICAL — Next step
+
+When this skill completes, suggest the user run `/godark-create-planning-doc`
+next. Do NOT attempt to create the planning doc yourself — the skill contains
+specific formatting, structure, and issue-splitting directives that must be
+followed exactly. The full workflow order is:
+
+1. `/godark-create-milestone` (this skill)
+2. `/godark-create-planning-doc`
+3. `/godark-create-issues`
+4. `/godark-create-scenarios`

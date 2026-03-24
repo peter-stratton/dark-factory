@@ -177,6 +177,37 @@ docker_compose:
 | `docker_compose.services[].name` | Service name as defined in the compose file |
 | `docker_compose.services[].description` | What the service provides (ports, credentials, database names) |
 
+### Host services
+
+If the project depends on services that run on the host (outside Docker Compose),
+declare them so godark can verify they are reachable before processing issues and
+inject their descriptions into agent prompts.
+
+```yaml
+host_services:
+  - name: supabase
+    description: "Supabase local stack (Postgres, Auth, Realtime, Studio)"
+    health_check:
+      command: "curl -sf http://localhost:54321/rest/v1/"
+      timeout: "10s"
+      retries: 5
+  - name: wrangler
+    description: "Cloudflare Workers local dev (R2, KV, DO)"
+    health_check:
+      command: "curl -sf http://localhost:8787/"
+```
+
+| Field | Purpose |
+|-------|---------|
+| `host_services[].name` | Service name (required) |
+| `host_services[].description` | What the service provides — injected into agent prompts |
+| `host_services[].health_check.command` | Shell command to check reachability (required when health_check is set) |
+| `host_services[].health_check.timeout` | Max time per health check attempt (default: `5s`) |
+| `host_services[].health_check.retries` | Number of attempts before failing (default: `3`) |
+
+godark does **not** start or stop host services — it only verifies they are
+reachable. Start them before running `godark run` or `godark implement`.
+
 ### Docker sandbox
 
 | Field | Purpose |

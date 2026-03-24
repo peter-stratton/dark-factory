@@ -74,3 +74,15 @@ consumption. Update the planning doc and roadmap with assigned issue numbers.
 - Do not modify scenario specs — that is handled by `/godark-create-scenarios`.
 - If some issues already exist and some are new, only create the new ones and
   update the planning doc with all numbers (existing + new).
+
+## CRITICAL — Next step
+
+When this skill completes, suggest the user run `/godark-create-scenarios` next.
+Do NOT attempt to create scenario specs yourself — the skill contains specific
+formatting, structure, and coverage directives that must be followed exactly.
+The full workflow order is:
+
+1. `/godark-create-milestone`
+2. `/godark-create-planning-doc`
+3. `/godark-create-issues` (this skill)
+4. `/godark-create-scenarios`

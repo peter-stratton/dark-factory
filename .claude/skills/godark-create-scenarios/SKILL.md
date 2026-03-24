@@ -71,3 +71,14 @@ section with fixture prerequisites, and `## Cases` section with one or more
 - When generating for a phase, process issues in dependency order (issues with
   no dependencies first) so that earlier specs can inform the style of later
   ones.
+
+## CRITICAL — Workflow complete
+
+This is the final skill in the planning workflow. The full order is:
+
+1. `/godark-create-milestone`
+2. `/godark-create-planning-doc`
+3. `/godark-create-issues`
+4. `/godark-create-scenarios` (this skill)
+
+The project is now ready for `godark run`.
