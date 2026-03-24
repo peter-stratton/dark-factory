@@ -18,12 +18,26 @@ var CommandRunner darkexec.CommandRunnerFunc = func(name string, args ...string)
 	return exec.Command(name, args...).CombinedOutput()
 }
 
-// BuildImage generates a Dockerfile from cfg, writes it to a temp directory,
-// and runs docker build. It returns the image tag on success.
+// BuildImage generates a Dockerfile from cfg (or uses a user-provided one),
+// writes it to a temp directory, and runs docker build. It returns the image
+// tag on success.
 func BuildImage(ctx context.Context, cfg DockerConfig, logger *slog.Logger) (string, error) {
-	content, err := GenerateDockerfile(cfg, logger)
-	if err != nil {
-		return "", fmt.Errorf("generating Dockerfile: %w", err)
+	var content string
+
+	if cfg.Dockerfile != "" {
+		// Use user-provided Dockerfile.
+		raw, err := os.ReadFile(cfg.Dockerfile)
+		if err != nil {
+			return "", fmt.Errorf("reading custom Dockerfile %q: %w", cfg.Dockerfile, err)
+		}
+		content = string(raw)
+		logger.Info("using custom Dockerfile", "path", cfg.Dockerfile)
+	} else {
+		var err error
+		content, err = GenerateDockerfile(cfg, logger)
+		if err != nil {
+			return "", fmt.Errorf("generating Dockerfile: %w", err)
+		}
 	}
 
 	tag := ImageTag(content)

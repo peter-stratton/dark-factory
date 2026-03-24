@@ -137,16 +137,26 @@ func TestGenerateDockerfileGoRuntimeWithVersion(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfileGoVersionMissingPatch(t *testing.T) {
+func TestGenerateDockerfileGoVersionNormalizesPatch(t *testing.T) {
 	cfg := DefaultDockerConfig()
 	cfg.Runtime = config.Runtime{Name: "go", Version: "1.25"}
 
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(df, "go1.25.0.linux-${ARCH}.tar.gz") {
+		t.Error("Dockerfile should normalize Go version 1.25 to 1.25.0")
+	}
+}
+
+func TestGenerateDockerfileGoVersionMajorOnly(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "go", Version: "1"}
+
 	_, err := GenerateDockerfile(cfg, slog.Default())
 	if err == nil {
-		t.Fatal("expected error for Go version without patch component, got nil")
-	}
-	if !strings.Contains(err.Error(), "patch component") {
-		t.Errorf("error message should mention patch component, got: %v", err)
+		t.Fatal("expected error for Go version with only major component, got nil")
 	}
 }
 

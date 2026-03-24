@@ -10,6 +10,7 @@ import (
 // DockerConfig holds the resolved configuration for Dockerfile generation.
 type DockerConfig struct {
 	Image              string
+	Dockerfile         string // path to a user-provided Dockerfile; skips generation when set
 	Runtime            config.Runtime
 	NodeVersion        string
 	User               string
@@ -35,6 +36,9 @@ func DefaultDockerConfig() DockerConfig {
 // defaults for any zero-value fields. compose may be nil (feature disabled).
 func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandboxEnv map[string]string, compose *config.DockerCompose) DockerConfig {
 	dc := DefaultDockerConfig()
+	if docker.Dockerfile != "" {
+		dc.Dockerfile = docker.Dockerfile
+	}
 	if docker.Image != "" {
 		dc.Image = docker.Image
 	}

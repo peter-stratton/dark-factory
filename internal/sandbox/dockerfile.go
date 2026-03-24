@@ -122,10 +122,13 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 			return "", fmt.Errorf("go runtime requires a version (Runtime.Version must be set)")
 		}
 		// Go download URLs require a full major.minor.patch version (e.g. "1.25.4").
-		// A version like "1.25" produces a 404 on go.dev/dl.
+		// A version like "1.25" produces a 404 on go.dev/dl, so append ".0" if
+		// only major.minor is provided (common in go.mod files).
 		parts := strings.Split(runtimeVersion, ".")
-		if len(parts) < 3 {
-			return "", fmt.Errorf("go runtime.version %q must include a patch component (e.g. %s.0)", runtimeVersion, runtimeVersion)
+		if len(parts) == 2 {
+			runtimeVersion += ".0"
+		} else if len(parts) < 2 {
+			return "", fmt.Errorf("go runtime.version %q must be at least major.minor (e.g. 1.25)", runtimeVersion)
 		}
 	case "flutter":
 		// pubspec.yaml's environment.sdk is a Dart SDK constraint (e.g.
