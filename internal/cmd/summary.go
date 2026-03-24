@@ -19,19 +19,23 @@ import (
 
 // generateSummary is a testability seam: replaced in tests to stub the Claude API call.
 // It accepts the fully-built prompt and returns the generated summary text.
-// Returns an error if the API key is missing or the API call fails.
+// Prefers CLAUDE_CODE_OAUTH_TOKEN, falls back to ANTHROPIC_API_KEY.
 var generateSummary = func(ctx context.Context, prompt string) (string, error) {
+	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("ANTHROPIC_API_KEY not set")
+
+	if oauthToken == "" && apiKey == "" {
+		return "", fmt.Errorf("missing authentication: set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY")
 	}
+
 	apiCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	return callClaudeAPI(apiCtx, apiKey, prompt)
+	return callClaudeAPI(apiCtx, oauthToken, apiKey, prompt)
 }
 
 // callClaudeAPI sends a prompt to the Anthropic Messages API and returns the text response.
-func callClaudeAPI(ctx context.Context, apiKey, prompt string) (string, error) {
+// When oauthToken is non-empty it is sent as a Bearer token; otherwise apiKey is used.
+func callClaudeAPI(ctx context.Context, oauthToken, apiKey, prompt string) (string, error) {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -57,8 +61,12 @@ func callClaudeAPI(ctx context.Context, apiKey, prompt string) (string, error) {
 		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
+	if oauthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+oauthToken)
+	} else {
+		req.Header.Set("x-api-key", apiKey)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
