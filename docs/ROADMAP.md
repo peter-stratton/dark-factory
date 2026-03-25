@@ -1312,7 +1312,7 @@ pure heuristic pattern matching on structured log output.
 - Distinct from the existing agent retry logic which re-runs the full step
   with reviewer feedback
 
-**Issues**: TBD
+**Issues**: #640–#649
 
 **Planning doc**: `docs/planning/phase-28-container-health-judge.md`
 
@@ -1356,3 +1356,15 @@ pure heuristic pattern matching on structured log output.
 - Docs site: add macOS `caffeinate` guidance — recommend `caffeinate -s godark
   run ...` for long/overnight runs to prevent macOS sleep from suspending
   Docker containers, dropping network connections, and stalling agent processes
+- Golden evaluation dataset for prompt regression testing — a curated set of
+  canonical issues (real or synthetic) with known-good implementations, stored
+  in `tests/eval/`. A `godark eval` command runs agents against these issues
+  and scores the results against baseline expectations. Primary use case is
+  catching prompt regressions: run `godark eval` in CI after any change to
+  `prompts/` and block the PR if scores drop below thresholds. Requires a new
+  `internal/eval/` package, a scoring rubric (acceptance criteria coverage,
+  verify pass rate, cost/duration within bounds), and a baseline snapshot to
+  compare against. Start small — 20–30 issues spanning simple wiring, moderate
+  features, and complex cross-cutting changes — and grow the dataset over time.
+  Inspired by offline evaluation frameworks for LLM agents (three pillars:
+  routing evaluation, LLM-as-judge scoring, and context grounding verification)
