@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/peter-stratton/dark-factory/internal/harness/templates"
 	"github.com/peter-stratton/dark-factory/prompts"
 	"github.com/spf13/cobra"
 )
@@ -45,9 +46,9 @@ func writeFileWithDirs(path string, data []byte) error {
 	return nil
 }
 
-// writeHarnessPrompts writes all harness prompt files to disk using
-// writeFileWithDirs. Prompt files are always overwritten (they are managed by
-// godark, like skills).
+// writeHarnessPrompts writes all harness prompt files and the prompts README
+// to disk using writeFileWithDirs. Prompt files are always overwritten (they
+// are managed by godark, like skills).
 func writeHarnessPrompts(cmd *cobra.Command) error {
 	for _, f := range harnessPromptFiles {
 		data, err := prompts.FS.ReadFile(f.name)
@@ -59,5 +60,16 @@ func writeHarnessPrompts(cmd *cobra.Command) error {
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", f.dest)
 	}
+
+	// Write the prompts README from harness templates.
+	readme, err := templates.FS.ReadFile("prompts-readme.md")
+	if err != nil {
+		return fmt.Errorf("reading embedded prompts README: %w", err)
+	}
+	if err := writeFileWithDirs("prompts/README.md", readme); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "wrote prompts/README.md\n")
+
 	return nil
 }

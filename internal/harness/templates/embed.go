@@ -7,5 +7,5 @@ import "embed"
 // WriteIfNotExists would skip (e.g. godark new writing CLAUDE.md into
 // projects where the file already exists from godark init).
 //
-//go:embed architecture.md architecture.json conventions.md roadmap.md claude.md godark.md gitignore
+//go:embed architecture.md architecture.json conventions.md roadmap.md claude.md godark.md gitignore prompts-readme.md
 var FS embed.FS
