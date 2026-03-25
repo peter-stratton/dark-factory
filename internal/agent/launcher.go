@@ -9,10 +9,13 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/peter-stratton/dark-factory/internal/agent/judge"
 	"github.com/peter-stratton/dark-factory/internal/agent/runner"
+	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/ghapp"
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
@@ -27,25 +30,33 @@ type RunOpts struct {
 	Branch            string
 	WorkDir           string
 	Timeout           time.Duration
-	MountDockerSocket bool // mount /var/run/docker.sock into sandbox container
+	MountDockerSocket bool         // mount /var/run/docker.sock into sandbox container
+	JudgeConfig       *config.Judge // nil means judge is disabled
 }
 
 // Result holds the outcome of an agent run.
 type Result struct {
-	ExitCode        int
-	Stdout          string
-	Stderr          string
-	TimedOut        bool
-	SessionID       string
-	CostUSD         float64
-	ResultText      string   // agent's final text output (from SDK result message)
-	Verdict         string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
-	ToolTrace       []string // summary of tool calls made by the agent
-	StartedAt       time.Time
-	FinishedAt      time.Time
-	ContainerLog    string // bounded combined log for post-mortem; only populated on failure
-	PeakMemoryBytes int64  // peak RSS in bytes; 0 if unavailable
-	CPUNanoseconds  int64  // total CPU time (user + system) in nanoseconds; 0 if unavailable
+	ExitCode          int
+	Stdout            string
+	Stderr            string
+	TimedOut          bool
+	JudgeKilled       bool                // true when the judge stopped the container early
+	JudgeIntervention *judge.Intervention // the intervention that triggered a kill, if any
+	SessionID         string
+	CostUSD           float64
+	ResultText        string   // agent's final text output (from SDK result message)
+	Verdict           string   // review verdict: "APPROVED", "CHANGES_REQUESTED", or "" (reviewer only)
+	ToolTrace         []string // summary of tool calls made by the agent
+	StartedAt         time.Time
+	FinishedAt        time.Time
+	ContainerLog      string // bounded combined log for post-mortem; only populated on failure
+	PeakMemoryBytes   int64  // peak RSS in bytes; 0 if unavailable
+	CPUNanoseconds    int64  // total CPU time (user + system) in nanoseconds; 0 if unavailable
+}
+
+// SandboxRunner executes a container run. Replaceable for testing.
+var SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	return sandbox.RunContainer(ctx, opts, logger)
 }
 
 // goosForRusage is the GOOS value used for Maxrss unit normalization.
@@ -245,16 +256,53 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	}
 	entrypoint := sandbox.EntrypointScript(cloneScript, agentCmd)
 
+	// Wrap the context with cancel so the judge can stop the container
+	// independently of the timeout.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Set up judge and log callback when judge is enabled.
+	var (
+		interventionPtr atomic.Pointer[judge.Intervention]
+		judgeKilled     atomic.Bool
+	)
+	var logCallback func(line string)
+	if opts.JudgeConfig != nil && (opts.JudgeConfig.Enabled == nil || *opts.JudgeConfig.Enabled) {
+		j := judge.NewJudge(opts.Role, judge.Config{
+			IdleTimeoutByRole:         opts.JudgeConfig.IdleTimeoutByRole,
+			DefaultIdleTimeout:        opts.JudgeConfig.DefaultIdleTimeout,
+			ToolThrashThreshold:       opts.JudgeConfig.ToolThrashThreshold,
+			ToolThrashWindowSecs:      opts.JudgeConfig.ToolThrashWindowSecs,
+			TransportFailureThreshold: opts.JudgeConfig.TransportFailureThreshold,
+		})
+		logCallback = func(line string) {
+			iv := j.ProcessLine(line, time.Now())
+			if iv == nil {
+				return
+			}
+			// Store the intervention (first one wins).
+			// Use atomic compare-and-swap to avoid a data race between
+			// concurrent log lines; only the first intervention is recorded.
+			interventionPtr.CompareAndSwap(nil, iv)
+			if iv.Judgment == judge.Kill {
+				judgeKilled.Store(true)
+				cancel() // stop the container
+			}
+		}
+		logger.Info("judge enabled for sandbox run", "role", opts.Role)
+	}
+
 	sandboxOpts := sandbox.RunOpts{
 		Image:             opts.Image,
 		Cmd:               []string{"sh", "-c", entrypoint},
 		Env:               env,
 		Timeout:           opts.Timeout,
 		MountDockerSocket: opts.MountDockerSocket,
+		LogCallback:       logCallback,
 	}
 
 	startedAt := time.Now()
-	result, err := sandbox.RunContainer(ctx, sandboxOpts, logger)
+	result, err := SandboxRunner(ctx, sandboxOpts, logger)
 	finishedAt := time.Now()
 	if err != nil {
 		return nil, fmt.Errorf("running sandbox container: %w", err)
@@ -268,15 +316,18 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		)
 	}
 
+	killed := judgeKilled.Load()
 	res := &Result{
-		ExitCode:        result.ExitCode,
-		Stdout:          result.Stdout,
-		Stderr:          result.Stderr,
-		TimedOut:        result.TimedOut,
-		StartedAt:       startedAt,
-		FinishedAt:      finishedAt,
-		PeakMemoryBytes: result.PeakMemoryBytes,
-		CPUNanoseconds:  result.CPUNanoseconds,
+		ExitCode:          result.ExitCode,
+		Stdout:            result.Stdout,
+		Stderr:            result.Stderr,
+		TimedOut:          result.TimedOut && !killed, // judge kill is not a timeout
+		JudgeKilled:       killed,
+		JudgeIntervention: interventionPtr.Load(),
+		StartedAt:         startedAt,
+		FinishedAt:        finishedAt,
+		PeakMemoryBytes:   result.PeakMemoryBytes,
+		CPUNanoseconds:    result.CPUNanoseconds,
 	}
 
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {
