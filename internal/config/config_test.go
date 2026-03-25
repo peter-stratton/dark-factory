@@ -2556,3 +2556,114 @@ repo: owner/repo
 		t.Errorf("len(HostServices) = %d, want 0 when absent", len(cfg.HostServices))
 	}
 }
+
+// --- Judge tests ---
+
+func TestJudgeConfigDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	j := cfg.JudgeConfig()
+	if j.Enabled == nil || !*j.Enabled {
+		t.Errorf("JudgeConfig().Enabled = %v, want true", j.Enabled)
+	}
+	if j.DefaultIdleTimeout != 300 {
+		t.Errorf("JudgeConfig().DefaultIdleTimeout = %d, want 300", j.DefaultIdleTimeout)
+	}
+	if j.ToolThrashThreshold != 3 {
+		t.Errorf("JudgeConfig().ToolThrashThreshold = %d, want 3", j.ToolThrashThreshold)
+	}
+	if j.ToolThrashWindowSecs != 60 {
+		t.Errorf("JudgeConfig().ToolThrashWindowSecs = %d, want 60", j.ToolThrashWindowSecs)
+	}
+	if j.TransportFailureThreshold != 10 {
+		t.Errorf("JudgeConfig().TransportFailureThreshold = %d, want 10", j.TransportFailureThreshold)
+	}
+	if j.ContainerRetryLimit != 2 {
+		t.Errorf("JudgeConfig().ContainerRetryLimit = %d, want 2", j.ContainerRetryLimit)
+	}
+}
+
+func TestJudgeConfigExplicitDisable(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+judge:
+  enabled: false
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	j := cfg.JudgeConfig()
+	if j.Enabled == nil || *j.Enabled {
+		t.Errorf("JudgeConfig().Enabled = %v, want false", j.Enabled)
+	}
+}
+
+func TestJudgeConfigCustomThresholds(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+judge:
+  default_idle_timeout: 600
+  tool_thrash_threshold: 5
+  tool_thrash_window_secs: 120
+  transport_failure_threshold: 20
+  container_retry_limit: 4
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	j := cfg.JudgeConfig()
+	if j.DefaultIdleTimeout != 600 {
+		t.Errorf("JudgeConfig().DefaultIdleTimeout = %d, want 600", j.DefaultIdleTimeout)
+	}
+	if j.ToolThrashThreshold != 5 {
+		t.Errorf("JudgeConfig().ToolThrashThreshold = %d, want 5", j.ToolThrashThreshold)
+	}
+	if j.ToolThrashWindowSecs != 120 {
+		t.Errorf("JudgeConfig().ToolThrashWindowSecs = %d, want 120", j.ToolThrashWindowSecs)
+	}
+	if j.TransportFailureThreshold != 20 {
+		t.Errorf("JudgeConfig().TransportFailureThreshold = %d, want 20", j.TransportFailureThreshold)
+	}
+	if j.ContainerRetryLimit != 4 {
+		t.Errorf("JudgeConfig().ContainerRetryLimit = %d, want 4", j.ContainerRetryLimit)
+	}
+}
+
+func TestJudgeConfigPerRoleIdleTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+judge:
+  idle_timeout_by_role:
+    recon: 180
+    implementer: 300
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	j := cfg.JudgeConfig()
+	if j.IdleTimeoutByRole == nil {
+		t.Fatal("JudgeConfig().IdleTimeoutByRole = nil, want non-nil")
+	}
+	if j.IdleTimeoutByRole["recon"] != 180 {
+		t.Errorf("IdleTimeoutByRole[\"recon\"] = %d, want 180", j.IdleTimeoutByRole["recon"])
+	}
+	if j.IdleTimeoutByRole["implementer"] != 300 {
+		t.Errorf("IdleTimeoutByRole[\"implementer\"] = %d, want 300", j.IdleTimeoutByRole["implementer"])
+	}
+}
