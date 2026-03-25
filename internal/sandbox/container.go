@@ -1,10 +1,12 @@
 package sandbox
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand"
 	"os/exec"
@@ -22,6 +24,14 @@ type RunOpts struct {
 	Timeout           time.Duration
 	Mount             string // host:container bind mount
 	MountDockerSocket bool   // mount /var/run/docker.sock into the container
+	// LogCallback, when non-nil, is called for each line emitted by the
+	// container while it is running. Lines are delivered via a buffered
+	// channel; if the callback is slow, excess lines are dropped rather
+	// than backpressuring the container process. The callback must be
+	// safe to call from a goroutine and must not block; a blocking
+	// callback may cause RunContainer to hang until the context is
+	// cancelled.
+	LogCallback func(line string)
 }
 
 // RunResult holds the outcome of a container run.
@@ -150,6 +160,61 @@ func (sp *statsPoller) stop() (peakMem, peakCPU int64) {
 	return sp.mem, sp.cpu
 }
 
+// startLogStreamer spawns producer/consumer goroutines that tail the named
+// container's logs and forward each line to callback. If callback is nil the
+// returned WaitGroup is already done. Lines are forwarded via a buffered
+// channel so a slow callback drops lines rather than backpressuring the
+// docker logs process.
+func startLogStreamer(ctx context.Context, name string, callback func(string), logger *slog.Logger) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	if callback == nil {
+		return &wg
+	}
+	ch := make(chan string, 256)
+	wg.Add(2)
+	// Producer: tail container stdout via docker logs --follow.
+	go func() {
+		defer wg.Done()
+		defer close(ch)
+		rc, wait, err := LogFollower(ctx, name)
+		if err != nil {
+			return
+		}
+		scanner := bufio.NewScanner(rc)
+		// Raise the per-line limit to 1 MB to handle realistic Docker log output
+		// that can exceed the default 64 KB limit. Without this, a long line
+		// causes Scan() to return false with ErrTooLong, silently stopping
+		// streaming mid-run.
+		scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
+		for scanner.Scan() {
+			line := scanner.Text()
+			select {
+			case ch <- line:
+			default: // drop line if consumer is behind
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			logger.Warn("log streamer scanner error", "container", name, "error", err)
+		}
+		_ = wait()
+	}()
+	// Consumer: deliver lines to the caller's callback. The select on
+	// ctx.Done() ensures RunContainer can always return when the context
+	// is cancelled, even if callback blocks unexpectedly.
+	go func() {
+		defer wg.Done()
+		for line := range ch {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				callback(line)
+			}
+		}
+	}()
+	return &wg
+}
+
 // RunContainer creates a Docker container from the given image, runs a command
 // inside it, captures stdout/stderr and exit code, enforces a timeout, and
 // always cleans up the container.
@@ -196,13 +261,16 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 		return nil, fmt.Errorf("docker start: %w\noutput: %s", err, out)
 	}
 
-	// 3. Start background stats poller. The Docker stats API only returns
+	// 3. Start log-streaming goroutine if a callback was provided.
+	logWg := startLogStreamer(ctx, name, opts.LogCallback, logger)
+
+	// 4. Start background stats poller. The Docker stats API only returns
 	// non-zero cgroup counters while the container is running; once it exits
 	// the kernel tears down the cgroup and the counters reset to zero.
 	// We poll periodically and keep the high-water marks.
 	sp := startStatsPoller(name)
 
-	// 4. docker wait (with context timeout)
+	// 5. docker wait (with context timeout)
 	result := &RunResult{}
 	waitStart := time.Now()
 	out, err = CommandRunnerWithContext(ctx, "docker", "wait", name)
@@ -210,6 +278,11 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 
 	// Signal the stats poller to stop and take a final sample.
 	peakMem, peakCPU := sp.stop()
+
+	// Wait for the log-streaming goroutines to finish draining. The
+	// exec.CommandContext above will have killed the docker logs process
+	// when ctx was cancelled, so the producer goroutine exits promptly.
+	logWg.Wait()
 
 	if ctx.Err() != nil || (opts.Timeout > 0 && wallElapsed > opts.Timeout+30*time.Second) {
 		// Timed out or cancelled — stop the container. The wall-clock check
@@ -231,7 +304,7 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 		result.ExitCode = code
 	}
 
-	// 5. docker logs (separate stdout/stderr)
+	// 6. docker logs (separate stdout/stderr)
 	stdoutBytes, stderrBytes, err := SplitRunner("docker", "logs", name)
 	if err != nil {
 		logger.Warn("failed to retrieve container logs", "name", name, "error", err)
@@ -239,7 +312,7 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	result.Stdout = string(stdoutBytes)
 	result.Stderr = string(stderrBytes)
 
-	// 6. Apply collected resource stats.
+	// 7. Apply collected resource stats.
 	result.PeakMemoryBytes = peakMem
 	result.CPUNanoseconds = peakCPU
 
@@ -253,4 +326,23 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 var CommandRunnerWithContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	return cmd.CombinedOutput()
+}
+
+// LogFollower starts "docker logs --follow --timestamps <name>" and returns a
+// ReadCloser of its stdout, a wait function, and any startup error.
+// Replaceable for testing.
+var LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() error, error) {
+	cmd := exec.CommandContext(ctx, "docker", "logs", "--follow", "--timestamps", name)
+	rc, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	// Discard Docker's own stderr explicitly so diagnostic output (e.g. "Error:
+	// No such container") does not surface as a hidden /dev/null write and the
+	// intent is clear to future readers.
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return nil, nil, err
+	}
+	return rc, cmd.Wait, nil
 }
