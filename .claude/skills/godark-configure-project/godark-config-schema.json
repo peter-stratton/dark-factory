@@ -63,6 +63,16 @@
       "type": "string",
       "default": "docs/ROADMAP.md"
     },
+    "branch_prefix": {
+      "type": "string",
+      "description": "Prefix for auto-generated branch names (e.g. 'godark' → 'godark/issue-42')",
+      "default": "godark"
+    },
+    "label_prefix": {
+      "type": "string",
+      "description": "Prefix for GitHub lifecycle labels (e.g. 'godark' → 'godark:awaiting-human-review')",
+      "default": "godark"
+    },
     "planning_dir": {
       "type": "string",
       "default": "docs/planning/"
