@@ -356,3 +356,184 @@ func TestRunSandbox_TimingFields(t *testing.T) {
 		t.Errorf("FinishedAt %v is before StartedAt %v", result.FinishedAt, result.StartedAt)
 	}
 }
+
+// --- Container retry tests ---
+
+// TestRunSandbox_RetrySucceeds verifies that a transport failure on the first
+// container triggers a retry, and the second container's result is returned.
+func TestRunSandbox_RetrySucceeds(t *testing.T) {
+	callCount := 0
+	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callCount++
+		if callCount == 1 {
+			// First container: feed stream errors to trigger transport failure.
+			if opts.LogCallback != nil {
+				for i := 0; i < 12; i++ {
+					opts.LogCallback("stream closed: EOF")
+				}
+			}
+			return sandboxResult("", 1, false), nil
+		}
+		// Second container: success.
+		if opts.LogCallback != nil {
+			opts.LogCallback(`{"tool":"Read","path":"foo.go"}`)
+		}
+		return sandboxResult(`{"session_id":"s-ok","result":"done","cost_usd":0.2,"is_error":false}`, 0, false), nil
+	})
+
+	enabled := true
+	opts := RunOpts{
+		Prompt: "test",
+		Role:   "implementer",
+		Repo:   "owner/repo",
+		JudgeConfig: &config.Judge{
+			Enabled:                   &enabled,
+			TransportFailureThreshold: 10,
+			ContainerRetryLimit:       2,
+		},
+	}
+	result, err := Run(context.Background(), opts, false, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if callCount != 2 {
+		t.Errorf("SandboxRunner called %d times, want 2", callCount)
+	}
+	if result.JudgeKilled {
+		t.Error("JudgeKilled should be false after successful retry")
+	}
+	if result.SessionID != "s-ok" {
+		t.Errorf("SessionID = %q, want %q", result.SessionID, "s-ok")
+	}
+}
+
+// TestRunSandbox_RetryLimitExhausted verifies that when all container retries
+// hit transport failures, the final result has JudgeKilled=true.
+func TestRunSandbox_RetryLimitExhausted(t *testing.T) {
+	callCount := 0
+	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callCount++
+		// Every container hits transport failure.
+		if opts.LogCallback != nil {
+			for i := 0; i < 12; i++ {
+				opts.LogCallback("stream closed: EOF")
+			}
+		}
+		return sandboxResult("", 1, false), nil
+	})
+
+	enabled := true
+	opts := RunOpts{
+		Prompt: "test",
+		Role:   "implementer",
+		Repo:   "owner/repo",
+		JudgeConfig: &config.Judge{
+			Enabled:                   &enabled,
+			TransportFailureThreshold: 10,
+			ContainerRetryLimit:       2,
+		},
+	}
+	result, err := Run(context.Background(), opts, false, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	// 1 initial + 2 retries = 3 total calls.
+	if callCount != 3 {
+		t.Errorf("SandboxRunner called %d times, want 3", callCount)
+	}
+	if !result.JudgeKilled {
+		t.Error("JudgeKilled should be true after exhausting retries")
+	}
+	if result.JudgeIntervention == nil {
+		t.Fatal("JudgeIntervention should be non-nil")
+	}
+	if result.JudgeIntervention.Rule != "transport_failure" {
+		t.Errorf("Rule = %q, want %q", result.JudgeIntervention.Rule, "transport_failure")
+	}
+}
+
+// TestRunSandbox_KillDoesNotRetry verifies that a Kill judgment (not
+// RetryContainer) does not trigger container retries.
+func TestRunSandbox_KillDoesNotRetry(t *testing.T) {
+	callCount := 0
+	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callCount++
+		// Trigger tool thrash → Kill (not RetryContainer).
+		if opts.LogCallback != nil {
+			for i := 0; i < 5; i++ {
+				opts.LogCallback(`ToolSearch("same query")`)
+			}
+		}
+		return sandboxResult("", 1, false), nil
+	})
+
+	enabled := true
+	opts := RunOpts{
+		Prompt: "test",
+		Role:   "implementer",
+		Repo:   "owner/repo",
+		JudgeConfig: &config.Judge{
+			Enabled:              &enabled,
+			ToolThrashThreshold:  3,
+			ToolThrashWindowSecs: 60,
+			ContainerRetryLimit:  2,
+		},
+	}
+	result, err := Run(context.Background(), opts, false, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("SandboxRunner called %d times, want 1 (no retry for Kill)", callCount)
+	}
+	if !result.JudgeKilled {
+		t.Error("JudgeKilled should be true")
+	}
+}
+
+// TestRunSandbox_RetryRunsTwiceOnTransportFailure is a simpler verification
+// that the retry loop executes exactly N+1 times (1 initial + N retries)
+// when transport failures persist, and the final result reflects the last
+// container's state.
+func TestRunSandbox_RetryRunsTwiceOnTransportFailure(t *testing.T) {
+	callCount := 0
+	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callCount++
+		if callCount <= 2 {
+			// First two containers: transport failure.
+			if opts.LogCallback != nil {
+				for i := 0; i < 12; i++ {
+					opts.LogCallback("stream error: connection reset")
+				}
+			}
+			return sandboxResult("", 1, false), nil
+		}
+		// Third container: success.
+		return sandboxResult(`{"session_id":"s3","result":"ok","cost_usd":0,"is_error":false}`, 0, false), nil
+	})
+
+	enabled := true
+	opts := RunOpts{
+		Prompt: "test",
+		Role:   "implementer",
+		Repo:   "owner/repo",
+		JudgeConfig: &config.Judge{
+			Enabled:                   &enabled,
+			TransportFailureThreshold: 10,
+			ContainerRetryLimit:       2,
+		},
+	}
+	result, err := Run(context.Background(), opts, false, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if callCount != 3 {
+		t.Errorf("SandboxRunner called %d times, want 3 (1 initial + 2 retries)", callCount)
+	}
+	if result.JudgeKilled {
+		t.Error("JudgeKilled should be false after successful retry")
+	}
+	if result.SessionID != "s3" {
+		t.Errorf("SessionID = %q, want %q (from third container)", result.SessionID, "s3")
+	}
+}
