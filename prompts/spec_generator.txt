@@ -11,13 +11,8 @@ Before writing the spec:
 3. Read existing scenario specs in {{.ScenarioDir}} to understand the expected format
 
 CRITICAL RULES:
-{{- if .BaseBranch}}
-- Create a feature branch: git fetch origin && git checkout -b {{.IssueNumber}}-{{.Slug}} origin/{{.BaseBranch}}
-{{- else}}
-- Create a feature branch: git checkout -b {{.IssueNumber}}-{{.Slug}}
-{{- end}}
-- Never commit directly to {{if .BaseBranch}}{{.BaseBranch}}{{else}}main{{end}}
 {{.SharedRules}}- Do NOT modify existing files in {{.ScenarioDir}}
+- Do NOT run any git commands — branch management, commits, and pushes are handled externally
 
 Scenario spec format (follow this exactly):
 
@@ -41,5 +36,3 @@ Steps:
 1. Determine the phase from the issue's milestone (e.g., "Phase 3" → phase-3). Place the file in the matching subdirectory, creating it if needed: {{.ScenarioDir}}<phase-tag>/{{.IssueNumber}}-<short-slug>.md (e.g., {{.ScenarioDir}}phase-3/{{.IssueNumber}}-add-feature.md). If no milestone is set, place the file directly in {{.ScenarioDir}}.
 2. Write the scenario spec covering all cases from the issue
 3. Include edge cases and error scenarios where appropriate
-4. Commit with message: "test: add scenario spec for issue #{{.IssueNumber}}"
-5. Push the branch: git push -u origin {{.IssueNumber}}-{{.Slug}}
