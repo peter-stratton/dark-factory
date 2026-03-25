@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/github"
-	"github.com/peter-stratton/dark-factory/internal/label"
 )
 
 // newTestLocker creates a Locker with a temp-dir lock file path for isolation.
@@ -18,7 +17,7 @@ func newTestLocker(t *testing.T) *Locker {
 	t.Helper()
 	return &Locker{
 		repo:         "owner/repo",
-		label:        label.InProgress,
+		label:        "godark-in-progress",
 		lockFilePath: filepath.Join(t.TempDir(), "lock.json"),
 		logger:       slog.Default(),
 	}
@@ -292,10 +291,41 @@ func TestEnsureLabelExists(t *testing.T) {
 		return emptyJSON(), nil
 	}
 
-	if err := EnsureLabelExists("owner/repo"); err != nil {
+	if err := EnsureLabelExists("owner/repo", "custom-label"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !createCalled {
 		t.Error("expected label create to be called")
+	}
+}
+
+func TestNew_UsesProvidedLabel(t *testing.T) {
+	l := New("owner/repo", "custom-label", slog.Default())
+	if l.label != "custom-label" {
+		t.Errorf("label = %q, want %q", l.label, "custom-label")
+	}
+}
+
+func TestEnsureLabelExists_UsesProvidedLabel(t *testing.T) {
+	var capturedLabel string
+	orig := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = orig })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		for i, a := range args {
+			if a == "--search" && i+1 < len(args) {
+				capturedLabel = args[i+1]
+			}
+			if a == "create" {
+				return []byte(`{}`), nil
+			}
+		}
+		return emptyJSON(), nil
+	}
+
+	if err := EnsureLabelExists("owner/repo", "my-lock-label"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedLabel != "my-lock-label" {
+		t.Errorf("label forwarded to GitHub API = %q, want %q", capturedLabel, "my-lock-label")
 	}
 }
