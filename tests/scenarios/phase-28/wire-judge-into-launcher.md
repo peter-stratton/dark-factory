@@ -37,3 +37,10 @@ Trigger a judge kill via idle timeout.
 - `Result.JudgeIntervention.Judgment` is `Kill`
 - `Result.JudgeIntervention.Detail` is non-empty
 - `Result.JudgeIntervention.DetectedAt` is non-zero
+
+### Kill with usable result preserves parsed output
+Stub `RunContainer` so the agent prints a valid final result JSON line (with session_id, cost, result text), then goes idle past the threshold. Judge kills the container.
+- `Result.JudgeKilled` is true
+- `Result.ResultText` is non-empty (parsed from final JSON)
+- `Result.SessionID` is non-empty
+- `Result.CostUSD` is greater than zero

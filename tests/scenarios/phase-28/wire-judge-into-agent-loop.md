@@ -22,12 +22,18 @@ Process the issue.
 - Log output contains the rule name (e.g., "idle_timeout")
 - Log output indicates the step was killed by the judge
 
-### No retry on judge kill within same attempt
-Stub agent `Run` to return judge-killed result on first call.
-- The step is not retried within the same attempt cycle
-- The issue proceeds to the next phase of handling (not re-run)
+### Kill with usable result proceeds to verify
+Stub agent `Run` to return `JudgeKilled: true` with non-empty `ResultText` (agent completed work before going idle).
+- The loop proceeds to the verify/review step as normal
+- The intervention is still written to run data
+- The issue is not treated as failed
 
-### Fresh attempt permitted after judge kill
-Stub agent `Run` to return judge-killed result. Config has `MaxRetries: 2`.
+### Kill with no result is terminal for current attempt
+Stub agent `Run` to return `JudgeKilled: true` with empty `ResultText` (agent stalled before producing output).
+- The step is not retried within the same attempt cycle
+- The issue does not proceed to verify/review
+
+### Fresh attempt permitted after kill with no result
+Stub agent `Run` to return judge-killed result with empty `ResultText`. Config has `MaxRetries: 2`.
 - A new attempt is started (fresh container) after the judge kill
 - The new attempt is a full retry, not a same-container retry

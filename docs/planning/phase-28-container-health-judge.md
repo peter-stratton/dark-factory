@@ -299,6 +299,12 @@ for transport failures is a separate issue.
 - Add `JudgeIntervention *judge.Intervention` field to `agent.Result`
 - When judge-killed: `Result.JudgeKilled = true`, `Result.TimedOut = false`,
   partial stdout/stderr captured as usual
+- `parseRunnerOutput` must still run on the partial stdout after a judge kill.
+  The agent may have printed its final result JSON (session_id, cost, tool_trace,
+  result text) before going idle. If parsing succeeds, the result is populated
+  normally — `ResultText`, `SessionID`, `CostUSD`, `Verdict`, and `ToolTrace`
+  are all available. The judge kill and a usable result are not mutually
+  exclusive
 - The `Run()` function signature does not change — judge config flows through
   `RunOpts` or a new `JudgeConfig` field on `agent.RunOpts`
 
@@ -309,6 +315,8 @@ for transport failures is a separate issue.
 - [ ] Kill judgment cancels context and stops container
 - [ ] `Result.JudgeKilled` set to true on kill
 - [ ] `Result.JudgeIntervention` populated with intervention details
+- [ ] `parseRunnerOutput` runs on partial stdout — result fields populated if
+      agent printed final JSON before going idle
 
 ### Test cases
 
@@ -320,6 +328,9 @@ for transport failures is a separate issue.
   `JudgeKilled: false` and no intervention
 - **Intervention record populated**: Trigger a kill. Verify
   `Result.JudgeIntervention` contains rule name, detail, and timing
+- **Kill with usable result**: Agent prints final result JSON, then goes idle.
+  Judge kills container. Verify `JudgeKilled: true` AND `ResultText` /
+  `SessionID` are populated from the parsed output
 
 ---
 
@@ -343,22 +354,31 @@ run data and surface them as a distinguishable event (not just "failed").
   - Convert `judge.Intervention` to `rundata.JudgeIntervention` (add the
     `Step` field indicating which agent step was killed: "implement",
     "review", "verify_fix", etc.)
-  - Judge kill is a terminal outcome for the current attempt — do not retry
-    the step (the agent was unproductive). Log a clear message explaining why
-  - Judge RetryContainer is handled by the launcher (issue #8), so the loop
+  - Distinguish two judge-kill outcomes based on whether the agent produced
+    a usable result before going idle:
+    - **Kill with usable result**: `JudgeKilled` is true but `ResultText` is
+      non-empty (agent completed work, pushed code, then went idle). Treat as
+      a normal result — proceed to verify/review. The judge kill is benign;
+      log the intervention but do not alter the pipeline flow
+    - **Kill with no result**: `JudgeKilled` is true and `ResultText` is empty
+      (agent stalled before producing output). Terminal outcome for the current
+      attempt — do not retry the same container. Log a clear message explaining
+      why
+  - Judge RetryContainer is handled by the launcher (issue #647), so the loop
     only sees the final result after container retries are exhausted
-  - If the judge killed the step and max retries haven't been reached, the
-    existing retry logic can still re-run the step as a new attempt (fresh
-    container). The judge kill prevents retrying the _same_ container, not
-    the whole step
+  - If the judge killed the step with no result and max retries haven't been
+    reached, the existing retry logic can still re-run the step as a new
+    attempt (fresh container). The judge kill prevents retrying the _same_
+    container, not the whole step
 
 ### Acceptance criteria
 
 - [ ] Judge-killed results detected in loop after agent calls
 - [ ] Intervention written to run data with correct step name
 - [ ] Judge kill logged with rule name and detail
-- [ ] Judge kill does not trigger same-container retry
-- [ ] Fresh-attempt retry still permitted after judge kill
+- [ ] Kill with usable result proceeds to verify/review normally
+- [ ] Kill with no result is terminal for the current attempt
+- [ ] Fresh-attempt retry still permitted after kill with no result
 
 ### Test cases
 
@@ -366,10 +386,12 @@ run data and surface them as a distinguishable event (not just "failed").
   `WriteJudgeIntervention` called with correct step and rule
 - **Kill logged**: Trigger judge kill in loop. Verify log message contains
   rule name
-- **No retry on kill**: Agent judge-killed on first attempt. Verify step is
-  not retried in the same attempt cycle
-- **Fresh attempt after kill**: Agent judge-killed, but max retries not
-  reached. Verify a new attempt is started (new container)
+- **Kill with usable result proceeds**: Agent returns `JudgeKilled: true` with
+  non-empty `ResultText`. Verify the loop proceeds to verify/review as normal
+- **Kill with no result is terminal**: Agent returns `JudgeKilled: true` with
+  empty `ResultText`. Verify the step is not retried in the same attempt cycle
+- **Fresh attempt after kill**: Agent judge-killed with no result, but max
+  retries not reached. Verify a new attempt is started (new container)
 
 ---
 
