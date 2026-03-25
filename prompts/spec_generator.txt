@@ -1,18 +1,18 @@
-Read CLAUDE.md completely before doing anything else.
-Then generate a scenario spec for GitHub issue #{{.IssueNumber}} in the {{.Repo}} repository.
+Generate a scenario spec for GitHub issue #{{.IssueNumber}} in the {{.Repo}} repository.
 
 Issue title: {{.IssueTitle}}
 Issue body:
 {{.IssueBody}}
 
 Before writing the spec:
-1. Read the full issue body carefully, including any acceptance criteria
+1. Read the issue body above carefully — it contains acceptance criteria and test cases
 2. Read 1-2 existing scenario specs in {{.ScenarioDir}} to understand the expected format
-3. Do NOT extensively explore the codebase — the issue body contains the constraints you need
 
 CRITICAL RULES:
 {{.SharedRules}}- Do NOT modify existing files in {{.ScenarioDir}}
 - Do NOT run any git commands — branch management, commits, and pushes are handled externally
+- Do NOT explore the codebase — the issue body contains all the constraints you need
+- Do NOT read CLAUDE.md or other project docs — focus only on the issue and spec format
 
 Scenario spec format (follow this exactly):
 
