@@ -25,6 +25,11 @@ type Intervention struct {
 type Config struct {
 	IdleTimeoutByRole  map[string]int // seconds, keyed by role name
 	DefaultIdleTimeout int            // fallback; default 300
+
+	ToolThrashThreshold  int // number of repeated ToolSearch queries before firing; default 3
+	ToolThrashWindowSecs int // sliding window in seconds for tool thrash detection; default 60
+
+	TransportFailureThreshold int // number of stream-closed/stream-error lines before firing; default 10
 }
 
 // Rule is implemented by each detection rule.
@@ -45,9 +50,20 @@ func NewJudge(role string, cfg Config) *Judge {
 	if cfg.DefaultIdleTimeout == 0 {
 		cfg.DefaultIdleTimeout = 300
 	}
+	if cfg.ToolThrashThreshold == 0 {
+		cfg.ToolThrashThreshold = 3
+	}
+	if cfg.ToolThrashWindowSecs == 0 {
+		cfg.ToolThrashWindowSecs = 60
+	}
+	if cfg.TransportFailureThreshold == 0 {
+		cfg.TransportFailureThreshold = 10
+	}
 	j := &Judge{role: role, cfg: cfg}
 	j.rules = []Rule{
 		newIdleTimeoutRule(role, cfg),
+		newToolThrashRule(cfg),
+		newTransportFailureRule(cfg),
 	}
 	return j
 }

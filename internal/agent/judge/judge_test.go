@@ -163,3 +163,112 @@ func TestFirstLineStartsTheClock(t *testing.T) {
 		t.Errorf("expected nil (idle measured from first line), got %+v", got)
 	}
 }
+
+// --- Tool thrash rule tests ---
+
+func toolThrashConfig() Config {
+	return Config{
+		DefaultIdleTimeout:   300,
+		ToolThrashThreshold:  3,
+		ToolThrashWindowSecs: 60,
+	}
+}
+
+func toolSearchLine(query string) string {
+	return `ToolSearch {"query":"` + query + `","max_results":5}`
+}
+
+func TestToolThrashFires(t *testing.T) {
+	r := newToolThrashRule(toolThrashConfig())
+
+	// Three identical queries within 60s should fire Kill.
+	r.ProcessLine(toolSearchLine("my query"), t0)
+	r.ProcessLine(toolSearchLine("my query"), t0.Add(10*time.Second))
+	got := r.ProcessLine(toolSearchLine("my query"), t0.Add(20*time.Second))
+
+	if got == nil {
+		t.Fatal("expected Kill intervention, got nil")
+	}
+	if got.Judgment != Kill {
+		t.Errorf("got judgment %q, want Kill", got.Judgment)
+	}
+	if got.Rule != "tool_thrash" {
+		t.Errorf("got rule %q, want tool_thrash", got.Rule)
+	}
+	if got.Counts["repeated_searches"] < 3 {
+		t.Errorf("expected repeated_searches >= 3, got %d", got.Counts["repeated_searches"])
+	}
+}
+
+func TestToolThrashDifferentQueriesNoFire(t *testing.T) {
+	r := newToolThrashRule(toolThrashConfig())
+
+	// Three different queries — no thrash.
+	r.ProcessLine(toolSearchLine("query one"), t0)
+	r.ProcessLine(toolSearchLine("query two"), t0.Add(10*time.Second))
+	got := r.ProcessLine(toolSearchLine("query three"), t0.Add(20*time.Second))
+
+	if got != nil {
+		t.Errorf("expected nil for different queries, got %+v", got)
+	}
+}
+
+func TestToolThrashOutsideWindowNoFire(t *testing.T) {
+	r := newToolThrashRule(toolThrashConfig())
+
+	// Three same queries but spread over 120s — outside the 60s window.
+	r.ProcessLine(toolSearchLine("stuck query"), t0)
+	r.ProcessLine(toolSearchLine("stuck query"), t0.Add(65*time.Second))
+	got := r.ProcessLine(toolSearchLine("stuck query"), t0.Add(130*time.Second))
+
+	if got != nil {
+		t.Errorf("expected nil (queries outside window), got %+v", got)
+	}
+}
+
+// --- Transport failure rule tests ---
+
+func transportConfig() Config {
+	return Config{
+		DefaultIdleTimeout:        300,
+		TransportFailureThreshold: 10,
+	}
+}
+
+func TestTransportFailureFires(t *testing.T) {
+	r := newTransportFailureRule(transportConfig())
+
+	var got *Intervention
+	for i := 0; i < 10; i++ {
+		got = r.ProcessLine("stream closed: EOF", t0.Add(time.Duration(i)*time.Second))
+	}
+
+	if got == nil {
+		t.Fatal("expected RetryContainer intervention, got nil")
+	}
+	if got.Judgment != RetryContainer {
+		t.Errorf("got judgment %q, want RetryContainer", got.Judgment)
+	}
+	if got.Rule != "transport_failure" {
+		t.Errorf("got rule %q, want transport_failure", got.Rule)
+	}
+	if got.Counts["stream_errors"] < 10 {
+		t.Errorf("expected stream_errors >= 10, got %d", got.Counts["stream_errors"])
+	}
+}
+
+func TestTransportFailureWithToolCallsNoFire(t *testing.T) {
+	r := newTransportFailureRule(transportConfig())
+
+	// One successful tool call mixed in — transport recovered.
+	r.ProcessLine(`{"tool": "bash", "input": {}}`, t0)
+
+	var got *Intervention
+	for i := 0; i < 10; i++ {
+		got = r.ProcessLine("stream error: connection reset", t0.Add(time.Duration(i+1)*time.Second))
+	}
+
+	if got != nil {
+		t.Errorf("expected nil when tool calls present, got %+v", got)
+	}
+}
