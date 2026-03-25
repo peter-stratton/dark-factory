@@ -260,7 +260,7 @@ func buildJudgeCallback(
 		}
 		// Store the intervention (first one wins).
 		interventionPtr.CompareAndSwap(nil, iv)
-		if iv.Judgment == judge.Kill {
+		if iv.Judgment == judge.Kill || iv.Judgment == judge.RetryContainer {
 			judgeKilled.Store(true)
 			cancel()
 		}
@@ -295,17 +295,14 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	}
 	entrypoint := sandbox.EntrypointScript(cloneScript, agentCmd)
 
-	// Wrap the context with cancel so the judge can stop the container
-	// independently of the timeout.
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// Set up judge and log callback when judge is enabled.
-	var (
-		interventionPtr atomic.Pointer[judge.Intervention]
-		judgeKilled     atomic.Bool
-	)
-	logCallback := buildJudgeCallback(opts, cancel, &interventionPtr, &judgeKilled, logger)
+	// Determine the container retry limit for transport failures.
+	containerRetryLimit := 0
+	if opts.JudgeConfig != nil {
+		containerRetryLimit = opts.JudgeConfig.ContainerRetryLimit
+		if containerRetryLimit == 0 {
+			containerRetryLimit = 2 // default
+		}
+	}
 
 	sandboxOpts := sandbox.RunOpts{
 		Image:             opts.Image,
@@ -313,12 +310,57 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		Env:               env,
 		Timeout:           opts.Timeout,
 		MountDockerSocket: opts.MountDockerSocket,
-		LogCallback:       logCallback,
 	}
 
 	startedAt := time.Now()
-	result, err := SandboxRunner(ctx, sandboxOpts, logger)
-	finishedAt := time.Now()
+	var res *Result
+
+	for attempt := 0; attempt <= containerRetryLimit; attempt++ {
+		if attempt > 0 {
+			logger.Warn("retrying container after transport failure",
+				"attempt", attempt+1,
+				"max_attempts", containerRetryLimit+1,
+			)
+			refreshGHToken(env, logger)
+		}
+
+		var err error
+		res, err = runSandboxOnce(ctx, opts, sandboxOpts, startedAt, logger)
+		if err != nil {
+			return nil, err
+		}
+
+		// If judge returned RetryContainer and we have retries left, loop.
+		if res.JudgeKilled && res.JudgeIntervention != nil &&
+			res.JudgeIntervention.Judgment == judge.RetryContainer &&
+			attempt < containerRetryLimit {
+			logger.Warn("judge recommends container retry",
+				"rule", res.JudgeIntervention.Rule,
+				"detail", res.JudgeIntervention.Detail,
+				"attempt", attempt+1,
+			)
+			continue
+		}
+		break
+	}
+
+	return res, nil
+}
+
+// runSandboxOnce executes a single container attempt with judge monitoring.
+// It creates a fresh judge and context cancel per attempt so previous state
+// doesn't carry over.
+func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOpts, startedAt time.Time, logger *slog.Logger) (*Result, error) {
+	attemptCtx, attemptCancel := context.WithCancel(ctx)
+	defer attemptCancel()
+
+	var (
+		interventionPtr atomic.Pointer[judge.Intervention]
+		judgeKilled     atomic.Bool
+	)
+	sandboxOpts.LogCallback = buildJudgeCallback(opts, attemptCancel, &interventionPtr, &judgeKilled, logger)
+
+	result, err := SandboxRunner(attemptCtx, sandboxOpts, logger)
 	if err != nil {
 		return nil, fmt.Errorf("running sandbox container: %w", err)
 	}
@@ -336,11 +378,11 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		ExitCode:          result.ExitCode,
 		Stdout:            result.Stdout,
 		Stderr:            result.Stderr,
-		TimedOut:          result.TimedOut && !killed, // judge kill is not a timeout
+		TimedOut:          result.TimedOut && !killed,
 		JudgeKilled:       killed,
 		JudgeIntervention: interventionPtr.Load(),
 		StartedAt:         startedAt,
-		FinishedAt:        finishedAt,
+		FinishedAt:        time.Now(),
 		PeakMemoryBytes:   result.PeakMemoryBytes,
 		CPUNanoseconds:    result.CPUNanoseconds,
 	}
@@ -357,7 +399,6 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	}
 
 	// Capture bounded container log for post-mortem on failure only.
-	// Must run after parseRunnerOutput so ExitCode reflects IsError upgrades.
 	if res.TimedOut || res.ExitCode != 0 {
 		combined := result.Stdout + result.Stderr
 		res.ContainerLog = boundLog(combined, maxPostMortemLines, maxPostMortemBytes)
