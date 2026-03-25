@@ -153,6 +153,32 @@
       </div>
       {{end}}
 
+      {{if .JudgeInterventions}}
+      <!-- Judge Interventions -->
+      <div class="card animate-in animate-in-2">
+        <div class="card__header">
+          <span class="card__title">Judge Interventions</span>
+        </div>
+        <div class="card__body" style="padding: var(--space-4) var(--space-5);">
+          <ul style="list-style: none; margin: 0; padding: 0;">
+            {{range .JudgeInterventions}}
+            <li style="display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-3); padding: var(--space-3); background: var(--bg-surface-1); border-radius: var(--radius-sm);">
+              <span class="badge badge--{{if eq .Judgment "kill"}}danger{{else if eq .Judgment "retry_container"}}warning{{else if eq .Judgment "warn"}}warning{{else}}secondary{{end}}" style="flex-shrink: 0; margin-top: 2px;">
+                <span class="badge__dot"></span>
+                {{.Judgment}}
+              </span>
+              <div>
+                <div style="font-size: var(--text-sm); font-weight: 500; font-family: monospace; margin-bottom: var(--space-1);">{{.Rule}}{{if .Step}} &middot; {{.Step}}{{end}}</div>
+                <div style="font-size: var(--text-sm); color: var(--text-secondary);">{{.Detail}}</div>
+                <div style="font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-1);">{{.DetectedAt.Format "2006-01-02 15:04:05"}}</div>
+              </div>
+            </li>
+            {{end}}
+          </ul>
+        </div>
+      </div>
+      {{end}}
+
       {{if .Dialogue}}
       <!-- Dialogue Timeline -->
       <div class="card animate-in animate-in-2">
