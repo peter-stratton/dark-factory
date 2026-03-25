@@ -228,9 +228,17 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 	return res, nil
 }
 
+// judgeHeartbeatInterval controls how often the heartbeat tick is sent to the
+// judge so it can detect idle timeouts even when no log lines arrive.
+// Replaceable for testing.
+var judgeHeartbeatInterval = 30 * time.Second
+
 // buildJudgeCallback creates a LogCallback for the sandbox that feeds lines
-// to the judge. Returns nil when the judge is disabled or not configured.
+// to the judge, and starts a heartbeat goroutine that periodically ticks the
+// judge so idle timeouts fire even when the container produces no output.
+// Returns nil when the judge is disabled or not configured.
 func buildJudgeCallback(
+	ctx context.Context,
 	opts RunOpts,
 	cancel context.CancelFunc,
 	interventionPtr *atomic.Pointer[judge.Intervention],
@@ -253,17 +261,34 @@ func buildJudgeCallback(
 	})
 	logger.Info("judge enabled for sandbox run", "role", opts.Role)
 
-	return func(line string) {
-		iv := j.ProcessLine(line, time.Now())
+	handle := func(iv *judge.Intervention) {
 		if iv == nil {
 			return
 		}
-		// Store the intervention (first one wins).
 		interventionPtr.CompareAndSwap(nil, iv)
 		if iv.Judgment == judge.Kill || iv.Judgment == judge.RetryContainer {
 			judgeKilled.Store(true)
 			cancel()
 		}
+	}
+
+	// Heartbeat: tick the judge periodically so idle timeouts fire even
+	// when the container produces no log output.
+	go func() {
+		ticker := time.NewTicker(judgeHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				handle(j.ProcessLine("", time.Now()))
+			}
+		}
+	}()
+
+	return func(line string) {
+		handle(j.ProcessLine(line, time.Now()))
 	}
 }
 
@@ -358,7 +383,7 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 		interventionPtr atomic.Pointer[judge.Intervention]
 		judgeKilled     atomic.Bool
 	)
-	sandboxOpts.LogCallback = buildJudgeCallback(opts, attemptCancel, &interventionPtr, &judgeKilled, logger)
+	sandboxOpts.LogCallback = buildJudgeCallback(attemptCtx, opts, attemptCancel, &interventionPtr, &judgeKilled, logger)
 
 	result, err := SandboxRunner(attemptCtx, sandboxOpts, logger)
 	if err != nil {
