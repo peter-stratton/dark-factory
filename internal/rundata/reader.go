@@ -35,7 +35,8 @@ type IssueDetail struct {
 	Punchlist        *PunchlistData
 	Dialogue         []DialogueEntry
 	VerifyResults    []VerifyStepResult
-	FailureAnalysis  *FailureAnalysis // from failure-analysis.json; nil if not present
+	FailureAnalysis    *FailureAnalysis    // from failure-analysis.json; nil if not present
+	JudgeInterventions []JudgeIntervention // from judge-interventions.json; nil if not present
 }
 
 // RunDetail holds the full data for one run, including per-issue details.
@@ -295,8 +296,9 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		Retries:          r.loadRetries(filepath.Join(issueDir, "retries")),
 		Punchlist:        r.readPunchlist(filepath.Join(issueDir, "punchlist.json")),
 		Dialogue:         r.readDialogue(filepath.Join(issueDir, "dialogue.json")),
-		VerifyResults:    r.loadVerifyResults(issueDir),
-		FailureAnalysis:  r.readFailureAnalysis(filepath.Join(issueDir, "failure-analysis.json")),
+		VerifyResults:      r.loadVerifyResults(issueDir),
+		FailureAnalysis:    r.readFailureAnalysis(filepath.Join(issueDir, "failure-analysis.json")),
+		JudgeInterventions: r.readJudgeInterventions(filepath.Join(issueDir, "judge-interventions.json")),
 	}
 }
 
@@ -375,6 +377,26 @@ func (r *Reader) readDialogue(path string) []DialogueEntry {
 	var entries []DialogueEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
 		r.logger.Warn("corrupt dialogue file, skipping", "path", path, "error", err)
+		return nil
+	}
+	return entries
+}
+
+// readJudgeInterventions reads judge intervention entries from path. Returns nil if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readJudgeInterventions(path string) []JudgeIntervention {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping judge interventions file", "path", path, "error", err)
+		return nil
+	}
+
+	var entries []JudgeIntervention
+	if err := json.Unmarshal(data, &entries); err != nil {
+		r.logger.Warn("corrupt judge interventions file, skipping", "path", path, "error", err)
 		return nil
 	}
 	return entries
