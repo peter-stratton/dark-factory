@@ -2,6 +2,7 @@ package rundata
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -421,6 +422,41 @@ type FailureAnalysis struct {
 func (w *Writer) WriteFailureAnalysis(issueNum int, analysis FailureAnalysis) error {
 	path := filepath.Join(w.issueDir(issueNum), "failure-analysis.json")
 	return writeJSONMkdirs(path, analysis)
+}
+
+// JudgeIntervention records a single judge intervention during an agent run.
+type JudgeIntervention struct {
+	Rule       string         `json:"rule"`
+	Judgment   string         `json:"judgment"`
+	Detail     string         `json:"detail"`
+	Counts     map[string]int `json:"counts,omitempty"`
+	DetectedAt time.Time      `json:"detected_at"`
+	Step       string         `json:"step"`
+}
+
+// WriteJudgeIntervention appends an intervention record for the given issue.
+// Path: issues/<issueNum>/judge-interventions.json
+// If the file already exists it is read, the new entry appended, and the
+// whole array written back; if absent a new single-element array is created.
+func (w *Writer) WriteJudgeIntervention(issueNum int, intervention JudgeIntervention) error {
+	path := filepath.Join(w.issueDir(issueNum), "judge-interventions.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("creating directories for %s: %w", path, err)
+	}
+
+	var existing []JudgeIntervention
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	if err == nil {
+		if err := json.Unmarshal(data, &existing); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+
+	existing = append(existing, intervention)
+	return writeJSON(path, existing)
 }
 
 // WriteContainerLog writes the raw container log for the given issue.

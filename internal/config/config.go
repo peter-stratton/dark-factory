@@ -126,6 +126,18 @@ type TruncationLimits struct {
 	PRDiff int `yaml:"pr_diff"`
 }
 
+// Judge holds configuration for the container health judge.
+// Absent fields get defaults applied by JudgeConfig().
+type Judge struct {
+	Enabled                   *bool          `yaml:"enabled"`
+	IdleTimeoutByRole         map[string]int `yaml:"idle_timeout_by_role"`
+	DefaultIdleTimeout        int            `yaml:"default_idle_timeout"`
+	ToolThrashThreshold       int            `yaml:"tool_thrash_threshold"`
+	ToolThrashWindowSecs      int            `yaml:"tool_thrash_window_secs"`
+	TransportFailureThreshold int            `yaml:"transport_failure_threshold"`
+	ContainerRetryLimit       int            `yaml:"container_retry_limit"`
+}
+
 // FeatureMergeStrategy controls whether and how the feature branch is merged
 // into the base branch after a successful review cycle.
 type FeatureMergeStrategy string
@@ -239,6 +251,7 @@ type Config struct {
 	Quality     Quality          `yaml:"quality"`
 	Verify      Verify           `yaml:"verify"`
 	Truncation  TruncationLimits `yaml:"truncation"`
+	Judge       Judge            `yaml:"judge"`
 
 	// Modules maps module names to per-module build/test/lint/generate commands
 	// and dependency relationships. Nil (absent) means single-module mode.
@@ -437,6 +450,32 @@ func (c *Config) EffectiveBaseBranch() string {
 		return "main"
 	}
 	return c.BaseBranch
+}
+
+// JudgeConfig returns the judge configuration with defaults applied for any
+// absent (zero/nil) fields.
+func (c *Config) JudgeConfig() Judge {
+	j := c.Judge
+	if j.Enabled == nil {
+		t := true
+		j.Enabled = &t
+	}
+	if j.DefaultIdleTimeout == 0 {
+		j.DefaultIdleTimeout = 300
+	}
+	if j.ToolThrashThreshold == 0 {
+		j.ToolThrashThreshold = 3
+	}
+	if j.ToolThrashWindowSecs == 0 {
+		j.ToolThrashWindowSecs = 60
+	}
+	if j.TransportFailureThreshold == 0 {
+		j.TransportFailureThreshold = 10
+	}
+	if j.ContainerRetryLimit == 0 {
+		j.ContainerRetryLimit = 2
+	}
+	return j
 }
 
 func (c *Config) effectiveBranchPrefix() string {

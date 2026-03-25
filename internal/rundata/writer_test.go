@@ -1300,3 +1300,79 @@ func TestStepResult_ResourceFieldsOmittedWhenZero(t *testing.T) {
 		t.Errorf("cpu_nanoseconds should be omitted when zero, but appears in JSON: %s", raw)
 	}
 }
+
+func TestWriteJudgeInterventionCreatesFile(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	intervention := JudgeIntervention{
+		Rule:     "no_large_diffs",
+		Judgment: "block",
+		Detail:   "diff exceeds threshold",
+		Step:     "implement",
+	}
+	if err := w.WriteJudgeIntervention(42, intervention); err != nil {
+		t.Fatalf("WriteJudgeIntervention() error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "judge-interventions.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file at %s, got: %v", path, err)
+	}
+
+	var written []JudgeIntervention
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if len(written) != 1 {
+		t.Fatalf("len = %d, want 1", len(written))
+	}
+	if written[0].Rule != "no_large_diffs" {
+		t.Errorf("Rule = %q, want %q", written[0].Rule, "no_large_diffs")
+	}
+	if written[0].Judgment != "block" {
+		t.Errorf("Judgment = %q, want %q", written[0].Judgment, "block")
+	}
+}
+
+func TestWriteJudgeInterventionAppends(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	first := JudgeIntervention{Rule: "rule_a", Judgment: "block", Step: "implement"}
+	second := JudgeIntervention{Rule: "rule_b", Judgment: "warn", Step: "quality-review"}
+
+	if err := w.WriteJudgeIntervention(42, first); err != nil {
+		t.Fatalf("WriteJudgeIntervention() first error: %v", err)
+	}
+	if err := w.WriteJudgeIntervention(42, second); err != nil {
+		t.Fatalf("WriteJudgeIntervention() second error: %v", err)
+	}
+
+	path := filepath.Join(w.Dir(), "issues", "42", "judge-interventions.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file at %s, got: %v", path, err)
+	}
+
+	var written []JudgeIntervention
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if len(written) != 2 {
+		t.Fatalf("len = %d, want 2", len(written))
+	}
+	if written[0].Rule != "rule_a" {
+		t.Errorf("written[0].Rule = %q, want %q", written[0].Rule, "rule_a")
+	}
+	if written[1].Rule != "rule_b" {
+		t.Errorf("written[1].Rule = %q, want %q", written[1].Rule, "rule_b")
+	}
+}

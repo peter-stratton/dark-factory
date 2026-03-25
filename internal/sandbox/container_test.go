@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -16,17 +17,19 @@ const validStatsJSON = `{"memory_stats":{"max_usage":104857600},"cpu_stats":{"cp
 const validStatsJSONCgroupsV2 = `{"memory_stats":{"usage":83886080},"cpu_stats":{"cpu_usage":{"total_usage":400000000}}}`
 
 // saveRunners saves the current CommandRunner, SplitRunner,
-// CommandRunnerWithContext, and StatsInterval values and returns a restore
-// function.
+// CommandRunnerWithContext, LogFollower, and StatsInterval values and returns
+// a restore function.
 func saveRunners() func() {
 	origCmd := CommandRunner
 	origSplit := SplitRunner
 	origCtx := CommandRunnerWithContext
+	origLog := LogFollower
 	origInterval := StatsInterval
 	return func() {
 		CommandRunner = origCmd
 		SplitRunner = origSplit
 		CommandRunnerWithContext = origCtx
+		LogFollower = origLog
 		StatsInterval = origInterval
 	}
 }
@@ -596,5 +599,186 @@ func TestRunContainerInspectAfterTimeout(t *testing.T) {
 	}
 	if result.PeakMemoryBytes != 104857600 {
 		t.Errorf("PeakMemoryBytes = %d, want 104857600 after timeout", result.PeakMemoryBytes)
+	}
+}
+
+// makeLogFollower returns a LogFollower stub that writes lines to a pipe and
+// returns immediately. The caller controls what lines are emitted.
+func makeLogFollower(lines []string) func(ctx context.Context, name string) (io.ReadCloser, func() error, error) {
+	return func(ctx context.Context, name string) (io.ReadCloser, func() error, error) {
+		pr, pw := io.Pipe()
+		go func() {
+			for _, line := range lines {
+				_, _ = fmt.Fprintln(pw, line)
+			}
+			pw.Close()
+		}()
+		return pr, func() error { return nil }, nil
+	}
+}
+
+func TestLogCallbackReceivesLines(t *testing.T) {
+	defer saveRunners()()
+	StatsInterval = time.Millisecond
+
+	want := []string{"line one", "line two", "line three"}
+	LogFollower = makeLogFollower(want)
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return []byte("out\n"), []byte{}, nil
+	}
+
+	var got []string
+	_, err := RunContainer(context.Background(), RunOpts{
+		Image: "test:latest",
+		Cmd:   []string{"echo", "hello"},
+		LogCallback: func(line string) {
+			got = append(got, line)
+		},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("LogCallback received no lines")
+	}
+	for i, w := range want {
+		found := false
+		for _, g := range got {
+			if strings.Contains(g, w) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("want[%d] = %q not found in received lines %v", i, w, got)
+		}
+	}
+}
+
+func TestNilLogCallbackNoOp(t *testing.T) {
+	defer saveRunners()()
+	StatsInterval = time.Millisecond
+
+	// LogFollower must not be called when LogCallback is nil.
+	LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() error, error) {
+		t.Error("LogFollower called with nil LogCallback")
+		return nil, nil, fmt.Errorf("should not be called")
+	}
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return []byte("out\n"), []byte{}, nil
+	}
+
+	result, err := RunContainer(context.Background(), RunOpts{
+		Image: "test:latest",
+		Cmd:   []string{"true"},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Stdout != "out\n" {
+		t.Errorf("Stdout = %q, want %q", result.Stdout, "out\n")
+	}
+}
+
+func TestLogCallbackGoroutineExitsOnCancel(t *testing.T) {
+	defer saveRunners()()
+	StatsInterval = time.Millisecond
+
+	// LogFollower blocks until ctx is cancelled, then returns EOF.
+	LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() error, error) {
+		pr, pw := io.Pipe()
+		go func() {
+			<-ctx.Done()
+			pw.Close()
+		}()
+		return pr, func() error { return nil }, nil
+	}
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		return []byte{}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	CommandRunnerWithContext = func(c context.Context, name string, args ...string) ([]byte, error) {
+		cancel()
+		<-c.Done()
+		return nil, c.Err()
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+
+	result, err := RunContainer(ctx, RunOpts{
+		Image:       "test:latest",
+		Cmd:         []string{"sleep", "999"},
+		LogCallback: func(line string) {},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// RunContainer must return (goroutines have exited) — if it hangs the
+	// test runner's timeout will catch it. Just verify the result.
+	if !result.TimedOut {
+		t.Error("TimedOut should be true when context is cancelled")
+	}
+}
+
+func TestLogCallbackRunResultStillPopulated(t *testing.T) {
+	defer saveRunners()()
+	StatsInterval = time.Millisecond
+
+	LogFollower = makeLogFollower([]string{"streaming line"})
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "create" {
+			return []byte("abc123\n"), nil
+		}
+		return []byte{}, nil
+	}
+	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("0\n"), nil
+	}
+	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
+		return []byte("final stdout\n"), []byte("final stderr\n"), nil
+	}
+
+	result, err := RunContainer(context.Background(), RunOpts{
+		Image:       "test:latest",
+		Cmd:         []string{"echo", "hello"},
+		LogCallback: func(line string) {},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Stdout != "final stdout\n" {
+		t.Errorf("Stdout = %q, want %q", result.Stdout, "final stdout\n")
+	}
+	if result.Stderr != "final stderr\n" {
+		t.Errorf("Stderr = %q, want %q", result.Stderr, "final stderr\n")
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
 	}
 }
