@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/peter-stratton/dark-factory/internal/label"
 	"github.com/peter-stratton/dark-factory/internal/lock"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +28,7 @@ lock before starting a new run.`,
 		}
 
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		locker := lock.New(repo, logger)
+		locker := lock.New(repo, label.InProgress, logger)
 		count, err := locker.ReleaseAll()
 		if err != nil {
 			return fmt.Errorf("releasing lock: %w", err)

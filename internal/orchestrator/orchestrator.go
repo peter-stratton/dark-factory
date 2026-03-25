@@ -280,7 +280,7 @@ func ReResolveAndProcess(
 	}
 
 	// Acquire a run lock for the newly unblocked issues.
-	locker := lock.New(cfg.Repo, logger)
+	locker := lock.New(cfg.Repo, label.InProgress, logger)
 	if err := locker.Acquire(issueNums, false); err != nil {
 		return false, fmt.Errorf("acquiring run lock: %w", err)
 	}
@@ -673,7 +673,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	var plWg sync.WaitGroup
 
 	// Locking: create a locker and track all locked issue numbers across waves.
-	locker := lock.New(cfg.Repo, logger)
+	locker := lock.New(cfg.Repo, label.InProgress, logger)
 	var allLockedNums []int
 	defer func() {
 		if len(allLockedNums) > 0 {

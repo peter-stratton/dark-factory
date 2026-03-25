@@ -366,7 +366,7 @@ func ensureLabels(cmd *cobra.Command) error {
 	}
 
 	// Lock label.
-	if err := lock.EnsureLabelExists(repo); err != nil {
+	if err := lock.EnsureLabelExists(repo, label.InProgress); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create lock label: %v\n", err)
 		return nil
 	}
