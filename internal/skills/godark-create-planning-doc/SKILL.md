@@ -188,6 +188,51 @@ When an issue is too large, split it along natural boundaries:
 Each sub-issue should be independently deployable and testable. Use `Blocked by`
 dependencies to enforce ordering.
 
+## Integration chain audit
+
+After all issues are drafted, trace every new type, field, config value, and
+function from its **point of origin** to its **point of consumption** to verify
+the chain is complete. This catches a recurring failure mode: features are built
+to spec at each layer but the glue between layers is missed, so the feature
+ships disconnected from the system.
+
+For each new type or field introduced in the phase:
+
+1. **Identify the origin** — where is it defined? (e.g., a new config struct,
+   a new field on a result type, a new event enum)
+2. **Trace every hop to the consumer** — walk the call chain from the entry
+   point (CLI command, route handler, main widget) down to where the new code
+   is used. List each intermediate function or constructor that must pass the
+   value through
+3. **Verify each hop is covered by an issue** — if a shared utility function
+   (e.g., an options builder, a widget factory, a route registration helper)
+   sits between two issues and neither issue mentions it, that hop will be
+   missed at implementation time
+4. **If a hop falls between issues**, either:
+   - Expand the downstream wiring issue to include the hop explicitly in its
+     Key constraints (preferred — keeps issue count down)
+   - Add a dedicated "connect X to Y" issue if the hop is non-trivial
+
+Present the chain audit to the user as a table or list before finalizing:
+
+```
+FeatureConfig defined in #A (config)
+  → read by buildOptions() in #??? ← NOT COVERED
+  → passed to runFeature() in #B (integration)
+  → used by featureCallback() in #B
+```
+
+Any row marked "NOT COVERED" must be resolved before the planning doc is
+complete. This is especially important for:
+- **Config fields** that must flow from file → config struct → constructor →
+  runtime consumer
+- **UI components** that must be instantiated and mounted in a parent widget,
+  route, or layout
+- **New parameters** added to inner functions that must be threaded through
+  every caller in the chain
+- **Event types** that must be registered with dispatchers, routers, or
+  notification systems
+
 ## CRITICAL — Next step
 
 When this skill completes, suggest the user run `/godark-create-issues` next.
