@@ -482,6 +482,13 @@ async def main() -> None:
         final["tool_trace"] = tool_trace
     print(json.dumps(final), flush=True)
 
+    # Force-exit after printing the result. The SDK's close() can hang
+    # indefinitely when the CLI subprocess blocks on shutdown (see
+    # https://github.com/anthropics/claude-agent-sdk-python/issues/728).
+    # The result is already on stdout for the Go side to capture.
+    _log_diagnostic("force_exit", reason="result printed, bypassing SDK cleanup")
+    os._exit(0)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
