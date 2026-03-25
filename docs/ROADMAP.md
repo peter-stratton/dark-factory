@@ -1368,3 +1368,37 @@ pure heuristic pattern matching on structured log output.
   features, and complex cross-cutting changes — and grow the dataset over time.
   Inspired by offline evaluation frameworks for LLM agents (three pillars:
   routing evaluation, LLM-as-judge scoring, and context grounding verification)
+- Specification quality gate — a pre-implementation gate that scores issue
+  readiness before spending compute. An agent evaluates whether the issue has
+  sufficient detail, explicit acceptance criteria, and testable requirements.
+  Weak specs get rejected or enriched before entering the pipeline. Could
+  enforce structured issue templates that require testable acceptance criteria.
+  Complements the existing `godark vet` validation but operates at runtime on
+  individual issues rather than in bulk
+- Eval as first-class contract — define issue-specific acceptance tests
+  upfront (before or alongside spec generation) that the system explicitly
+  targets, rather than relying on emergent evals from the reviewer agent.
+  The eval becomes a hard contract: implementation iterates until the
+  pre-defined acceptance test passes. Requires design work around authoring
+  format, storage, and how it integrates with the existing verify and review
+  pipeline. Distinct from scenario specs (which describe behavior) in that
+  evals are executable pass/fail gates defined before implementation begins
+- Production monitoring feedback loop — post-merge observation of deployed
+  code to detect regressions and feed outcomes back into the pipeline. Could
+  integrate with external metrics systems (Prometheus, Grafana, Datadog) to
+  track whether dark-factory-built features cause production incidents, error
+  rate spikes, or performance degradation. Enables quantifiable proof that
+  the system produces production-quality code. Implementation depends heavily
+  on the target deployment environment and observability stack. Could start
+  simple (poll a health endpoint or error rate after merge) and grow toward
+  richer integrations. Valuable for building organizational confidence in
+  autonomous code generation
+- Self-optimization from historical data — use accumulated run analytics
+  (stats.db) to tune pipeline behavior automatically. Examples: issues of a
+  certain type or complexity that fail review frequently get more recon/spec
+  effort; prompts that correlate with higher success rates get preferred;
+  retry budgets adjust based on historical pass rates. Requires server mode
+  (Phase 15) for persistent cross-run state and enough data volume to draw
+  meaningful conclusions. Likely a full milestone given the breadth of
+  tuning surfaces and the need for guardrails against over-fitting to
+  historical patterns
