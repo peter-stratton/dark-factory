@@ -26,6 +26,11 @@ var harnessPromptFiles = []struct{ name, dest string }{
 	{"implementer.txt", "prompts/implementer.txt"},
 	{"implementer_retry.txt", "prompts/implementer_retry.txt"},
 	{"reviewer.txt", "prompts/reviewer.txt"},
+	{"quality_reviewer.txt", "prompts/quality_reviewer.txt"},
+	{"spec_generator.txt", "prompts/spec_generator.txt"},
+	{"punchlist.txt", "prompts/punchlist.txt"},
+	{"verify_fix.txt", "prompts/verify_fix.txt"},
+	{"recon.txt", "prompts/recon.txt"},
 }
 
 // writeFileWithDirs creates parent directories for path and writes data to it,

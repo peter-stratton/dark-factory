@@ -41,11 +41,16 @@ const configTail = `
 #   patch_target: 80          # 1-100, percentage of changed lines that must be covered
 #   test_command: ""           # optional override (must write -coverprofile=/tmp/cov.out)
 
-# Prompt templates
+# Prompt templates (override by copying to a custom path)
 prompts:
   implementer: prompts/implementer.txt
   implementer_retry: prompts/implementer_retry.txt
   reviewer: prompts/reviewer.txt
+  quality_reviewer: prompts/quality_reviewer.txt
+  spec_generator: prompts/spec_generator.txt
+  punchlist: prompts/punchlist.txt
+  verify_fix: prompts/verify_fix.txt
+  recon: prompts/recon.txt
 
 # Default branch of the repository (auto-detected from GitHub if omitted)
 # default_branch: main
