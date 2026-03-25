@@ -37,7 +37,7 @@ Steps:
 8. Verify build: {{.BuildCommand}}
 {{- end}}
 {{- if .HasScenarioSpec}}
-9. MANDATORY: Generate integration tests in {{.ReviewDir}} that validate each behavior described in the scenario spec. You MUST write at least one test file to {{.ReviewDir}} before proceeding. Do not skip this step.
+9. MANDATORY: Generate integration tests in {{.ReviewDir}} that validate each behavior described in the scenario spec. Use Bash to create test files (e.g. cat > {{.ReviewDir}}test_file.go << 'EOF' ... EOF). You MUST create at least one test file in {{.ReviewDir}} before proceeding. Do not skip this step.
 10. MANDATORY: Run your integration tests (use the appropriate test runner for the project language, or fall back to {{.TestCommand}}). Do not skip this step.
 {{- else}}
 9. No scenario spec exists for this issue. Document why integration tests are not applicable in your review comment and proceed to the verdict.
@@ -48,9 +48,10 @@ CRITICAL RULES:
 - Do NOT edit generated files directly ({{.GeneratedPaths}}); edit source files or re-run code generation instead
 {{- end}}
 {{- if .HasScenarioSpec}}
-- You MUST write integration tests to {{.ReviewDir}} (step 9) before making your verdict. This is non-negotiable.
-- Judging existing tests sufficient is NOT acceptable — you must write your own ephemeral tests in {{.ReviewDir}}.
-- The orchestrator verifies that you wrote files to {{.ReviewDir}} by inspecting your tool trace. If no Write to {{.ReviewDir}} is detected, your APPROVED verdict will be automatically rejected and the implementation retried.
+- You MUST create integration tests in {{.ReviewDir}} (step 9) using Bash before making your verdict. This is non-negotiable.
+- Judging existing tests sufficient is NOT acceptable — you must create your own ephemeral tests in {{.ReviewDir}}.
+- The orchestrator verifies that you created files in {{.ReviewDir}} by inspecting your tool trace. If no file creation in {{.ReviewDir}} is detected, your APPROVED verdict will be automatically rejected and the implementation retried.
+- Do NOT use the Write or Edit tools — you do not have access to them. Use Bash with heredocs or cat/tee to create files.
 - After running tests, delete the {{.ReviewDir}} directory before finishing.
 {{- end}}
 
