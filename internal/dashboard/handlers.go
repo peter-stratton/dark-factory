@@ -76,8 +76,9 @@ type IssueRowView struct {
 	FlagCount     int    // total quality flags across all steps
 	Cost          string // formatted total cost, e.g. "$0.0042" or "—"
 	URL           string // link to issue detail page
-	AwaitingHuman bool   // true when outcome status is "ready-to-merge"
-	ErrorReason   string // failure reason from outcome, shown inline for failed issues
+	AwaitingHuman         bool   // true when outcome status is "ready-to-merge"
+	ErrorReason           string // failure reason from outcome, shown inline for failed issues
+	HasJudgeInterventions bool   // true when judge intervened at least once
 }
 
 // IssueDetailData is the data passed to the issue-detail template.
@@ -96,9 +97,10 @@ type IssueDetailData struct {
 	ReviewChainURL  string // URL for the review chain polling partial
 	ErrorReason     string // failure reason from outcome, shown prominently for failed issues
 	Timeline        []TimelineStepView
-	Punchlist       *rundata.PunchlistData
-	Dialogue        []rundata.DialogueEntry
-	FailureAnalysis *rundata.FailureAnalysis
+	Punchlist           *rundata.PunchlistData
+	Dialogue            []rundata.DialogueEntry
+	FailureAnalysis     *rundata.FailureAnalysis
+	JudgeInterventions  []rundata.JudgeIntervention
 }
 
 // CheckSummaryView is the view model for one check within a verify step summary.
@@ -463,10 +465,11 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		RunURL:          runURL,
 		ReviewChainURL:  reviewChainURL,
 		ErrorReason:     found.Outcome.Error,
-		Timeline:        buildTimeline(*found),
-		Punchlist:       found.Punchlist,
-		Dialogue:        found.Dialogue,
-		FailureAnalysis: found.FailureAnalysis,
+		Timeline:           buildTimeline(*found),
+		Punchlist:          found.Punchlist,
+		Dialogue:           found.Dialogue,
+		FailureAnalysis:    found.FailureAnalysis,
+		JudgeInterventions: found.JudgeInterventions,
 	}
 
 	var buf bytes.Buffer
@@ -553,8 +556,9 @@ func issueToRowView(issue rundata.IssueDetail, owner, repo, timestamp string) Is
 		FlagCount:     flagCount,
 		Cost:          formatCost(totalCost),
 		URL:           issueURL,
-		AwaitingHuman: issue.Outcome.Status == "ready-to-merge",
-		ErrorReason:   issue.Outcome.Error,
+		AwaitingHuman:         issue.Outcome.Status == "ready-to-merge",
+		ErrorReason:           issue.Outcome.Error,
+		HasJudgeInterventions: len(issue.JudgeInterventions) > 0,
 	}
 }
 

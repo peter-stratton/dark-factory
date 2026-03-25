@@ -205,6 +205,9 @@
     {{else}}
     <span class="text-muted">—</span>
     {{end}}
+    {{if .HasJudgeInterventions}}
+    <span class="badge badge--danger" style="margin-left: var(--space-1);">judge</span>
+    {{end}}
   </td>
   <td class="cell-num text-secondary">{{.Cost}}</td>
 </tr>
