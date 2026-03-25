@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -335,10 +336,16 @@ var LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() 
 	cmd := exec.CommandContext(ctx, "docker", "logs", "--follow", "--timestamps", name)
 	// Combine stdout and stderr so the judge sees tool audit lines (which the
 	// agent runner writes to stderr) alongside assistant text (stdout).
-	pr, pw := io.Pipe()
+	// Use os.Pipe (kernel-buffered) rather than io.Pipe (synchronous) to avoid
+	// deadlocks when docker writes to both streams concurrently.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating log pipe: %w", err)
+	}
 	cmd.Stdout = pw
 	cmd.Stderr = pw
 	if err := cmd.Start(); err != nil {
+		pr.Close()
 		pw.Close()
 		return nil, nil, err
 	}
