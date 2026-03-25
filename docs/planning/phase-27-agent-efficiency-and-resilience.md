@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Multi-pass recon prompt with generalized language
+## Issue 631: Multi-pass recon prompt with generalized language
 
 ### Description
 
@@ -66,7 +66,7 @@ patterns that work across Go, Flutter, Node, Rust, and Python projects.
 
 ---
 
-## Issue: Partial recon brief on timeout
+## Issue 632: Partial recon brief on timeout
 
 ### Description
 
@@ -119,9 +119,9 @@ Relates to #630.
 
 ---
 
-## Issue: Adaptive recon depth by issue type
+## Issue 633: Adaptive recon depth by issue type
 
-**Blocked by**: multi-pass recon prompt with generalized language
+**Blocked by**: #631
 
 ### Description
 
@@ -178,7 +178,7 @@ key constraints in the body may skip recon entirely.
 
 ---
 
-## Issue: Per-step timeout configuration
+## Issue 634: Per-step timeout configuration
 
 ### Description
 
@@ -234,7 +234,7 @@ current `agent_timeout` applies uniformly to all roles.
 
 ---
 
-## Issue: Prompt and permission audit
+## Issue 635: Prompt and permission audit
 
 ### Description
 

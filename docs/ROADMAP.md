@@ -1257,7 +1257,7 @@ for tool/permission alignment across all roles.
 - Recon prompt generalization — remove Flutter/UI-specific language in favor
   of universal patterns, or make project-type-aware via template variables
 
-**Issues**: TBD
+**Issues**: #631–#635
 
 **Planning doc**: `docs/planning/phase-27-agent-efficiency-and-resilience.md`
 
