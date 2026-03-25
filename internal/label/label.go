@@ -72,3 +72,76 @@ func All() []string {
 	}
 	return names
 }
+
+// Labels holds all label names derived from a runtime prefix. Use New to
+// construct one; do not create a zero value directly.
+type Labels struct {
+	InProgress           string
+	AwaitingHumanReview  string
+	FixingReviewFeedback string
+	ReadyToMerge         string
+	NoDark               string
+	Specs                []Spec
+
+	transitions map[string]map[string]bool
+}
+
+// New returns a Labels whose names are derived from prefix. NoDark is always
+// "nodark" regardless of prefix.
+func New(prefix string) *Labels {
+	inProgress := prefix + "-in-progress"
+	awaitingHumanReview := prefix + ":awaiting-human-review"
+	fixingReviewFeedback := prefix + ":fixing-review-feedback"
+	readyToMerge := prefix + ":ready-to-merge"
+
+	l := &Labels{
+		InProgress:           inProgress,
+		AwaitingHumanReview:  awaitingHumanReview,
+		FixingReviewFeedback: fixingReviewFeedback,
+		ReadyToMerge:         readyToMerge,
+		NoDark:               "nodark",
+		Specs: []Spec{
+			{Name: awaitingHumanReview, Color: "4A90E2", Description: "PR approved by AI, awaiting human review"},
+			{Name: fixingReviewFeedback, Color: "F5D76E", Description: "AI is addressing review feedback"},
+			{Name: readyToMerge, Color: "50C878", Description: "All reviews passed, ready to merge"},
+		},
+		transitions: map[string]map[string]bool{
+			"": {
+				awaitingHumanReview: true,
+				readyToMerge:        true,
+			},
+			awaitingHumanReview: {
+				fixingReviewFeedback: true,
+				readyToMerge:         true,
+				"":                   true,
+			},
+			fixingReviewFeedback: {
+				awaitingHumanReview: true,
+				"":                  true,
+			},
+			readyToMerge: {
+				"": true,
+			},
+		},
+	}
+	return l
+}
+
+// All returns the 3 PR lifecycle label strings for this Labels instance.
+func (l *Labels) All() []string {
+	names := make([]string, len(l.Specs))
+	for i, s := range l.Specs {
+		names[i] = s.Name
+	}
+	return names
+}
+
+// Transition reports whether moving from label from to label to is a legal
+// state transition for this Labels instance.
+func (l *Labels) Transition(from, to string) bool {
+	tos, ok := l.transitions[from]
+	if !ok {
+		return false
+	}
+	return tos[to]
+}
