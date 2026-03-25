@@ -228,6 +228,45 @@ func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, e
 	return res, nil
 }
 
+// buildJudgeCallback creates a LogCallback for the sandbox that feeds lines
+// to the judge. Returns nil when the judge is disabled or not configured.
+func buildJudgeCallback(
+	opts RunOpts,
+	cancel context.CancelFunc,
+	interventionPtr *atomic.Pointer[judge.Intervention],
+	judgeKilled *atomic.Bool,
+	logger *slog.Logger,
+) func(line string) {
+	if opts.JudgeConfig == nil {
+		return nil
+	}
+	if opts.JudgeConfig.Enabled != nil && !*opts.JudgeConfig.Enabled {
+		return nil
+	}
+
+	j := judge.NewJudge(opts.Role, judge.Config{
+		IdleTimeoutByRole:         opts.JudgeConfig.IdleTimeoutByRole,
+		DefaultIdleTimeout:        opts.JudgeConfig.DefaultIdleTimeout,
+		ToolThrashThreshold:       opts.JudgeConfig.ToolThrashThreshold,
+		ToolThrashWindowSecs:      opts.JudgeConfig.ToolThrashWindowSecs,
+		TransportFailureThreshold: opts.JudgeConfig.TransportFailureThreshold,
+	})
+	logger.Info("judge enabled for sandbox run", "role", opts.Role)
+
+	return func(line string) {
+		iv := j.ProcessLine(line, time.Now())
+		if iv == nil {
+			return
+		}
+		// Store the intervention (first one wins).
+		interventionPtr.CompareAndSwap(nil, iv)
+		if iv.Judgment == judge.Kill {
+			judgeKilled.Store(true)
+			cancel()
+		}
+	}
+}
+
 func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, error) {
 	logger.Info("running agent in sandbox", "image", opts.Image, "timeout", opts.Timeout)
 
@@ -266,31 +305,7 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		interventionPtr atomic.Pointer[judge.Intervention]
 		judgeKilled     atomic.Bool
 	)
-	var logCallback func(line string)
-	if opts.JudgeConfig != nil && (opts.JudgeConfig.Enabled == nil || *opts.JudgeConfig.Enabled) {
-		j := judge.NewJudge(opts.Role, judge.Config{
-			IdleTimeoutByRole:         opts.JudgeConfig.IdleTimeoutByRole,
-			DefaultIdleTimeout:        opts.JudgeConfig.DefaultIdleTimeout,
-			ToolThrashThreshold:       opts.JudgeConfig.ToolThrashThreshold,
-			ToolThrashWindowSecs:      opts.JudgeConfig.ToolThrashWindowSecs,
-			TransportFailureThreshold: opts.JudgeConfig.TransportFailureThreshold,
-		})
-		logCallback = func(line string) {
-			iv := j.ProcessLine(line, time.Now())
-			if iv == nil {
-				return
-			}
-			// Store the intervention (first one wins).
-			// Use atomic compare-and-swap to avoid a data race between
-			// concurrent log lines; only the first intervention is recorded.
-			interventionPtr.CompareAndSwap(nil, iv)
-			if iv.Judgment == judge.Kill {
-				judgeKilled.Store(true)
-				cancel() // stop the container
-			}
-		}
-		logger.Info("judge enabled for sandbox run", "role", opts.Role)
-	}
+	logCallback := buildJudgeCallback(opts, cancel, &interventionPtr, &judgeKilled, logger)
 
 	sandboxOpts := sandbox.RunOpts{
 		Image:             opts.Image,
