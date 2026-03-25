@@ -28,7 +28,9 @@ type RunOpts struct {
 	// container while it is running. Lines are delivered via a buffered
 	// channel; if the callback is slow, excess lines are dropped rather
 	// than backpressuring the container process. The callback must be
-	// safe to call from a goroutine.
+	// safe to call from a goroutine and must not block; a blocking
+	// callback may cause RunContainer to hang until the context is
+	// cancelled.
 	LogCallback func(line string)
 }
 
@@ -163,7 +165,7 @@ func (sp *statsPoller) stop() (peakMem, peakCPU int64) {
 // returned WaitGroup is already done. Lines are forwarded via a buffered
 // channel so a slow callback drops lines rather than backpressuring the
 // docker logs process.
-func startLogStreamer(ctx context.Context, name string, callback func(string)) *sync.WaitGroup {
+func startLogStreamer(ctx context.Context, name string, callback func(string), logger *slog.Logger) *sync.WaitGroup {
 	var wg sync.WaitGroup
 	if callback == nil {
 		return &wg
@@ -179,6 +181,11 @@ func startLogStreamer(ctx context.Context, name string, callback func(string)) *
 			return
 		}
 		scanner := bufio.NewScanner(rc)
+		// Raise the per-line limit to 1 MB to handle realistic Docker log output
+		// that can exceed the default 64 KB limit. Without this, a long line
+		// causes Scan() to return false with ErrTooLong, silently stopping
+		// streaming mid-run.
+		scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
 		for scanner.Scan() {
 			line := scanner.Text()
 			select {
@@ -186,13 +193,23 @@ func startLogStreamer(ctx context.Context, name string, callback func(string)) *
 			default: // drop line if consumer is behind
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			logger.Warn("log streamer scanner error", "container", name, "error", err)
+		}
 		_ = wait()
 	}()
-	// Consumer: deliver lines to the caller's callback.
+	// Consumer: deliver lines to the caller's callback. The select on
+	// ctx.Done() ensures RunContainer can always return when the context
+	// is cancelled, even if callback blocks unexpectedly.
 	go func() {
 		defer wg.Done()
 		for line := range ch {
-			callback(line)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				callback(line)
+			}
 		}
 	}()
 	return &wg
@@ -245,7 +262,7 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	}
 
 	// 3. Start log-streaming goroutine if a callback was provided.
-	logWg := startLogStreamer(ctx, name, opts.LogCallback)
+	logWg := startLogStreamer(ctx, name, opts.LogCallback, logger)
 
 	// 4. Start background stats poller. The Docker stats API only returns
 	// non-zero cgroup counters while the container is running; once it exits
@@ -320,6 +337,10 @@ var LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() 
 	if err != nil {
 		return nil, nil, err
 	}
+	// Discard Docker's own stderr explicitly so diagnostic output (e.g. "Error:
+	// No such container") does not surface as a hidden /dev/null write and the
+	// intent is clear to future readers.
+	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		return nil, nil, err
 	}
