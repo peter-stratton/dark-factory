@@ -444,13 +444,6 @@ func (c *Config) effectiveBranchPrefix() string {
 	return c.BranchPrefix
 }
 
-func (c *Config) effectiveLabelPrefix() string {
-	if c.LabelPrefix == "" {
-		return "godark"
-	}
-	return c.LabelPrefix
-}
-
 // EffectiveDefaultBranch returns the default branch for the repository.
 // Resolution order: explicit config/CLI value, GitHub API lookup, fallback "main".
 func (c *Config) EffectiveDefaultBranch(repo string) string {
