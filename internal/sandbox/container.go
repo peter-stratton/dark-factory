@@ -333,16 +333,20 @@ var CommandRunnerWithContext = func(ctx context.Context, name string, args ...st
 // Replaceable for testing.
 var LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() error, error) {
 	cmd := exec.CommandContext(ctx, "docker", "logs", "--follow", "--timestamps", name)
-	rc, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-	// Discard Docker's own stderr explicitly so diagnostic output (e.g. "Error:
-	// No such container") does not surface as a hidden /dev/null write and the
-	// intent is clear to future readers.
-	cmd.Stderr = io.Discard
+	// Combine stdout and stderr so the judge sees tool audit lines (which the
+	// agent runner writes to stderr) alongside assistant text (stdout).
+	pr, pw := io.Pipe()
+	cmd.Stdout = pw
+	cmd.Stderr = pw
 	if err := cmd.Start(); err != nil {
+		pw.Close()
 		return nil, nil, err
 	}
-	return rc, cmd.Wait, nil
+	// Close the write end when the command exits so the reader sees EOF.
+	wait := func() error {
+		err := cmd.Wait()
+		pw.Close()
+		return err
+	}
+	return pr, wait, nil
 }
