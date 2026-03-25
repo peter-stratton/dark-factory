@@ -1174,3 +1174,71 @@ func TestLoadRunOutcomeTitleTakesPrecedenceOverIssueTitles(t *testing.T) {
 		t.Errorf("Outcome.Title: got %q, want %q", detail.Issues[0].Outcome.Title, "Authoritative title from outcome")
 	}
 }
+
+func TestLoadRunJudgeInterventions(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:      "owner/repo",
+		StartedAt: time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+
+	interventions := []JudgeIntervention{
+		{Rule: "no_large_diffs", Judgment: "block", Step: "implement"},
+		{Rule: "test_required", Judgment: "warn", Step: "quality-review"},
+	}
+	if err := writeJSON(filepath.Join(issueDir, "judge-interventions.json"), interventions); err != nil {
+		t.Fatalf("writing judge-interventions.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	got := detail.Issues[0].JudgeInterventions
+	if len(got) != 2 {
+		t.Fatalf("JudgeInterventions len = %d, want 2", len(got))
+	}
+	if got[0].Rule != "no_large_diffs" {
+		t.Errorf("got[0].Rule = %q, want %q", got[0].Rule, "no_large_diffs")
+	}
+	if got[1].Rule != "test_required" {
+		t.Errorf("got[1].Rule = %q, want %q", got[1].Rule, "test_required")
+	}
+}
+
+func TestLoadRunMissingJudgeInterventionsIsNil(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:      "owner/repo",
+		StartedAt: time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	// judge-interventions.json intentionally not written
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	if detail.Issues[0].JudgeInterventions != nil {
+		t.Errorf("JudgeInterventions = %v, want nil", detail.Issues[0].JudgeInterventions)
+	}
+}
