@@ -78,6 +78,10 @@ prompts:
 
 # Agent timeout (Go duration format: "30m", "1h", etc.)
 # agent_timeout: "30m"
+
+# Customizable prefixes for branch names and GitHub labels (default: "godark")
+# branch_prefix: godark
+# label_prefix: godark
 `
 
 // buildDefaultConfig constructs the default godark.yaml config string.
