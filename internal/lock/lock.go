@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/github"
-	"github.com/peter-stratton/dark-factory/internal/label"
 )
 
 const (
@@ -51,11 +50,11 @@ type Locker struct {
 	logger       *slog.Logger
 }
 
-// New returns a Locker for the given repo using the default lock label and file path.
-func New(repo string, logger *slog.Logger) *Locker {
+// New returns a Locker for the given repo using the provided lock label and default file path.
+func New(repo, lockLabel string, logger *slog.Logger) *Locker {
 	return &Locker{
 		repo:         repo,
-		label:        label.InProgress,
+		label:        lockLabel,
 		lockFilePath: defaultLockFilePath,
 		logger:       logger,
 	}
@@ -161,8 +160,8 @@ func (l *Locker) IsLocked() (bool, *RunInfo, error) {
 
 // EnsureLabelExists creates the lock label in the repo if it doesn't exist.
 // Intended to be called by `godark init` to pre-create the label.
-func EnsureLabelExists(repo string) error {
-	return github.EnsureLabel(repo, label.InProgress, LockLabelColor, LockLabelDescription)
+func EnsureLabelExists(repo, lockLabel string) error {
+	return github.EnsureLabel(repo, lockLabel, LockLabelColor, LockLabelDescription)
 }
 
 func (l *Locker) releaseFromIssues(issueNumbers []int) error {
