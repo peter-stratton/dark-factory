@@ -2037,6 +2037,30 @@ func TestResolveBranch_ExplicitMainAllowsOptOut(t *testing.T) {
 	}
 }
 
+func TestResolveBranch_CustomPrefix_SingleIssue(t *testing.T) {
+	cfg := &Config{BranchPrefix: "df"}
+	got := cfg.ResolveBranch("", []int{42})
+	if got != "df/issue-42" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "df/issue-42")
+	}
+}
+
+func TestResolveBranch_CustomPrefix_Milestone(t *testing.T) {
+	cfg := &Config{BranchPrefix: "df"}
+	got := cfg.ResolveBranch("my-milestone", nil)
+	if got != "df/my-milestone" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "df/my-milestone")
+	}
+}
+
+func TestResolveBranch_CustomPrefix_BaseBranchOverrides(t *testing.T) {
+	cfg := &Config{BranchPrefix: "df", BaseBranch: "main"}
+	got := cfg.ResolveBranch("Phase 1", []int{42})
+	if got != "main" {
+		t.Errorf("ResolveBranch() = %q, want %q", got, "main")
+	}
+}
+
 func TestDefaultRollupIsManual(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `repo: owner/repo`)

@@ -222,6 +222,8 @@ type Config struct {
 	AutoMerge              AutoMerge `yaml:"auto_merge"`
 	BaseBranch             string    `yaml:"base_branch"`
 	DefaultBranch          string    `yaml:"default_branch"`
+	BranchPrefix           string    `yaml:"branch_prefix"`
+	LabelPrefix            string    `yaml:"label_prefix"`
 	QualityStrictnessDecay bool   `yaml:"quality_strictness_decay"`
 	EnforceArchitecture    bool   `yaml:"enforce_architecture"`
 
@@ -390,18 +392,19 @@ func (c *Config) ResolveBranch(milestone string, issueNums []int) string {
 	if c.BaseBranch != "" {
 		return c.BaseBranch
 	}
+	prefix := c.effectiveBranchPrefix()
 	if milestone != "" {
-		return "godark/" + milestoneSlug(milestone)
+		return prefix + "/" + milestoneSlug(milestone)
 	}
 	if len(issueNums) == 1 {
-		return fmt.Sprintf("godark/issue-%d", issueNums[0])
+		return fmt.Sprintf("%s/issue-%d", prefix, issueNums[0])
 	}
 	if len(issueNums) > 1 {
 		parts := make([]string, len(issueNums))
 		for i, n := range issueNums {
 			parts[i] = fmt.Sprintf("%d", n)
 		}
-		return "godark/issues-" + strings.Join(parts, "-")
+		return prefix + "/issues-" + strings.Join(parts, "-")
 	}
 	return ""
 }
@@ -432,6 +435,20 @@ func (c *Config) EffectiveBaseBranch() string {
 		return "main"
 	}
 	return c.BaseBranch
+}
+
+func (c *Config) effectiveBranchPrefix() string {
+	if c.BranchPrefix == "" {
+		return "godark"
+	}
+	return c.BranchPrefix
+}
+
+func (c *Config) effectiveLabelPrefix() string {
+	if c.LabelPrefix == "" {
+		return "godark"
+	}
+	return c.LabelPrefix
 }
 
 // EffectiveDefaultBranch returns the default branch for the repository.
