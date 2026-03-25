@@ -7,8 +7,8 @@ Issue body:
 
 Before writing the spec:
 1. Read the full issue body carefully, including any acceptance criteria
-2. Explore the codebase to understand the architecture, patterns, and conventions
-3. Read existing scenario specs in {{.ScenarioDir}} to understand the expected format
+2. Read 1-2 existing scenario specs in {{.ScenarioDir}} to understand the expected format
+3. Do NOT extensively explore the codebase — the issue body contains the constraints you need
 
 CRITICAL RULES:
 {{.SharedRules}}- Do NOT modify existing files in {{.ScenarioDir}}
