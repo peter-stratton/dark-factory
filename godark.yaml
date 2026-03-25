@@ -13,6 +13,10 @@ protected_paths: ["CLAUDE.md", "tests/scenarios/"]
 
 lint_command: "golangci-lint run ./..."
 
+timeouts:
+  recon: 5m
+  spec_generator: 3m
+
 docker:
   install_commands:
     - "curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b /usr/local/bin v2.11.3"
