@@ -3556,7 +3556,7 @@ func TestProcessIssue_MergeRemovesLifecycleLabels(t *testing.T) {
 	// auto_merge: all does not apply lifecycle labels before merge, but after
 	// merge all lifecycle labels are removed unconditionally (to clean up labels
 	// applied by a previous run or manually).
-	all := label.All()
+	all := cfg.Labels().All()
 	allSet := make(map[string]bool, len(all))
 	for _, lbl := range all {
 		allSet[lbl] = true

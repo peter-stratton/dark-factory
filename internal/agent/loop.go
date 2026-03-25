@@ -872,7 +872,7 @@ func runFunctionalReviewCycle(
 			}
 			// Remove all lifecycle labels after merge (best-effort). This cleans up
 			// labels applied in a previous run or manually, not just the current run.
-			for _, lbl := range label.All() {
+			for _, lbl := range cfg.Labels().All() {
 				_ = github.RemoveIssueLabel(cfg.Repo, prNum, lbl)
 			}
 			return StatusImplemented, true, attempt, nil

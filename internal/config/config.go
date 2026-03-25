@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peter-stratton/dark-factory/internal/label"
+
 	darkexec "github.com/peter-stratton/dark-factory/internal/exec"
 	"gopkg.in/yaml.v3"
 )
@@ -449,6 +451,11 @@ func (c *Config) effectiveLabelPrefix() string {
 		return "godark"
 	}
 	return c.LabelPrefix
+}
+
+// Labels returns a Labels instance derived from the configured label prefix.
+func (c *Config) Labels() *label.Labels {
+	return label.New(c.effectiveLabelPrefix())
 }
 
 // EffectiveDefaultBranch returns the default branch for the repository.

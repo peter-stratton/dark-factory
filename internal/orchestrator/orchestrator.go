@@ -280,7 +280,7 @@ func ReResolveAndProcess(
 	}
 
 	// Acquire a run lock for the newly unblocked issues.
-	locker := lock.New(cfg.Repo, label.InProgress, logger)
+	locker := lock.New(cfg.Repo, cfg.Labels().InProgress, logger)
 	if err := locker.Acquire(issueNums, false); err != nil {
 		return false, fmt.Errorf("acquiring run lock: %w", err)
 	}
@@ -330,7 +330,7 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Log
 		return nil, nil, fmt.Errorf("loading prompts: %w", err)
 	}
 
-	for _, spec := range label.Specs {
+	for _, spec := range cfg.Labels().Specs {
 		if err := github.EnsureLabel(cfg.Repo, spec.Name, spec.Color, spec.Description); err != nil {
 			logger.Warn("failed to ensure lifecycle label", "label", spec.Name, "error", err)
 		}
@@ -605,7 +605,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 	// Ensure all PR lifecycle labels exist in the repo at startup.
-	for _, spec := range label.Specs {
+	for _, spec := range cfg.Labels().Specs {
 		if err := github.EnsureLabel(cfg.Repo, spec.Name, spec.Color, spec.Description); err != nil {
 			logger.Warn("failed to ensure lifecycle label", "label", spec.Name, "error", err)
 		}
@@ -673,7 +673,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	var plWg sync.WaitGroup
 
 	// Locking: create a locker and track all locked issue numbers across waves.
-	locker := lock.New(cfg.Repo, label.InProgress, logger)
+	locker := lock.New(cfg.Repo, cfg.Labels().InProgress, logger)
 	var allLockedNums []int
 	defer func() {
 		if len(allLockedNums) > 0 {
@@ -724,7 +724,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		} else {
 			// Subsequent waves: we already hold the lock, just label new issues.
 			for _, n := range batchNums {
-				if err := github.AddIssueLabel(cfg.Repo, n, label.InProgress); err != nil {
+				if err := github.AddIssueLabel(cfg.Repo, n, cfg.Labels().InProgress); err != nil {
 					logger.Warn("failed to apply lock label to newly unblocked issue", "issue", n, "error", err)
 				}
 			}

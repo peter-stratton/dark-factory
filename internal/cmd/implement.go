@@ -173,7 +173,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		}
 
 		// Acquire run lock to prevent concurrent godark executions.
-		locker := lock.New(cfg.Repo, label.InProgress, logger)
+		locker := lock.New(cfg.Repo, cfg.Labels().InProgress, logger)
 		if err := locker.Acquire(issueNums, force); err != nil {
 			return fmt.Errorf("acquiring run lock: %w", err)
 		}
