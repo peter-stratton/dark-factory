@@ -158,6 +158,46 @@ func (sp *statsPoller) stop() (peakMem, peakCPU int64) {
 	return sp.mem, sp.cpu
 }
 
+// startLogStreamer spawns producer/consumer goroutines that tail the named
+// container's logs and forward each line to callback. If callback is nil the
+// returned WaitGroup is already done. Lines are forwarded via a buffered
+// channel so a slow callback drops lines rather than backpressuring the
+// docker logs process.
+func startLogStreamer(ctx context.Context, name string, callback func(string)) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	if callback == nil {
+		return &wg
+	}
+	ch := make(chan string, 256)
+	wg.Add(2)
+	// Producer: tail container stdout via docker logs --follow.
+	go func() {
+		defer wg.Done()
+		defer close(ch)
+		rc, wait, err := LogFollower(ctx, name)
+		if err != nil {
+			return
+		}
+		scanner := bufio.NewScanner(rc)
+		for scanner.Scan() {
+			line := scanner.Text()
+			select {
+			case ch <- line:
+			default: // drop line if consumer is behind
+			}
+		}
+		_ = wait()
+	}()
+	// Consumer: deliver lines to the caller's callback.
+	go func() {
+		defer wg.Done()
+		for line := range ch {
+			callback(line)
+		}
+	}()
+	return &wg
+}
+
 // RunContainer creates a Docker container from the given image, runs a command
 // inside it, captures stdout/stderr and exit code, enforces a timeout, and
 // always cleans up the container.
@@ -205,38 +245,7 @@ func RunContainer(ctx context.Context, opts RunOpts, logger *slog.Logger) (*RunR
 	}
 
 	// 3. Start log-streaming goroutine if a callback was provided.
-	// Lines are forwarded via a buffered channel so a slow callback drops
-	// lines rather than backpressuring the docker logs process.
-	var logWg sync.WaitGroup
-	if opts.LogCallback != nil {
-		ch := make(chan string, 256)
-		logWg.Add(2)
-		// Producer: tail container stdout via docker logs --follow.
-		go func() {
-			defer logWg.Done()
-			defer close(ch)
-			rc, wait, err := LogFollower(ctx, name)
-			if err != nil {
-				return
-			}
-			scanner := bufio.NewScanner(rc)
-			for scanner.Scan() {
-				line := scanner.Text()
-				select {
-				case ch <- line:
-				default: // drop line if consumer is behind
-				}
-			}
-			_ = wait()
-		}()
-		// Consumer: deliver lines to the caller's callback.
-		go func() {
-			defer logWg.Done()
-			for line := range ch {
-				opts.LogCallback(line)
-			}
-		}()
-	}
+	logWg := startLogStreamer(ctx, name, opts.LogCallback)
 
 	// 4. Start background stats poller. The Docker stats API only returns
 	// non-zero cgroup counters while the container is running; once it exits
