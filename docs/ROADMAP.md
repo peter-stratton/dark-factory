@@ -1348,6 +1348,9 @@ dead code path that would fail at runtime.
 ---
 
 ### Future considerations (not yet scoped)
+- Configurable retry on judge Kill — currently only transport_failure retries
+  the container; idle_timeout/no_progress/tool_thrash kills fail the step with
+  no automatic retry (falls through to the normal max_retries review loop)
 - Linter config generation from `architecture.json` (per-language)
 - Multi-cluster deployment and geographic distribution
 - Cost allocation and chargeback per team/repo
