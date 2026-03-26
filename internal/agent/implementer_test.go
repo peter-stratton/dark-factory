@@ -2,15 +2,17 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
+
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestImplement_RendersPromptAndCallsRun(t *testing.T) {
-	captured := stubRunner(t)
+	stubSandboxRunner(t)
 
 	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
 	if err != nil {
@@ -19,18 +21,13 @@ func TestImplement_RendersPromptAndCallsRun(t *testing.T) {
 	if result.ExitCode != 0 {
 		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
 	}
-
-	// Verify the rendered prompt was set in GODARK_PROMPT (captured via stubRunner's output).
-	// stubRunner includes GODARK_PROMPT in its output for easy assertion.
-	joined := strings.Join(*captured, " ")
-	_ = joined // command is python3 <path>, prompt is in env not args
 }
 
 func TestImplement_PromptContainsIssueDetails(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
@@ -49,9 +46,9 @@ func TestImplement_PromptContainsIssueDetails(t *testing.T) {
 
 func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	result, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
@@ -73,9 +70,9 @@ func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 
 func TestRetry_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
@@ -90,9 +87,9 @@ func TestRetry_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
 
 func TestRetry_WithoutSessionID_NoSessionEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
@@ -107,9 +104,9 @@ func TestRetry_WithoutSessionID_NoSessionEnv(t *testing.T) {
 
 func TestRetry_WithHandoffContext_SkipsSessionID(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	// Even with a prevSessionID, handoffContext non-empty means fresh session.
@@ -125,9 +122,9 @@ func TestRetry_WithHandoffContext_SkipsSessionID(t *testing.T) {
 
 func TestRetry_WithHandoffContext_RendersHandoffInPrompt(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	handoff := "## Implementation Notes\nTried X but it failed."
@@ -151,9 +148,9 @@ func TestRetry_WithHandoffContext_RendersHandoffInPrompt(t *testing.T) {
 
 func TestRetry_WithEmptyHandoffContext_NoFreshBlock(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{
@@ -173,9 +170,9 @@ func TestRetry_WithEmptyHandoffContext_NoFreshBlock(t *testing.T) {
 
 func TestImplement_DoesNotSetSessionIDEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
@@ -189,7 +186,7 @@ func TestImplement_DoesNotSetSessionIDEnv(t *testing.T) {
 }
 
 func TestImplement_AgentTimeoutParsed(t *testing.T) {
-	stubRunner(t)
+	stubSandboxRunner(t)
 
 	cfg := testConfig()
 	cfg.AgentTimeout = "5m"
@@ -201,7 +198,7 @@ func TestImplement_AgentTimeoutParsed(t *testing.T) {
 }
 
 func TestImplement_InvalidTimeout(t *testing.T) {
-	stubRunner(t)
+	stubSandboxRunner(t)
 
 	cfg := testConfig()
 	cfg.AgentTimeout = "invalid"
@@ -282,9 +279,9 @@ func TestNewRunOpts_EmptyProtectedPathsEnv(t *testing.T) {
 
 func TestImplement_ProtectedPathsInEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
@@ -326,9 +323,9 @@ func TestNewRunOpts_EmptyDeniedCommandsEnv(t *testing.T) {
 
 func TestImplement_DeniedCommandsInEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	cfg := testConfig()
@@ -361,9 +358,9 @@ func TestNewRunOpts_DoesNotMutateAuthEnv(t *testing.T) {
 func TestImplement_BranchExistsDetection(t *testing.T) {
 	// Stub Runner (agent call) and GuardRunner (git ls-remote).
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
@@ -392,9 +389,9 @@ func TestImplement_BranchExistsDetection(t *testing.T) {
 
 func TestImplement_SetsImplementerRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
@@ -409,9 +406,9 @@ func TestImplement_SetsImplementerRole(t *testing.T) {
 
 func TestRetry_SetsImplementerRetryRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
@@ -425,8 +422,8 @@ func TestRetry_SetsImplementerRetryRole(t *testing.T) {
 }
 
 func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		return []byte("fail output"), []byte(""), 1, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stdout: "fail output", ExitCode: 1}, nil
 	})
 
 	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "")
@@ -560,9 +557,9 @@ func TestNewPromptData_EnforceArchitectureDefaultFalse(t *testing.T) {
 
 func TestVerifyFix_RendersPromptWithErrors(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{
@@ -589,9 +586,9 @@ func TestVerifyFix_RendersPromptWithErrors(t *testing.T) {
 
 func TestVerifyFix_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{VerifyFix: "fix prompt"}
@@ -607,9 +604,9 @@ func TestVerifyFix_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
 
 func TestVerifyFix_WithoutSessionID_NoSessionEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{VerifyFix: "fix prompt"}
@@ -625,9 +622,9 @@ func TestVerifyFix_WithoutSessionID_NoSessionEnv(t *testing.T) {
 
 func TestVerifyFix_SetsImplementerRetryRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{VerifyFix: "fix prompt"}
@@ -669,9 +666,9 @@ func TestNewRunOpts_EmptyGeneratedPathsEnv(t *testing.T) {
 
 func TestImplement_GeneratedPathsInEnv(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	cfg := testConfig()

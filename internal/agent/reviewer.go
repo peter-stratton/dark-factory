@@ -36,7 +36,7 @@ func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Conf
 		"pr_number", prNum,
 	)
 
-	result, err := Run(ctx, opts, cfg.NoSandbox, logger)
+	result, err := Run(ctx, opts, logger)
 	if err != nil {
 		return nil, fmt.Errorf("running reviewer agent: %w", err)
 	}

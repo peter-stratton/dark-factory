@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-	"syscall"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/punchlist"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestExtractJSONArray_PlainJSON(t *testing.T) {
@@ -261,9 +261,9 @@ func TestGenerateAcceptanceTests_LogsSuccessWithCount(t *testing.T) {
 	logger := slog.New(cap)
 
 	// Stub Runner to return a valid JSON array.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		resultJSON := `{"session_id":"","result":"[\"Test one\",\"Test two\"]","cost_usd":0,"is_error":false}`
-		return []byte(resultJSON), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: resultJSON}, nil
 	})
 	// Stub punchlist CommandRunner (FetchPRDiff) to avoid real gh call.
 	origCmd := punchlist.CommandRunner
@@ -304,9 +304,9 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 	logger := slog.New(cap)
 
 	// Stub Runner to return unparseable output.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		resultJSON := `{"session_id":"","result":"not a json array","cost_usd":0,"is_error":false}`
-		return []byte(resultJSON), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: resultJSON}, nil
 	})
 	origCmd := punchlist.CommandRunner
 	defer func() { punchlist.CommandRunner = origCmd }()

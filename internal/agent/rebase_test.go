@@ -3,12 +3,13 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/github"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 // rebaseTestConfig returns a config suitable for runPreMergeRebasePhase tests.
@@ -215,10 +216,9 @@ func TestRunPreMergeRebasePhase_ConflictingUpdateBranchFails_ImplementerFixes(t 
 	}
 
 	retryCallCount := 0
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		retryCallCount++
-		out := wrapRunnerJSON("conflict fix output")
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("conflict fix output")}, nil
 	})
 
 	stubGuardRunner(t, standardRebaseGuard())
@@ -257,9 +257,8 @@ func TestRunPreMergeRebasePhase_ExhaustsAttempts_NeedsHumanReview(t *testing.T) 
 		return []byte(""), nil
 	}
 
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		out := wrapRunnerJSON("conflict fix attempted but conflicts remain")
-		return []byte(out), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("conflict fix attempted but conflicts remain")}, nil
 	})
 
 	stubGuardRunner(t, standardRebaseGuard())
@@ -299,10 +298,9 @@ func TestRunPreMergeRebasePhase_MultipleAttempts(t *testing.T) {
 		return []byte(""), nil
 	}
 
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		retryCallCount++
-		out := wrapRunnerJSON("conflict fix output")
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("conflict fix output")}, nil
 	})
 
 	stubGuardRunner(t, standardRebaseGuard())
