@@ -181,6 +181,7 @@ func startLogStreamer(ctx context.Context, name string, callback func(string), l
 		if err != nil {
 			return
 		}
+		defer rc.Close()
 		scanner := bufio.NewScanner(rc)
 		// Raise the per-line limit to 1 MB to handle realistic Docker log output
 		// that can exceed the default 64 KB limit. Without this, a long line
@@ -349,11 +350,13 @@ var LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() 
 		pw.Close()
 		return nil, nil, err
 	}
-	// Close the write end when the command exits so the reader sees EOF.
+	// Close the parent's copy of the write end immediately. The child
+	// process inherited its own file descriptor; when docker exits the
+	// kernel closes the child's copy, and the reader sees EOF. Keeping
+	// pw open in the parent would prevent EOF and hang the scanner.
+	pw.Close()
 	wait := func() error {
-		err := cmd.Wait()
-		pw.Close()
-		return err
+		return cmd.Wait()
 	}
 	return pr, wait, nil
 }
