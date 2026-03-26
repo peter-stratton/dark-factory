@@ -93,6 +93,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues[idx].stage = msg.Stage
 		}
 
+	case JudgeInterventionMsg:
+		if idx, ok := m.issueIndex[msg.IssueNumber]; ok {
+			reason := strings.ToTitle(msg.Judgment) + ": " + msg.Rule
+			if msg.Step != "" {
+				reason += " (" + msg.Step + ")"
+			}
+			m.issues[idx].judgeReason = reason
+		}
+
 	case IssueCompletedMsg:
 		m.handleIssueCompleted(msg)
 

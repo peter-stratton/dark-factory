@@ -26,6 +26,8 @@ type ProgressReporter interface {
 	RollupCreated(prNumber int, prURL string, merged bool)
 	// RunFinished signals the final summary.
 	RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int)
+	// JudgeIntervention signals that the judge intervened during an agent step.
+	JudgeIntervention(issueNumber int, rule, judgment, detail, step string)
 	// PunchlistText outputs a punchlist fragment as it becomes available.
 	PunchlistText(text string)
 }

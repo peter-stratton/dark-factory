@@ -40,6 +40,7 @@ func (r *stubProgressReporter) WaveStarted(_ int, _ int)                        
 func (r *stubProgressReporter) AllBlocked(_ int, _ int)                                      {}
 func (r *stubProgressReporter) RollupCreated(_ int, _ string, _ bool)                        {}
 func (r *stubProgressReporter) RunFinished(_ int, _ int, _ int, _ int, _ int)                {}
+func (r *stubProgressReporter) JudgeIntervention(_ int, _, _, _, _ string)                   {}
 func (r *stubProgressReporter) PunchlistText(_ string)                                       {}
 
 // stubNotifier records sent events and optionally returns an error.

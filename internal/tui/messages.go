@@ -68,6 +68,15 @@ type RollupCreatedMsg struct {
 // spinner running to indicate active polling.
 type WatchingMsg struct{}
 
+// JudgeInterventionMsg is sent when the judge intervenes during an agent step.
+type JudgeInterventionMsg struct {
+	IssueNumber int
+	Rule        string
+	Judgment    string
+	Detail      string
+	Step        string
+}
+
 // RunDoneMsg is sent when the orchestrator goroutine finishes. The TUI stays
 // on screen so the user can review results; pressing q/esc/ctrl+c exits.
 type RunDoneMsg struct{}
