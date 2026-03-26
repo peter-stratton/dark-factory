@@ -264,18 +264,47 @@ func levelToClass(level string) string {
 
 // notableMessages are log message prefixes that represent key milestones in a run.
 var notableMessages = []string{
+	// run lifecycle
 	"starting orchestration",
+	"fetched issues",
+	"run lock acquired",
+	"run lock released",
+
+	// issue lifecycle
+	"processing issue",
+	"issue outcome",
+
+	// agent step starts
+	"starting spec generator agent",
+	"starting recon agent",
 	"starting implementer agent",
 	"starting implementer retry agent",
+	"starting verify-fix agent",
 	"starting quality reviewer agent",
-	"starting functional reviewer agent",
-	"starting spec generator agent",
+	"starting reviewer agent",           // functional reviewer (actual message)
+	"starting functional reviewer agent", // kept for forward compat
+
+	// agent step completions / verdicts
 	"quality reviewer finished",
-	"functional reviewer finished",
+	"reviewer finished",           // functional reviewer (actual message)
+	"functional reviewer finished", // kept for forward compat
 	"quality review requested changes",
-	"processing issue",
-	"run lock acquired",
-	"fetched issues",
+	"retrying implementation",
+
+	// verify outcomes
+	"verify step passed",
+	"verify step passed for module",
+	"rollup verify passed",
+	"rollup verify passed after fix",
+
+	// pr events
+	"rollup pr upserted",
+	"rollup pr merged",
+	"rollup pr left open for human review",
+	"pr approved, will merge",
+	"pr approved, skipping merge",
+	"pr is not low-risk, labeling for human review",
+	"pr is conflicting, attempting automatic rebase",
 }
 
 // isNotableMsg reports whether a log message represents a key milestone.

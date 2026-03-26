@@ -492,6 +492,97 @@ func TestServer_RunLogs_Pagination_HtmxTarget(t *testing.T) {
 	}
 }
 
+// --- Notable message tests ---
+
+func TestIsNotableMsg(t *testing.T) {
+	notable := []string{
+		// run lifecycle
+		"starting orchestration",
+		"fetched issues",
+		"run lock acquired",
+		"run lock released",
+		// issue lifecycle
+		"processing issue",
+		"issue outcome",
+		// agent step starts
+		"starting spec generator agent",
+		"starting recon agent",
+		"starting implementer agent",
+		"starting implementer retry agent",
+		"starting verify-fix agent",
+		"starting quality reviewer agent",
+		"starting reviewer agent",
+		"starting functional reviewer agent",
+		// agent step completions / verdicts
+		"quality reviewer finished",
+		"reviewer finished",
+		"functional reviewer finished",
+		"quality review requested changes",
+		"retrying implementation",
+		// verify outcomes
+		"verify step passed",
+		"verify step passed for module",
+		"rollup verify passed",
+		"rollup verify passed after fix",
+		// pr events
+		"rollup pr upserted",
+		"rollup pr merged",
+		"rollup pr left open for human review",
+		"pr approved, will merge",
+		"pr approved, skipping merge",
+		"pr is not low-risk, labeling for human review",
+		"pr is conflicting, attempting automatic rebase",
+	}
+	notNotable := []string{
+		"",
+		"debug noise",
+		"fetching diff",
+		"cloning repository",
+		"starting something else",
+	}
+
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:      "acme/proj",
+		Milestone: "v1.0",
+		StartedAt: now,
+	})
+
+	srv := newServer(t, tmpDir)
+
+	for _, msg := range notable {
+		// Write a log file with just this message and check it renders with log-notable class.
+		writeDebugLog(t, runDir, []string{makeLogLine("INFO", msg)})
+		req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/logs", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("msg=%q: status=%d", msg, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "log-notable") {
+			t.Errorf("msg=%q should be notable but log-notable class not found in response", msg)
+		}
+	}
+
+	for _, msg := range notNotable {
+		if msg == "" {
+			continue // empty message not logged
+		}
+		writeDebugLog(t, runDir, []string{makeLogLine("INFO", msg)})
+		req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/logs", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("msg=%q: status=%d", msg, rr.Code)
+		}
+		if strings.Contains(rr.Body.String(), "log-notable") {
+			t.Errorf("msg=%q should NOT be notable but log-notable class found in response", msg)
+		}
+	}
+}
+
 // --- HTMX filter integration tests ---
 
 func TestServer_RunLogs_FilterControls_HTMX(t *testing.T) {
