@@ -346,15 +346,15 @@ var LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() 
 	cmd.Stdout = pw
 	cmd.Stderr = pw
 	if err := cmd.Start(); err != nil {
-		pr.Close()
-		pw.Close()
+		_ = pr.Close()
+		_ = pw.Close()
 		return nil, nil, err
 	}
 	// Close the parent's copy of the write end immediately. The child
 	// process inherited its own file descriptor; when docker exits the
 	// kernel closes the child's copy, and the reader sees EOF. Keeping
 	// pw open in the parent would prevent EOF and hang the scanner.
-	pw.Close()
+	_ = pw.Close()
 	wait := func() error {
 		return cmd.Wait()
 	}
