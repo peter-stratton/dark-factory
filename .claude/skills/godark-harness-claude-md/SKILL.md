@@ -33,7 +33,7 @@ This skill should be run **after** `/godark-define-architecture` and
    - **Duplicated** — content that already exists in a subordinate doc,
      prompt template, or tool config (e.g. error handling rules that match
      `docs/conventions.md`, git workflow already in prompt templates, protected
-     paths already in `godark.yaml` / Agent SDK config). Action: drop without
+     paths already in `godark.yaml`). Action: drop without
      moving — the content is already where it belongs.
    - **Misplaced** — content that belongs in a subordinate doc or prompt
      template but isn't there yet (e.g. inline coding conventions, architecture
@@ -53,7 +53,7 @@ This skill should be run **after** `/godark-define-architecture` and
      - Build/test/lint commands → `godark.yaml` or the project's CI config
      - Git workflow (branching, commit conventions) → prompt templates
      - Definition of done / completion criteria → prompt templates
-     - Protected path lists → Agent SDK configuration / `godark.yaml`
+     - Protected path lists → `godark.yaml`
    - Ask the user where each block should go. Suggest the default but accept
      alternatives.
    - Move the content to the agreed destination. If the destination file already
@@ -129,7 +129,7 @@ it probably belongs in a subordinate doc.
   - Code examples or function signatures (they go stale)
   - Style rules enforced by linters (redundant)
   - Build/test commands available in `godark.yaml` or detectable from the project
-  - Protected path lists (enforced mechanically by the Agent SDK)
+  - Protected path lists (enforced mechanically by `godark.yaml`)
   - Git workflow rules (belong in prompt templates injected per-run)
   - Definition of done / completion checklists (belong in prompt templates)
   - Content that duplicates a subordinate doc
