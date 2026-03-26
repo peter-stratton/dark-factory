@@ -196,3 +196,110 @@ func TestEmptyMilestone(t *testing.T) {
 		t.Errorf("expected empty slice, got %d issues", len(issues))
 	}
 }
+
+func TestFetchMergedPRIssueNumbers_ClosingKeywords(t *testing.T) {
+	cases := []struct {
+		name  string
+		body  string
+		want  []int
+	}{
+		{
+			name: "closes",
+			body: "Closes #31",
+			want: []int{31},
+		},
+		{
+			name: "fixes",
+			body: "Fixes #42",
+			want: []int{42},
+		},
+		{
+			name: "resolves",
+			body: "Resolves #7",
+			want: []int{7},
+		},
+		{
+			name: "multiple",
+			body: "Closes #10\nFixes #20\nResolves #30",
+			want: []int{10, 20, 30},
+		},
+		{
+			name: "case insensitive",
+			body: "CLOSES #99",
+			want: []int{99},
+		},
+		{
+			name: "no keywords",
+			body: "This PR adds a new feature.",
+			want: nil,
+		},
+		{
+			name: "deduplication",
+			body: "Closes #5\nCloses #5",
+			want: []int{5},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := CommandRunner
+			defer func() { CommandRunner = orig }()
+
+			CommandRunner = func(name string, args ...string) ([]byte, error) {
+				type prBody struct {
+					Body string `json:"body"`
+				}
+				prs := []prBody{{Body: tc.body}}
+				out, err := json.Marshal(prs)
+				if err != nil {
+					return nil, err
+				}
+				return out, nil
+			}
+
+			got, err := FetchMergedPRIssueNumbers("owner/repo")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i, n := range tc.want {
+				if got[i] != n {
+					t.Errorf("index %d: got %d, want %d", i, got[i], n)
+				}
+			}
+		})
+	}
+}
+
+func TestFetchMergedPRIssueNumbers_Error(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh: not authenticated")
+	}
+
+	_, err := FetchMergedPRIssueNumbers("owner/repo")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestFetchMergedPRIssueNumbers_Empty(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("[]"), nil
+	}
+
+	got, err := FetchMergedPRIssueNumbers("owner/repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty result, got %v", got)
+	}
+}

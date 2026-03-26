@@ -2760,15 +2760,19 @@ func TestRefreshAndCategorize_ReturnsCorrectSplit(t *testing.T) {
 	origRunner := github.CommandRunner
 	t.Cleanup(func() { github.CommandRunner = origRunner })
 	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
-		for i, a := range args {
-			if a == "--state" && i+1 < len(args) && args[i+1] == "closed" {
-				return json.Marshal([]struct{ Number int }{{Number: 1}})
+		// gh issue list --state closed → return #1 as closed
+		if len(args) > 0 && args[0] == "issue" {
+			for i, a := range args {
+				if a == "--state" && i+1 < len(args) && args[i+1] == "closed" {
+					return json.Marshal([]struct{ Number int }{{Number: 1}})
+				}
 			}
 		}
+		// gh pr list --state merged → no merged PRs
 		return []byte("[]"), nil
 	}
 
-	processable, blocked, err := refreshAndCategorize("owner/repo", allIssues, nil)
+	processable, blocked, err := refreshAndCategorize("owner/repo", allIssues, nil, nil, slog.Default())
 	if err != nil {
 		t.Fatalf("refreshAndCategorize() error = %v", err)
 	}
@@ -2777,5 +2781,68 @@ func TestRefreshAndCategorize_ReturnsCorrectSplit(t *testing.T) {
 	}
 	if len(blocked) != 0 {
 		t.Errorf("expected 0 blocked, got %d: %v", len(blocked), blocked)
+	}
+}
+
+func TestRefreshAndCategorize_ForcedClosedUnblocksDependent(t *testing.T) {
+	// Issue 5 is blocked by #4. Issue 4 was just merged but CloseIssue failed
+	// (issue still open on GitHub). forcedClosed=[4] must unblock issue 5.
+	allIssues := []github.Issue{
+		{Number: 5, Title: "blocked by 4", Body: "**Blocked by**: #4"},
+	}
+
+	origRunner := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origRunner })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		// GitHub reports no closed issues (CloseIssue failed).
+		if len(args) > 0 && args[0] == "issue" {
+			return []byte("[]"), nil
+		}
+		// No merged PRs with closing keywords.
+		return []byte("[]"), nil
+	}
+
+	processable, blocked, err := refreshAndCategorize("owner/repo", allIssues, nil, []int{4}, slog.Default())
+	if err != nil {
+		t.Fatalf("refreshAndCategorize() error = %v", err)
+	}
+	if len(processable) != 1 || processable[0].Number != 5 {
+		t.Fatalf("expected issue 5 to be processable, got processable=%v blocked=%v", processable, blocked)
+	}
+	if len(blocked) != 0 {
+		t.Errorf("expected 0 blocked, got %d", len(blocked))
+	}
+}
+
+func TestRefreshAndCategorize_MergedPRUnblocksDependent(t *testing.T) {
+	// Issue 7 is blocked by #6. Issue 6's PR was merged with "Closes #6" in
+	// the body, but CloseIssue was never called (watch-mode path).
+	allIssues := []github.Issue{
+		{Number: 7, Title: "blocked by 6", Body: "**Blocked by**: #6"},
+	}
+
+	origRunner := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origRunner })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "issue" {
+			// GitHub still shows issue 6 as open.
+			return []byte("[]"), nil
+		}
+		// gh pr list --state merged returns a PR whose body closes #6.
+		if len(args) > 0 && args[0] == "pr" {
+			return []byte(`[{"body":"Closes #6\n\nImplementation notes here."}]`), nil
+		}
+		return []byte("[]"), nil
+	}
+
+	processable, blocked, err := refreshAndCategorize("owner/repo", allIssues, nil, nil, slog.Default())
+	if err != nil {
+		t.Fatalf("refreshAndCategorize() error = %v", err)
+	}
+	if len(processable) != 1 || processable[0].Number != 7 {
+		t.Fatalf("expected issue 7 to be processable, got processable=%v blocked=%v", processable, blocked)
+	}
+	if len(blocked) != 0 {
+		t.Errorf("expected 0 blocked, got %d", len(blocked))
 	}
 }

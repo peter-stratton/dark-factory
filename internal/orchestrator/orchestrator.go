@@ -195,9 +195,13 @@ func categorizeIssues(issues []github.Issue, closedSet map[int]bool) ([]github.I
 }
 
 // refreshAndCategorize re-fetches closed issue numbers from GitHub, rebuilds
-// the closed set (injecting noDarkNums as resolved), and re-categorizes
-// allIssues into processable and blocked slices.
-func refreshAndCategorize(repo string, allIssues []github.Issue, noDarkNums []int) (processable []github.Issue, blocked []blockedIssue, err error) {
+// the closed set (injecting noDarkNums and forcedClosed as resolved), and
+// re-categorizes allIssues into processable and blocked slices.
+//
+// forcedClosed contains issue numbers that were merged in the current wave and
+// must be treated as closed regardless of GitHub's issue state. This handles
+// the case where CloseIssue silently failed after a successful squash-merge.
+func refreshAndCategorize(repo string, allIssues []github.Issue, noDarkNums []int, forcedClosed []int, logger *slog.Logger) (processable []github.Issue, blocked []blockedIssue, err error) {
 	closedNumbers, err := github.FetchClosedIssueNumbers(repo)
 	if err != nil {
 		return nil, nil, fmt.Errorf("re-fetching closed issues: %w", err)
@@ -206,6 +210,21 @@ func refreshAndCategorize(repo string, allIssues []github.Issue, noDarkNums []in
 	// Treat nodark issues as resolved so they do not block other issues.
 	for _, n := range noDarkNums {
 		cs[n] = true
+	}
+	// Inject issues merged in the current wave that may not yet be closed on
+	// GitHub (e.g. CloseIssue failed, or GitHub auto-close didn't fire).
+	for _, n := range forcedClosed {
+		cs[n] = true
+	}
+	// Also resolve issues referenced by any merged PR — covers the watch-mode
+	// and external-merge paths where CloseIssue may have been skipped entirely.
+	mergedNums, mergeErr := github.FetchMergedPRIssueNumbers(repo)
+	if mergeErr != nil {
+		logger.Warn("failed to fetch merged PR issue numbers, dependency resolution may be incomplete", "error", mergeErr)
+	} else {
+		for _, n := range mergedNums {
+			cs[n] = true
+		}
 	}
 	processable, blocked = categorizeIssues(allIssues, cs)
 	return processable, blocked, nil
@@ -232,7 +251,7 @@ func ReResolveAndProcess(
 	reporter progress.ProgressReporter,
 	notifiers []notify.Notifier,
 ) (bool, error) {
-	processable, _, err := refreshAndCategorize(cfg.Repo, allIssues, noDarkNums)
+	processable, _, err := refreshAndCategorize(cfg.Repo, allIssues, noDarkNums, nil, logger)
 	if err != nil {
 		return false, fmt.Errorf("re-resolving dependencies: %w", err)
 	}
@@ -733,6 +752,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 		// Process each issue in the batch.
 		merged := false
+		var justMergedNums []int
 		for _, issue := range batch {
 			if ctx.Err() != nil {
 				logger.Warn("context cancelled, stopping", "error", ctx.Err())
@@ -783,6 +803,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 					}
 				}
 				merged = true
+				justMergedNums = append(justMergedNums, issue.Number)
 			case agent.StatusReadyToMerge:
 				runStats.readyToMerge++
 				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost)
@@ -857,8 +878,10 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 
 		// Re-fetch closed issues and re-categorize for the next wave.
+		// Pass justMergedNums so issues whose CloseIssue call failed are still
+		// treated as resolved for dependency purposes.
 		var refreshErr error
-		processable, blocked, refreshErr = refreshAndCategorize(cfg.Repo, allIssues, noDarkNums)
+		processable, blocked, refreshErr = refreshAndCategorize(cfg.Repo, allIssues, noDarkNums, justMergedNums, logger)
 		if refreshErr != nil {
 			logger.Warn("failed to re-fetch closed issues, stopping re-resolution", "error", refreshErr)
 			break
