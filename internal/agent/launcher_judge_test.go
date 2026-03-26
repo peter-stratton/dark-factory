@@ -11,14 +11,6 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
-// stubSandboxRunner replaces SandboxRunner for the duration of the test.
-func stubSandboxRunner(t *testing.T, fn func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error)) {
-	t.Helper()
-	orig := SandboxRunner
-	t.Cleanup(func() { SandboxRunner = orig })
-	SandboxRunner = fn
-}
-
 // enabledJudge returns a *config.Judge with judge enabled and a very short
 // idle timeout so tests can trigger a kill without sleeping.
 func enabledJudge(idleTimeoutSecs int) *config.Judge {
@@ -55,7 +47,7 @@ func sandboxResult(stdout string, exitCode int, timedOut bool) *sandbox.RunResul
 // judge config has Enabled=false.
 func TestRunSandbox_JudgeDisabled(t *testing.T) {
 	var capturedOpts sandbox.RunOpts
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		capturedOpts = opts
 		return sandboxResult(`{"session_id":"s1","result":"ok","cost_usd":0,"is_error":false}`, 0, false), nil
 	})
@@ -66,7 +58,7 @@ func TestRunSandbox_JudgeDisabled(t *testing.T) {
 		Repo:        "owner/repo",
 		JudgeConfig: disabledJudge(),
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -85,7 +77,7 @@ func TestRunSandbox_JudgeDisabled(t *testing.T) {
 // JudgeConfig is nil (judge not configured).
 func TestRunSandbox_JudgeNilConfig(t *testing.T) {
 	var capturedOpts sandbox.RunOpts
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		capturedOpts = opts
 		return sandboxResult(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`, 0, false), nil
 	})
@@ -95,7 +87,7 @@ func TestRunSandbox_JudgeNilConfig(t *testing.T) {
 		Repo:        "owner/repo",
 		JudgeConfig: nil,
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -110,7 +102,7 @@ func TestRunSandbox_JudgeNilConfig(t *testing.T) {
 // TestRunSandbox_JudgeEnabled_NoIntervention verifies that normal log lines
 // do not trigger a kill and the result is clean.
 func TestRunSandbox_JudgeEnabled_NoIntervention(t *testing.T) {
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		// Feed normal lines to the callback; none should trigger an intervention.
 		if opts.LogCallback != nil {
 			opts.LogCallback(`{"tool":"Read","path":"foo.go"}`)
@@ -126,7 +118,7 @@ func TestRunSandbox_JudgeEnabled_NoIntervention(t *testing.T) {
 		Repo:        "owner/repo",
 		JudgeConfig: enabledJudge(300),
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -145,7 +137,7 @@ func TestRunSandbox_JudgeEnabled_NoIntervention(t *testing.T) {
 // is set when judge is enabled.
 func TestRunSandbox_JudgeEnabled_LogCallbackWired(t *testing.T) {
 	var capturedOpts sandbox.RunOpts
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		capturedOpts = opts
 		return sandboxResult(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`, 0, false), nil
 	})
@@ -156,7 +148,7 @@ func TestRunSandbox_JudgeEnabled_LogCallbackWired(t *testing.T) {
 		Repo:        "owner/repo",
 		JudgeConfig: enabledJudge(300),
 	}
-	_, err := Run(context.Background(), opts, false, testLogger(t))
+	_, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -169,7 +161,7 @@ func TestRunSandbox_JudgeEnabled_LogCallbackWired(t *testing.T) {
 // the context (stopping the container) and sets JudgeKilled=true.
 func TestRunSandbox_KillStopsContainer(t *testing.T) {
 	var contextCancelled bool
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		// Simulate idle timeout by invoking the callback with a line, then
 		// manipulating time by injecting an intervention directly via the callback.
 		// We create a fake idle-timeout line that the judge would see after enough
@@ -204,7 +196,7 @@ func TestRunSandbox_KillStopsContainer(t *testing.T) {
 			ToolThrashWindowSecs: 60,
 		},
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -222,7 +214,7 @@ func TestRunSandbox_KillStopsContainer(t *testing.T) {
 // TestRunSandbox_InterventionRecordPopulated verifies that JudgeIntervention
 // contains rule name, detail, and timing after a kill.
 func TestRunSandbox_InterventionRecordPopulated(t *testing.T) {
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		if opts.LogCallback != nil {
 			// Trigger tool thrash: same query repeated.
 			for i := 0; i < 5; i++ {
@@ -243,7 +235,7 @@ func TestRunSandbox_InterventionRecordPopulated(t *testing.T) {
 			ToolThrashWindowSecs: 60,
 		},
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -268,7 +260,7 @@ func TestRunSandbox_InterventionRecordPopulated(t *testing.T) {
 func TestRunSandbox_KillWithUsableResult(t *testing.T) {
 	const finalJSON = `{"session_id":"sess-xyz","result":"Implementation complete","cost_usd":0.55,"is_error":false,"verdict":"","tool_trace":["Read foo.go"]}`
 
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		if opts.LogCallback != nil {
 			// Trigger tool thrash kill.
 			for i := 0; i < 5; i++ {
@@ -290,7 +282,7 @@ func TestRunSandbox_KillWithUsableResult(t *testing.T) {
 			ToolThrashWindowSecs: 60,
 		},
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -315,7 +307,7 @@ func TestRunSandbox_KillWithUsableResult(t *testing.T) {
 // in config.Judge is treated as enabled (default-on behaviour).
 func TestRunSandbox_JudgeEnabled_DefaultOn(t *testing.T) {
 	var capturedOpts sandbox.RunOpts
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		capturedOpts = opts
 		return sandboxResult(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`, 0, false), nil
 	})
@@ -327,7 +319,7 @@ func TestRunSandbox_JudgeEnabled_DefaultOn(t *testing.T) {
 		Repo:        "owner/repo",
 		JudgeConfig: &config.Judge{DefaultIdleTimeout: 300},
 	}
-	_, err := Run(context.Background(), opts, false, testLogger(t))
+	_, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -339,12 +331,12 @@ func TestRunSandbox_JudgeEnabled_DefaultOn(t *testing.T) {
 // TestRunSandbox_TimingFields verifies StartedAt and FinishedAt are set for
 // sandbox runs.
 func TestRunSandbox_TimingFields(t *testing.T) {
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		return sandboxResult(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`, 0, false), nil
 	})
 
 	before := time.Now()
-	result, err := Run(context.Background(), RunOpts{Prompt: "test", Repo: "owner/repo"}, false, testLogger(t))
+	result, err := Run(context.Background(), RunOpts{Prompt: "test", Repo: "owner/repo"}, testLogger(t))
 	after := time.Now()
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -363,7 +355,7 @@ func TestRunSandbox_TimingFields(t *testing.T) {
 // container triggers a retry, and the second container's result is returned.
 func TestRunSandbox_RetrySucceeds(t *testing.T) {
 	callCount := 0
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callCount++
 		if callCount == 1 {
 			// First container: feed stream errors to trigger transport failure.
@@ -392,7 +384,7 @@ func TestRunSandbox_RetrySucceeds(t *testing.T) {
 			ContainerRetryLimit:       2,
 		},
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -411,7 +403,7 @@ func TestRunSandbox_RetrySucceeds(t *testing.T) {
 // hit transport failures, the final result has JudgeKilled=true.
 func TestRunSandbox_RetryLimitExhausted(t *testing.T) {
 	callCount := 0
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callCount++
 		// Every container hits transport failure.
 		if opts.LogCallback != nil {
@@ -433,7 +425,7 @@ func TestRunSandbox_RetryLimitExhausted(t *testing.T) {
 			ContainerRetryLimit:       2,
 		},
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -456,7 +448,7 @@ func TestRunSandbox_RetryLimitExhausted(t *testing.T) {
 // RetryContainer) does not trigger container retries.
 func TestRunSandbox_KillDoesNotRetry(t *testing.T) {
 	callCount := 0
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callCount++
 		// Trigger tool thrash → Kill (not RetryContainer).
 		if opts.LogCallback != nil {
@@ -479,7 +471,7 @@ func TestRunSandbox_KillDoesNotRetry(t *testing.T) {
 			ContainerRetryLimit:  2,
 		},
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -497,7 +489,7 @@ func TestRunSandbox_KillDoesNotRetry(t *testing.T) {
 // container's state.
 func TestRunSandbox_RetryRunsTwiceOnTransportFailure(t *testing.T) {
 	callCount := 0
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callCount++
 		if callCount <= 2 {
 			// First two containers: transport failure.
@@ -523,7 +515,7 @@ func TestRunSandbox_RetryRunsTwiceOnTransportFailure(t *testing.T) {
 			ContainerRetryLimit:       2,
 		},
 	}
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}

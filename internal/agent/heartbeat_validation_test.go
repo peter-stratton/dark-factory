@@ -19,7 +19,7 @@ func TestHeartbeatFiresIdleTimeout(t *testing.T) {
 	enabled := true
 	var containerRanFor time.Duration
 
-	stubSandboxRunner(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		// Send one tool call, then go silent.
 		if opts.LogCallback != nil {
 			opts.LogCallback(`{"tool": "Read", "path": "foo.go"}`)
@@ -41,7 +41,7 @@ func TestHeartbeatFiresIdleTimeout(t *testing.T) {
 		},
 	}
 
-	result, err := Run(context.Background(), opts, false, testLogger(t))
+	result, err := Run(context.Background(), opts, testLogger(t))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}

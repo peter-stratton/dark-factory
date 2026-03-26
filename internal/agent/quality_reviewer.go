@@ -40,7 +40,7 @@ func QualityReview(ctx context.Context, issue github.Issue, prNum int, cfg *conf
 		"cycle", cycle+1,
 	)
 
-	result, err := Run(ctx, opts, cfg.NoSandbox, logger)
+	result, err := Run(ctx, opts, logger)
 	if err != nil {
 		return nil, fmt.Errorf("running quality reviewer agent: %w", err)
 	}

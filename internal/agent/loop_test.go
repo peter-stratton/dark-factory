@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/agent/judge"
@@ -84,16 +83,16 @@ func setupLoopTest(t *testing.T, agentOutputs []string, guardFn func(name string
 	t.Helper()
 	stubs := &loopStubs{agentOutputs: agentOutputs}
 
-	origRunner := Runner
+	origSandboxRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origSandboxRunner
 		GuardRunner = origGuard
 	})
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := stubs.nextAgentOutput()
-		return []byte(wrapRunnerJSON(out)), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON(out)}, nil
 	}
 
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
@@ -456,18 +455,18 @@ func TestProcessIssue_SkipsSpecGenWhenNoPrompt(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	// Override Runner to count agent calls.
-	origRunner := Runner
-	t.Cleanup(func() { Runner = origRunner })
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	// Override SandboxRunner to count agent calls.
+	origSandboxRunner := SandboxRunner
+	t.Cleanup(func() { SandboxRunner = origSandboxRunner })
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		agentCallCount++
 		switch agentCallCount {
 		case 1:
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2:
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default:
-			return []byte(wrapRunnerJSON("reviewer output\nAGENT_RESULT=APPROVED\n")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("reviewer output\nAGENT_RESULT=APPROVED\n")}, nil
 		}
 	}
 
@@ -502,10 +501,10 @@ func loopGuardFn(name string, args ...string) ([]byte, error) {
 }
 
 func TestProcessIssue_PassesSessionIDToFirstRetry(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -513,25 +512,25 @@ func TestProcessIssue_PassesSessionIDToFirstRetry(t *testing.T) {
 	callIdx := 0
 	var retryEnv map[string]string
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer — returns a session ID
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		case 3: // reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 4: // first retry — capture env
-			retryEnv = make(map[string]string, len(env))
-			for k, v := range env {
+			retryEnv = make(map[string]string, len(opts.Env))
+			for k, v := range opts.Env {
 				retryEnv[k] = v
 			}
 			out := `{"session_id":"sess-retry-002","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		default: // reviewer after retry — approve
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -549,10 +548,10 @@ func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
 	cfg := loopConfig()
 	cfg.MaxRetries = 2
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -560,30 +559,30 @@ func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
 	callIdx := 0
 	var secondRetryEnv map[string]string
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
 			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		case 3: // reviewer — changes requested
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 4: // first retry — returns its own session ID
 			out := `{"session_id":"sess-retry-1","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 5: // reviewer — changes requested again
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 6: // second retry — capture env
-			secondRetryEnv = make(map[string]string, len(env))
-			for k, v := range env {
+			secondRetryEnv = make(map[string]string, len(opts.Env))
+			for k, v := range opts.Env {
 				secondRetryEnv[k] = v
 			}
 			out := `{"session_id":"sess-retry-2","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		default: // reviewer after second retry — approve
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -598,10 +597,10 @@ func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
 }
 
 func TestProcessIssue_ReviewerHasNoSessionID(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -609,21 +608,21 @@ func TestProcessIssue_ReviewerHasNoSessionID(t *testing.T) {
 	callIdx := 0
 	var reviewerEnvs []map[string]string
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer — returns a session ID
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // reviewer calls — capture env
-			captured := make(map[string]string, len(env))
-			for k, v := range env {
+			captured := make(map[string]string, len(opts.Env))
+			for k, v := range opts.Env {
 				captured[k] = v
 			}
 			reviewerEnvs = append(reviewerEnvs, captured)
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -676,10 +675,10 @@ func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
 	cfg.QualityStrictnessDecay = true
 	// MaxRetries=2 → qualityMaxAttempts=3
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -691,25 +690,25 @@ func TestProcessIssue_PassesCycleToQualityReview(t *testing.T) {
 	prompts := testPrompts(t)
 	prompts.QualityReviewer = "Quality review PR #{{.PRNumber}}{{if .StrictnessDirective}}\n{{.StrictnessDirective}}{{end}}"
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality review cycle=0 (should have no directive)
-			if env["GODARK_ROLE"] == "quality_reviewer" {
-				qualityPrompts = append(qualityPrompts, env["GODARK_PROMPT"])
+			if opts.Env["GODARK_ROLE"] == "quality_reviewer" {
+				qualityPrompts = append(qualityPrompts, opts.Env["GODARK_PROMPT"])
 			}
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 3: // retry
-			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("retry output")}, nil
 		case 4: // quality review cycle=1 (should have directive)
-			if env["GODARK_ROLE"] == "quality_reviewer" {
-				qualityPrompts = append(qualityPrompts, env["GODARK_PROMPT"])
+			if opts.Env["GODARK_ROLE"] == "quality_reviewer" {
+				qualityPrompts = append(qualityPrompts, opts.Env["GODARK_PROMPT"])
 			}
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -876,26 +875,26 @@ func TestProcessIssue_AutoMergeNone_QualityReviewStillRuns(t *testing.T) {
 	cfg.AutoMerge.Feature = "none"
 
 	agentCallCount := 0
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		agentCallCount++
 		switch agentCallCount {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer
-			if env["GODARK_ROLE"] != "quality_reviewer" {
-				return []byte(wrapRunnerJSON("unexpected role: " + env["GODARK_ROLE"])), []byte(""), 0, nil, nil
+			if opts.Env["GODARK_ROLE"] != "quality_reviewer" {
+				return &sandbox.RunResult{Stdout: wrapRunnerJSON("unexpected role: " + opts.Env["GODARK_ROLE"])}, nil
 			}
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -928,15 +927,15 @@ func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 		return []byte(""), nil
 	})
 
-	origRunner := Runner
-	t.Cleanup(func() { Runner = origRunner })
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	origRunner := SandboxRunner
+	t.Cleanup(func() { SandboxRunner = origRunner })
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		agentCallCount++
 		switch agentCallCount {
 		case 1:
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		default:
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -1204,28 +1203,28 @@ func TestProcessIssue_HookCalledOnSpecGeneratorSuccess(t *testing.T) {
 func TestProcessIssue_HookCalledOnSpecGeneratorError(t *testing.T) {
 	hook := &testRunDataHook{}
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		if callIdx == 1 {
 			// Spec generator call: return an error
-			return nil, nil, 0, nil, fmt.Errorf("spec gen failed")
+			return nil, fmt.Errorf("spec gen failed")
 		}
 		// Subsequent calls: implementer, quality reviewer, reviewer
 		outputs := []string{"implementer output", "AGENT_RESULT=APPROVED", "AGENT_RESULT=APPROVED"}
 		idx := callIdx - 2
 		if idx < len(outputs) {
-			return []byte(wrapRunnerJSON(outputs[idx])), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON(outputs[idx])}, nil
 		}
-		return []byte(wrapRunnerJSON("")), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("")}, nil
 	}
 
 	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPromptsWithSpecGen(t), nil, testLogger(t), hook, nil)
@@ -1238,10 +1237,10 @@ func TestProcessIssue_HookCalledOnSpecGeneratorError(t *testing.T) {
 func TestProcessIssue_HookCalledOnSpecGeneratorTimeout(t *testing.T) {
 	hook := &testRunDataHook{}
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -1249,19 +1248,19 @@ func TestProcessIssue_HookCalledOnSpecGeneratorTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	callIdx := 0
-	Runner = func(innerCtx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(innerCtx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		if callIdx == 1 {
 			// Cancel the context during spec gen to trigger TimedOut path
 			cancel()
-			return []byte(""), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{}, nil
 		}
 		outputs := []string{"implementer output", "AGENT_RESULT=APPROVED", "AGENT_RESULT=APPROVED"}
 		idx := callIdx - 2
 		if idx < len(outputs) {
-			return []byte(wrapRunnerJSON(outputs[idx])), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON(outputs[idx])}, nil
 		}
-		return []byte(wrapRunnerJSON("")), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("")}, nil
 	}
 
 	ProcessIssue(ctx, loopIssue(), loopConfig(), testPromptsWithSpecGen(t), nil, testLogger(t), hook, nil)
@@ -1613,10 +1612,10 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 	cfg.ReviewDir = "tests/review/"
 	cfg.ScenarioDir = scenarioDir
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -1624,35 +1623,35 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 	callIdx := 0
 	var mergeCallCount int
 
-	reviewerWithoutTests := func() []byte {
+	reviewerWithoutTests := func() string {
 		final := runnerFinalResult{
 			Result:    "AGENT_RESULT=APPROVED",
 			ToolTrace: []string{"Read tests/existing_test.go", "go test ./..."},
 		}
 		b, _ := json.Marshal(final)
-		return b
+		return string(b)
 	}
 
-	reviewerWithTests := func() []byte {
+	reviewerWithTests := func() string {
 		final := runnerFinalResult{
 			Result:    "AGENT_RESULT=APPROVED",
 			ToolTrace: []string{"Write tests/review/my_test.go", "go test ./..."},
 		}
 		b, _ := json.Marshal(final)
-		return b
+		return string(b)
 	}
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		case 3: // functional reviewer — approves without writing tests (guard re-runs reviewer)
-			return reviewerWithoutTests(), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: reviewerWithoutTests()}, nil
 		default: // second functional reviewer — approves with tests written (no implementer retry in between)
-			return reviewerWithTests(), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: reviewerWithTests()}, nil
 		}
 	}
 
@@ -1684,10 +1683,10 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 // GenerateSpec succeeds, no git fetch or checkout is performed — the
 // specGenerated flag is used instead of pulling files to the host.
 func TestProcessIssue_SpecGeneratedNoFetchNeeded(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -1712,17 +1711,17 @@ func TestProcessIssue_SpecGeneratedNoFetchNeeded(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // spec generator
-			return []byte(wrapRunnerJSON("spec generated")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("spec generated")}, nil
 		case 2: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer — include Write to review dir
-			return []byte(wrapRunnerJSONWithTrace("AGENT_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSONWithTrace("AGENT_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})}, nil
 		}
 	}
 
@@ -1750,10 +1749,10 @@ func TestProcessIssue_SpecGeneratedNoFetchNeeded(t *testing.T) {
 // generator succeeds, hasSpec is true for quality checks even though
 // the spec file only exists on the remote branch (not the host).
 func TestProcessIssue_SpecGeneratedSetsHasSpec(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -1775,17 +1774,17 @@ func TestProcessIssue_SpecGeneratedSetsHasSpec(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // spec generator
-			return []byte(wrapRunnerJSON("spec generated")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("spec generated")}, nil
 		case 2: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer — must include Write to review dir
-			return []byte(wrapRunnerJSONWithTrace("AGENT_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSONWithTrace("AGENT_RESULT=APPROVED", []string{"Write tests/review/test_main.go", "Bash go test ./tests/review/ -v"})}, nil
 		}
 	}
 
@@ -1813,29 +1812,29 @@ func TestProcessIssue_PreMergeGuardAllowsApprovalWithTests(t *testing.T) {
 	cfg.ReviewDir = "tests/review/"
 	cfg.ScenarioDir = scenarioDir
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer — approve
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer — approves WITH tests written
 			final := runnerFinalResult{
 				Result:    "AGENT_RESULT=APPROVED",
 				ToolTrace: []string{"Write tests/review/my_test.go", "go test ./..."},
 			}
 			b, _ := json.Marshal(final)
-			return b, []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: string(b)}, nil
 		}
 	}
 
@@ -2449,10 +2448,10 @@ func verifyFixPrompts(t *testing.T) *Prompts {
 // TestProcessIssue_VerifyFixSucceedsOnFirstAttempt verifies that when verify
 // initially fails but the fix agent succeeds, processing continues to review.
 func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -2484,19 +2483,19 @@ func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
 			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // verify-fix agent
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -2514,10 +2513,10 @@ func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
 // TestProcessIssue_VerifyFixExhaustedBlocking verifies that when all fix attempts
 // are exhausted and verify still fails with Blocking=true, status is "failed".
 func TestProcessIssue_VerifyFixExhaustedBlocking(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -2543,11 +2542,11 @@ func TestProcessIssue_VerifyFixExhaustedBlocking(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		// All agent calls return OK — verify failures drive the outcome.
 		out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	}
 
 	// MaxFixAttempts=2 → 2 fix agents called, then blocked.
@@ -2569,10 +2568,10 @@ func TestProcessIssue_VerifyFixExhaustedBlocking(t *testing.T) {
 // TestProcessIssue_VerifyFixExhaustedNonBlocking verifies that when all fix attempts
 // are exhausted with Blocking=false, processing proceeds to review with a warning.
 func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -2598,19 +2597,19 @@ func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
 			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // verify-fix agent
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 3: // quality reviewer (non-blocking proceeds here)
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -2626,10 +2625,10 @@ func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
 // TestProcessIssue_VerifyFixDriftCheckedAfterFix verifies that protected path drift
 // is re-checked after each fix attempt, and a drift detection fails the issue.
 func TestProcessIssue_VerifyFixDriftCheckedAfterFix(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -2663,10 +2662,10 @@ func TestProcessIssue_VerifyFixDriftCheckedAfterFix(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	}
 
 	cfg := verifyFixLoopConfig(true, 2)
@@ -2686,10 +2685,10 @@ func TestProcessIssue_VerifyFixDriftCheckedAfterFix(t *testing.T) {
 // TestProcessIssue_VerifyFixSessionContinuity verifies that the fix agent receives
 // the implementer's session ID for context resumption.
 func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -2720,23 +2719,23 @@ func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
 
 	callIdx := 0
 	var fixAgentEnv map[string]string
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer — returns a session ID
 			out := `{"session_id":"sess-impl-xyz","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // verify-fix agent — capture env
-			fixAgentEnv = make(map[string]string, len(env))
-			for k, v := range env {
+			fixAgentEnv = make(map[string]string, len(opts.Env))
+			for k, v := range opts.Env {
 				fixAgentEnv[k] = v
 			}
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -2754,10 +2753,10 @@ func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
 // TestProcessIssue_VerifyFixPromptContainsErrorOutput verifies that the rendered
 // verify_fix prompt includes check names and output from failed verify checks.
 func TestProcessIssue_VerifyFixPromptContainsErrorOutput(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -2788,20 +2787,20 @@ func TestProcessIssue_VerifyFixPromptContainsErrorOutput(t *testing.T) {
 
 	callIdx := 0
 	var fixAgentPrompt string
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
 			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // verify-fix agent — capture prompt
-			fixAgentPrompt = env["GODARK_PROMPT"]
+			fixAgentPrompt = opts.Env["GODARK_PROMPT"]
 			out := `{"session_id":"sess-fix","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -2822,10 +2821,10 @@ func TestProcessIssue_VerifyFixPromptContainsErrorOutput(t *testing.T) {
 // TestProcessIssue_VerifyFixSkippedWhenNoPrompt verifies that when VerifyFix prompt
 // is not configured, verify failures use the original blocking/non-blocking behavior.
 func TestProcessIssue_VerifyFixSkippedWhenNoPrompt(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -2850,10 +2849,10 @@ func TestProcessIssue_VerifyFixSkippedWhenNoPrompt(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		out := `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	}
 
 	// No VerifyFix prompt → fix cycle should not trigger.
@@ -3011,10 +3010,10 @@ func TestProcessIssue_VerifySandboxContainerFailure(t *testing.T) {
 // reviewer requests changes, Retry is called with an empty prevSessionID
 // (GODARK_SESSION_ID must not be set in the retry agent's environment).
 func TestProcessIssue_QualityRetryHasNoSessionID(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -3022,25 +3021,25 @@ func TestProcessIssue_QualityRetryHasNoSessionID(t *testing.T) {
 	callIdx := 0
 	var qualityRetryEnv map[string]string
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer — returns a session ID
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 3: // quality retry — capture env
-			qualityRetryEnv = make(map[string]string, len(env))
-			for k, v := range env {
+			qualityRetryEnv = make(map[string]string, len(opts.Env))
+			for k, v := range opts.Env {
 				qualityRetryEnv[k] = v
 			}
 			out := `{"session_id":"sess-qual-retry","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 4: // quality reviewer — approves after retry
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer — approves
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3058,10 +3057,10 @@ func TestProcessIssue_QualityRetryHasNoSessionID(t *testing.T) {
 // reviewer requests changes, Retry is called with the implementer's session ID
 // (GODARK_SESSION_ID must be set in the retry agent's environment).
 func TestProcessIssue_FunctionalRetryHasSessionID(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -3069,25 +3068,25 @@ func TestProcessIssue_FunctionalRetryHasSessionID(t *testing.T) {
 	callIdx := 0
 	var functionalRetryEnv map[string]string
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer — returns a session ID
 			out := `{"session_id":"sess-impl-001","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // quality reviewer — approves
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		case 3: // functional reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 4: // functional retry — capture env
-			functionalRetryEnv = make(map[string]string, len(env))
-			for k, v := range env {
+			functionalRetryEnv = make(map[string]string, len(opts.Env))
+			for k, v := range opts.Env {
 				functionalRetryEnv[k] = v
 			}
 			out := `{"session_id":"sess-func-retry","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		default: // functional reviewer — approves after retry
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3108,10 +3107,10 @@ func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
 	cfg := loopConfig()
 	cfg.MaxRetries = 2
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -3119,30 +3118,30 @@ func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
 	callIdx := 0
 	var functionalRetryEnv map[string]string
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer — returns original session ID
 			out := `{"session_id":"sess-impl","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 3: // quality retry — returns its own session ID
 			out := `{"session_id":"sess-qual-retry","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		case 4: // quality reviewer — approves
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		case 5: // functional reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 6: // functional retry — capture env; should have quality retry's session ID
-			functionalRetryEnv = make(map[string]string, len(env))
-			for k, v := range env {
+			functionalRetryEnv = make(map[string]string, len(opts.Env))
+			for k, v := range opts.Env {
 				functionalRetryEnv[k] = v
 			}
 			out := `{"session_id":"sess-func-retry","result":"ok","cost_usd":0,"is_error":false}`
-			return []byte(out), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: out}, nil
 		default: // functional reviewer — approves
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3304,25 +3303,25 @@ func TestProcessIssue_LowRiskMode_LowRiskMerges(t *testing.T) {
 	cfg.AutoMerge.Feature = "low_risk"
 	cfg.ProtectedPaths = []string{"CLAUDE.md"}
 
-	// Stub Runner directly so we can include a tool trace with a "Read" entry
+	// Stub SandboxRunner directly so we can include a tool trace with a "Read" entry
 	// for the functional reviewer, preventing the no_diff_read quality flag.
 	callIdx := 0
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nAGENT_RESULT=APPROVED\n", []string{"Read pr diff"})
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer
-			return []byte(reviewerOut), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: reviewerOut}, nil
 		}
 	}
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
@@ -3428,24 +3427,24 @@ func TestProcessIssue_LowRiskMode_RiskAssessmentWritten(t *testing.T) {
 	cfg.AutoMerge.Feature = "low_risk"
 	cfg.ProtectedPaths = []string{"CLAUDE.md"}
 
-	// Stub Runner with a reviewer output that includes a "Read" trace entry.
+	// Stub SandboxRunner with a reviewer output that includes a "Read" trace entry.
 	callIdx := 0
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	reviewerOut := wrapRunnerJSONWithTrace("reviewer output\nAGENT_RESULT=APPROVED\n", []string{"Read pr diff"})
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1:
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2:
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default:
-			return []byte(reviewerOut), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: reviewerOut}, nil
 		}
 	}
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
@@ -3648,10 +3647,10 @@ func TestProcessIssue_QualityEscalationLabelsAwaitingReview(t *testing.T) {
 // quality reviewer requests changes and the retry agent runs, verify is
 // re-executed before the next quality review cycle.
 func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -3678,19 +3677,19 @@ func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 3: // retry agent
-			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("retry output")}, nil
 		case 4: // quality reviewer — approves after retry+verify
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3710,10 +3709,10 @@ func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
 // TestProcessIssue_VerifyBlockingFailsAfterQualityGateRetry verifies that when
 // verify fails (blocking) after a quality-gate retry, the run is marked failed.
 func TestProcessIssue_VerifyBlockingFailsAfterQualityGateRetry(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -3745,15 +3744,15 @@ func TestProcessIssue_VerifyBlockingFailsAfterQualityGateRetry(t *testing.T) {
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		default: // retry agent
-			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("retry output")}, nil
 		}
 	}
 
@@ -3772,10 +3771,10 @@ func TestProcessIssue_VerifyBlockingFailsAfterQualityGateRetry(t *testing.T) {
 // that when verify fails (non-blocking) after a quality-gate retry, the
 // quality review cycle continues rather than aborting.
 func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
@@ -3801,19 +3800,19 @@ func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing
 	}
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 3: // retry agent
-			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("retry output")}, nil
 		case 4: // quality reviewer — approves (verify non-blocking, so we get here)
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3830,28 +3829,28 @@ func TestProcessIssue_VerifyNonBlockingContinuesAfterQualityGateRetry(t *testing
 func TestProcessIssue_ReconRunsBeforeImplement(t *testing.T) {
 	callOrder := []string{}
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		role := env["GODARK_ROLE"]
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		role := opts.Env["GODARK_ROLE"]
 		callOrder = append(callOrder, role)
 		callIdx++
 		switch callIdx {
 		case 1: // recon
-			return []byte(wrapRunnerJSON("recon brief text")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("recon brief text")}, nil
 		case 2: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3881,27 +3880,27 @@ func TestProcessIssue_ReconRunsBeforeImplement(t *testing.T) {
 func TestProcessIssue_ReconOutputPassedToImplementer(t *testing.T) {
 	var implementerPrompt string
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // recon
-			return []byte(wrapRunnerJSON("key finding: use approach X")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("key finding: use approach X")}, nil
 		case 2: // implementer
-			implementerPrompt = env["GODARK_PROMPT"]
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			implementerPrompt = opts.Env["GODARK_PROMPT"]
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3925,27 +3924,27 @@ func TestProcessIssue_ReconOutputPassedToImplementer(t *testing.T) {
 func TestProcessIssue_ReconFailureNonBlocking(t *testing.T) {
 	var implementerPrompt string
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // recon — simulate failure via non-zero exit
-			return []byte(""), []byte("error output"), 1, nil, nil
+			return &sandbox.RunResult{Stderr: "error output", ExitCode: 1}, nil
 		case 2: // implementer
-			implementerPrompt = env["GODARK_PROMPT"]
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			implementerPrompt = opts.Env["GODARK_PROMPT"]
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 3: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -3975,10 +3974,10 @@ func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
@@ -3987,17 +3986,17 @@ func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
 	defer cancel()
 
 	callIdx := 0
-	Runner = func(innerCtx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(innerCtx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // recon — cancel context to trigger TimedOut path
 			cancel()
-			return []byte(""), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{}, nil
 		case 2: // implementer — capture prompt; context is cancelled so Run returns TimedOut
-			implementerPrompt = env["GODARK_PROMPT"]
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			implementerPrompt = opts.Env["GODARK_PROMPT"]
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		default:
-			return []byte(wrapRunnerJSON("")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("")}, nil
 		}
 	}
 
@@ -4032,26 +4031,26 @@ func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
 func TestProcessIssue_ReconSkippedWhenUnconfigured(t *testing.T) {
 	callOrder := []string{}
 
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = loopGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		role := env["GODARK_ROLE"]
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		role := opts.Env["GODARK_ROLE"]
 		callOrder = append(callOrder, role)
 		callIdx++
 		switch callIdx {
 		case 1: // implementer
-			return []byte(wrapRunnerJSON("implementer output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
 		case 2: // quality reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		default: // functional reviewer
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -4491,16 +4490,16 @@ func qualityGuardFn(name string, args ...string) ([]byte, error) {
 // TestRunQualityReviewCycle_ApprovedFirstTry verifies that the cycle returns
 // (true, nil) when the quality reviewer approves on the first attempt.
 func TestRunQualityReviewCycle_ApprovedFirstTry(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = qualityGuardFn
 
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 	}
 
 	cfg := loopConfig()
@@ -4534,24 +4533,24 @@ func TestRunQualityReviewCycle_ApprovedFirstTry(t *testing.T) {
 // (true, nil) after CHANGES_REQUESTED on the first attempt and APPROVED on
 // the second.
 func TestRunQualityReviewCycle_ApprovedAfterRetry(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = qualityGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
 		case 1: // quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		case 2: // retry agent
-			return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("retry output")}, nil
 		default: // quality reviewer — approves
-			return []byte(wrapRunnerJSON("AGENT_RESULT=APPROVED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
 		}
 	}
 
@@ -4585,23 +4584,23 @@ func TestRunQualityReviewCycle_ApprovedAfterRetry(t *testing.T) {
 // TestRunQualityReviewCycle_ExhaustsRetries verifies that the cycle returns
 // (false, nil) when all quality review attempts are exhausted without approval.
 func TestRunQualityReviewCycle_ExhaustsRetries(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 	GuardRunner = qualityGuardFn
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		if callIdx%2 == 1 {
 			// quality reviewer — always requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		}
 		// retry agent
-		return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("retry output")}, nil
 	}
 
 	cfg := loopConfig()
@@ -4635,22 +4634,22 @@ func TestRunQualityReviewCycle_ExhaustsRetries(t *testing.T) {
 // TestRunQualityReviewCycle_DriftDuringQuality verifies that the cycle returns
 // (false, driftErr) when drift is detected after a quality-gate retry.
 func TestRunQualityReviewCycle_DriftDuringQuality(t *testing.T) {
-	origRunner := Runner
+	origRunner := SandboxRunner
 	origGuard := GuardRunner
 	t.Cleanup(func() {
-		Runner = origRunner
+		SandboxRunner = origRunner
 		GuardRunner = origGuard
 	})
 
 	callIdx := 0
-	Runner = func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		if callIdx == 1 {
 			// quality reviewer — requests changes
-			return []byte(wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")), []byte(""), 0, nil, nil
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
 		}
 		// retry agent
-		return []byte(wrapRunnerJSON("retry output")), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("retry output")}, nil
 	}
 
 	GuardRunner = func(name string, args ...string) ([]byte, error) {

@@ -44,7 +44,7 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 		"branch", branch,
 	)
 
-	return Run(ctx, opts, cfg.NoSandbox, logger)
+	return Run(ctx, opts, logger)
 }
 
 // Retry runs the implementer agent in retry mode for an existing PR.
@@ -89,7 +89,7 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID 
 		"fresh_session", handoffContext != "",
 	)
 
-	return Run(ctx, opts, cfg.NoSandbox, logger)
+	return Run(ctx, opts, logger)
 }
 
 // VerifyFix runs the implementer agent in verify-fix mode. It renders the
@@ -122,7 +122,7 @@ func VerifyFix(ctx context.Context, issue github.Issue, prNumber int, verifyErro
 		"resume_session", prevSessionID != "",
 	)
 
-	return Run(ctx, opts, cfg.NoSandbox, logger)
+	return Run(ctx, opts, logger)
 }
 
 // BranchName returns the conventional branch name for an issue.
