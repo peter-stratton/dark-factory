@@ -93,7 +93,9 @@ RUN {{.}}
 # Install Claude Code CLI via native installer (not the Python SDK, which has
 # critical bugs — see claude-agent-sdk-python#666, #739).
 WORKDIR /tmp
-RUN curl -fsSL https://claude.ai/install.sh | bash && mv /root/.local/bin/claude /usr/local/bin/claude && chmod +x /usr/local/bin/claude
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+    && chmod +x /usr/local/bin/claude
 
 # Create non-root user
 RUN useradd -m -s /bin/bash {{.User}}

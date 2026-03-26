@@ -883,8 +883,8 @@ func TestGenerateDockerfileClaudeCLIInstalled(t *testing.T) {
 	if !strings.Contains(df, "claude.ai/install.sh") {
 		t.Error("Dockerfile missing Claude CLI native installer")
 	}
-	if !strings.Contains(df, "mv /root/.local/bin/claude /usr/local/bin/claude") {
-		t.Error("Dockerfile missing claude binary move to /usr/local/bin")
+	if !strings.Contains(df, "cp -L /root/.local/bin/claude /usr/local/bin/claude") {
+		t.Error("Dockerfile missing claude binary copy to /usr/local/bin")
 	}
 }
 
