@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Schema for godark.yaml — derived from internal/config/config.go Config struct",
+  "$comment": "Schema for godark.yaml \u2014 derived from internal/config/config.go Config struct",
   "type": "object",
   "properties": {
     "repo": {
@@ -38,7 +38,9 @@
     },
     "generated_paths": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Directories containing generated code (excluded from review diffs)"
     },
     "modules": {
@@ -50,13 +52,19 @@
     },
     "protected_paths": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Paths agents must not modify",
-      "default": ["godark.yaml"]
+      "default": [
+        "godark.yaml"
+      ]
     },
     "denied_commands": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Shell commands agents must not run"
     },
     "roadmap_path": {
@@ -65,12 +73,12 @@
     },
     "branch_prefix": {
       "type": "string",
-      "description": "Prefix for auto-generated branch names (e.g. 'godark' → 'godark/issue-42')",
+      "description": "Prefix for auto-generated branch names (e.g. 'godark' \u2192 'godark/issue-42')",
       "default": "godark"
     },
     "label_prefix": {
       "type": "string",
-      "description": "Prefix for GitHub lifecycle labels (e.g. 'godark' → 'godark:awaiting-human-review')",
+      "description": "Prefix for GitHub lifecycle labels (e.g. 'godark' \u2192 'godark:awaiting-human-review')",
       "default": "godark"
     },
     "planning_dir": {
@@ -97,23 +105,27 @@
       "type": "string",
       "default": "docs/conventions.md"
     },
-    "no_sandbox": {
-      "type": "boolean",
-      "description": "Run agents on host instead of in Docker"
-    },
     "auto_merge": {
       "type": "object",
       "description": "Merge behavior for feature PRs and rollup PRs",
       "properties": {
         "feature": {
           "type": "string",
-          "enum": ["none", "low_risk", "all"],
+          "enum": [
+            "none",
+            "low_risk",
+            "all"
+          ],
           "description": "Merge strategy for feature PRs after approval",
           "default": "none"
         },
         "rollup": {
           "type": "string",
-          "enum": ["none", "manual", "auto"],
+          "enum": [
+            "none",
+            "manual",
+            "auto"
+          ],
           "description": "Rollup PR handling after a run completes: none (human does everything), manual (godark opens PR, human merges), auto (godark opens and merges)",
           "default": "none"
         }
@@ -128,89 +140,152 @@
     },
     "auth_preference": {
       "type": "string",
-      "enum": ["oauth", "api_key"],
+      "enum": [
+        "oauth",
+        "api_key"
+      ],
       "default": "oauth"
     },
     "sandbox_env": {
       "type": "object",
-      "additionalProperties": { "type": "string" },
+      "additionalProperties": {
+        "type": "string"
+      },
       "description": "Extra environment variables passed to the sandbox"
     },
     "runtime": {
       "type": "object",
       "properties": {
-        "name": { "type": "string", "description": "go, flutter, node, rust, python" },
-        "version": { "type": "string" }
+        "name": {
+          "type": "string",
+          "description": "go, flutter, node, rust, python"
+        },
+        "version": {
+          "type": "string"
+        }
       }
     },
     "docker": {
       "type": "object",
       "properties": {
-        "image": { "type": "string" },
-        "dockerfile": { "type": "string" },
-        "mount": { "type": "string" },
-        "user": { "type": "string" },
-        "node_version": { "type": "string" },
+        "image": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "mount": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "node_version": {
+          "type": "string"
+        },
         "extra_packages": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
     "prompts": {
       "type": "object",
       "properties": {
-        "implementer": { "type": "string" },
-        "implementer_retry": { "type": "string" },
-        "reviewer": { "type": "string" },
-        "quality_reviewer": { "type": "string" },
-        "spec_generator": { "type": "string" },
-        "punchlist": { "type": "string" },
-        "verify_fix": { "type": "string" }
+        "implementer": {
+          "type": "string"
+        },
+        "implementer_retry": {
+          "type": "string"
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "quality_reviewer": {
+          "type": "string"
+        },
+        "spec_generator": {
+          "type": "string"
+        },
+        "punchlist": {
+          "type": "string"
+        },
+        "verify_fix": {
+          "type": "string"
+        }
       }
     },
     "quality": {
       "type": "object",
       "properties": {
-        "min_review_cost_usd": { "type": "number" },
-        "min_review_duration_seconds": { "type": "integer" }
+        "min_review_cost_usd": {
+          "type": "number"
+        },
+        "min_review_duration_seconds": {
+          "type": "integer"
+        }
       }
     },
     "verify": {
       "type": "object",
       "properties": {
-        "max_fix_attempts": { "type": "integer", "default": 2 },
-        "blocking": { "type": "boolean", "default": true }
+        "max_fix_attempts": {
+          "type": "integer",
+          "default": 2
+        },
+        "blocking": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "required_env": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Environment variable names that must be set before a run starts"
     },
     "wait_for_checks": {
       "type": "object",
       "properties": {
-        "timeout": { "type": "string", "description": "Go duration (e.g. '10m')" },
+        "timeout": {
+          "type": "string",
+          "description": "Go duration (e.g. '10m')"
+        },
         "required": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "CI check names to wait for"
         }
       },
-      "required": ["timeout", "required"]
+      "required": [
+        "timeout",
+        "required"
+      ]
     },
     "watch": {
       "type": "object",
       "properties": {
-        "poll_interval": { "type": "string", "description": "Go duration (e.g. '60s')" }
+        "poll_interval": {
+          "type": "string",
+          "description": "Go duration (e.g. '60s')"
+        }
       }
     },
     "risk_thresholds": {
       "type": "object",
       "properties": {
-        "max_lines": { "type": "integer" },
-        "max_files": { "type": "integer" }
+        "max_lines": {
+          "type": "integer"
+        },
+        "max_files": {
+          "type": "integer"
+        }
       }
     },
     "notify": {
@@ -246,27 +321,45 @@
                 "description": "Human-readable description of what this service provides (e.g. 'PostgreSQL 16 test database on port 5432')"
               }
             },
-            "required": ["name"]
+            "required": [
+              "name"
+            ]
           }
         }
       },
-      "required": ["file"]
+      "required": [
+        "file"
+      ]
     }
   },
-  "required": ["repo"],
+  "required": [
+    "repo"
+  ],
   "$defs": {
     "Module": {
       "type": "object",
       "description": "Per-module build/test/lint/generate commands. All fields are optional.",
       "properties": {
-        "format_command": { "type": "string" },
-        "build_command": { "type": "string" },
-        "test_command": { "type": "string" },
-        "lint_command": { "type": "string" },
-        "generate_command": { "type": "string" },
+        "format_command": {
+          "type": "string"
+        },
+        "build_command": {
+          "type": "string"
+        },
+        "test_command": {
+          "type": "string"
+        },
+        "lint_command": {
+          "type": "string"
+        },
+        "generate_command": {
+          "type": "string"
+        },
         "depends_on": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Names of other modules this module depends on"
         }
       }
@@ -274,17 +367,34 @@
     "NotifyProviderConfig": {
       "type": "object",
       "properties": {
-        "provider": { "type": "string", "enum": ["telegram"] },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "telegram"
+          ]
+        },
         "events": {
           "type": "array",
-          "items": { "type": "string", "enum": ["run_complete", "implementation_complete", "abort"] }
+          "items": {
+            "type": "string",
+            "enum": [
+              "run_complete",
+              "implementation_complete",
+              "abort"
+            ]
+          }
         },
         "settings": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       },
-      "required": ["provider", "events"]
+      "required": [
+        "provider",
+        "events"
+      ]
     }
   }
 }

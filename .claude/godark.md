@@ -51,7 +51,6 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `manual` |
 | `base_branch` | Base branch for feature PRs. Auto-generated when omitted: `godark/phase-N` for milestone runs, `godark/issue-N` for implement runs. Set to `main` to merge directly to the default branch without a rollup PR. | auto-generated |
 | `default_branch` | Default branch of the repo (auto-detected from GitHub if omitted) | auto-detect / `main` |
-| `no_sandbox` | Run agents on host instead of Docker | `false` |
 
 ### Paths and constraints
 
