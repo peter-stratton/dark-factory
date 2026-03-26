@@ -1233,7 +1233,7 @@ implementer context and is slower than necessary.
 
 ---
 
-## Phase 27: Agent Efficiency & Resilience
+## Phase 27: Agent Efficiency & Resilience ⏸️ DEFERRED
 
 **Goal**: Every agent step completes within its time budget, produces useful
 output even on timeout, and never wastes time on tools it can't access. Recon
