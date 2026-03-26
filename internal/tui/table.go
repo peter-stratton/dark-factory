@@ -10,13 +10,14 @@ import (
 
 // issueRow holds all display state for a single issue in the table.
 type issueRow struct {
-	number   int
-	title    string
-	status   string
-	stage    string
-	prNumber int
-	retries  int
-	errMsg   string
+	number      int
+	title       string
+	status      string
+	stage       string
+	prNumber    int
+	retries     int
+	errMsg      string
+	judgeReason string // e.g. "Killed: idle 300s" — set by JudgeInterventionMsg
 }
 
 // Status marker constants.
@@ -25,6 +26,7 @@ const (
 	markerCompleted = "■"
 	markerReview    = "●"
 	markerFailed    = "✕"
+	markerJudge     = "⚖"
 )
 
 // Lipgloss styles for status markers.
@@ -33,6 +35,7 @@ var (
 	markerCompletedStyle = lipgloss.NewStyle().Foreground(colorGreen)
 	markerReviewStyle    = lipgloss.NewStyle().Foreground(colorYellow)
 	markerFailedStyle    = lipgloss.NewStyle().Foreground(colorRed)
+	markerJudgeStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#D4760A", Dark: "#FF8C00"})
 	rowNumberStyle       = lipgloss.NewStyle().Foreground(colorMuted)
 	rowTitleStyle = lipgloss.NewStyle().Foreground(colorBright)
 	rowErrStyle   = lipgloss.NewStyle().Foreground(colorRed)
@@ -88,7 +91,9 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 
 	line := left + strings.Repeat(" ", gap) + badge
 
-	if row.errMsg != "" {
+	if row.judgeReason != "" {
+		line += " " + markerJudgeStyle.Render(row.judgeReason)
+	} else if row.errMsg != "" {
 		line += " " + rowErrStyle.Render(row.errMsg)
 	}
 
@@ -112,6 +117,9 @@ func badgeFor(row issueRow) string {
 	case "ready-to-merge", "needs-human-review":
 		return badgeReviewStyle.Render("REVIEW")
 	case "failed":
+		if row.judgeReason != "" {
+			return badgeJudgeStyle.Render("JUDGE")
+		}
 		return badgeFailedStyle.Render("FAILED")
 	default:
 		if row.stage != "" {
@@ -137,6 +145,9 @@ func markerFor(row issueRow, spin spinner.Model) string {
 	case "ready-to-merge", "needs-human-review":
 		return markerReviewStyle.Render(markerReview)
 	case "failed":
+		if row.judgeReason != "" {
+			return markerJudgeStyle.Render(markerJudge)
+		}
 		return markerFailedStyle.Render(markerFailed)
 	default:
 		// No terminal status: distinguish in-progress (stage set) from queued.

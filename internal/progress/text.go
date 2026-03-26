@@ -77,6 +77,11 @@ func (r *TextReporter) RunFinished(implemented, readyToMerge, needsHumanReview, 
 		implemented, readyToMerge, needsHumanReview, failed, blocked)
 }
 
+// JudgeIntervention writes a judge intervention line.
+func (r *TextReporter) JudgeIntervention(issueNumber int, rule, judgment, detail, step string) {
+	fmt.Fprintf(r.w, "  #%d — judge %s: %s (%s) [%s]\n", issueNumber, judgment, rule, detail, step)
+}
+
 // PunchlistText writes a punchlist fragment directly.
 func (r *TextReporter) PunchlistText(text string) {
 	fmt.Fprint(r.w, text)

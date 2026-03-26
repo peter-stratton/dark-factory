@@ -92,6 +92,17 @@ func (r *TUIReporter) RunFinished(implemented, readyToMerge, needsHumanReview, f
 	})
 }
 
+// JudgeIntervention sends JudgeInterventionMsg when the judge intervenes.
+func (r *TUIReporter) JudgeIntervention(issueNumber int, rule, judgment, detail, step string) {
+	r.p.Send(JudgeInterventionMsg{
+		IssueNumber: issueNumber,
+		Rule:        rule,
+		Judgment:    judgment,
+		Detail:      detail,
+		Step:        step,
+	})
+}
+
 // PunchlistText is a no-op in TUI mode. The punchlist is written to a file;
 // the TUI does not display it inline.
 func (r *TUIReporter) PunchlistText(text string) {}

@@ -4721,7 +4721,8 @@ func (r *mockReporter) WaveStarted(_, _ int)                  {}
 func (r *mockReporter) AllBlocked(_, _ int)                   {}
 func (r *mockReporter) RollupCreated(_ int, _ string, _ bool) {}
 func (r *mockReporter) RunFinished(_, _, _, _, _ int)         {}
-func (r *mockReporter) PunchlistText(_ string)                {}
+func (r *mockReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
+func (r *mockReporter) PunchlistText(_ string)                    {}
 
 func (r *mockReporter) hasStageChange(number int, stage string) bool {
 	for _, sc := range r.stageChanges {
@@ -4849,7 +4850,7 @@ func TestProcessIssue_RetryReentersImplementStage(t *testing.T) {
 func TestHandleJudgeIntervention_NoIntervention(t *testing.T) {
 	hook := &testRunDataHook{}
 	result := &Result{JudgeKilled: false}
-	terminal := handleJudgeIntervention(42, "implement", result, hook, testLogger(t))
+	terminal := handleJudgeIntervention(42, "implement", result, hook, nil, testLogger(t))
 	if terminal {
 		t.Error("expected false for non-killed result")
 	}
@@ -4869,7 +4870,7 @@ func TestHandleJudgeIntervention_KillWithUsableResult(t *testing.T) {
 		},
 		ResultText: "Implementation complete",
 	}
-	terminal := handleJudgeIntervention(42, "implement", result, hook, testLogger(t))
+	terminal := handleJudgeIntervention(42, "implement", result, hook, nil, testLogger(t))
 	if terminal {
 		t.Error("expected false for kill with usable result")
 	}
@@ -4899,7 +4900,7 @@ func TestHandleJudgeIntervention_KillWithNoResult(t *testing.T) {
 		},
 		ResultText: "",
 	}
-	terminal := handleJudgeIntervention(42, "implement", result, hook, testLogger(t))
+	terminal := handleJudgeIntervention(42, "implement", result, hook, nil, testLogger(t))
 	if !terminal {
 		t.Error("expected true for kill with no usable result")
 	}
@@ -4910,7 +4911,7 @@ func TestHandleJudgeIntervention_KillWithNoResult(t *testing.T) {
 
 func TestHandleJudgeIntervention_NilResult(t *testing.T) {
 	hook := &testRunDataHook{}
-	terminal := handleJudgeIntervention(42, "implement", nil, hook, testLogger(t))
+	terminal := handleJudgeIntervention(42, "implement", nil, hook, nil, testLogger(t))
 	if terminal {
 		t.Error("expected false for nil result")
 	}
@@ -4929,7 +4930,7 @@ func TestHandleJudgeIntervention_CorrectStepName(t *testing.T) {
 			},
 			ResultText: "done",
 		}
-		handleJudgeIntervention(42, step, result, hook, testLogger(t))
+		handleJudgeIntervention(42, step, result, hook, nil, testLogger(t))
 		if len(hook.judgeInterventions) != 1 {
 			t.Errorf("step %q: expected 1 intervention, got %d", step, len(hook.judgeInterventions))
 			continue
