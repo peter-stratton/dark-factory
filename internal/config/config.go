@@ -132,6 +132,8 @@ type Judge struct {
 	Enabled                   *bool          `yaml:"enabled"`
 	IdleTimeoutByRole         map[string]int `yaml:"idle_timeout_by_role"`
 	DefaultIdleTimeout        int            `yaml:"default_idle_timeout"`
+	NoProgressTimeoutByRole   map[string]int `yaml:"no_progress_timeout_by_role"`
+	DefaultNoProgressTimeout  int            `yaml:"default_no_progress_timeout"`
 	ToolThrashThreshold       int            `yaml:"tool_thrash_threshold"`
 	ToolThrashWindowSecs      int            `yaml:"tool_thrash_window_secs"`
 	TransportFailureThreshold int            `yaml:"transport_failure_threshold"`

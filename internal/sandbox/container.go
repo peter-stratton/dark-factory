@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -180,6 +181,7 @@ func startLogStreamer(ctx context.Context, name string, callback func(string), l
 		if err != nil {
 			return
 		}
+		defer rc.Close()
 		scanner := bufio.NewScanner(rc)
 		// Raise the per-line limit to 1 MB to handle realistic Docker log output
 		// that can exceed the default 64 KB limit. Without this, a long line
@@ -333,16 +335,28 @@ var CommandRunnerWithContext = func(ctx context.Context, name string, args ...st
 // Replaceable for testing.
 var LogFollower = func(ctx context.Context, name string) (io.ReadCloser, func() error, error) {
 	cmd := exec.CommandContext(ctx, "docker", "logs", "--follow", "--timestamps", name)
-	rc, err := cmd.StdoutPipe()
+	// Combine stdout and stderr so the judge sees tool audit lines (which the
+	// agent runner writes to stderr) alongside assistant text (stdout).
+	// Use os.Pipe (kernel-buffered) rather than io.Pipe (synchronous) to avoid
+	// deadlocks when docker writes to both streams concurrently.
+	pr, pw, err := os.Pipe()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("creating log pipe: %w", err)
 	}
-	// Discard Docker's own stderr explicitly so diagnostic output (e.g. "Error:
-	// No such container") does not surface as a hidden /dev/null write and the
-	// intent is clear to future readers.
-	cmd.Stderr = io.Discard
+	cmd.Stdout = pw
+	cmd.Stderr = pw
 	if err := cmd.Start(); err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
 		return nil, nil, err
 	}
-	return rc, cmd.Wait, nil
+	// Close the parent's copy of the write end immediately. The child
+	// process inherited its own file descriptor; when docker exits the
+	// kernel closes the child's copy, and the reader sees EOF. Keeping
+	// pw open in the parent would prevent EOF and hang the scanner.
+	_ = pw.Close()
+	wait := func() error {
+		return cmd.Wait()
+	}
+	return pr, wait, nil
 }

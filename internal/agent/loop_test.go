@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/peter-stratton/dark-factory/internal/agent/judge"
 	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
@@ -964,6 +965,7 @@ type testRunDataHook struct {
 	outcomes                   []rundata.Outcome
 	issueStatuses              []rundata.IssueStatus
 	riskAssessments            []rundata.RiskAssessment
+	judgeInterventions         []rundata.JudgeIntervention
 }
 
 func (h *testRunDataHook) WriteReconResult(_ int, _ rundata.StepResult) error {
@@ -1012,6 +1014,10 @@ func (h *testRunDataHook) WriteRiskAssessment(_ int, a rundata.RiskAssessment) e
 }
 func (h *testRunDataHook) WriteFailureAnalysis(_ int, _ rundata.FailureAnalysis) error { return nil }
 func (h *testRunDataHook) WriteContainerLog(_ int, _ string) error                     { return nil }
+func (h *testRunDataHook) WriteJudgeIntervention(_ int, ji rundata.JudgeIntervention) error {
+	h.judgeInterventions = append(h.judgeInterventions, ji)
+	return nil
+}
 
 func TestProcessIssue_HookCalledOnImplement(t *testing.T) {
 	hook := &testRunDataHook{}
@@ -4715,7 +4721,8 @@ func (r *mockReporter) WaveStarted(_, _ int)                  {}
 func (r *mockReporter) AllBlocked(_, _ int)                   {}
 func (r *mockReporter) RollupCreated(_ int, _ string, _ bool) {}
 func (r *mockReporter) RunFinished(_, _, _, _, _ int)         {}
-func (r *mockReporter) PunchlistText(_ string)                {}
+func (r *mockReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
+func (r *mockReporter) PunchlistText(_ string)                    {}
 
 func (r *mockReporter) hasStageChange(number int, stage string) bool {
 	for _, sc := range r.stageChanges {
@@ -4835,5 +4842,101 @@ func TestProcessIssue_RetryReentersImplementStage(t *testing.T) {
 	count := reporter.countStageChanges("implement")
 	if count < 2 {
 		t.Errorf("IssueStageChanged(_, %q) called %d time(s), want at least 2 (initial + retry)", "implement", count)
+	}
+}
+
+// --- Judge intervention tests ---
+
+func TestHandleJudgeIntervention_NoIntervention(t *testing.T) {
+	hook := &testRunDataHook{}
+	result := &Result{JudgeKilled: false}
+	terminal := handleJudgeIntervention(42, "implement", result, hook, nil, testLogger(t))
+	if terminal {
+		t.Error("expected false for non-killed result")
+	}
+	if len(hook.judgeInterventions) != 0 {
+		t.Errorf("expected no interventions written, got %d", len(hook.judgeInterventions))
+	}
+}
+
+func TestHandleJudgeIntervention_KillWithUsableResult(t *testing.T) {
+	hook := &testRunDataHook{}
+	result := &Result{
+		JudgeKilled: true,
+		JudgeIntervention: &judge.Intervention{
+			Rule:     "idle_timeout",
+			Judgment: judge.Kill,
+			Detail:   "no output for 300s",
+		},
+		ResultText: "Implementation complete",
+	}
+	terminal := handleJudgeIntervention(42, "implement", result, hook, nil, testLogger(t))
+	if terminal {
+		t.Error("expected false for kill with usable result")
+	}
+	if len(hook.judgeInterventions) != 1 {
+		t.Fatalf("expected 1 intervention written, got %d", len(hook.judgeInterventions))
+	}
+	ji := hook.judgeInterventions[0]
+	if ji.Rule != "idle_timeout" {
+		t.Errorf("Rule = %q, want %q", ji.Rule, "idle_timeout")
+	}
+	if ji.Step != "implement" {
+		t.Errorf("Step = %q, want %q", ji.Step, "implement")
+	}
+	if ji.Judgment != "kill" {
+		t.Errorf("Judgment = %q, want %q", ji.Judgment, "kill")
+	}
+}
+
+func TestHandleJudgeIntervention_KillWithNoResult(t *testing.T) {
+	hook := &testRunDataHook{}
+	result := &Result{
+		JudgeKilled: true,
+		JudgeIntervention: &judge.Intervention{
+			Rule:     "idle_timeout",
+			Judgment: judge.Kill,
+			Detail:   "no output for 300s",
+		},
+		ResultText: "",
+	}
+	terminal := handleJudgeIntervention(42, "implement", result, hook, nil, testLogger(t))
+	if !terminal {
+		t.Error("expected true for kill with no usable result")
+	}
+	if len(hook.judgeInterventions) != 1 {
+		t.Fatalf("expected 1 intervention written, got %d", len(hook.judgeInterventions))
+	}
+}
+
+func TestHandleJudgeIntervention_NilResult(t *testing.T) {
+	hook := &testRunDataHook{}
+	terminal := handleJudgeIntervention(42, "implement", nil, hook, nil, testLogger(t))
+	if terminal {
+		t.Error("expected false for nil result")
+	}
+}
+
+func TestHandleJudgeIntervention_CorrectStepName(t *testing.T) {
+	steps := []string{"implement", "retry", "verify_fix", "ci_fix", "recon", "spec_generator"}
+	for _, step := range steps {
+		hook := &testRunDataHook{}
+		result := &Result{
+			JudgeKilled: true,
+			JudgeIntervention: &judge.Intervention{
+				Rule:     "tool_thrash",
+				Judgment: judge.Kill,
+				Detail:   "ToolSearch repeated",
+			},
+			ResultText: "done",
+		}
+		handleJudgeIntervention(42, step, result, hook, nil, testLogger(t))
+		if len(hook.judgeInterventions) != 1 {
+			t.Errorf("step %q: expected 1 intervention, got %d", step, len(hook.judgeInterventions))
+			continue
+		}
+		if hook.judgeInterventions[0].Step != step {
+			t.Errorf("step %q: got Step=%q", step, hook.judgeInterventions[0].Step)
+		}
 	}
 }

@@ -90,15 +90,12 @@ ENV {{.Key}}={{.Value}}
 RUN {{.}}
 {{- end}}
 
-# Install Claude Agent SDK (bundles Claude Code CLI)
-RUN pip install claude-agent-sdk{{if .SDKVersion}}=={{.SDKVersion}}{{end}}
-
-# Work around SDK stdin timeout (default 60s kills hooks on long runs).
-# See: https://github.com/anthropics/claude-agent-sdk-python/issues/730
-ENV CLAUDE_CODE_STREAM_CLOSE_TIMEOUT=3600000
-
-# Copy agent runner
-COPY agent_runner.py /usr/local/bin/agent_runner.py
+# Install Claude Code CLI via native installer (not the Python SDK, which has
+# critical bugs — see claude-agent-sdk-python#666, #739).
+WORKDIR /tmp
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+    && chmod +x /usr/local/bin/claude
 
 # Create non-root user
 RUN useradd -m -s /bin/bash {{.User}}
@@ -205,7 +202,6 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		RuntimeName       string
 		RuntimeVersion    string
 		NodeVersion       string
-		SDKVersion        string
 		User              string
 		ExtraPackages     []string
 		InstallCommands   []string
@@ -216,7 +212,6 @@ func GenerateDockerfile(cfg DockerConfig, logger *slog.Logger) (string, error) {
 		RuntimeName:       runtimeName,
 		RuntimeVersion:    runtimeVersion,
 		NodeVersion:       cfg.NodeVersion,
-		SDKVersion:        cfg.SDKVersion,
 		User:              cfg.User,
 		ExtraPackages:     cfg.ExtraPackages,
 		InstallCommands:   cfg.InstallCommands,

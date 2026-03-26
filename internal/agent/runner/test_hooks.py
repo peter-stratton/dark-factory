@@ -1,17 +1,14 @@
 """Unit tests for the hook logic in agent_runner.py."""
 
 import asyncio
-import io
 import json
 import sys
 import unittest
-from unittest.mock import patch
 
 # Import helpers directly from agent_runner
 from agent_runner import (
     _is_generated,
     _is_protected,
-    make_audit_hook,
     make_denied_commands_hook,
     make_generated_path_hook,
     make_protected_path_hook,
@@ -305,60 +302,6 @@ class TestDeniedCommandsHook(unittest.TestCase):
         result = self._call_bash(hook, "rm -rf /workspace")
         self.assertNotEqual(result.get("decision"), "block")
 
-
-class TestAuditHook(unittest.TestCase):
-    """Tests for the make_audit_hook PostToolUse hook."""
-
-    def _call(self, hook, tool_name: str, tool_input: dict) -> tuple[dict, str]:
-        """Returns (hook_result, stderr_output)."""
-        hook_input = {
-            "hook_event_name": "PostToolUse",
-            "tool_name": tool_name,
-            "tool_input": tool_input,
-            "tool_response": "ok",
-            "tool_use_id": "tu_002",
-            "session_id": "sess_001",
-            "transcript_path": "/tmp/transcript",
-            "cwd": "/workspace",
-        }
-        buf = io.StringIO()
-        with patch("sys.stderr", buf):
-            result = run(hook(hook_input, None, None))
-        return result, buf.getvalue()
-
-    def test_writes_json_to_stderr(self):
-        hook = make_audit_hook()
-        _, stderr = self._call(hook, "Bash", {"command": "go test ./..."})
-        self.assertTrue(stderr.strip(), "Expected non-empty stderr output")
-        record = json.loads(stderr.strip())
-        self.assertIn("tool", record)
-        self.assertIn("input_summary", record)
-        self.assertIn("timestamp", record)
-
-    def test_tool_name_in_log(self):
-        hook = make_audit_hook()
-        _, stderr = self._call(hook, "Write", {"file_path": "foo.go", "content": "x"})
-        record = json.loads(stderr.strip())
-        self.assertEqual(record["tool"], "Write")
-
-    def test_input_summary_in_log(self):
-        hook = make_audit_hook()
-        _, stderr = self._call(hook, "Read", {"file_path": "bar.go"})
-        record = json.loads(stderr.strip())
-        self.assertIn("bar.go", record["input_summary"])
-
-    def test_long_input_truncated(self):
-        long_content = "x" * 500
-        hook = make_audit_hook()
-        _, stderr = self._call(hook, "Write", {"file_path": "f.go", "content": long_content})
-        record = json.loads(stderr.strip())
-        # input_summary should be truncated to at most ~203 chars (200 + "...")
-        self.assertLessEqual(len(record["input_summary"]), 203)
-
-    def test_returns_empty_dict(self):
-        hook = make_audit_hook()
-        result, _ = self._call(hook, "Glob", {"pattern": "*.go"})
-        self.assertEqual(result, {})
 
 
 if __name__ == "__main__":

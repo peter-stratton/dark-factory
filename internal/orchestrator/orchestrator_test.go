@@ -97,6 +97,7 @@ func (r *fakeReporter) RollupCreated(prNumber int, prURL string, merged bool) {
 func (r *fakeReporter) RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int) {
 	r.runFinished = append(r.runFinished, fakeRunFinished{implemented, readyToMerge, needsHumanReview, failed, blocked})
 }
+func (r *fakeReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
 func (r *fakeReporter) PunchlistText(text string) {
 	r.punchlistTexts = append(r.punchlistTexts, text)
 }

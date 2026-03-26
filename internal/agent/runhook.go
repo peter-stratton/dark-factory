@@ -19,4 +19,5 @@ type RunDataHook interface {
 	WriteRiskAssessment(issueNumber int, assessment rundata.RiskAssessment) error
 	WriteFailureAnalysis(issueNumber int, analysis rundata.FailureAnalysis) error
 	WriteContainerLog(issueNumber int, log string) error
+	WriteJudgeIntervention(issueNumber int, intervention rundata.JudgeIntervention) error
 }

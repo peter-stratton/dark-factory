@@ -92,6 +92,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if prompts.SpecGenerator != "" && !HasScenarioSpec(cfg.ScenarioDir, issue.Number) {
 		logger.Info("no scenario spec found, generating", "issue_number", issue.Number)
 		specResult, err := GenerateSpec(ctx, issue, cfg, prompts, authEnv, logger)
+		if specResult != nil {
+			handleJudgeIntervention(issue.Number, "spec_generator", specResult, hook, reporter, logger)
+		}
 		var specWriteHook func(rundata.StepResult) error
 		if hook != nil {
 			specWriteHook = func(step rundata.StepResult) error {
@@ -123,6 +126,11 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 			reporter.IssueStageChanged(issue.Number, "recon")
 		}
 		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
+		if reconResult != nil {
+			if handleJudgeIntervention(issue.Number, "recon", reconResult, hook, reporter, logger) {
+				runPostMortem(issue.Number, reconResult, hook, logger)
+			}
+		}
 		var reconWriteHook func(rundata.StepResult) error
 		if hook != nil {
 			reconWriteHook = func(step rundata.StepResult) error {
@@ -139,6 +147,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if err != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent: %w", err)
+		return outcome
+	}
+	if handleJudgeIntervention(issue.Number, "implement", implResult, hook, reporter, logger) {
+		runPostMortem(issue.Number, implResult, hook, logger)
+		outcome.Status = StatusFailed
+		outcome.Err = fmt.Errorf("implementer agent killed by judge: %s", implResult.JudgeIntervention.Rule)
 		return outcome
 	}
 	if implResult.TimedOut {
@@ -217,7 +231,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if reporter != nil {
 		reporter.IssueStageChanged(issue.Number, "verify")
 	}
-	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles); verifyErr != nil {
+	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, &sessionID, &fixCycles); verifyErr != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = verifyErr
 		return outcome
@@ -276,6 +290,7 @@ func runVerifyPhase(
 	authEnv map[string]string,
 	logger *slog.Logger,
 	hook RunDataHook,
+	reporter progress.ProgressReporter,
 	sessionID *string,
 	fixCycles *int,
 ) error {
@@ -333,6 +348,9 @@ func runVerifyPhase(
 					fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, cfg, prompts, authEnv, logger)
 					if err != nil {
 						return fmt.Errorf("verify-fix agent: %w", err)
+					}
+					if handleJudgeIntervention(issue.Number, "verify_fix", fixResult, hook, reporter, logger) {
+						return fmt.Errorf("verify-fix agent killed by judge: %s", fixResult.JudgeIntervention.Rule)
 					}
 					if fixResult.TimedOut {
 						return fmt.Errorf("verify-fix agent timed out")
@@ -416,6 +434,9 @@ func runVerifyPhase(
 				fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, cfg, prompts, authEnv, logger)
 				if err != nil {
 					return fmt.Errorf("verify-fix agent: %w", err)
+				}
+				if handleJudgeIntervention(issue.Number, "verify_fix", fixResult, hook, reporter, logger) {
+					return fmt.Errorf("verify-fix agent killed by judge: %s", fixResult.JudgeIntervention.Rule)
 				}
 				if fixResult.TimedOut {
 					return fmt.Errorf("verify-fix agent timed out")
@@ -619,7 +640,7 @@ func runQualityReviewCycle(
 
 			// Re-run verify after quality-gate retry so that changes introduced
 			// by the retry agent are caught before the next quality review cycle.
-			if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, sessionID, fixCycles); verifyErr != nil {
+			if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles); verifyErr != nil {
 				return false, fmt.Errorf("verify after quality-gate retry: %w", verifyErr)
 			}
 
@@ -791,7 +812,7 @@ func runFunctionalReviewCycle(
 			// mergeable after approval; if not, attempts automatic rebase or
 			// triggers a conflict-fix cycle.
 			if needsHR, rebaseErr := runPreMergeRebasePhase(
-				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, sessionID, fixCycles,
+				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles,
 			); rebaseErr != nil {
 				return StatusFailed, false, 0, rebaseErr
 			} else if needsHR {
@@ -844,6 +865,9 @@ func runFunctionalReviewCycle(
 					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, *sessionID, cfg, prompts, authEnv, logger)
 					if err != nil {
 						return StatusFailed, false, 0, fmt.Errorf("CI fix agent: %w", err)
+					}
+					if handleJudgeIntervention(issue.Number, "ci_fix", fixResult, hook, reporter, logger) {
+						return StatusFailed, false, 0, fmt.Errorf("CI fix agent killed by judge: %s", fixResult.JudgeIntervention.Rule)
 					}
 					if fixResult.TimedOut {
 						return StatusFailed, false, 0, fmt.Errorf("CI fix agent timed out")
@@ -913,6 +937,9 @@ func runFunctionalReviewCycle(
 			retryResult, err := Retry(ctx, issue, prNum, *sessionID, "", handoff, cfg, prompts, authEnv, logger)
 			if err != nil {
 				return StatusFailed, false, 0, fmt.Errorf("retry agent: %w", err)
+			}
+			if handleJudgeIntervention(issue.Number, "retry", retryResult, hook, reporter, logger) {
+				return StatusFailed, false, 0, fmt.Errorf("retry agent killed by judge: %s", retryResult.JudgeIntervention.Rule)
 			}
 			if retryResult.TimedOut {
 				return StatusFailed, false, 0, fmt.Errorf("retry agent timed out")
@@ -1134,6 +1161,58 @@ func hasQualityFlag(flags []quality.Flag, code string) bool {
 	return false
 }
 
+// handleJudgeIntervention writes a judge intervention to run data and logs it.
+// Returns true if the judge killed the container with no usable result (caller
+// should treat as terminal for this attempt). Returns false if there was no
+// intervention, or if the kill produced a usable result (caller should proceed
+// normally).
+func handleJudgeIntervention(issueNum int, step string, result *Result, hook RunDataHook, reporter progress.ProgressReporter, logger *slog.Logger) (terminalKill bool) {
+	if result == nil || !result.JudgeKilled || result.JudgeIntervention == nil {
+		return false
+	}
+
+	iv := result.JudgeIntervention
+	logger.Warn("judge intervention",
+		"issue_number", issueNum,
+		"step", step,
+		"rule", iv.Rule,
+		"judgment", string(iv.Judgment),
+		"detail", iv.Detail,
+	)
+
+	if reporter != nil {
+		reporter.JudgeIntervention(issueNum, iv.Rule, string(iv.Judgment), iv.Detail, step)
+	}
+
+	if hook != nil {
+		ji := rundata.JudgeIntervention{
+			Rule:       iv.Rule,
+			Judgment:   string(iv.Judgment),
+			Detail:     iv.Detail,
+			Counts:     iv.Counts,
+			DetectedAt: iv.DetectedAt,
+			Step:       step,
+		}
+		if err := hook.WriteJudgeIntervention(issueNum, ji); err != nil {
+			logger.Warn("failed to write judge intervention", "issue_number", issueNum, "error", err)
+		}
+	}
+
+	// Kill with usable result: the agent completed work before going idle.
+	// Proceed normally — the kill was benign.
+	if result.ResultText != "" {
+		logger.Info("judge killed container but result is usable, proceeding",
+			"issue_number", issueNum, "step", step)
+		return false
+	}
+
+	// Kill with no result: the agent stalled before producing output.
+	// Terminal for this attempt.
+	logger.Warn("judge killed container with no usable result",
+		"issue_number", issueNum, "step", step, "rule", iv.Rule)
+	return true
+}
+
 // runPostMortem performs best-effort post-mortem analysis on a failed agent result
 // and writes the findings to the hook. It is a no-op when hook is nil, when the
 // result has no container log, or when writing fails (errors are logged as warnings).
@@ -1285,6 +1364,7 @@ func runPreMergeRebasePhase(
 	authEnv map[string]string,
 	logger *slog.Logger,
 	hook RunDataHook,
+	reporter progress.ProgressReporter,
 	sessionID *string,
 	fixCycles *int,
 ) (needsHumanReview bool, err error) {
@@ -1342,7 +1422,7 @@ func runPreMergeRebasePhase(
 
 		// Re-run verify since the branch content has changed (either by
 		// automatic rebase or by the implementer's conflict fix).
-		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, sessionID, fixCycles); verifyErr != nil {
+		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles); verifyErr != nil {
 			return false, fmt.Errorf("verify after rebase attempt %d: %w", attempt+1, verifyErr)
 		}
 	}

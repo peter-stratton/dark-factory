@@ -3,8 +3,6 @@ package sandbox
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -98,8 +96,7 @@ func TestGenerateDockerfileDefault(t *testing.T) {
 		{"node install", "setup_20.x"},
 		{"useradd", "useradd -m -s /bin/bash devloop"},
 		{"python3 install", "python3"},
-		{"pip sdk install", "pip install claude-agent-sdk"},
-		{"copy agent runner", "COPY agent_runner.py /usr/local/bin/agent_runner.py"},
+		{"claude cli install", "claude.ai/install.sh"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(df, c.contain) {
@@ -254,31 +251,17 @@ func TestBuildImageStubbedCommandRunner(t *testing.T) {
 	}
 }
 
-func TestBuildImageWritesAgentRunner(t *testing.T) {
+func TestBuildImageSucceeds(t *testing.T) {
 	orig := CommandRunner
 	defer func() { CommandRunner = orig }()
 
-	var agentRunnerFound bool
 	CommandRunner = func(name string, args ...string) ([]byte, error) {
-		// During docker build, check that agent_runner.py is present in the build context.
-		if name == "docker" && len(args) > 0 && args[0] == "build" {
-			// The build context dir is the last argument.
-			buildDir := args[len(args)-1]
-			pyPath := filepath.Join(buildDir, "agent_runner.py")
-			if _, err := os.Stat(pyPath); err == nil {
-				agentRunnerFound = true
-			}
-		}
 		return []byte("Successfully built"), nil
 	}
 
 	_, err := BuildImage(context.Background(), DefaultDockerConfig(), slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !agentRunnerFound {
-		t.Error("agent_runner.py was not written to the build context before docker build")
 	}
 }
 
@@ -292,23 +275,13 @@ func TestGenerateDockerfileIncludesPython3(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfileIncludesPipInstall(t *testing.T) {
+func TestGenerateDockerfileInstallsClaudeCLI(t *testing.T) {
 	df, err := GenerateDockerfile(DefaultDockerConfig(), slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(df, "pip install claude-agent-sdk") {
-		t.Error("Dockerfile missing claude-agent-sdk install")
-	}
-}
-
-func TestGenerateDockerfileCopiesAgentRunner(t *testing.T) {
-	df, err := GenerateDockerfile(DefaultDockerConfig(), slog.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(df, "COPY agent_runner.py /usr/local/bin/agent_runner.py") {
-		t.Error("Dockerfile missing COPY agent_runner.py directive")
+	if !strings.Contains(df, "claude.ai/install.sh") {
+		t.Error("Dockerfile missing Claude CLI native installer")
 	}
 }
 
@@ -659,8 +632,8 @@ func TestGenerateDockerfileClaudeCodeAlwaysPresent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("runtime %q: unexpected error: %v", rt.Name, err)
 		}
-		if !strings.Contains(df, "pip install claude-agent-sdk") {
-			t.Errorf("runtime %q: Dockerfile missing Claude Agent SDK install", rt.Name)
+		if !strings.Contains(df, "claude.ai/install.sh") {
+			t.Errorf("runtime %q: Dockerfile missing Claude CLI install", rt.Name)
 		}
 	}
 }
@@ -696,12 +669,12 @@ func TestGenerateDockerfileInstallCommandsOrder(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	sdkPos := strings.Index(df, "pip install claude-agent-sdk")
+	cliPos := strings.Index(df, "claude.ai/install.sh")
 	installCmdPos := strings.Index(df, "RUN curl -sSfL https://example.com/install.sh | sh")
 	userPos := strings.Index(df, "USER devloop")
 
-	if sdkPos < 0 {
-		t.Fatal("Dockerfile missing Claude Agent SDK install")
+	if cliPos < 0 {
+		t.Fatal("Dockerfile missing Claude CLI install")
 	}
 	if installCmdPos < 0 {
 		t.Fatal("Dockerfile missing install command")
@@ -709,8 +682,8 @@ func TestGenerateDockerfileInstallCommandsOrder(t *testing.T) {
 	if userPos < 0 {
 		t.Fatal("Dockerfile missing USER directive")
 	}
-	if installCmdPos > sdkPos {
-		t.Error("install command appears after SDK install")
+	if installCmdPos > cliPos {
+		t.Error("install command appears after Claude CLI install")
 	}
 	if installCmdPos > userPos {
 		t.Error("install command appears after USER directive (must run as root)")
@@ -901,54 +874,17 @@ func TestGenerateDockerfileDockerCLIAlongsideExtraPackages(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfileSDKVersionPinned(t *testing.T) {
+func TestGenerateDockerfileClaudeCLIInstalled(t *testing.T) {
 	cfg := DefaultDockerConfig()
-	cfg.SDKVersion = "0.1.50"
-
 	df, err := GenerateDockerfile(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(df, "pip install claude-agent-sdk==0.1.50") {
-		t.Error("Dockerfile missing pinned SDK version")
+	if !strings.Contains(df, "claude.ai/install.sh") {
+		t.Error("Dockerfile missing Claude CLI native installer")
 	}
-}
-
-func TestGenerateDockerfileSDKVersionUnpinned(t *testing.T) {
-	cfg := DefaultDockerConfig()
-	// SDKVersion empty — should install latest without pin.
-
-	df, err := GenerateDockerfile(cfg, slog.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.Contains(df, "claude-agent-sdk==") {
-		t.Error("Dockerfile should not pin SDK version when SDKVersion is empty")
-	}
-	if !strings.Contains(df, "pip install claude-agent-sdk") {
-		t.Error("Dockerfile missing SDK install")
-	}
-}
-
-func TestDockerConfigFromConfigResolvesSDKVersion(t *testing.T) {
-	orig := resolveSDKVersion
-	t.Cleanup(func() { resolveSDKVersion = orig })
-	resolveSDKVersion = func() string { return "0.1.50" }
-
-	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
-	if dc.SDKVersion != "0.1.50" {
-		t.Errorf("SDKVersion = %q, want %q", dc.SDKVersion, "0.1.50")
-	}
-}
-
-func TestDockerConfigFromConfigSDKResolutionFailure(t *testing.T) {
-	orig := resolveSDKVersion
-	t.Cleanup(func() { resolveSDKVersion = orig })
-	resolveSDKVersion = func() string { return "" }
-
-	dc := DockerConfigFromConfig(config.Docker{}, config.Runtime{}, nil, nil)
-	if dc.SDKVersion != "" {
-		t.Errorf("SDKVersion = %q, want empty (fallback to latest)", dc.SDKVersion)
+	if !strings.Contains(df, "cp -L /root/.local/bin/claude /usr/local/bin/claude") {
+		t.Error("Dockerfile missing claude binary copy to /usr/local/bin")
 	}
 }
 

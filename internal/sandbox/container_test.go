@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -38,21 +39,26 @@ func TestRunContainerSuccess(t *testing.T) {
 	defer saveRunners()()
 	StatsInterval = time.Millisecond
 
+	var mu sync.Mutex
 	var calls []string
-	CommandRunner = func(name string, args ...string) ([]byte, error) {
-		call := name + " " + strings.Join(args, " ")
+	appendCall := func(call string) {
+		mu.Lock()
 		calls = append(calls, call)
+		mu.Unlock()
+	}
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		appendCall(name + " " + strings.Join(args, " "))
 		if args[0] == "create" {
 			return []byte("abc123\n"), nil
 		}
 		return []byte{}, nil
 	}
 	CommandRunnerWithContext = func(_ context.Context, name string, args ...string) ([]byte, error) {
-		calls = append(calls, name+" "+strings.Join(args, " "))
+		appendCall(name + " " + strings.Join(args, " "))
 		return []byte("0\n"), nil
 	}
 	SplitRunner = func(name string, args ...string) ([]byte, []byte, error) {
-		calls = append(calls, name+" "+strings.Join(args, " "))
+		appendCall(name + " " + strings.Join(args, " "))
 		return []byte("hello\n"), []byte{}, nil
 	}
 
@@ -74,6 +80,8 @@ func TestRunContainerSuccess(t *testing.T) {
 	}
 
 	// Verify docker rm -f was called (cleanup).
+	mu.Lock()
+	defer mu.Unlock()
 	found := false
 	for _, c := range calls {
 		if strings.Contains(c, "rm -f") {
