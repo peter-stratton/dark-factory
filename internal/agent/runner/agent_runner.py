@@ -30,7 +30,7 @@ import claude_agent_sdk
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage
 from claude_agent_sdk.types import (
     HookMatcher,
-    PostToolUseHookInput,
+
     PreToolUseHookInput,
 )
 
@@ -226,29 +226,6 @@ def make_denied_commands_hook(denied_patterns: list[str]):
     return hook
 
 
-def make_audit_hook():
-    """Return an async PostToolUse hook that logs tool calls to stderr as JSON."""
-
-    async def hook(hook_input: PostToolUseHookInput, matcher: str | None, ctx) -> dict:
-        tool_name = hook_input.get("tool_name", "")
-        tool_input = hook_input.get("tool_input", {})
-        # Build a brief input summary (first 200 chars of JSON representation)
-        try:
-            input_repr = json.dumps(tool_input)
-        except Exception:
-            input_repr = str(tool_input)
-        input_summary = input_repr[:200] + ("..." if len(input_repr) > 200 else "")
-
-        record = {
-            "tool": tool_name,
-            "input_summary": input_summary,
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-        }
-        print(json.dumps(record), file=sys.stderr, flush=True)
-        return {}
-
-    return hook
-
 
 async def main() -> None:
     prompt = os.environ.get("GODARK_PROMPT", "")
@@ -317,12 +294,10 @@ async def main() -> None:
     hooks: dict = {}
     if pre_tool_use_hooks:
         hooks["PreToolUse"] = pre_tool_use_hooks
-    hooks["PostToolUse"] = [
-        HookMatcher(
-            matcher=None,
-            hooks=[make_audit_hook()],
-        )
-    ]
+    # PostToolUse audit hook removed — the SDK's internal hook dispatch can
+    # crash with AbortError (see claude-agent-sdk-python#739), killing the
+    # agent mid-run. Tool audit lines are now emitted directly from
+    # _collect_messages when ToolUseBlock content is observed.
 
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
@@ -382,6 +357,19 @@ async def main() -> None:
                             tool_trace.append(f"Bash: {cmd}")
                         elif tool_name:
                             tool_trace.append(tool_name)
+                        # Emit tool audit line to stderr (replaces PostToolUse hook
+                        # which crashed the SDK — see claude-agent-sdk-python#739).
+                        try:
+                            input_repr = json.dumps(tool_input)
+                        except Exception:
+                            input_repr = str(tool_input)
+                        input_summary = input_repr[:200] + ("..." if len(input_repr) > 200 else "")
+                        record = {
+                            "tool": tool_name,
+                            "input_summary": input_summary,
+                            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                        }
+                        print(json.dumps(record), file=sys.stderr, flush=True)
 
             if isinstance(message, ResultMessage):
                 result_session_id = getattr(message, "session_id", "") or ""
