@@ -181,7 +181,7 @@ func TestRunSandbox_KillStopsContainer(t *testing.T) {
 		// tool-thrash rule: send the same ToolSearch query more than the threshold.
 		if opts.LogCallback != nil {
 			for i := 0; i < 5; i++ {
-				opts.LogCallback(`ToolSearch("identical query")`)
+				opts.LogCallback(`ToolSearch {"query":"identical query","max_results":5}`)
 			}
 		}
 		// Check if context was cancelled.
@@ -226,7 +226,7 @@ func TestRunSandbox_InterventionRecordPopulated(t *testing.T) {
 		if opts.LogCallback != nil {
 			// Trigger tool thrash: same query repeated.
 			for i := 0; i < 5; i++ {
-				opts.LogCallback(`ToolSearch("repeated query")`)
+				opts.LogCallback(`ToolSearch {"query":"repeated query","max_results":5}`)
 			}
 		}
 		return sandboxResult("", 1, false), nil
@@ -272,7 +272,7 @@ func TestRunSandbox_KillWithUsableResult(t *testing.T) {
 		if opts.LogCallback != nil {
 			// Trigger tool thrash kill.
 			for i := 0; i < 5; i++ {
-				opts.LogCallback(`ToolSearch("same search again")`)
+				opts.LogCallback(`ToolSearch {"query":"same search again","max_results":5}`)
 			}
 		}
 		// Agent printed result JSON before going idle; it appears in stdout.
@@ -461,7 +461,7 @@ func TestRunSandbox_KillDoesNotRetry(t *testing.T) {
 		// Trigger tool thrash → Kill (not RetryContainer).
 		if opts.LogCallback != nil {
 			for i := 0; i < 5; i++ {
-				opts.LogCallback(`ToolSearch("same query")`)
+				opts.LogCallback(`ToolSearch {"query":"same query","max_results":5}`)
 			}
 		}
 		return sandboxResult("", 1, false), nil

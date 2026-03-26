@@ -36,6 +36,9 @@ func (r *toolThrashRule) ProcessLine(line string, now time.Time) *Intervention {
 	}
 
 	query := r.extractQuery(line)
+	if query == "" {
+		return nil // can't determine query — don't count toward thrash detection
+	}
 	window := time.Duration(r.windowSecs) * time.Second
 	cutoff := now.Add(-window)
 
@@ -66,10 +69,10 @@ func (r *toolThrashRule) ProcessLine(line string, now time.Time) *Intervention {
 }
 
 // extractQuery pulls the query string from a ToolSearch log line.
-// Falls back to "unknown" if no JSON query field is found.
+// Returns empty string if no JSON query field is found.
 func (r *toolThrashRule) extractQuery(line string) string {
 	if m := queryRe.FindStringSubmatch(line); len(m) == 2 {
 		return m[1]
 	}
-	return "unknown"
+	return ""
 }

@@ -321,6 +321,38 @@ func TestToolThrashOutsideWindowNoFire(t *testing.T) {
 	}
 }
 
+func TestToolThrashCLIStreamFormat(t *testing.T) {
+	r := newToolThrashRule(toolThrashConfig())
+
+	// CLI stream-json format: query nested under "input".
+	cliLine := `{"type":"tool_use","id":"toolu_01X","name":"ToolSearch","input":{"query":"read file","max_results":3}}`
+	r.ProcessLine(cliLine, t0)
+	r.ProcessLine(cliLine, t0.Add(10*time.Second))
+	got := r.ProcessLine(cliLine, t0.Add(20*time.Second))
+
+	if got == nil {
+		t.Fatal("expected Kill intervention for CLI format thrash, got nil")
+	}
+	if got.Judgment != Kill {
+		t.Errorf("got judgment %q, want Kill", got.Judgment)
+	}
+}
+
+func TestToolThrashUnparseableQueryIgnored(t *testing.T) {
+	r := newToolThrashRule(toolThrashConfig())
+
+	// Lines mentioning ToolSearch but with no parseable query field
+	// should not count toward thrash detection.
+	line := `ToolSearch returned 3 results`
+	r.ProcessLine(line, t0)
+	r.ProcessLine(line, t0.Add(10*time.Second))
+	got := r.ProcessLine(line, t0.Add(20*time.Second))
+
+	if got != nil {
+		t.Errorf("expected nil for unparseable query lines, got %+v", got)
+	}
+}
+
 // --- Transport failure rule tests ---
 
 func transportConfig() Config {
