@@ -442,7 +442,7 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 	}
 
 	// Capture bounded container log for post-mortem on failure only.
-	if res.TimedOut || res.ExitCode != 0 {
+	if res.TimedOut || res.JudgeKilled || res.ExitCode != 0 {
 		combined := result.Stdout + result.Stderr
 		res.ContainerLog = boundLog(combined, maxPostMortemLines, maxPostMortemBytes)
 	}
