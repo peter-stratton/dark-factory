@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	darkexec "github.com/peter-stratton/dark-factory/internal/exec"
@@ -154,6 +155,49 @@ func CloseIssue(repo string, number int) error {
 // the given repo. This is used to build the closed-set for dependency resolution.
 func FetchClosedIssueNumbers(repo string) ([]int, error) {
 	return fetchNumbersByState(repo, "closed")
+}
+
+// closingKeywordPattern matches GitHub's closing keywords followed by an issue
+// reference (e.g. "Closes #31", "Fixes #42", "Resolves #7").
+var closingKeywordPattern = regexp.MustCompile(`(?i)(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)`)
+
+// FetchMergedPRIssueNumbers returns issue numbers referenced by merged PRs via
+// closing keywords (Closes #N, Fixes #N, Resolves #N), even if the issue itself
+// is still open. This handles the case where CloseIssue silently failed after a
+// successful squash-merge to a non-default branch.
+func FetchMergedPRIssueNumbers(repo string) ([]int, error) {
+	out, err := CommandRunner("gh", "pr", "list",
+		"--repo", repo,
+		"--state", "merged",
+		"--json", "body",
+		"--limit", "200",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("gh pr list (merged): %w", err)
+	}
+
+	var prs []struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return nil, fmt.Errorf("parsing gh output: %w", err)
+	}
+
+	seen := make(map[int]bool)
+	var numbers []int
+	for _, pr := range prs {
+		for _, match := range closingKeywordPattern.FindAllStringSubmatch(pr.Body, -1) {
+			n, err := strconv.Atoi(match[1])
+			if err != nil {
+				continue
+			}
+			if !seen[n] {
+				seen[n] = true
+				numbers = append(numbers, n)
+			}
+		}
+	}
+	return numbers, nil
 }
 
 // FetchAllIssueNumbers returns a set of all issue numbers (open and closed)
