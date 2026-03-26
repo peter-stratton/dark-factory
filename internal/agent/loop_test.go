@@ -4866,7 +4866,7 @@ func TestHandleJudgeIntervention_KillWithUsableResult(t *testing.T) {
 		JudgeIntervention: &judge.Intervention{
 			Rule:     "idle_timeout",
 			Judgment: judge.Kill,
-			Detail:   "no tool call for 300s",
+			Detail:   "no output for 300s",
 		},
 		ResultText: "Implementation complete",
 	}
@@ -4896,7 +4896,7 @@ func TestHandleJudgeIntervention_KillWithNoResult(t *testing.T) {
 		JudgeIntervention: &judge.Intervention{
 			Rule:     "idle_timeout",
 			Judgment: judge.Kill,
-			Detail:   "no tool call for 300s",
+			Detail:   "no output for 300s",
 		},
 		ResultText: "",
 	}

@@ -16,14 +16,14 @@ func TestIdleTimeoutFires(t *testing.T) {
 		t.Fatalf("expected nil at t0, got %+v", got)
 	}
 
-	// Advance just under threshold — should still be nil.
-	got = j.ProcessLine("more text", t0.Add(299*time.Second))
+	// Empty-line heartbeat ticks don't reset the timer.
+	got = j.ProcessLine("", t0.Add(299*time.Second))
 	if got != nil {
 		t.Fatalf("expected nil before threshold, got %+v", got)
 	}
 
-	// Advance past threshold — Kill should fire.
-	got = j.ProcessLine("more text", t0.Add(301*time.Second))
+	// Past threshold with no non-empty lines — Kill fires.
+	got = j.ProcessLine("", t0.Add(301*time.Second))
 	if got == nil {
 		t.Fatal("expected Kill intervention, got nil")
 	}
@@ -41,26 +41,23 @@ func TestIdleTimeoutFires(t *testing.T) {
 	}
 }
 
-func TestIdleTimeoutResetsOnToolCall(t *testing.T) {
+func TestIdleTimeoutResetsOnAnyOutput(t *testing.T) {
 	j := NewJudge("recon", Config{DefaultIdleTimeout: 300})
 
 	// Start clock.
 	j.ProcessLine("assistant text", t0)
 
-	// Send non-tool lines up to just before threshold.
-	j.ProcessLine("more text", t0.Add(250*time.Second))
+	// Any non-empty line resets the timer — not just tool lines.
+	j.ProcessLine("just thinking out loud...", t0.Add(290*time.Second))
 
-	// Tool call line resets the clock.
-	j.ProcessLine(`{"tool": "bash", "input": {}}`, t0.Add(290*time.Second))
-
-	// Advance 290s past the tool call — still under threshold.
-	got := j.ProcessLine("text after tool", t0.Add(290*time.Second+289*time.Second))
+	// 289s after the last non-empty line — still under threshold.
+	got := j.ProcessLine("still going", t0.Add(290*time.Second+289*time.Second))
 	if got != nil {
 		t.Fatalf("expected nil within threshold after reset, got %+v", got)
 	}
 
-	// Advance past threshold from the tool call.
-	got = j.ProcessLine("text after tool", t0.Add(290*time.Second+301*time.Second))
+	// Now go silent (only heartbeat ticks). Past threshold from last output.
+	got = j.ProcessLine("", t0.Add(290*time.Second+289*time.Second+301*time.Second))
 	if got == nil {
 		t.Fatal("expected Kill intervention after threshold exceeded post-reset, got nil")
 	}
@@ -94,7 +91,8 @@ func TestPerRoleThreshold(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			j := NewJudge(tt.role, cfg)
 			j.ProcessLine("start", t0)
-			got := j.ProcessLine("idle line", t0.Add(tt.idleAfter))
+			// Empty line = heartbeat tick, does not reset the timer.
+			got := j.ProcessLine("", t0.Add(tt.idleAfter))
 			if tt.wantKill && got == nil {
 				t.Errorf("expected Kill intervention, got nil")
 			}
@@ -116,14 +114,14 @@ func TestDefaultThresholdFallback(t *testing.T) {
 	j := NewJudge("unknown-role", cfg)
 	j.ProcessLine("start", t0)
 
-	// Under default threshold.
-	got := j.ProcessLine("text", t0.Add(299*time.Second))
+	// Under default threshold (heartbeat tick, no output).
+	got := j.ProcessLine("", t0.Add(299*time.Second))
 	if got != nil {
 		t.Errorf("expected nil before default threshold, got %+v", got)
 	}
 
 	// Over default threshold.
-	got = j.ProcessLine("text", t0.Add(301*time.Second))
+	got = j.ProcessLine("", t0.Add(301*time.Second))
 	if got == nil {
 		t.Fatal("expected Kill using default threshold, got nil")
 	}
@@ -137,12 +135,12 @@ func TestDefaultIdleTimeoutAppliedWhenZero(t *testing.T) {
 	j := NewJudge("recon", Config{})
 	j.ProcessLine("start", t0)
 
-	got := j.ProcessLine("text", t0.Add(299*time.Second))
+	got := j.ProcessLine("", t0.Add(299*time.Second))
 	if got != nil {
 		t.Errorf("expected nil before 300s default, got %+v", got)
 	}
 
-	got = j.ProcessLine("text", t0.Add(301*time.Second))
+	got = j.ProcessLine("", t0.Add(301*time.Second))
 	if got == nil {
 		t.Fatal("expected Kill at 301s with default 300s threshold, got nil")
 	}
