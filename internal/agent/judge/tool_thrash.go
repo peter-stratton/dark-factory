@@ -39,7 +39,6 @@ func (r *toolThrashRule) ProcessLine(line string, now time.Time) *Intervention {
 	window := time.Duration(r.windowSecs) * time.Second
 	cutoff := now.Add(-window)
 
-	// Append current timestamp and prune entries outside the window.
 	times := append(r.queryTimes[query], now)
 	pruned := times[:0]
 	for _, ts := range times {
@@ -47,7 +46,11 @@ func (r *toolThrashRule) ProcessLine(line string, now time.Time) *Intervention {
 			pruned = append(pruned, ts)
 		}
 	}
-	r.queryTimes[query] = pruned
+	if len(pruned) == 0 {
+		delete(r.queryTimes, query)
+	} else {
+		r.queryTimes[query] = pruned
+	}
 
 	if len(pruned) >= r.threshold {
 		return &Intervention{

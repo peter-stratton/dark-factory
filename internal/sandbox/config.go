@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
-	"github.com/peter-stratton/dark-factory/internal/pypi"
 )
 
 // DockerConfig holds the resolved configuration for Dockerfile generation.
@@ -14,7 +13,6 @@ type DockerConfig struct {
 	Dockerfile         string // path to a user-provided Dockerfile; skips generation when set
 	Runtime            config.Runtime
 	NodeVersion        string
-	SDKVersion         string // resolved claude-agent-sdk version; doubles as cache-bust key
 	User               string
 	ExtraPackages      []string
 	InstallCommands    []string
@@ -60,24 +58,12 @@ func DockerConfigFromConfig(docker config.Docker, runtime config.Runtime, sandbo
 	if len(docker.InstallCommands) > 0 {
 		dc.InstallCommands = docker.InstallCommands
 	}
-	dc.SDKVersion = resolveSDKVersion()
 	dc.SandboxEnv = sandboxEnv
 	if compose != nil {
 		dc.ComposeFile = compose.File
 		dc.ComposeProjectName = compose.ProjectName
 	}
 	return dc
-}
-
-// resolveSDKVersion queries PyPI for the latest claude-agent-sdk version.
-// Returns the version string (e.g. "0.1.50") or empty string on failure,
-// which causes the Dockerfile to install the latest without pinning.
-var resolveSDKVersion = func() string {
-	v, err := pypi.LatestVersion(pypi.SDKPackage)
-	if err != nil {
-		return ""
-	}
-	return v
 }
 
 // ImageTag returns a deterministic image tag derived from the Dockerfile content.

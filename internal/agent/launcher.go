@@ -269,21 +269,13 @@ func buildJudgeCallback(
 	// and the heartbeat goroutine call ProcessLine concurrently.
 	var mu sync.Mutex
 
-	var lineCount int64
 	processAndHandle := func(line string) {
 		mu.Lock()
 		iv := j.ProcessLine(line, time.Now())
 		mu.Unlock()
-		if line != "" {
-			lineCount++
-			if lineCount == 1 {
-				logger.Info("judge received first log line", "role", opts.Role)
-			}
-		}
 		if iv == nil {
 			return
 		}
-		logger.Info("judge evaluated stream", "role", opts.Role, "lines_seen", lineCount)
 		interventionPtr.CompareAndSwap(nil, iv)
 		if iv.Judgment == judge.Kill || iv.Judgment == judge.RetryContainer {
 			judgeKilled.Store(true)
