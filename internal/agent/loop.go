@@ -127,7 +127,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		}
 		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
 		if reconResult != nil {
-			handleJudgeIntervention(issue.Number, "recon", reconResult, hook, reporter, logger)
+			if handleJudgeIntervention(issue.Number, "recon", reconResult, hook, reporter, logger) {
+				runPostMortem(issue.Number, reconResult, hook, logger)
+			}
 		}
 		var reconWriteHook func(rundata.StepResult) error
 		if hook != nil {

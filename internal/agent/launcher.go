@@ -311,7 +311,7 @@ func buildJudgeCallback(
 }
 
 func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, error) {
-	logger.Info("running agent in sandbox", "image", opts.Image, "timeout", opts.Timeout)
+	logger.Info("running agent in sandbox", "image", opts.Image, "timeout", opts.Timeout, "prompt_bytes", len(opts.Prompt), "role", opts.Role)
 
 	workDir := opts.WorkDir
 	if workDir == "" {
