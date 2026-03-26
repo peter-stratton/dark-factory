@@ -40,7 +40,10 @@ func BuildImage(ctx context.Context, cfg DockerConfig, logger *slog.Logger) (str
 		}
 	}
 
-	tag := ImageTag(content)
+	// Include agent_runner.py in the tag hash so image is rebuilt when the
+	// runner script changes (the Dockerfile itself may be unchanged).
+	pyForTag, _ := runner.FS.ReadFile("agent_runner.py")
+	tag := ImageTag(content + string(pyForTag))
 	logger.Info("building Docker image", "tag", tag)
 
 	tmpDir, err := os.MkdirTemp("", "godark-docker-*")
