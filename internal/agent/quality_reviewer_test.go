@@ -2,17 +2,18 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestQualityReview_ReturnsVerdict(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"output\nAGENT_RESULT=APPROVED\nmore output","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
@@ -25,9 +26,9 @@ func TestQualityReview_ReturnsVerdict(t *testing.T) {
 }
 
 func TestQualityReview_ChangesRequested(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"AGENT_RESULT=CHANGES_REQUESTED\n","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
@@ -41,9 +42,9 @@ func TestQualityReview_ChangesRequested(t *testing.T) {
 
 func TestQualityReview_SetsQualityReviewerRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte("AGENT_RESULT=APPROVED\n"), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: "AGENT_RESULT=APPROVED\n"}, nil
 	})
 
 	_, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
@@ -57,9 +58,9 @@ func TestQualityReview_SetsQualityReviewerRole(t *testing.T) {
 }
 
 func TestQualityReview_StructuredVerdict(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"some text","cost_usd":0,"is_error":false,"verdict":"APPROVED"}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
@@ -139,10 +140,10 @@ func qualityPromptsWithDirective(t *testing.T) *Prompts {
 
 func TestQualityReview_Cycle0NoDirectiveInPrompt(t *testing.T) {
 	var capturedPrompt string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedPrompt = env["GODARK_PROMPT"]
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedPrompt = opts.Env["GODARK_PROMPT"]
 		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3
@@ -158,10 +159,10 @@ func TestQualityReview_Cycle0NoDirectiveInPrompt(t *testing.T) {
 
 func TestQualityReview_Cycle1NarrowsScope(t *testing.T) {
 	var capturedPrompt string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedPrompt = env["GODARK_PROMPT"]
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedPrompt = opts.Env["GODARK_PROMPT"]
 		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3
@@ -177,10 +178,10 @@ func TestQualityReview_Cycle1NarrowsScope(t *testing.T) {
 
 func TestQualityReview_FinalCycleSecurityOnly(t *testing.T) {
 	var capturedPrompt string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedPrompt = env["GODARK_PROMPT"]
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedPrompt = opts.Env["GODARK_PROMPT"]
 		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3, final cycle=2
@@ -199,10 +200,10 @@ func TestQualityReview_FinalCycleSecurityOnly(t *testing.T) {
 
 func TestQualityReview_SingleAttemptNoDirective(t *testing.T) {
 	var capturedPrompt string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedPrompt = env["GODARK_PROMPT"]
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedPrompt = opts.Env["GODARK_PROMPT"]
 		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	cfg := qualityConfigWithDecay(0) // maxAttempts=1
@@ -218,10 +219,10 @@ func TestQualityReview_SingleAttemptNoDirective(t *testing.T) {
 
 func TestQualityReview_DecayDisabledNoDirective(t *testing.T) {
 	var capturedPrompt string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedPrompt = env["GODARK_PROMPT"]
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedPrompt = opts.Env["GODARK_PROMPT"]
 		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	cfg := testConfig()
@@ -239,10 +240,10 @@ func TestQualityReview_DecayDisabledNoDirective(t *testing.T) {
 
 func TestQualityReview_DirectiveAppendedNotReplaced(t *testing.T) {
 	var capturedPrompt string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedPrompt = env["GODARK_PROMPT"]
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedPrompt = opts.Env["GODARK_PROMPT"]
 		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3

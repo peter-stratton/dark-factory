@@ -97,10 +97,6 @@
       "type": "string",
       "default": "docs/conventions.md"
     },
-    "no_sandbox": {
-      "type": "boolean",
-      "description": "Run agents on host instead of in Docker"
-    },
     "auto_merge": {
       "type": "object",
       "description": "Merge behavior for feature PRs and rollup PRs",

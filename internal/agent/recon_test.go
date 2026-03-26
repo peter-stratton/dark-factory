@@ -2,16 +2,18 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"strings"
-	"syscall"
 	"testing"
+
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestRecon_RendersPromptAndCallsRun(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"recon output","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"recon output","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{Recon: "Recon issue #{{.IssueNumber}}: {{.IssueTitle}}"}
@@ -37,9 +39,9 @@ func TestRecon_RendersPromptAndCallsRun(t *testing.T) {
 
 func TestRecon_SetsReconRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{Recon: "recon prompt"}
@@ -54,7 +56,7 @@ func TestRecon_SetsReconRole(t *testing.T) {
 }
 
 func TestRecon_InvalidTimeout(t *testing.T) {
-	stubRunner(t)
+	stubSandboxRunner(t)
 
 	cfg := testConfig()
 	cfg.AgentTimeout = "invalid"
@@ -68,9 +70,9 @@ func TestRecon_InvalidTimeout(t *testing.T) {
 
 func TestImplement_ReconBriefPassedToPrompt(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	brief := "key finding: use X approach"
@@ -91,9 +93,9 @@ func TestImplement_ReconBriefPassedToPrompt(t *testing.T) {
 
 func TestImplement_EmptyReconBriefDoesNotAffectPrompt(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{

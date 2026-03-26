@@ -2,16 +2,18 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"strings"
-	"syscall"
 	"testing"
+
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{
@@ -37,9 +39,9 @@ func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 
 func TestGenerateSpec_SetsSpecGeneratorRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte(`{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
 	prompts := &Prompts{
@@ -57,7 +59,7 @@ func TestGenerateSpec_SetsSpecGeneratorRole(t *testing.T) {
 }
 
 func TestGenerateSpec_InvalidTimeout(t *testing.T) {
-	stubRunner(t)
+	stubSandboxRunner(t)
 
 	cfg := testConfig()
 	cfg.AgentTimeout = "invalid"

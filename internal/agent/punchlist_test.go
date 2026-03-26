@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-	"syscall"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/punchlist"
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestExtractJSONArray_PlainJSON(t *testing.T) {
@@ -208,7 +208,7 @@ func TestEnrichPunchlistEntries_SkipWhenNoPrompt(t *testing.T) {
 		{IssueNumber: 1, IssueTitle: "Test"},
 	}
 	prompts := &Prompts{Punchlist: ""}
-	cfg := &config.Config{Repo: "owner/repo", NoSandbox: true}
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	EnrichPunchlistEntries(context.Background(), entries, prompts, cfg, nil, logger)
 
@@ -236,7 +236,7 @@ func TestGenerateAcceptanceTests_SkipWhenNoPrompt(t *testing.T) {
 
 	entry := punchlist.Entry{IssueNumber: 42, IssueTitle: "Test"}
 	prompts := &Prompts{Punchlist: ""}
-	cfg := &config.Config{Repo: "owner/repo", NoSandbox: true}
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	result := GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, nil, logger)
 	if result != nil {
@@ -260,10 +260,10 @@ func TestGenerateAcceptanceTests_LogsSuccessWithCount(t *testing.T) {
 	cap := &logCapturer{}
 	logger := slog.New(cap)
 
-	// Stub Runner to return a valid JSON array.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	// Stub SandboxRunner to return a valid JSON array.
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		resultJSON := `{"session_id":"","result":"[\"Test one\",\"Test two\"]","cost_usd":0,"is_error":false}`
-		return []byte(resultJSON), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: resultJSON}, nil
 	})
 	// Stub punchlist CommandRunner (FetchPRDiff) to avoid real gh call.
 	origCmd := punchlist.CommandRunner
@@ -274,7 +274,7 @@ func TestGenerateAcceptanceTests_LogsSuccessWithCount(t *testing.T) {
 
 	entry := punchlist.Entry{IssueNumber: 42, IssueTitle: "Test", PRNumber: 10}
 	prompts := &Prompts{Punchlist: "Generate tests for issue {{.IssueNumber}}"}
-	cfg := &config.Config{Repo: "owner/repo", NoSandbox: true}
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	result := GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, map[string]string{}, logger)
 	if len(result) != 2 {
@@ -303,10 +303,10 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 	cap := &logCapturer{}
 	logger := slog.New(cap)
 
-	// Stub Runner to return unparseable output.
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	// Stub SandboxRunner to return unparseable output.
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		resultJSON := `{"session_id":"","result":"not a json array","cost_usd":0,"is_error":false}`
-		return []byte(resultJSON), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: resultJSON}, nil
 	})
 	origCmd := punchlist.CommandRunner
 	defer func() { punchlist.CommandRunner = origCmd }()
@@ -324,7 +324,7 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 
 	entry := punchlist.Entry{IssueNumber: 42, PRNumber: 10}
 	prompts := &Prompts{Punchlist: "Generate tests for issue {{.IssueNumber}}"}
-	cfg := &config.Config{Repo: "owner/repo", NoSandbox: true}
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	result := GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, map[string]string{}, logger)
 

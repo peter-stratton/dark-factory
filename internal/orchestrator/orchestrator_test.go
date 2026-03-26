@@ -427,6 +427,13 @@ func TestCategorizeIssues(t *testing.T) {
 func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome) {
 	t.Helper()
 
+	// Stub buildImageFn so tests don't require a real Docker daemon.
+	origBuildImage := buildImageFn
+	t.Cleanup(func() { buildImageFn = origBuildImage })
+	buildImageFn = func(_ context.Context, _ sandbox.DockerConfig, _ *slog.Logger) (string, error) {
+		return "test-image:latest", nil
+	}
+
 	// Mock processIssueFn.
 	origProcess := processIssueFn
 	t.Cleanup(func() { processIssueFn = origProcess })
@@ -505,7 +512,6 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 
 	closedSet := map[int]bool{} // initially empty
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
 		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
@@ -552,7 +558,6 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	output := captureStdout(t, func() {
 		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "", nil)
@@ -601,7 +606,6 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
 		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
@@ -726,7 +730,6 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
 		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
@@ -1105,7 +1108,6 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
 		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil); err != nil {
@@ -1185,7 +1187,6 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 	fn := &fakeNotifier{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	captureStdout(t, func() {
 		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
@@ -1213,57 +1214,6 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 	}
 }
 
-func TestProcessIssues_AbortNotificationFired(t *testing.T) {
-	allIssues := []github.Issue{
-		{Number: 1, Title: "will merge then fail to pull"},
-	}
-
-	setupProcessMocks(t, func() []int { return nil },
-		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome {
-			return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
-		})
-
-	// Override CommandRunner so PullAfterMerge fails (simulates network issue).
-	origCmdRunner := CommandRunner
-	t.Cleanup(func() { CommandRunner = origCmdRunner })
-	pullCallCount := 0
-	CommandRunner = func(name string, args ...string) ([]byte, error) {
-		if len(args) >= 2 && args[0] == "pull" && args[1] == "--rebase" {
-			pullCallCount++
-			return nil, fmt.Errorf("pull failed: remote unreachable")
-		}
-		// git status --porcelain: clean tree (allows PullAfterMerge to return a clear error)
-		if len(args) >= 1 && args[0] == "status" {
-			return []byte(""), nil
-		}
-		return []byte("ok"), nil
-	}
-
-	fn := &fakeNotifier{}
-	closedSet := map[int]bool{}
-	cfg := testConfig()
-	cfg.NoSandbox = true
-
-	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
-			t.Fatalf("processIssues() error = %v", err)
-		}
-	})
-
-	// Must have received an abort event.
-	var abortEvents []notify.Event
-	for _, e := range fn.received {
-		if e.Type == "abort" {
-			abortEvents = append(abortEvents, e)
-		}
-	}
-	if len(abortEvents) != 1 {
-		t.Fatalf("got %d abort events, want 1; all events: %v", len(abortEvents), fn.received)
-	}
-	if !strings.Contains(abortEvents[0].Message, "abort") && !strings.Contains(abortEvents[0].Message, "sync") && !strings.Contains(abortEvents[0].Message, "Run aborted") {
-		t.Errorf("abort message %q should mention the abort reason", abortEvents[0].Message)
-	}
-}
 
 // filteringNotifier only accepts events whose Type is in the allowed set,
 // forwarding to the inner fakeNotifier. This simulates notify.filteredNotifier
@@ -1352,7 +1302,6 @@ func TestRollup_NoneDoesNothing(t *testing.T) {
 	created, merged := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.BaseBranch = "feature-branch"
 	cfg.AutoMerge.Rollup = "none"
 
@@ -1383,7 +1332,6 @@ func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
 	created, merged := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.BaseBranch = "feature-branch"
 	cfg.AutoMerge.Rollup = "manual"
 
@@ -1420,7 +1368,6 @@ func TestRollup_AutoCreateAndMerges(t *testing.T) {
 	created, merged := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.BaseBranch = "feature-branch"
 	cfg.AutoMerge.Rollup = "auto"
 
@@ -1454,7 +1401,6 @@ func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.BaseBranch = "" // empty — use default branch
 	cfg.AutoMerge.Rollup = "auto"
 
@@ -1482,7 +1428,6 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.BaseBranch = "main" // same as default branch
 	cfg.AutoMerge.Rollup = "auto"
 
@@ -1510,7 +1455,6 @@ func TestRollup_SkipWhenBaseBranchEqualsCustomDefault(t *testing.T) {
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DefaultBranch = "master"
 	cfg.BaseBranch = "master" // same as custom default branch
 	cfg.AutoMerge.Rollup = "auto"
@@ -1539,7 +1483,6 @@ func TestRollup_UsesCustomDefaultBranch(t *testing.T) {
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DefaultBranch = "master"
 	cfg.BaseBranch = "feature-branch"
 	cfg.AutoMerge.Rollup = "manual"
@@ -1571,7 +1514,6 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 	created, _ := setupRollupMocks(t)
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.BaseBranch = "feature-branch"
 	cfg.AutoMerge.Rollup = "auto"
 
@@ -1586,49 +1528,6 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 	}
 }
 
-func TestRollup_SkipWhenAborted(t *testing.T) {
-	allIssues := []github.Issue{
-		{Number: 1, Title: "will merge then abort"},
-	}
-
-	// Process the issue as implemented, but then fail the PullAfterMerge so
-	// the run aborts with stats.implemented == 1.
-	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
-			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
-		})
-
-	// Override CommandRunner so PullAfterMerge fails, triggering an abort.
-	origCmdRunner := CommandRunner
-	t.Cleanup(func() { CommandRunner = origCmdRunner })
-	CommandRunner = func(name string, args ...string) ([]byte, error) {
-		if len(args) >= 2 && args[0] == "pull" && args[1] == "--rebase" {
-			return nil, fmt.Errorf("pull failed: remote unreachable")
-		}
-		if len(args) >= 1 && args[0] == "status" {
-			return []byte(""), nil
-		}
-		return []byte("ok"), nil
-	}
-
-	mockConfigDefaultBranch(t, "main")
-	created, _ := setupRollupMocks(t)
-
-	cfg := testConfig()
-	cfg.NoSandbox = true
-	cfg.BaseBranch = "feature-branch"
-	cfg.AutoMerge.Rollup = "auto"
-
-	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
-			t.Fatalf("processIssues() error = %v", err)
-		}
-	})
-
-	if len(*created) != 0 {
-		t.Errorf("rollup should be skipped when the run aborted, got creates: %v", *created)
-	}
-}
 
 func TestBuildRollupBody_ListsIssues(t *testing.T) {
 	issues := []github.Issue{
@@ -1661,7 +1560,6 @@ func TestReporter_IssueCompleted(t *testing.T) {
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
@@ -1708,7 +1606,6 @@ func TestReporter_WaveStarted(t *testing.T) {
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
@@ -1745,7 +1642,6 @@ func TestReporter_RunFinished(t *testing.T) {
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
@@ -1809,7 +1705,6 @@ func TestReporter_LoggerPreserved(t *testing.T) {
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, logger, reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
@@ -1848,7 +1743,6 @@ func TestReporter_AllBlockedCalled(t *testing.T) {
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{} // #99 not closed
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
@@ -2047,7 +1941,6 @@ func TestReporter_IssueCompleted_WithCost(t *testing.T) {
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, writer, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
@@ -2077,7 +1970,6 @@ func TestReporter_IssueCompleted_ZeroCostWhenNoWriter(t *testing.T) {
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	// Pass nil writer — cost must degrade gracefully to 0.0.
 	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
@@ -2201,8 +2093,7 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 	}
 }
 
-// setupReResolveAndProcessMocks is like setupProcessMocks but also stubs
-// sandbox.BuildImage (not needed for NoSandbox) and preps the lock seam.
+// setupReResolveAndProcessMocks is like setupProcessMocks and preps the lock seam.
 // It returns closedNumbers as a mutable slice pointer for tests to update.
 func setupReResolveAndProcessMocks(t *testing.T, closedNumbers *[]int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome) {
 	t.Helper()
@@ -2225,7 +2116,6 @@ func TestReResolveAndProcess_UnblocksAfterMerge(t *testing.T) {
 	})
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	seen := map[int]bool{1: true} // issue 1 was processed in the prior run
 
@@ -2264,7 +2154,6 @@ func TestReResolveAndProcess_MultipleUnblocked(t *testing.T) {
 	})
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	seen := map[int]bool{1: true, 2: true}
 
@@ -2309,7 +2198,6 @@ func TestReResolveAndProcess_NoNewUnblocked(t *testing.T) {
 	})
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	seen := map[int]bool{}
 
@@ -2343,7 +2231,6 @@ func TestReResolveAndProcess_SeenSkipsAlreadyProcessed(t *testing.T) {
 	})
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 
 	seen := map[int]bool{1: true} // issue 1 already processed
 
@@ -2381,7 +2268,6 @@ func TestProcessIssues_ComposeStartsSuccessfully(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DockerCompose = &config.DockerCompose{
 		File:        "docker-compose.test.yml",
 		ProjectName: "myapp",
@@ -2442,7 +2328,6 @@ func TestProcessIssues_ComposeStartupFailure(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DockerCompose = &config.DockerCompose{
 		File:        "docker-compose.test.yml",
 		ProjectName: "myapp",
@@ -2486,7 +2371,6 @@ func TestProcessIssues_ComposeSkippedWhenNotConfigured(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	// cfg.DockerCompose is nil — compose not configured.
 
 	captureStdout(t, func() {
@@ -2524,7 +2408,6 @@ func TestProcessIssues_ComposeProjectNamePassed(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DockerCompose = &config.DockerCompose{
 		File:        "docker-compose.test.yml",
 		ProjectName: "myapp",
@@ -2597,7 +2480,6 @@ func TestProcessIssues_ComposeDownCalledAfterNormalRun(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DockerCompose = &config.DockerCompose{
 		File:        "docker-compose.test.yml",
 		ProjectName: "myapp",
@@ -2634,7 +2516,6 @@ func TestProcessIssues_ComposeDownCalledAfterRunFailure(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DockerCompose = &config.DockerCompose{
 		File:        "docker-compose.test.yml",
 		ProjectName: "myapp",
@@ -2670,7 +2551,6 @@ func TestProcessIssues_ComposeDownCalledAfterContextCancellation(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DockerCompose = &config.DockerCompose{
 		File:        "docker-compose.test.yml",
 		ProjectName: "myapp",
@@ -2715,7 +2595,6 @@ func TestProcessIssues_ComposeDownFailureLogsWarning(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.NoSandbox = true
 	cfg.DockerCompose = &config.DockerCompose{
 		File:        "docker-compose.test.yml",
 		ProjectName: "myapp",

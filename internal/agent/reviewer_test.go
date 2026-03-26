@@ -2,14 +2,16 @@ package agent
 
 import (
 	"context"
-	"syscall"
+	"log/slog"
 	"testing"
+
+	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestReview_ReturnsVerdict(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"output\nAGENT_RESULT=APPROVED\nmore output","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
@@ -22,9 +24,9 @@ func TestReview_ReturnsVerdict(t *testing.T) {
 }
 
 func TestReview_ChangesRequested(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"AGENT_RESULT=CHANGES_REQUESTED\n","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
@@ -38,9 +40,9 @@ func TestReview_ChangesRequested(t *testing.T) {
 
 func TestReview_SetsReviewerRole(t *testing.T) {
 	var capturedEnv map[string]string
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
-		capturedEnv = env
-		return []byte("AGENT_RESULT=APPROVED\n"), []byte(""), 0, nil, nil
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnv = opts.Env
+		return &sandbox.RunResult{Stdout: "AGENT_RESULT=APPROVED\n"}, nil
 	})
 
 	_, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
@@ -54,9 +56,9 @@ func TestReview_SetsReviewerRole(t *testing.T) {
 }
 
 func TestReview_StructuredVerdictApproved(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"some text","cost_usd":0,"is_error":false,"verdict":"APPROVED"}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
@@ -69,9 +71,9 @@ func TestReview_StructuredVerdictApproved(t *testing.T) {
 }
 
 func TestReview_StructuredVerdictChangesRequested(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"some text","cost_usd":0,"is_error":false,"verdict":"CHANGES_REQUESTED"}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
@@ -84,10 +86,10 @@ func TestReview_StructuredVerdictChangesRequested(t *testing.T) {
 }
 
 func TestReview_NoStructuredVerdict_FallsBackToStdout(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		// No verdict field in JSON; result text contains the sentinel.
 		out := `{"session_id":"","result":"AGENT_RESULT=APPROVED\n","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)
@@ -100,9 +102,9 @@ func TestReview_NoStructuredVerdict_FallsBackToStdout(t *testing.T) {
 }
 
 func TestReview_NeitherSource_EmptyVerdict(t *testing.T) {
-	stubRunnerFunc(t, func(ctx context.Context, env map[string]string, name string, args ...string) ([]byte, []byte, int, *syscall.Rusage, error) {
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := `{"session_id":"","result":"no sentinel here","cost_usd":0,"is_error":false}`
-		return []byte(out), []byte(""), 0, nil, nil
+		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
 	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), false)

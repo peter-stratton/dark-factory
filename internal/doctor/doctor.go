@@ -62,30 +62,23 @@ type Opts struct {
 	Runtime           string // detected runtime name (e.g. "go")
 	LintCommand       string // configured lint command
 	ComposeConfigured bool   // docker_compose block is present
-	NoSandbox         bool   // check host toolchain instead of Docker
 }
 
 // Checks returns the full ordered list of pre-flight checks.
 //
-// By default, only host-level requirements are checked: Docker, gh CLI, and
-// an Anthropic auth token. When NoSandbox is true, additional checks verify
-// that the runtime toolchain, Python 3, and any lint tools are available on
-// the host (since there is no container to provide them).
-//
-// Compose checks are always conditional on ComposeConfigured.
+// Checks always include Docker, gh CLI, and an Anthropic auth token.
+// Compose checks are conditional on ComposeConfigured.
 func Checks(opts Opts) []*Check {
 	var checks []*Check
 
-	if !opts.NoSandbox {
-		checks = append(checks, &Check{
-			Name: "Docker daemon running",
-			Fix:  "Start Docker Desktop or the Docker daemon (e.g. `sudo systemctl start docker`).",
-			run: func() bool {
-				_, err := CommandRunner("docker", "info")
-				return err == nil
-			},
-		})
-	}
+	checks = append(checks, &Check{
+		Name: "Docker daemon running",
+		Fix:  "Start Docker Desktop or the Docker daemon (e.g. `sudo systemctl start docker`).",
+		run: func() bool {
+			_, err := CommandRunner("docker", "info")
+			return err == nil
+		},
+	})
 
 	checks = append(checks,
 		&Check{
@@ -112,47 +105,6 @@ func Checks(opts Opts) []*Check {
 			},
 		},
 	)
-
-	// The remaining checks are only relevant in --no-sandbox mode, where the
-	// host must provide the runtime toolchain and lint tools directly.
-	if opts.NoSandbox {
-		if opts.Runtime != "" {
-			bin, args := runtimeVersionCmd(opts.Runtime)
-			if bin != "" {
-				rt := opts.Runtime
-				b := bin
-				a := args
-				checks = append(checks, &Check{
-					Name: fmt.Sprintf("%s toolchain available", rt),
-					Fix:  fmt.Sprintf("Install the %s toolchain and ensure it is on your PATH.", rt),
-					run: func() bool {
-						_, err := CommandRunner(b, a...)
-						return err == nil
-					},
-				})
-			}
-		}
-
-		checks = append(checks, &Check{
-			Name: "Python 3 available",
-			Fix:  "Install Python 3: https://www.python.org/downloads/",
-			run: func() bool {
-				_, err := CommandRunner("python3", "--version")
-				return err == nil
-			},
-		})
-
-		if strings.Contains(opts.LintCommand, "golangci-lint") {
-			checks = append(checks, &Check{
-				Name: "golangci-lint installed",
-				Fix:  "Install golangci-lint: `brew install golangci-lint` or see https://golangci-lint.run/usage/install/",
-				run: func() bool {
-					_, err := CommandRunner("golangci-lint", "--version")
-					return err == nil
-				},
-			})
-		}
-	}
 
 	if opts.ComposeConfigured {
 		checks = append(checks, &Check{

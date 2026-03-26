@@ -6,17 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent/judge"
-	"github.com/peter-stratton/dark-factory/internal/agent/runner"
 	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/ghapp"
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
@@ -61,58 +57,8 @@ var SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog
 	return sandbox.RunContainer(ctx, opts, logger)
 }
 
-// goosForRusage is the GOOS value used for Maxrss unit normalization.
-// On macOS, Maxrss is in kilobytes; on Linux it is in bytes.
-// Replaceable for testing to validate both platform behaviours.
-var goosForRusage = runtime.GOOS
-
-// Runner executes a command on the host with the given environment. Replaceable for testing.
-// The returned *syscall.Rusage comes from cmd.ProcessState (populated by wait4) and
-// contains accurate per-child resource usage including peak RSS. This is more reliable
-// than a separate getrusage(RUSAGE_CHILDREN) call, which returns 0 for Maxrss on macOS.
-var Runner = func(ctx context.Context, env map[string]string, name string, args ...string) (stdout, stderr []byte, exitCode int, rusage *syscall.Rusage, err error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	if len(env) > 0 {
-		cmd.Env = os.Environ()
-		for k, v := range env {
-			cmd.Env = append(cmd.Env, k+"="+v)
-		}
-	}
-	var outBuf, errBuf []byte
-	cmd.Stdout = &writerFunc{fn: func(p []byte) { outBuf = append(outBuf, p...) }}
-	cmd.Stderr = &writerFunc{fn: func(p []byte) { errBuf = append(errBuf, p...) }}
-	err = cmd.Run()
-	code := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
-			err = nil // non-zero exit is not an error for us
-		}
-	}
-	if cmd.ProcessState != nil {
-		if ru, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok {
-			rusage = ru
-		}
-	}
-	return outBuf, errBuf, code, rusage, err
-}
-
-// writerFunc adapts a function to the io.Writer interface.
-type writerFunc struct {
-	fn func([]byte)
-}
-
-func (w *writerFunc) Write(p []byte) (int, error) {
-	w.fn(p)
-	return len(p), nil
-}
-
-// Run invokes a Claude Code agent with the given prompt, either inside a
-// Docker container (sandbox mode) or directly on the host (no-sandbox mode).
-func Run(ctx context.Context, opts RunOpts, noSandbox bool, logger *slog.Logger) (*Result, error) {
-	if noSandbox {
-		return runHost(ctx, opts, logger)
-	}
+// Run invokes a Claude Code agent with the given prompt inside a Docker container.
+func Run(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, error) {
 	return runSandbox(ctx, opts, logger)
 }
 
@@ -132,102 +78,6 @@ func refreshGHToken(env map[string]string, logger *slog.Logger) {
 		logger.Warn("failed to update host GH_TOKEN", "error", err)
 	}
 	logger.Info("refreshed GitHub App installation token")
-}
-
-func runHost(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result, error) {
-	logger.Info("running agent on host", "timeout", opts.Timeout)
-
-	if opts.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-		defer cancel()
-	}
-
-	// Write embedded agent_runner.py to a temp file.
-	pyContent, err := runner.FS.ReadFile("agent_runner.py")
-	if err != nil {
-		return nil, fmt.Errorf("reading embedded agent_runner.py: %w", err)
-	}
-
-	tmpFile, err := os.CreateTemp("", "godark-agent-*.py")
-	if err != nil {
-		return nil, fmt.Errorf("creating temp file for agent runner: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(pyContent); err != nil {
-		_ = tmpFile.Close()
-		return nil, fmt.Errorf("writing agent_runner.py to temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("closing temp agent runner file: %w", err)
-	}
-
-	// Build env vars: merge RunOpts.Env, then add GODARK_* vars.
-	env := make(map[string]string, len(opts.Env)+2)
-	for k, v := range opts.Env {
-		env[k] = v
-	}
-	env["GODARK_PROMPT"] = opts.Prompt
-	if opts.Role != "" {
-		env["GODARK_ROLE"] = opts.Role
-	}
-
-	// Refresh GitHub App token so each agent invocation gets a fresh 1-hour token.
-	refreshGHToken(env, logger)
-
-	startedAt := time.Now()
-	stdout, stderr, exitCode, rusage, err := Runner(ctx, env, "python3", tmpFile.Name())
-	finishedAt := time.Now()
-	if ctx.Err() != nil {
-		return &Result{TimedOut: true, Stdout: string(stdout), Stderr: string(stderr), StartedAt: startedAt, FinishedAt: finishedAt}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("running agent runner on host: %w", err)
-	}
-
-	res := &Result{
-		ExitCode:   exitCode,
-		Stdout:     string(stdout),
-		Stderr:     string(stderr),
-		StartedAt:  startedAt,
-		FinishedAt: finishedAt,
-	}
-
-	if parsed := parseRunnerOutput(string(stdout)); parsed != nil {
-		res.SessionID = parsed.SessionID
-		res.CostUSD = parsed.CostUSD
-		res.ResultText = parsed.Result
-		res.Verdict = parsed.Verdict
-		res.ToolTrace = parsed.ToolTrace
-		if parsed.IsError && res.ExitCode == 0 {
-			res.ExitCode = 1
-		}
-	}
-
-	// Capture resource usage from the child process (best-effort).
-	// The rusage comes from cmd.ProcessState (populated by wait4), which gives
-	// accurate per-child stats including peak RSS. This is more reliable than
-	// a separate getrusage(RUSAGE_CHILDREN) call, which returns 0 for Maxrss
-	// on macOS.
-	if rusage != nil {
-		mem := int64(rusage.Maxrss)
-		if goosForRusage == "darwin" {
-			mem *= 1024 // macOS reports Maxrss in kilobytes; convert to bytes
-		}
-		res.PeakMemoryBytes = mem
-		res.CPUNanoseconds = (int64(rusage.Utime.Sec)+int64(rusage.Stime.Sec))*1e9 +
-			(int64(rusage.Utime.Usec)+int64(rusage.Stime.Usec))*1e3
-	}
-
-	// Capture bounded log for post-mortem on failure only.
-	if res.TimedOut || res.ExitCode != 0 {
-		combined := string(stdout) + string(stderr)
-		res.ContainerLog = boundLog(combined, maxPostMortemLines, maxPostMortemBytes)
-	}
-
-	logger.Info("host agent finished", "exit_code", res.ExitCode)
-	return res, nil
 }
 
 // judgeHeartbeatInterval controls how often the heartbeat tick is sent to the

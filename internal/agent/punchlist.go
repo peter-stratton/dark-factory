@@ -72,7 +72,7 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 		Timeout: timeout,
 	}
 
-	result, err := Run(ctx, opts, cfg.NoSandbox, logger)
+	result, err := Run(ctx, opts, logger)
 	if err != nil {
 		logger.Warn("punchlist agent run failed", "error", err)
 		return nil

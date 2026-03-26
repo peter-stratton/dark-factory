@@ -31,5 +31,5 @@ func Recon(ctx context.Context, issue github.Issue, cfg *config.Config, prompts 
 		"issue_title", issue.Title,
 	)
 
-	return Run(ctx, opts, cfg.NoSandbox, logger)
+	return Run(ctx, opts, logger)
 }

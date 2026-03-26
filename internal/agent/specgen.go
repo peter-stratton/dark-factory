@@ -35,5 +35,5 @@ func GenerateSpec(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		"branch", BranchName(issue.Number, slug),
 	)
 
-	return Run(ctx, opts, cfg.NoSandbox, logger)
+	return Run(ctx, opts, logger)
 }
