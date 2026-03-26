@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,10 @@ var claudeRunner = func(ctx context.Context, prompt string) (string, error) {
 	cmd.Stdin = strings.NewReader(prompt)
 	out, err := cmd.Output()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			return "", fmt.Errorf("claude --print: %w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+		}
 		return "", fmt.Errorf("claude --print: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
