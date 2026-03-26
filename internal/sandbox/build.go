@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/peter-stratton/dark-factory/internal/agent/runner"
 	darkexec "github.com/peter-stratton/dark-factory/internal/exec"
 )
 
@@ -40,10 +39,7 @@ func BuildImage(ctx context.Context, cfg DockerConfig, logger *slog.Logger) (str
 		}
 	}
 
-	// Include agent_runner.py in the tag hash so image is rebuilt when the
-	// runner script changes (the Dockerfile itself may be unchanged).
-	pyForTag, _ := runner.FS.ReadFile("agent_runner.py")
-	tag := ImageTag(content + string(pyForTag))
+	tag := ImageTag(content)
 	logger.Info("building Docker image", "tag", tag)
 
 	tmpDir, err := os.MkdirTemp("", "godark-docker-*")
@@ -55,17 +51,6 @@ func BuildImage(ctx context.Context, cfg DockerConfig, logger *slog.Logger) (str
 	dfPath := filepath.Join(tmpDir, "Dockerfile")
 	if err := os.WriteFile(dfPath, []byte(content), 0o644); err != nil { //nolint:gosec // dfPath is tmpDir + constant filename, not user input
 		return "", fmt.Errorf("writing Dockerfile: %w", err)
-	}
-
-	// Write embedded agent_runner.py to the build context so the COPY
-	// directive in the Dockerfile can find it.
-	pyContent, err := runner.FS.ReadFile("agent_runner.py")
-	if err != nil {
-		return "", fmt.Errorf("reading embedded agent_runner.py: %w", err)
-	}
-	pyPath := filepath.Join(tmpDir, "agent_runner.py")
-	if err := os.WriteFile(pyPath, pyContent, 0o644); err != nil {
-		return "", fmt.Errorf("writing agent_runner.py to build context: %w", err)
 	}
 
 	out, err := CommandRunner("docker", "build", "-t", tag, "-f", dfPath, tmpDir)
