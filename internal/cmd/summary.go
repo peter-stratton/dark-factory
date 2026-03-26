@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -17,86 +14,24 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
-// generateSummary is a testability seam: replaced in tests to stub the Claude API call.
-// It accepts the fully-built prompt and returns the generated summary text.
-// Prefers CLAUDE_CODE_OAUTH_TOKEN, falls back to ANTHROPIC_API_KEY.
-var generateSummary = func(ctx context.Context, prompt string) (string, error) {
-	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-
-	if oauthToken == "" && apiKey == "" {
-		return "", fmt.Errorf("missing authentication: set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY")
+// claudeRunner is a testability seam: replaced in tests to stub the claude CLI call.
+// It accepts the prompt via stdin and returns the generated text from stdout.
+var claudeRunner = func(ctx context.Context, prompt string) (string, error) {
+	cmd := exec.CommandContext(ctx, "claude", "--print")
+	cmd.Stdin = strings.NewReader(prompt)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("claude --print: %w", err)
 	}
-
-	apiCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	return callClaudeAPI(apiCtx, oauthToken, apiKey, prompt)
+	return strings.TrimSpace(string(out)), nil
 }
 
-// callClaudeAPI sends a prompt to the Anthropic Messages API and returns the text response.
-// When oauthToken is non-empty it is sent as a Bearer token; otherwise apiKey is used.
-func callClaudeAPI(ctx context.Context, oauthToken, apiKey, prompt string) (string, error) {
-	type message struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	payload := struct {
-		Model     string    `json:"model"`
-		MaxTokens int       `json:"max_tokens"`
-		Messages  []message `json:"messages"`
-	}{
-		Model:     "claude-haiku-4-5-20251001",
-		MaxTokens: 1024,
-		Messages:  []message{{Role: "user", Content: prompt}},
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshal payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.anthropic.com/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
-	if oauthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+oauthToken)
-	} else {
-		req.Header.Set("x-api-key", apiKey)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("send request: %w", err)
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body) // drain to allow TCP connection reuse
-		resp.Body.Close()                     //nolint:errcheck // best-effort close; ignore error
-	}()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
-	}
-
-	for _, c := range result.Content {
-		if c.Type == "text" {
-			return c.Text, nil
-		}
-	}
-	return "", fmt.Errorf("no text content in response")
+// generateSummary is a testability seam: replaced in tests to stub the claude CLI call.
+// It accepts the fully-built prompt and returns the generated summary text.
+var generateSummary = func(ctx context.Context, prompt string) (string, error) {
+	apiCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return claudeRunner(apiCtx, prompt)
 }
 
 // buildSummaryPrompt constructs the prompt for executive summary generation.

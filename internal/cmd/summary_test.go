@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,5 +122,48 @@ func TestBuildSummaryPromptNoIssues(t *testing.T) {
 
 	if !strings.Contains(prompt, "No issues processed") {
 		t.Errorf("prompt for empty outcomes should mention 'No issues processed', got: %s", prompt)
+	}
+}
+
+// TestGenerateSummaryCallsClaudeRunner verifies that generateSummary delegates to
+// claudeRunner and returns its output.
+func TestGenerateSummaryCallsClaudeRunner(t *testing.T) {
+	orig := claudeRunner
+	defer func() { claudeRunner = orig }()
+
+	var gotPrompt string
+	claudeRunner = func(_ context.Context, prompt string) (string, error) {
+		gotPrompt = prompt
+		return "Executive summary text.", nil
+	}
+
+	got, err := generateSummary(context.Background(), "test prompt")
+	if err != nil {
+		t.Fatalf("generateSummary: unexpected error: %v", err)
+	}
+	if got != "Executive summary text." {
+		t.Errorf("generateSummary = %q, want %q", got, "Executive summary text.")
+	}
+	if gotPrompt != "test prompt" {
+		t.Errorf("claudeRunner received prompt %q, want %q", gotPrompt, "test prompt")
+	}
+}
+
+// TestGenerateSummaryPropagatesError verifies that errors from claudeRunner are
+// returned to the caller.
+func TestGenerateSummaryPropagatesError(t *testing.T) {
+	orig := claudeRunner
+	defer func() { claudeRunner = orig }()
+
+	claudeRunner = func(_ context.Context, _ string) (string, error) {
+		return "", errors.New("claude: exit status 1")
+	}
+
+	_, err := generateSummary(context.Background(), "prompt")
+	if err == nil {
+		t.Fatal("generateSummary: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "claude") {
+		t.Errorf("error %q should mention claude", err.Error())
 	}
 }
