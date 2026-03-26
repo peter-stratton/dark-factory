@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -331,7 +332,20 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 	// Refresh GitHub App token so each container gets a fresh 1-hour token.
 	refreshGHToken(env, logger)
 
-	agentCmd := "cd " + workDir + " && python3 /usr/local/bin/agent_runner.py"
+	// Invoke the Claude CLI directly instead of the Python SDK wrapper.
+	// stream-json output gives us real-time tool call visibility and a
+	// structured result line the judge and parseRunnerOutput both understand.
+	// --verbose is required for stream-json in print mode.
+	agentCmd := "cd " + workDir + " && claude -p" +
+		" --output-format stream-json" +
+		" --verbose" +
+		" --permission-mode bypassPermissions" +
+		" --setting-sources project"
+	// Session resume for retry scenarios.
+	if sid, ok := env["GODARK_SESSION_ID"]; ok && sid != "" {
+		agentCmd += ` --resume "$GODARK_SESSION_ID"`
+	}
+	agentCmd += ` "$GODARK_PROMPT"`
 	cloneScript, err := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
 	if err != nil {
 		return nil, fmt.Errorf("building clone script: %w", err)
@@ -439,6 +453,14 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 		if parsed.IsError && res.ExitCode == 0 {
 			res.ExitCode = 1
 		}
+		// CLI stream-json mode doesn't include verdict or tool_trace
+		// fields. Extract them from the output.
+		if res.Verdict == "" && res.ResultText != "" {
+			res.Verdict = extractVerdict(res.ResultText)
+		}
+		if len(res.ToolTrace) == 0 {
+			res.ToolTrace = extractToolTrace(result.Stdout)
+		}
 	}
 
 	// Capture bounded container log for post-mortem on failure only.
@@ -450,18 +472,25 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 	return res, nil
 }
 
-// runnerFinalResult is the structured JSON output printed as the last line by agent_runner.py.
+// runnerFinalResult is the structured JSON output printed as the last line by
+// either agent_runner.py (SDK mode) or the Claude CLI (stream-json mode).
+//
+// SDK format:  {"session_id":"...", "result":"...", "cost_usd":0.04, "is_error":false}
+// CLI format:  {"type":"result", "session_id":"...", "result":"...", "total_cost_usd":0.04, "is_error":false}
 type runnerFinalResult struct {
-	SessionID string   `json:"session_id"`
-	Result    string   `json:"result"`
-	CostUSD   float64  `json:"cost_usd"`
-	IsError   bool     `json:"is_error"`
-	Verdict   string   `json:"verdict,omitempty"`
-	ToolTrace []string `json:"tool_trace,omitempty"`
+	Type          string   `json:"type,omitempty"`           // "result" in CLI stream-json mode
+	SessionID     string   `json:"session_id"`
+	Result        string   `json:"result"`
+	CostUSD       float64  `json:"cost_usd"`
+	TotalCostUSD  float64  `json:"total_cost_usd,omitempty"` // CLI stream-json uses this field
+	IsError       bool     `json:"is_error"`
+	Verdict       string   `json:"verdict,omitempty"`
+	ToolTrace     []string `json:"tool_trace,omitempty"`
 }
 
 // parseRunnerOutput extracts the structured final result from runner stdout.
-// The runner prints a final JSON line with session_id, result, cost_usd, and is_error.
+// It scans from the end of stdout for the last valid JSON line that looks like
+// a result (has session_id or type=="result").
 func parseRunnerOutput(stdout string) *runnerFinalResult {
 	lines := strings.Split(stdout, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -471,6 +500,10 @@ func parseRunnerOutput(stdout string) *runnerFinalResult {
 		}
 		var r runnerFinalResult
 		if err := json.Unmarshal([]byte(line), &r); err == nil {
+			// Normalize: CLI stream-json uses total_cost_usd, SDK uses cost_usd.
+			if r.CostUSD == 0 && r.TotalCostUSD > 0 {
+				r.CostUSD = r.TotalCostUSD
+			}
 			return &r
 		}
 		break
@@ -484,4 +517,64 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return "..." + s[len(s)-n:]
+}
+
+// extractToolTrace scans CLI stream-json stdout for assistant messages
+// containing tool_use content blocks and builds a tool trace summary.
+func extractToolTrace(stdout string) []string {
+	var trace []string
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, `"tool_use"`) {
+			continue
+		}
+		var msg struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content []struct {
+					Type  string         `json:"type"`
+					Name  string         `json:"name"`
+					Input map[string]any `json:"input"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(line), &msg) != nil || msg.Type != "assistant" {
+			continue
+		}
+		for _, block := range msg.Message.Content {
+			if block.Type != "tool_use" || block.Name == "" {
+				continue
+			}
+			switch block.Name {
+			case "Edit", "Write", "Read":
+				fp, _ := block.Input["file_path"].(string)
+				if fp != "" {
+					trace = append(trace, block.Name+" "+fp)
+				} else {
+					trace = append(trace, block.Name)
+				}
+			case "Bash":
+				cmd, _ := block.Input["command"].(string)
+				if len(cmd) > 80 {
+					cmd = cmd[:80]
+				}
+				trace = append(trace, "Bash: "+cmd)
+			default:
+				trace = append(trace, block.Name)
+			}
+		}
+	}
+	return trace
+}
+
+var verdictRe = regexp.MustCompile(`(?i)REVIEW\s+RESULT:\s*(APPROVED|CHANGES_REQUESTED)`)
+
+// extractVerdict scans text for a "REVIEW RESULT: ..." pattern and returns
+// the normalized verdict string, or "" if none found.
+func extractVerdict(text string) string {
+	m := verdictRe.FindStringSubmatch(text)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.ToUpper(m[1])
 }

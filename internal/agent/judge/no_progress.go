@@ -35,7 +35,10 @@ func (r *noProgressRule) ProcessLine(line string, now time.Time) *Intervention {
 		r.lastToolCall = now
 		r.started = true
 	}
-	if strings.Contains(line, `"tool":`) {
+	// Match tool activity from either format:
+	//   SDK audit:   {"tool": "Read", ...}
+	//   CLI stream:  {"type":"tool_use", "name":"Read", ...}  (inside assistant message)
+	if strings.Contains(line, `"tool":`) || strings.Contains(line, `"tool_use"`) {
 		r.lastToolCall = now
 	}
 	idle := now.Sub(r.lastToolCall)
