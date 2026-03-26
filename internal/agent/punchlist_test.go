@@ -208,7 +208,7 @@ func TestEnrichPunchlistEntries_SkipWhenNoPrompt(t *testing.T) {
 		{IssueNumber: 1, IssueTitle: "Test"},
 	}
 	prompts := &Prompts{Punchlist: ""}
-	cfg := &config.Config{Repo: "owner/repo", }
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	EnrichPunchlistEntries(context.Background(), entries, prompts, cfg, nil, logger)
 
@@ -236,7 +236,7 @@ func TestGenerateAcceptanceTests_SkipWhenNoPrompt(t *testing.T) {
 
 	entry := punchlist.Entry{IssueNumber: 42, IssueTitle: "Test"}
 	prompts := &Prompts{Punchlist: ""}
-	cfg := &config.Config{Repo: "owner/repo", }
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	result := GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, nil, logger)
 	if result != nil {
@@ -274,7 +274,7 @@ func TestGenerateAcceptanceTests_LogsSuccessWithCount(t *testing.T) {
 
 	entry := punchlist.Entry{IssueNumber: 42, IssueTitle: "Test", PRNumber: 10}
 	prompts := &Prompts{Punchlist: "Generate tests for issue {{.IssueNumber}}"}
-	cfg := &config.Config{Repo: "owner/repo", }
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	result := GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, map[string]string{}, logger)
 	if len(result) != 2 {
@@ -324,7 +324,7 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 
 	entry := punchlist.Entry{IssueNumber: 42, PRNumber: 10}
 	prompts := &Prompts{Punchlist: "Generate tests for issue {{.IssueNumber}}"}
-	cfg := &config.Config{Repo: "owner/repo", }
+	cfg := &config.Config{Repo: "owner/repo"}
 
 	result := GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, map[string]string{}, logger)
 

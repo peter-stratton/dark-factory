@@ -2884,8 +2884,8 @@ func sandboxGuardFn(name string, args ...string) ([]byte, error) {
 	return []byte(""), nil
 }
 
-// TestProcessIssue_VerifySandboxMode verifies that when NoSandbox is false the
-// sandboxCommandRunner is used (sandboxRunContainer is called instead of GuardRunner sh).
+// TestProcessIssue_VerifySandboxMode verifies that the sandboxCommandRunner is always used
+// (sandboxRunContainer is called instead of GuardRunner sh).
 func TestProcessIssue_VerifySandboxMode(t *testing.T) {
 	var sandboxCalled bool
 	var capturedImage string
