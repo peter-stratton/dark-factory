@@ -170,12 +170,7 @@ func RunRollupVerify(
 		return true, nil
 	}
 
-	var verifyRunner CommandRunner
-	if cfg.NoSandbox {
-		verifyRunner = newHostRunner()
-	} else {
-		verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
-	}
+	verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
 
 	logger.Info("running rollup verify step", "check_count", len(verifyChecks))
 	verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)

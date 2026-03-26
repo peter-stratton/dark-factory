@@ -17,7 +17,6 @@ import (
 func rebaseTestConfig() *config.Config {
 	return &config.Config{
 		Repo:              "owner/repo",
-		NoSandbox:         true,
 		AgentTimeout:      "10m",
 		ProtectedPaths:    []string{"CLAUDE.md"},
 		ScenarioDir:       "tests/scenarios/",

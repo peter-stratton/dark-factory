@@ -44,9 +44,7 @@ func oauthEnv(key string) string {
 
 func noEnv(_ string) string { return "" }
 
-// --- Sandbox mode (default) ---
-
-func TestRun_Sandbox_AllPass(t *testing.T) {
+func TestRun_AllPass(t *testing.T) {
 	orig := CommandRunner
 	origEnv := EnvLookup
 	defer func() { CommandRunner = orig; EnvLookup = origEnv }()
@@ -131,94 +129,9 @@ func TestChecks_Sandbox_NoRuntimeOrPython(t *testing.T) {
 	}
 }
 
-func TestChecks_Sandbox_NoGolangciLint(t *testing.T) {
+func TestChecks_NoGolangciLintCheck(t *testing.T) {
+	// golangci-lint check is never added (host toolchain checks removed).
 	checks := Checks(Opts{LintCommand: "golangci-lint run ./..."})
-	for _, c := range checks {
-		if c.Name == "golangci-lint installed" {
-			t.Error("unexpected golangci-lint check in sandbox mode")
-		}
-	}
-}
-
-// --- No-sandbox mode ---
-
-func TestRun_NoSandbox_AllPass(t *testing.T) {
-	orig := CommandRunner
-	origEnv := EnvLookup
-	defer func() { CommandRunner = orig; EnvLookup = origEnv }()
-
-	CommandRunner = stubRunner("gh --version", "gh auth", "go version", "python3 --version")
-	EnvLookup = apiKeyEnv
-
-	var buf bytes.Buffer
-	checks := Checks(Opts{Runtime: "go", NoSandbox: true})
-	passed := Run(&buf, checks)
-
-	if !passed {
-		t.Errorf("expected all checks to pass, output:\n%s", buf.String())
-	}
-	// 3 base (no docker) + runtime + python = 5
-	if c := strings.Count(buf.String(), "[PASS]"); c != 5 {
-		t.Errorf("expected 5 PASS lines, got %d:\n%s", c, buf.String())
-	}
-}
-
-func TestChecks_NoSandbox_NoDocker(t *testing.T) {
-	checks := Checks(Opts{NoSandbox: true})
-	for _, c := range checks {
-		if c.Name == "Docker daemon running" {
-			t.Error("unexpected Docker check in no-sandbox mode")
-		}
-	}
-}
-
-func TestChecks_NoSandbox_WithRuntime(t *testing.T) {
-	runtimes := []string{"go", "flutter", "node", "rust", "elixir", "python"}
-	for _, rt := range runtimes {
-		checks := Checks(Opts{Runtime: rt, NoSandbox: true})
-		found := false
-		for _, c := range checks {
-			if strings.Contains(c.Name, rt+" toolchain") {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("runtime=%s: no toolchain check found in no-sandbox mode", rt)
-		}
-	}
-}
-
-func TestChecks_NoSandbox_NoRuntime(t *testing.T) {
-	checks := Checks(Opts{NoSandbox: true})
-	// 3 base (no docker) + python = 4
-	if len(checks) != 4 {
-		t.Errorf("expected 4 checks without runtime in no-sandbox mode, got %d", len(checks))
-	}
-}
-
-func TestChecks_NoSandbox_UnknownRuntime(t *testing.T) {
-	checks := Checks(Opts{Runtime: "cobol", NoSandbox: true})
-	// Unknown runtime: 3 base + python = 4 (no toolchain check added).
-	if len(checks) != 4 {
-		t.Errorf("expected 4 checks for unknown runtime in no-sandbox mode, got %d", len(checks))
-	}
-}
-
-func TestChecks_NoSandbox_GolangciLint(t *testing.T) {
-	checks := Checks(Opts{LintCommand: "golangci-lint run ./...", NoSandbox: true})
-	found := false
-	for _, c := range checks {
-		if c.Name == "golangci-lint installed" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("expected golangci-lint check in no-sandbox mode")
-	}
-}
-
-func TestChecks_NoSandbox_NoGolangciLint(t *testing.T) {
-	checks := Checks(Opts{LintCommand: "staticcheck ./...", NoSandbox: true})
 	for _, c := range checks {
 		if c.Name == "golangci-lint installed" {
 			t.Error("unexpected golangci-lint check")
@@ -226,68 +139,30 @@ func TestChecks_NoSandbox_NoGolangciLint(t *testing.T) {
 	}
 }
 
-func TestRun_NoSandbox_GolangciLint_Pass(t *testing.T) {
-	orig := CommandRunner
-	origEnv := EnvLookup
-	defer func() { CommandRunner = orig; EnvLookup = origEnv }()
-
-	CommandRunner = stubRunner("gh --version", "gh auth", "python3 --version", "golangci-lint --version")
-	EnvLookup = apiKeyEnv
-
-	var buf bytes.Buffer
-	checks := Checks(Opts{LintCommand: "golangci-lint run ./...", NoSandbox: true})
-	passed := Run(&buf, checks)
-
-	if !passed {
-		t.Errorf("expected all checks to pass, output:\n%s", buf.String())
+func TestChecks_DockerAlwaysIncluded(t *testing.T) {
+	// Docker check must appear regardless of opts.
+	checks := Checks(Opts{})
+	found := false
+	for _, c := range checks {
+		if c.Name == "Docker daemon running" {
+			found = true
+		}
 	}
-	if !strings.Contains(buf.String(), "[PASS] golangci-lint installed") {
-		t.Errorf("expected golangci-lint PASS:\n%s", buf.String())
+	if !found {
+		t.Error("expected 'Docker daemon running' check to always be present")
 	}
 }
 
-func TestRun_NoSandbox_GolangciLint_Fail(t *testing.T) {
-	orig := CommandRunner
-	origEnv := EnvLookup
-	defer func() { CommandRunner = orig; EnvLookup = origEnv }()
-
-	CommandRunner = stubRunner("gh --version", "gh auth", "python3 --version")
-	EnvLookup = apiKeyEnv
-
-	var buf bytes.Buffer
-	checks := Checks(Opts{LintCommand: "golangci-lint run ./...", NoSandbox: true})
-	passed := Run(&buf, checks)
-
-	if passed {
-		t.Error("expected Run to return false when golangci-lint is missing")
-	}
-	out := buf.String()
-	if !strings.Contains(out, "[FAIL] golangci-lint installed") {
-		t.Errorf("expected golangci-lint FAIL:\n%s", out)
-	}
-	if !strings.Contains(out, "brew install golangci-lint") {
-		t.Errorf("expected brew install hint:\n%s", out)
-	}
-}
-
-func TestRun_NoSandbox_NoShortCircuit(t *testing.T) {
-	orig := CommandRunner
-	origEnv := EnvLookup
-	defer func() { CommandRunner = orig; EnvLookup = origEnv }()
-
-	CommandRunner = stubRunner()
-	EnvLookup = noEnv
-
-	var buf bytes.Buffer
-	checks := Checks(Opts{Runtime: "go", NoSandbox: true})
-	passed := Run(&buf, checks)
-
-	if passed {
-		t.Error("expected Run to return false")
-	}
-	// 3 base + runtime + python = 5 checks, all should appear.
-	if c := strings.Count(buf.String(), "[FAIL]"); c != 5 {
-		t.Errorf("expected 5 FAIL lines, got %d:\n%s", c, buf.String())
+func TestChecks_NoHostToolchainChecks(t *testing.T) {
+	// Runtime toolchain and Python 3 checks must never appear.
+	checks := Checks(Opts{Runtime: "go"})
+	for _, c := range checks {
+		if strings.Contains(c.Name, "toolchain") {
+			t.Errorf("unexpected toolchain check: %s", c.Name)
+		}
+		if c.Name == "Python 3 available" {
+			t.Error("unexpected Python 3 check")
+		}
 	}
 }
 

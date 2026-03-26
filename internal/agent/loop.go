@@ -3,10 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -301,12 +299,7 @@ func runVerifyPhase(
 			return fmt.Errorf("sorting modules for verify: %w", err)
 		}
 
-		var verifyRunner CommandRunner
-		if cfg.NoSandbox {
-			verifyRunner = newHostRunner()
-		} else {
-			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
-		}
+		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
 
 		moduleFailed := false
 		var failedModName string
@@ -403,12 +396,7 @@ func runVerifyPhase(
 			)
 		}
 	} else if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
-		var verifyRunner CommandRunner
-		if cfg.NoSandbox {
-			verifyRunner = newHostRunner()
-		} else {
-			verifyRunner = sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
-		}
+		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
 		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
 		if hook != nil {
@@ -1099,23 +1087,6 @@ func buildVerifyChecks(cfg *config.Config) []Check {
 		checks = append(checks, Check{Name: "test", Command: cfg.TestCommand})
 	}
 	return checks
-}
-
-// newHostRunner returns a CommandRunner that executes commands on the host
-// via GuardRunner("sh", "-c", command). Exit codes are extracted from
-// exec.ExitError when available; other errors return exit code 1.
-func newHostRunner() CommandRunner {
-	return func(ctx context.Context, command string) ([]byte, []byte, int, error) {
-		out, err := GuardRunner("sh", "-c", command)
-		if err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				return out, nil, exitErr.ExitCode(), nil
-			}
-			return out, nil, 1, err
-		}
-		return out, nil, 0, nil
-	}
 }
 
 func trimOutput(b []byte) string {
