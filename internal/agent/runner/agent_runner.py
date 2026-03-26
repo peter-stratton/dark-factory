@@ -389,12 +389,28 @@ async def main() -> None:
                 cost_usd = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
                 is_error = bool(getattr(message, "is_error", False))
 
+    async def _heartbeat(interval: float = 30.0):
+        """Print a periodic heartbeat to stderr so the judge knows the agent is alive.
+
+        The SDK yields complete messages, not streaming tokens, so long agent
+        turns produce no container output. Without this heartbeat the judge's
+        idle-timeout rule would kill the container during extended thinking.
+        """
+        while True:
+            await asyncio.sleep(interval)
+            record = {
+                "heartbeat": True,
+                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            }
+            print(json.dumps(record), file=sys.stderr, flush=True)
+
     max_retries = 3
     base_delay = 2.0  # seconds
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
         query_start = time.monotonic()
+        heartbeat_task = asyncio.create_task(_heartbeat())
         try:
             await _collect_messages(options)
             elapsed = time.monotonic() - query_start
@@ -436,6 +452,12 @@ async def main() -> None:
             delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)
             _log_diagnostic("retry_backoff", attempt=attempt + 1, delay_seconds=round(delay, 1))
             await asyncio.sleep(delay)
+        finally:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
     # Use the full accumulated assistant text as the result so the dashboard
     # shows the complete agent output, not just the final sentinel line.

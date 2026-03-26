@@ -162,6 +162,103 @@ func TestFirstLineStartsTheClock(t *testing.T) {
 	}
 }
 
+// --- No-progress rule tests ---
+
+func TestNoProgressFiresWithoutToolCalls(t *testing.T) {
+	j := NewJudge("recon", Config{DefaultNoProgressTimeout: 600})
+
+	// First line starts the clock.
+	j.ProcessLine("some text", t0)
+
+	// Non-empty lines keep flowing but no tool calls — timer should NOT reset.
+	got := j.ProcessLine("still thinking...", t0.Add(599*time.Second))
+	if got != nil {
+		t.Fatalf("expected nil before threshold, got %+v", got)
+	}
+
+	// Past threshold — Kill fires even though output is still flowing.
+	got = j.ProcessLine("more thinking", t0.Add(601*time.Second))
+	if got == nil {
+		t.Fatal("expected Kill intervention, got nil")
+	}
+	if got.Rule != "no_progress" {
+		t.Errorf("got rule %q, want %q", got.Rule, "no_progress")
+	}
+	if got.Judgment != Kill {
+		t.Errorf("got judgment %q, want %q", got.Judgment, Kill)
+	}
+}
+
+func TestNoProgressResetsOnToolCall(t *testing.T) {
+	j := NewJudge("recon", Config{DefaultNoProgressTimeout: 600})
+
+	j.ProcessLine("start", t0)
+
+	// Lots of text, no tools — close to threshold.
+	j.ProcessLine("thinking...", t0.Add(590*time.Second))
+
+	// Tool call resets the clock.
+	j.ProcessLine(`{"tool": "Read", "input_summary": "foo.go"}`, t0.Add(595*time.Second))
+
+	// 599s after the tool call — still under threshold.
+	got := j.ProcessLine("more text", t0.Add(595*time.Second+599*time.Second))
+	if got != nil {
+		t.Fatalf("expected nil after tool call reset, got %+v", got)
+	}
+
+	// Past threshold from last tool call.
+	got = j.ProcessLine("still going", t0.Add(595*time.Second+601*time.Second))
+	if got == nil {
+		t.Fatal("expected Kill after threshold exceeded post-reset, got nil")
+	}
+	if got.Rule != "no_progress" {
+		t.Errorf("got rule %q, want %q", got.Rule, "no_progress")
+	}
+}
+
+func TestNoProgressPerRoleThreshold(t *testing.T) {
+	cfg := Config{
+		NoProgressTimeoutByRole: map[string]int{
+			"recon":       900,
+			"implementer": 600,
+		},
+		DefaultNoProgressTimeout: 300,
+	}
+
+	tests := []struct {
+		name     string
+		role     string
+		after    time.Duration
+		wantKill bool
+	}{
+		{name: "recon under", role: "recon", after: 899 * time.Second, wantKill: false},
+		{name: "recon over", role: "recon", after: 901 * time.Second, wantKill: true},
+		{name: "implementer under", role: "implementer", after: 599 * time.Second, wantKill: false},
+		{name: "implementer over", role: "implementer", after: 601 * time.Second, wantKill: true},
+		{name: "unknown uses default under", role: "reviewer", after: 299 * time.Second, wantKill: false},
+		{name: "unknown uses default over", role: "reviewer", after: 301 * time.Second, wantKill: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			j := NewJudge(tt.role, cfg)
+			j.ProcessLine("start", t0)
+			// Non-empty line (not a tool call) — only no_progress should care.
+			got := j.ProcessLine("still thinking", t0.Add(tt.after))
+			var fired bool
+			if got != nil && got.Rule == "no_progress" {
+				fired = true
+			}
+			if tt.wantKill && !fired {
+				t.Error("expected no_progress Kill, did not fire")
+			}
+			if !tt.wantKill && fired {
+				t.Errorf("did not expect no_progress Kill, got %+v", got)
+			}
+		})
+	}
+}
+
 // --- Tool thrash rule tests ---
 
 func toolThrashConfig() Config {

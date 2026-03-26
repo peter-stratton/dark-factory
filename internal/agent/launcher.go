@@ -256,6 +256,8 @@ func buildJudgeCallback(
 	j := judge.NewJudge(opts.Role, judge.Config{
 		IdleTimeoutByRole:         opts.JudgeConfig.IdleTimeoutByRole,
 		DefaultIdleTimeout:        opts.JudgeConfig.DefaultIdleTimeout,
+		NoProgressTimeoutByRole:   opts.JudgeConfig.NoProgressTimeoutByRole,
+		DefaultNoProgressTimeout:  opts.JudgeConfig.DefaultNoProgressTimeout,
 		ToolThrashThreshold:       opts.JudgeConfig.ToolThrashThreshold,
 		ToolThrashWindowSecs:      opts.JudgeConfig.ToolThrashWindowSecs,
 		TransportFailureThreshold: opts.JudgeConfig.TransportFailureThreshold,
