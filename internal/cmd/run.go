@@ -62,10 +62,6 @@ Use "godark implement" to process individual issues by number.`,
 			return err
 		}
 
-		if cfg.NoSandbox {
-			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
-		}
-
 		// Determine whether to use TUI mode: interactive terminal and --no-tui not set.
 		useTUI := !noTUI && isTerminalFn(int(os.Stdout.Fd()))
 
@@ -290,7 +286,6 @@ func init() {
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles per issue")
 	f.Bool("dry-run", false, "Print execution plan without taking action")
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
-	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-judge", false, "Disable the container health judge")
 	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
 	f.Bool("watch", false, "After first pass, keep running and poll for PR reviews until no more await review")

@@ -85,14 +85,21 @@ func setupLoopTest(t *testing.T, agentOutputs []string, guardFn func(name string
 
 	origSandboxRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origSandboxRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
 
 	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		out := stubs.nextAgentOutput()
 		return &sandbox.RunResult{Stdout: wrapRunnerJSON(out)}, nil
+	}
+
+	// Default: verify container runs succeed.
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 0}, nil
 	}
 
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
@@ -109,7 +116,7 @@ func setupLoopTest(t *testing.T, agentOutputs []string, guardFn func(name string
 func loopConfig() *config.Config {
 	return &config.Config{
 		Repo:           "owner/repo",
-		NoSandbox:      true,
+		Docker:         config.Docker{Image: "test-image:latest"},
 		AutoMerge:      config.AutoMerge{Feature: "all", Rollup: "none"},
 		MaxRetries:     2,
 		AgentTimeout:   "10m",
@@ -1291,9 +1298,6 @@ func TestProcessIssue_HookCalledOnVerifyPass(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" {
-			return []byte(""), nil // verify command passes
-		}
 		return []byte(""), nil
 	})
 
@@ -1313,7 +1317,6 @@ func TestProcessIssue_HookCalledOnVerifyPass(t *testing.T) {
 func TestProcessIssue_HookCalledOnVerifyFixRetries(t *testing.T) {
 	hook := &testRunDataHook{}
 	cfg := verifyFixLoopConfig(true, 1)
-	shCallIdx := 0
 
 	setupLoopTest(t, []string{
 		"implementer output",
@@ -1334,18 +1337,18 @@ func TestProcessIssue_HookCalledOnVerifyFixRetries(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" {
-			idx := shCallIdx
-			shCallIdx++
-			if idx == 0 {
-				// First verify: fail.
-				return []byte("error output"), fmt.Errorf("exit status 1")
-			}
-			// Second verify (after fix): pass.
-			return []byte(""), nil
-		}
 		return []byte(""), nil
 	})
+
+	// Override sandboxRunContainer: first verify fails, second (after fix) passes.
+	verifyCallIdx := 0
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		verifyCallIdx++
+		if verifyCallIdx == 1 {
+			return &sandbox.RunResult{ExitCode: 1, Stdout: "error output"}, nil
+		}
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	}
 
 	ProcessIssue(context.Background(), loopIssue(), cfg, verifyFixPrompts(t), nil, testLogger(t), hook, nil)
 
@@ -2131,61 +2134,6 @@ func TestBuildVerifyChecks_GenerateSuccessProceedsToBuild(t *testing.T) {
 	}
 }
 
-// TestNewHostRunner_SuccessOnZeroExit verifies that a nil-error GuardRunner response maps to exit 0.
-func TestNewHostRunner_SuccessOnZeroExit(t *testing.T) {
-	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
-		return []byte("build output"), nil
-	})
-
-	runner := newHostRunner()
-	stdout, _, exitCode, err := runner(context.Background(), "go build ./...")
-
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if exitCode != 0 {
-		t.Errorf("exitCode = %d, want 0", exitCode)
-	}
-	if string(stdout) != "build output" {
-		t.Errorf("stdout = %q, want %q", string(stdout), "build output")
-	}
-}
-
-// TestNewHostRunner_FailsOnError verifies that a non-nil GuardRunner error maps to non-zero exit.
-func TestNewHostRunner_FailsOnError(t *testing.T) {
-	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
-		return []byte("build error"), fmt.Errorf("exit status 1")
-	})
-
-	runner := newHostRunner()
-	_, _, exitCode, _ := runner(context.Background(), "go build ./...")
-
-	if exitCode == 0 {
-		t.Error("exitCode = 0, want non-zero on error")
-	}
-}
-
-// TestNewHostRunner_UsesShC verifies the runner invokes GuardRunner with sh -c.
-func TestNewHostRunner_UsesShC(t *testing.T) {
-	var capturedName string
-	var capturedArgs []string
-
-	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
-		capturedName = name
-		capturedArgs = args
-		return []byte(""), nil
-	})
-
-	runner := newHostRunner()
-	runner(context.Background(), "go build ./...") //nolint
-
-	if capturedName != "sh" {
-		t.Errorf("name = %q, want sh", capturedName)
-	}
-	if len(capturedArgs) != 2 || capturedArgs[0] != "-c" || capturedArgs[1] != "go build ./..." {
-		t.Errorf("args = %v, want [-c go build ./...]", capturedArgs)
-	}
-}
 
 // TestProcessIssue_VerifyPassedProceedsToReview verifies that when verify passes
 // the issue proceeds to review and is ultimately implemented.
@@ -2240,12 +2188,12 @@ func TestProcessIssue_VerifySkippedWhenNoCommands(t *testing.T) {
 	}
 }
 
-// TestProcessIssue_VerifyHostMode verifies that verify commands are run on the host
-// via sh -c.
-func TestProcessIssue_VerifyHostMode(t *testing.T) {
-	var verifyCmds []string
+// TestProcessIssue_VerifySandboxCommandPassed verifies that verify commands are
+// passed through GODARK_VERIFY_CMD to the sandbox container.
+func TestProcessIssue_VerifySandboxCommandPassed(t *testing.T) {
+	var capturedEnvs []map[string]string
 
-	setupLoopTest(t, []string{
+	stubs := setupLoopTest(t, []string{
 		"implementer output",
 		"AGENT_RESULT=APPROVED",
 		"AGENT_RESULT=APPROVED",
@@ -2263,12 +2211,17 @@ func TestProcessIssue_VerifyHostMode(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" && len(args) > 1 && args[0] == "-c" {
-			verifyCmds = append(verifyCmds, args[1])
-			return []byte("ok"), nil
-		}
 		return []byte(""), nil
 	})
+	_ = stubs
+
+	// Override sandboxRunContainer to capture the opts.
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		capturedEnvs = append(capturedEnvs, opts.Env)
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	}
 
 	cfg := verifyLoopConfig(true)
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
@@ -2276,11 +2229,11 @@ func TestProcessIssue_VerifyHostMode(t *testing.T) {
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
 	}
-	if len(verifyCmds) == 0 {
-		t.Error("expected verify commands to be run via sh -c")
+	if len(capturedEnvs) == 0 {
+		t.Error("expected sandboxRunContainer to be called for verify")
 	}
-	if len(verifyCmds) > 0 && verifyCmds[0] != "go build ./..." {
-		t.Errorf("verifyCmds[0] = %q, want %q", verifyCmds[0], "go build ./...")
+	if len(capturedEnvs) > 0 && capturedEnvs[0]["GODARK_VERIFY_CMD"] != "go build ./..." {
+		t.Errorf("GODARK_VERIFY_CMD = %q, want %q", capturedEnvs[0]["GODARK_VERIFY_CMD"], "go build ./...")
 	}
 }
 
@@ -2303,11 +2256,15 @@ func TestProcessIssue_VerifyBlockingFailure(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			return []byte("build failed"), fmt.Errorf("exit status 1")
-		}
 		return []byte(""), nil
 	})
+
+	// Override sandboxRunContainer to simulate verify failure.
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stdout: "build failed"}, nil
+	}
 
 	cfg := verifyLoopConfig(true) // Blocking = true
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
@@ -2341,11 +2298,15 @@ func TestProcessIssue_VerifyNonBlockingProceedsToReview(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			return []byte("build failed"), fmt.Errorf("exit status 1")
-		}
 		return []byte(""), nil
 	})
+
+	// Override sandboxRunContainer to simulate verify failure.
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stdout: "build failed"}, nil
+	}
 
 	cfg := verifyLoopConfig(false) // Blocking = false → proceeds to review despite failure
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
@@ -2356,9 +2317,9 @@ func TestProcessIssue_VerifyNonBlockingProceedsToReview(t *testing.T) {
 }
 
 // TestProcessIssue_VerifyRunsAfterGuardRails verifies that guard rail drift detection
-// occurs before verify — if drift is detected, verify (sh -c) is never called.
+// occurs before verify — if drift is detected, the verify container is never called.
 func TestProcessIssue_VerifyRunsAfterGuardRails(t *testing.T) {
-	stubs := setupLoopTest(t, []string{
+	setupLoopTest(t, []string{
 		"implementer output",
 	}, func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
@@ -2378,16 +2339,22 @@ func TestProcessIssue_VerifyRunsAfterGuardRails(t *testing.T) {
 		return []byte(""), nil
 	})
 
+	var sandboxVerifyCalled bool
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		sandboxVerifyCalled = true
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	}
+
 	cfg := verifyLoopConfig(true)
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "failed" {
 		t.Errorf("Status = %q, want failed (guard rails drift)", outcome.Status)
 	}
-	for _, call := range stubs.guardCalls {
-		if len(call) > 0 && call[0] == "sh" {
-			t.Errorf("expected verify (sh -c) not to run after guard rail failure, but got: %v", call)
-		}
+	if sandboxVerifyCalled {
+		t.Error("expected verify container not to run after guard rail failure, but it was called")
 	}
 }
 
@@ -2411,11 +2378,15 @@ func TestProcessIssue_VerifyRunsBeforeQualityReview(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			return []byte("build failed"), fmt.Errorf("exit status 1")
-		}
 		return []byte(""), nil
 	})
+
+	// Override sandboxRunContainer to simulate verify failure.
+	origSandboxRunContainer := sandboxRunContainer
+	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stdout: "build failed"}, nil
+	}
 
 	cfg := verifyLoopConfig(true) // Blocking = true → fails at verify
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
@@ -2450,12 +2421,13 @@ func verifyFixPrompts(t *testing.T) *Prompts {
 func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
 	origRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
 
-	shCallIdx := 0
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -2470,16 +2442,18 @@ func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			shCallIdx++
-			if shCallIdx == 1 {
-				// First verify run: fail.
-				return []byte("build error output"), fmt.Errorf("exit status 1")
-			}
-			// Second verify run (after fix): pass.
-			return []byte(""), nil
-		}
 		return []byte(""), nil
+	}
+
+	verifyCallIdx := 0
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		verifyCallIdx++
+		if verifyCallIdx == 1 {
+			// First verify run: fail.
+			return &sandbox.RunResult{ExitCode: 1, Stdout: "build error output"}, nil
+		}
+		// Second verify run (after fix): pass.
+		return &sandbox.RunResult{ExitCode: 0}, nil
 	}
 
 	callIdx := 0
@@ -2505,8 +2479,8 @@ func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
 	if outcome.Status != "implemented" {
 		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
 	}
-	if shCallIdx != 2 {
-		t.Errorf("shCallIdx = %d, want 2 (initial verify + re-verify after fix)", shCallIdx)
+	if verifyCallIdx != 2 {
+		t.Errorf("verifyCallIdx = %d, want 2 (initial verify + re-verify after fix)", verifyCallIdx)
 	}
 }
 
@@ -2515,9 +2489,11 @@ func TestProcessIssue_VerifyFixSucceedsOnFirstAttempt(t *testing.T) {
 func TestProcessIssue_VerifyFixExhaustedBlocking(t *testing.T) {
 	origRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
 
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
@@ -2534,11 +2510,12 @@ func TestProcessIssue_VerifyFixExhaustedBlocking(t *testing.T) {
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
 		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			// All verify runs fail.
-			return []byte("build error"), fmt.Errorf("exit status 1")
-		}
 		return []byte(""), nil
+	}
+
+	// All verify runs fail.
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stdout: "build error"}, nil
 	}
 
 	callIdx := 0
@@ -2570,10 +2547,17 @@ func TestProcessIssue_VerifyFixExhaustedBlocking(t *testing.T) {
 func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
 	origRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
+
+	// All verify runs fail.
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stdout: "build error"}, nil
+	}
 
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
@@ -2588,10 +2572,6 @@ func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
 		}
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
-		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			// All verify runs fail.
-			return []byte("build error"), fmt.Errorf("exit status 1")
 		}
 		return []byte(""), nil
 	}
@@ -2627,12 +2607,18 @@ func TestProcessIssue_VerifyFixExhaustedNonBlocking(t *testing.T) {
 func TestProcessIssue_VerifyFixDriftCheckedAfterFix(t *testing.T) {
 	origRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
 
-	shCallIdx := 0
+	// Verify always fails so fix cycle triggers.
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stdout: "build error"}, nil
+	}
+
 	driftCheckCount := 0
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
@@ -2652,11 +2638,6 @@ func TestProcessIssue_VerifyFixDriftCheckedAfterFix(t *testing.T) {
 				return []byte("CLAUDE.md\n"), nil
 			}
 			return []byte("src/main.go\n"), nil
-		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			shCallIdx++
-			// First verify fails so fix cycle triggers.
-			return []byte("build error"), fmt.Errorf("exit status 1")
 		}
 		return []byte(""), nil
 	}
@@ -2687,12 +2668,23 @@ func TestProcessIssue_VerifyFixDriftCheckedAfterFix(t *testing.T) {
 func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
 	origRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
 
-	shCallIdx := 0
+	verifyCallIdx := 0
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		verifyCallIdx++
+		if verifyCallIdx == 1 {
+			// First verify fails → fix agent runs.
+			return &sandbox.RunResult{ExitCode: 1, Stdout: "build error"}, nil
+		}
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	}
+
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -2706,13 +2698,6 @@ func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
 		}
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
-		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			shCallIdx++
-			if shCallIdx == 1 {
-				return []byte("build error"), fmt.Errorf("exit status 1")
-			}
-			return []byte(""), nil
 		}
 		return []byte(""), nil
 	}
@@ -2755,12 +2740,23 @@ func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
 func TestProcessIssue_VerifyFixPromptContainsErrorOutput(t *testing.T) {
 	origRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
 
-	shCallIdx := 0
+	verifyCallIdx := 0
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		verifyCallIdx++
+		if verifyCallIdx == 1 {
+			// First verify fails with recognizable output for prompt check.
+			return &sandbox.RunResult{ExitCode: 1, Stdout: "undefined: Foo"}, nil
+		}
+		return &sandbox.RunResult{ExitCode: 0}, nil
+	}
+
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -2774,13 +2770,6 @@ func TestProcessIssue_VerifyFixPromptContainsErrorOutput(t *testing.T) {
 		}
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
-		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			shCallIdx++
-			if shCallIdx == 1 {
-				return []byte("undefined: Foo"), fmt.Errorf("exit status 1")
-			}
-			return []byte(""), nil
 		}
 		return []byte(""), nil
 	}
@@ -2869,10 +2858,9 @@ func TestProcessIssue_VerifyFixSkippedWhenNoPrompt(t *testing.T) {
 	}
 }
 
-// sandboxLoopConfig returns a loop config with NoSandbox=false and a Docker image set.
+// sandboxLoopConfig returns a loop config with a Docker image set for sandbox mode tests.
 func sandboxLoopConfig() *config.Config {
 	cfg := verifyLoopConfig(true)
-	cfg.NoSandbox = false
 	cfg.Docker.Image = "test-image:latest"
 	return cfg
 }
@@ -2896,8 +2884,8 @@ func sandboxGuardFn(name string, args ...string) ([]byte, error) {
 	return []byte(""), nil
 }
 
-// TestProcessIssue_VerifySandboxMode verifies that when NoSandbox is false the
-// sandboxCommandRunner is used (sandboxRunContainer is called instead of GuardRunner sh).
+// TestProcessIssue_VerifySandboxMode verifies that the sandboxCommandRunner is always used
+// (sandboxRunContainer is called instead of GuardRunner sh).
 func TestProcessIssue_VerifySandboxMode(t *testing.T) {
 	var sandboxCalled bool
 	var capturedImage string
@@ -2940,43 +2928,6 @@ func TestProcessIssue_VerifySandboxMode(t *testing.T) {
 	}
 }
 
-// TestProcessIssue_VerifyHostModeUnchangedWithNoSandbox verifies that NoSandbox=true
-// still routes through the host runner (GuardRunner sh -c) and not the sandbox runner.
-func TestProcessIssue_VerifyHostModeUnchangedWithNoSandbox(t *testing.T) {
-	var sandboxCalled bool
-	origSandboxRunContainer := sandboxRunContainer
-	t.Cleanup(func() { sandboxRunContainer = origSandboxRunContainer })
-	sandboxRunContainer = func(_ context.Context, opts sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
-		sandboxCalled = true
-		return &sandbox.RunResult{ExitCode: 0}, nil
-	}
-
-	var shCalled bool
-	setupLoopTest(t, []string{
-		"implementer output",
-		"AGENT_RESULT=APPROVED",
-		"AGENT_RESULT=APPROVED",
-	}, func(name string, args ...string) ([]byte, error) {
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			shCalled = true
-			return []byte("ok"), nil
-		}
-		return sandboxGuardFn(name, args...)
-	})
-
-	cfg := verifyLoopConfig(true) // NoSandbox: true (default from loopConfig)
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
-
-	if outcome.Status != "implemented" {
-		t.Errorf("Status = %q, want implemented (err: %v)", outcome.Status, outcome.Err)
-	}
-	if sandboxCalled {
-		t.Error("sandboxRunContainer was called; host mode should not use the sandbox runner")
-	}
-	if !shCalled {
-		t.Error("sh -c was not called; host mode should run verify commands via sh")
-	}
-}
 
 // TestProcessIssue_VerifySandboxContainerFailure verifies that a non-zero exit code
 // from the sandbox container causes the verify check to fail.
@@ -2993,7 +2944,7 @@ func TestProcessIssue_VerifySandboxContainerFailure(t *testing.T) {
 	})
 	stubGuardRunner(t, sandboxGuardFn)
 
-	cfg := sandboxLoopConfig() // NoSandbox: false, Blocking: true
+	cfg := sandboxLoopConfig() // Blocking: true
 	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
 
 	if outcome.Status != "failed" {
@@ -3649,12 +3600,19 @@ func TestProcessIssue_QualityEscalationLabelsAwaitingReview(t *testing.T) {
 func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
 	origRunner := SandboxRunner
 	origGuard := GuardRunner
+	origSandboxRunContainer := sandboxRunContainer
 	t.Cleanup(func() {
 		SandboxRunner = origRunner
 		GuardRunner = origGuard
+		sandboxRunContainer = origSandboxRunContainer
 	})
 
-	shCallCount := 0
+	verifyCallCount := 0
+	sandboxRunContainer = func(_ context.Context, _ sandbox.RunOpts, _ *slog.Logger) (*sandbox.RunResult, error) {
+		verifyCallCount++
+		return &sandbox.RunResult{ExitCode: 0}, nil // all verify runs pass
+	}
+
 	GuardRunner = func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
@@ -3668,10 +3626,6 @@ func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
 		}
 		if name == "git" && strings.Contains(joined, "diff --name-only") {
 			return []byte("src/main.go\n"), nil
-		}
-		if name == "sh" && len(args) > 0 && args[0] == "-c" {
-			shCallCount++
-			return []byte(""), nil // all verify runs pass
 		}
 		return []byte(""), nil
 	}
@@ -3701,8 +3655,8 @@ func TestProcessIssue_VerifyRerunsAfterQualityGateRetry(t *testing.T) {
 	}
 	// Expect 2 verify runs: one initial (before quality review) and one after
 	// the quality-gate retry.
-	if shCallCount != 2 {
-		t.Errorf("shCallCount = %d, want 2 (initial verify + verify after quality-gate retry)", shCallCount)
+	if verifyCallCount != 2 {
+		t.Errorf("verifyCallCount = %d, want 2 (initial verify + verify after quality-gate retry)", verifyCallCount)
 	}
 }
 
@@ -3989,9 +3943,9 @@ func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
 	SandboxRunner = func(innerCtx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		callIdx++
 		switch callIdx {
-		case 1: // recon — cancel context to trigger TimedOut path
+		case 1: // recon — cancel context and return TimedOut to trigger non-blocking timeout path
 			cancel()
-			return &sandbox.RunResult{}, nil
+			return &sandbox.RunResult{TimedOut: true}, nil
 		case 2: // implementer — capture prompt; context is cancelled so Run returns TimedOut
 			implementerPrompt = opts.Env["GODARK_PROMPT"]
 			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil

@@ -234,7 +234,6 @@ type Config struct {
 	ArchitectureJSON string `yaml:"architecture_json"`
 	ConventionsDoc   string `yaml:"conventions_doc"`
 
-	NoSandbox              bool      `yaml:"no_sandbox"`
 	AutoMerge              AutoMerge `yaml:"auto_merge"`
 	BaseBranch             string    `yaml:"base_branch"`
 	DefaultBranch          string    `yaml:"default_branch"`
@@ -361,7 +360,6 @@ type Prompts struct {
 type CLIFlags struct {
 	Repo              *string
 	MaxRetries        *int
-	NoSandbox         *bool
 	AutoMergeFeature  *string
 	AutoMergeRollup   *string
 	BaseBranch        *string
@@ -582,9 +580,6 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.MaxRetries != nil {
 		cfg.MaxRetries = *flags.MaxRetries
-	}
-	if flags.NoSandbox != nil {
-		cfg.NoSandbox = *flags.NoSandbox
 	}
 	if flags.AutoMergeFeature != nil {
 		cfg.AutoMerge.Feature = FeatureMergeStrategy(*flags.AutoMergeFeature)

@@ -17,18 +17,11 @@ var doctorCmd = &cobra.Command{
 variables are in place. Prints a pass/fail checklist and exits non-zero if
 any check fails.
 
-Default checks (sandbox mode):
+Checks:
   • Docker daemon running
   • gh CLI installed and authenticated
-  • Anthropic auth token set
-
-With --no-sandbox, additional host toolchain checks are included:
-  • Detected runtime toolchain available
-  • Python 3 available
-  • Lint tools available (if configured)`,
+  • Anthropic auth token set`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		noSandbox, _ := cmd.Flags().GetBool("no-sandbox")
-
 		// Best-effort runtime detection from the current directory.
 		runtime := ""
 		if dp, err := detect.DetectRuntime("."); err == nil {
@@ -47,7 +40,6 @@ With --no-sandbox, additional host toolchain checks are included:
 			Runtime:           runtime,
 			LintCommand:       lintCommand,
 			ComposeConfigured: composeConfigured,
-			NoSandbox:         noSandbox,
 		})
 		passed := doctor.Run(os.Stdout, checks)
 		if !passed {
@@ -58,6 +50,5 @@ With --no-sandbox, additional host toolchain checks are included:
 }
 
 func init() {
-	doctorCmd.Flags().Bool("no-sandbox", false, "Include host toolchain checks for --no-sandbox mode")
 	rootCmd.AddCommand(doctorCmd)
 }

@@ -84,10 +84,6 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return err
 		}
 
-		if cfg.NoSandbox {
-			fmt.Fprintln(os.Stderr, "WARNING: running without sandbox — agent execution is not containerized")
-		}
-
 		// Determine whether to use TUI mode: interactive terminal and --no-tui not set.
 		useTUI := !noTUI && isTerminalFn(int(os.Stdout.Fd()))
 
@@ -155,14 +151,12 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return fmt.Errorf("loading prompts: %w", err)
 		}
 
-		if !cfg.NoSandbox {
-			dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
-			tag, err := sandbox.BuildImage(cmd.Context(), dc, logger)
-			if err != nil {
-				return fmt.Errorf("building Docker image: %w", err)
-			}
-			cfg.Docker.Image = tag
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+		tag, err := sandbox.BuildImage(cmd.Context(), dc, logger)
+		if err != nil {
+			return fmt.Errorf("building Docker image: %w", err)
 		}
+		cfg.Docker.Image = tag
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -352,11 +346,6 @@ func applyOutcomeStats(outcome agent.IssueOutcome, issue github.Issue, cfg *conf
 	switch outcome.Status {
 	case agent.StatusImplemented:
 		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", costUSD)
-		if cfg.NoSandbox {
-			if err := orchestrator.PullAfterMerge(cfg.EffectiveBaseBranch(), logger); err != nil {
-				logger.Warn("could not sync local repo after merge", "error", err)
-			}
-		}
 		return 1, 0, 0, 0
 	case agent.StatusReadyToMerge:
 		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", costUSD)
@@ -536,7 +525,6 @@ func init() {
 	f.String("repo", "", "GitHub repository (owner/repo)")
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles")
 	f.Bool("dry-run", false, "Print issue details and exit")
-	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
 	f.Bool("no-judge", false, "Disable the container health judge")
 	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
 	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")

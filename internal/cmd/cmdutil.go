@@ -21,10 +21,6 @@ func parseCLIFlags(cmd *cobra.Command) config.CLIFlags {
 		v, _ := cmd.Flags().GetInt("max-retries")
 		flags.MaxRetries = &v
 	}
-	if cmd.Flags().Changed("no-sandbox") {
-		v, _ := cmd.Flags().GetBool("no-sandbox")
-		flags.NoSandbox = &v
-	}
 	if cmd.Flags().Changed("auto-merge-feature") {
 		v, _ := cmd.Flags().GetString("auto-merge-feature")
 		flags.AutoMergeFeature = &v

@@ -77,7 +77,6 @@ func testIssue() github.Issue {
 func testConfig() *config.Config {
 	return &config.Config{
 		Repo:           "owner/repo",
-		NoSandbox:      true,
 		AgentTimeout:   "10m",
 		BuildCommand:   "go build ./...",
 		TestCommand:    "go test ./...",

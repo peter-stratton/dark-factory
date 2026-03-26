@@ -6,14 +6,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newTestCmd returns a cobra.Command with all 7 flags registered, mirroring
+// newTestCmd returns a cobra.Command with all flags registered, mirroring
 // the flag definitions used by runCmd and implementCmd.
 func newTestCmd() *cobra.Command {
 	c := &cobra.Command{Use: "test"}
 	f := c.Flags()
 	f.String("repo", "", "")
 	f.Int("max-retries", 3, "")
-	f.Bool("no-sandbox", false, "")
 	f.String("auto-merge-feature", "none", "")
 	f.String("auto-merge-rollup", "none", "")
 	f.String("base-branch", "", "")
@@ -31,9 +30,6 @@ func TestParseCLIFlags_NoFlagsChanged(t *testing.T) {
 	}
 	if flags.MaxRetries != nil {
 		t.Errorf("MaxRetries: want nil, got %v", flags.MaxRetries)
-	}
-	if flags.NoSandbox != nil {
-		t.Errorf("NoSandbox: want nil, got %v", flags.NoSandbox)
 	}
 	if flags.AutoMergeFeature != nil {
 		t.Errorf("AutoMergeFeature: want nil, got %v", flags.AutoMergeFeature)
@@ -58,7 +54,6 @@ func TestParseCLIFlags_AllFlagsSet(t *testing.T) {
 	if err := cmd.ParseFlags([]string{
 		"--repo", "owner/repo",
 		"--max-retries", "5",
-		"--no-sandbox",
 		"--auto-merge-feature", "all",
 		"--auto-merge-rollup", "auto",
 		"--base-branch", "main",
@@ -74,9 +69,6 @@ func TestParseCLIFlags_AllFlagsSet(t *testing.T) {
 	}
 	if flags.MaxRetries == nil || *flags.MaxRetries != 5 {
 		t.Errorf("MaxRetries: want 5, got %v", flags.MaxRetries)
-	}
-	if flags.NoSandbox == nil || !*flags.NoSandbox {
-		t.Errorf("NoSandbox: want true, got %v", flags.NoSandbox)
 	}
 	if flags.AutoMergeFeature == nil || *flags.AutoMergeFeature != "all" {
 		t.Errorf("AutoMergeFeature: want %q, got %v", "all", flags.AutoMergeFeature)
@@ -97,7 +89,6 @@ func TestParseCLIFlags_PartialFlags(t *testing.T) {
 	cmd := newTestCmd()
 	if err := cmd.ParseFlags([]string{
 		"--repo", "owner/repo",
-		"--no-sandbox",
 	}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
@@ -106,9 +97,6 @@ func TestParseCLIFlags_PartialFlags(t *testing.T) {
 
 	if flags.Repo == nil || *flags.Repo != "owner/repo" {
 		t.Errorf("Repo: want %q, got %v", "owner/repo", flags.Repo)
-	}
-	if flags.NoSandbox == nil || !*flags.NoSandbox {
-		t.Errorf("NoSandbox: want true, got %v", flags.NoSandbox)
 	}
 	// Unset fields must remain nil.
 	if flags.MaxRetries != nil {

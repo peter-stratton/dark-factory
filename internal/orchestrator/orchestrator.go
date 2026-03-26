@@ -355,14 +355,12 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Log
 		}
 	}
 
-	if !cfg.NoSandbox {
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
-		tag, err := sandbox.BuildImage(ctx, dc, logger)
-		if err != nil {
-			return nil, nil, fmt.Errorf("building Docker image: %w", err)
-		}
-		cfg.Docker.Image = tag
+	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+	tag, err := buildImageFn(ctx, dc, logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building Docker image: %w", err)
 	}
+	cfg.Docker.Image = tag
 
 	return authEnv, prompts, nil
 }
@@ -633,14 +631,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	// Compute DockerConfig for image build and compose startup.
 	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
 
-	// Build Docker image once if using sandbox mode.
-	if !cfg.NoSandbox {
-		tag, err := sandbox.BuildImage(ctx, dc, logger)
-		if err != nil {
-			return fmt.Errorf("building Docker image: %w", err)
-		}
-		cfg.Docker.Image = tag
+	tag, err := buildImageFn(ctx, dc, logger)
+	if err != nil {
+		return fmt.Errorf("building Docker image: %w", err)
 	}
+	cfg.Docker.Image = tag
 
 	// Verify host services are reachable before any agent execution.
 	if len(cfg.HostServices) > 0 {
@@ -669,8 +664,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	if writer != nil {
 		hook = writer
 	}
-
-	baseBranch := cfg.EffectiveBaseBranch()
 
 	// Track run counters across all waves.
 	var runStats struct {
@@ -792,16 +785,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
 				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost)
-				// Only pull after merge in host mode (no sandbox). When agents
-				// run in Docker, each gets a fresh clone — the local repo state
-				// doesn't matter for the next agent invocation.
-				if cfg.NoSandbox {
-					if err := PullAfterMerge(baseBranch, logger); err != nil {
-						logger.Warn("stopping loop: could not sync local repo after merge", "error", err)
-						runStats.abortReason = fmt.Sprintf("could not sync after merge: %v", err)
-						goto done
-					}
-				}
 				merged = true
 				justMergedNums = append(justMergedNums, issue.Number)
 			case agent.StatusReadyToMerge:
@@ -965,6 +948,10 @@ done:
 func printSummary(total, blocked, processable int) {
 	fmt.Printf("Summary: %d total, %d blocked, %d processable\n", total, blocked, processable)
 }
+
+// buildImageFn builds the Docker image for sandbox execution.
+// Replaceable for testing.
+var buildImageFn = sandbox.BuildImage
 
 // processIssueFn is the function called to process each issue.
 // Replaceable for testing.

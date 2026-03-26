@@ -11,7 +11,6 @@ import (
 
 func strPtr(s string) *string { return &s }
 func intPtr(i int) *int       { return &i }
-func boolPtr(b bool) *bool    { return &b }
 
 func writeYAML(t *testing.T, dir, content string) string {
 	t.Helper()
@@ -279,23 +278,8 @@ func TestInvalidYAML(t *testing.T) {
 	}
 }
 
-func TestNoSandboxDefault(t *testing.T) {
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `
-repo: owner/repo
-
-`)
-
-	cfg, err := Load(path, CLIFlags{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.NoSandbox {
-		t.Error("NoSandbox should default to false")
-	}
-}
-
-func TestNoSandboxFromYAML(t *testing.T) {
+func TestNoSandboxYAMLSilentlyIgnored(t *testing.T) {
+	// no_sandbox: true in YAML should be silently ignored (yaml.v3 non-strict mode).
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
 repo: owner/repo
@@ -303,29 +287,9 @@ repo: owner/repo
 no_sandbox: true
 `)
 
-	cfg, err := Load(path, CLIFlags{})
+	_, err := Load(path, CLIFlags{})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.NoSandbox {
-		t.Error("NoSandbox = false, want true from YAML")
-	}
-}
-
-func TestNoSandboxFlagOverride(t *testing.T) {
-	dir := t.TempDir()
-	path := writeYAML(t, dir, `
-repo: owner/repo
-
-no_sandbox: false
-`)
-
-	cfg, err := Load(path, CLIFlags{NoSandbox: boolPtr(true)})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.NoSandbox {
-		t.Error("NoSandbox = false, want true (flag should override)")
+		t.Fatalf("unexpected error loading config with no_sandbox: %v", err)
 	}
 }
 
