@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -261,7 +262,14 @@ func buildJudgeCallback(
 	})
 	logger.Info("judge enabled for sandbox run", "role", opts.Role)
 
-	handle := func(iv *judge.Intervention) {
+	// Mutex serializes access to the judge since both the log callback
+	// and the heartbeat goroutine call ProcessLine concurrently.
+	var mu sync.Mutex
+
+	processAndHandle := func(line string) {
+		mu.Lock()
+		iv := j.ProcessLine(line, time.Now())
+		mu.Unlock()
 		if iv == nil {
 			return
 		}
@@ -282,13 +290,13 @@ func buildJudgeCallback(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				handle(j.ProcessLine("", time.Now()))
+				processAndHandle("")
 			}
 		}
 	}()
 
 	return func(line string) {
-		handle(j.ProcessLine(line, time.Now()))
+		processAndHandle(line)
 	}
 }
 
