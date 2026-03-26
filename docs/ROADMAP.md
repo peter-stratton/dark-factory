@@ -1341,6 +1341,10 @@ dead code path that would fail at runtime.
 - Remove `NoSandbox` from doctor opts and host toolchain checks
 - Update config schema, godark.md template, and flag tests
 
+**Issues**: #668–#671
+
+**Planning doc**: `docs/planning/phase-29-complete-cli-migration.md`
+
 ---
 
 ### Future considerations (not yet scoped)

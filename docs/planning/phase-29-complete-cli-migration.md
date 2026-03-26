@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Delete Python runner package and runHost function
+## Issue 668: Delete Python runner package and runHost function
 
 ### Description
 
@@ -63,9 +63,9 @@ caller files to drop the removed parameter.
 
 ---
 
-## Issue: Remove NoSandbox from config, commands, orchestrator, and doctor
+## Issue 670: Remove NoSandbox from config, commands, orchestrator, and doctor
 
-**Blocked by**: Delete Python runner package and runHost function
+**Blocked by**: #668
 
 ### Description
 
@@ -140,9 +140,9 @@ Docker image builds and sandbox verify runners are unconditional.
 
 ---
 
-## Issue: Migrate test infrastructure from Runner to SandboxRunner stubs
+## Issue 671: Migrate test infrastructure from Runner to SandboxRunner stubs
 
-**Blocked by**: Remove NoSandbox from config, commands, orchestrator, and doctor
+**Blocked by**: #670
 
 ### Description
 
@@ -207,7 +207,7 @@ underlying `sandbox.SplitRunner` instead.
 
 ---
 
-## Issue: Update docs and config schemas for sandbox-only mode
+## Issue 669: Update docs and config schemas for sandbox-only mode
 
 ### Description
 
