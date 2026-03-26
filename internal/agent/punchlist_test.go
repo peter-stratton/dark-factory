@@ -260,7 +260,7 @@ func TestGenerateAcceptanceTests_LogsSuccessWithCount(t *testing.T) {
 	cap := &logCapturer{}
 	logger := slog.New(cap)
 
-	// Stub Runner to return a valid JSON array.
+	// Stub SandboxRunner to return a valid JSON array.
 	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		resultJSON := `{"session_id":"","result":"[\"Test one\",\"Test two\"]","cost_usd":0,"is_error":false}`
 		return &sandbox.RunResult{Stdout: resultJSON}, nil
@@ -303,7 +303,7 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 	cap := &logCapturer{}
 	logger := slog.New(cap)
 
-	// Stub Runner to return unparseable output.
+	// Stub SandboxRunner to return unparseable output.
 	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		resultJSON := `{"session_id":"","result":"not a json array","cost_usd":0,"is_error":false}`
 		return &sandbox.RunResult{Stdout: resultJSON}, nil

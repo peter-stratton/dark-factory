@@ -58,7 +58,7 @@ func setupSandboxDockerStubs(t *testing.T, agentOutputs []string) {
 	}
 }
 
-// loopTestSetup stubs both Runner (for agent invocations) and GuardRunner
+// loopTestSetup stubs both SandboxRunner (for agent invocations) and GuardRunner
 // (for git/gh commands) and returns the config. The caller configures
 // specific behavior via the provided function maps.
 type loopStubs struct {
@@ -3969,9 +3969,9 @@ func TestProcessIssue_ReconTimeoutNonBlocking(t *testing.T) {
 		t.Errorf("expected warning about recon timeout in log, got: %s", logBuf.String())
 	}
 
-	// Implement() must still be called (Runner called at least twice).
+	// Implement() must still be called (SandboxRunner called at least twice).
 	if callIdx < 2 {
-		t.Errorf("Implement() was not called after recon timeout (Runner calls = %d)", callIdx)
+		t.Errorf("Implement() was not called after recon timeout (SandboxRunner calls = %d)", callIdx)
 	}
 
 	// Implement() must receive an empty reconBrief (no "brief=" in its prompt).
