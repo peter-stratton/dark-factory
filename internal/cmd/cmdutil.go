@@ -41,6 +41,10 @@ func parseCLIFlags(cmd *cobra.Command) config.CLIFlags {
 		v, _ := cmd.Flags().GetString("default-branch")
 		flags.DefaultBranch = &v
 	}
+	if cmd.Flags().Changed("no-judge") {
+		v, _ := cmd.Flags().GetBool("no-judge")
+		flags.NoJudge = &v
+	}
 
 	return flags
 }

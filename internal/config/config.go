@@ -366,6 +366,7 @@ type CLIFlags struct {
 	AutoMergeRollup   *string
 	BaseBranch        *string
 	DefaultBranch     *string
+	NoJudge           *bool
 	Config            string
 }
 
@@ -596,6 +597,12 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.DefaultBranch != nil {
 		cfg.DefaultBranch = *flags.DefaultBranch
+	}
+	if flags.NoJudge != nil && *flags.NoJudge {
+		disabled := false
+		if cfg.Judge.Enabled == nil || *cfg.Judge.Enabled {
+			cfg.Judge.Enabled = &disabled
+		}
 	}
 }
 

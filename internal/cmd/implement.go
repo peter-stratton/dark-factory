@@ -537,6 +537,7 @@ func init() {
 	f.Int("max-retries", 3, "Maximum review/fix retry cycles")
 	f.Bool("dry-run", false, "Print issue details and exit")
 	f.Bool("no-sandbox", false, "Run agents on host instead of in Docker")
+	f.Bool("no-judge", false, "Disable the container health judge")
 	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
 	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")
 	f.String("auto-merge-rollup", "manual", "Rollup merge strategy after run: none (no rollup PR), manual (create PR but don't merge), auto (create and merge rollup PR)")
