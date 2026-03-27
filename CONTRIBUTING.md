@@ -35,7 +35,7 @@ Dark Factory is built by its own pipeline:
 3. A human spot-checks the results
 
 This is a deliberate model: humans make design decisions, agents execute them.
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full roadmap and phasing.
+See [docs/roadmap/](docs/roadmap/) for the full roadmap and phasing.
 
 ## Local development
 

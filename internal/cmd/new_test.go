@@ -72,7 +72,7 @@ func TestNewCreatesAllFiles(t *testing.T) {
 		"testproject/docs/architecture.md",
 		"testproject/docs/architecture.json",
 		"testproject/docs/conventions.md",
-		"testproject/docs/ROADMAP.md",
+		"testproject/docs/roadmap/README.md",
 		"testproject/prompts/implementer.txt",
 		"testproject/prompts/implementer_retry.txt",
 		"testproject/prompts/reviewer.txt",

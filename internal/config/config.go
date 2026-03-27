@@ -546,7 +546,7 @@ func defaults() *Config {
 		MaxResumeRetries:  2,
 		MaxRebaseAttempts: 1,
 		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupManual},
-		RoadmapPath:    "docs/ROADMAP.md",
+		RoadmapPath:    "docs/roadmap/",
 		ProtectedPaths: []string{"godark.yaml"},
 		DeniedCommands: []string{
 			"rm -rf",

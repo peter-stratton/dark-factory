@@ -16,7 +16,7 @@ Run `godark init` in an empty temporary directory.
 - `docs/architecture.md` exists with non-empty content
 - `docs/architecture.json` exists with non-empty content
 - `docs/conventions.md` exists with non-empty content
-- `docs/ROADMAP.md` exists with non-empty content
+- `docs/roadmap/README.md` exists with non-empty content
 - `prompts/implementer.txt` exists with non-empty content
 - `prompts/implementer_retry.txt` exists with non-empty content
 - `prompts/reviewer.txt` exists with non-empty content
@@ -34,7 +34,7 @@ Run `godark init` in a directory, modify `docs/architecture.md`, then run
 Create only `docs/architecture.md` and `docs/conventions.md` in the temp
 directory. Run `godark init`.
 - `docs/architecture.json` is created (was missing)
-- `docs/ROADMAP.md` is created (was missing)
+- `docs/roadmap/README.md` is created (was missing)
 - `docs/architecture.md` is not overwritten
 - `docs/conventions.md` is not overwritten
 

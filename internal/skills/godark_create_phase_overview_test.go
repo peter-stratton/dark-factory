@@ -49,8 +49,8 @@ func TestCreatePhaseOverviewSkillFrontmatterDisableModelInvocation(t *testing.T)
 
 func TestCreatePhaseOverviewSkillReadsRoadmap(t *testing.T) {
 	content := readSkill(t, "godark-create-phase-overview")
-	if !strings.Contains(content, "ROADMAP.md") {
-		t.Error("skill does not reference ROADMAP.md")
+	if !strings.Contains(content, "docs/roadmap/") {
+		t.Error("skill does not reference docs/roadmap/")
 	}
 }
 

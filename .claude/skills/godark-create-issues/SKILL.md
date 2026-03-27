@@ -13,7 +13,7 @@ consumption. Update the planning doc and roadmap with assigned issue numbers.
 ## Steps
 
 1. **Read config** — Read `godark.yaml` to get the `repo`, `roadmap_path`
-   (default: `docs/ROADMAP.md`), and `planning_dir` (default: `docs/planning/`).
+   (default: `docs/roadmap/`), and `planning_dir` (default: `docs/planning/`).
 
 2. **Find the planning doc** — Use the phase number argument to locate the
    planning doc by globbing `<planning_dir>/phase-<N>-*.md`. If no match is
@@ -55,8 +55,9 @@ consumption. Update the planning doc and roadmap with assigned issue numbers.
 6. **Update the planning doc** — Replace `## Issue: <Title>` headings with
    `## Issue N: <Title>` using the assigned GitHub issue numbers.
 
-7. **Update the roadmap** — In `docs/ROADMAP.md`, add or update the `**Issues**`
-   line for this phase with the issue number range (e.g., `**Issues**: #14–#17`).
+7. **Update the roadmap** — In the phase file (e.g. `docs/roadmap/phase-30.md`),
+   add or update the `**Issues**` line with the issue number range (e.g.,
+   `**Issues**: #14-#17`).
 
 8. **Print summary** — List each created issue with its number, title, and URL.
 

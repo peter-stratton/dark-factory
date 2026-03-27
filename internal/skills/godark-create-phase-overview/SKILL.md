@@ -17,10 +17,11 @@ reference real code, real config fields, and real command output.
 
 ## Steps
 
-1. **Read the roadmap** -- Read `docs/ROADMAP.md` and find the specified phase.
-   Extract the phase name, goal, milestone, and feature list. If the phase is
-   not marked with a checkmark, warn the user that the phase appears incomplete
-   and ask whether to proceed anyway.
+1. **Read the roadmap** -- Read the phase file from `docs/roadmap/` (e.g.
+   `docs/roadmap/phase-20.md`). If unsure which file, read
+   `docs/roadmap/README.md` first. Extract the phase name, goal, milestone, and
+   feature list. If the phase is not marked with a checkmark, warn the user that
+   the phase appears incomplete and ask whether to proceed anyway.
 
 2. **Read the planning doc** -- Check `docs/planning/` for a planning doc
    matching the phase (e.g., `phase-7-review-quality-and-dashboard.md`). If one

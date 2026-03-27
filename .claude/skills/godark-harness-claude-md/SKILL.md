@@ -21,7 +21,7 @@ This skill should be run **after** `/godark-define-architecture` and
    understand what content is already covered outside CLAUDE.md:
    - `docs/architecture.md` and `docs/architecture.json`
    - `docs/conventions.md`
-   - `docs/ROADMAP.md`
+   - `docs/roadmap/`
    - `godark.yaml`
 
    If `docs/architecture.md` and `docs/conventions.md` are missing or still
@@ -108,7 +108,7 @@ it probably belongs in a subordinate doc.
 
 - Architecture and layer definitions — docs/architecture.md
 - Coding conventions — docs/conventions.md
-- Roadmap and phasing — docs/ROADMAP.md
+- Roadmap and phasing — docs/roadmap/
 - Build, test, and runtime config — godark.yaml
 ```
 

@@ -91,10 +91,10 @@ Template with section headers for:
 Each section has a brief guidance comment. Language-agnostic — the human
 fills in language-specific conventions during planning.
 
-### docs/ROADMAP.md
+### docs/roadmap/README.md
 
 Minimal template with the standard format header. Ready for
-`/godark-create-milestone`.
+`/godark-create-milestone`. Each phase gets its own file in the directory.
 
 ### prompts/*.txt
 

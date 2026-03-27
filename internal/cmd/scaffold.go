@@ -17,7 +17,7 @@ var harnessDocFiles = []struct{ src, dest string }{
 	{"architecture.md", "docs/architecture.md"},
 	{"architecture.json", "docs/architecture.json"},
 	{"conventions.md", "docs/conventions.md"},
-	{"roadmap.md", "docs/ROADMAP.md"},
+	{"roadmap.md", "docs/roadmap/README.md"},
 }
 
 // harnessPromptFiles is the canonical list of prompt template files written

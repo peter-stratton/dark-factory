@@ -147,7 +147,7 @@ func writeNewProjectConfig(cmd *cobra.Command, repo string) error {
 // current directory. Unlike writeHarnessDocs, it does not check --reset-claude-md
 // or print a CLAUDE.md guidance hint (CLAUDE.md is already written by runNew).
 func writeNewProjectHarnessDocs(cmd *cobra.Command) error {
-	for _, dir := range []string{"docs/planning", "tests/scenarios"} {
+	for _, dir := range []string{"docs/roadmap", "docs/planning", "tests/scenarios"} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}

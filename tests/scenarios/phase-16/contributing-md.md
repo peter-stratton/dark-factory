@@ -32,4 +32,4 @@ Read `CONTRIBUTING.md`.
 
 ### Roadmap link
 Read `CONTRIBUTING.md`.
-- Contains a link to `docs/ROADMAP.md`
+- Contains a link to `docs/roadmap/`

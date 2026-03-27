@@ -1,12 +1,10 @@
 # Roadmap
 
-<!-- Format: Each milestone is a heading. Under each milestone, list the
-     issues or features it contains as bullet points. Link issues by number.
-     Mark completed milestones with [DONE]. -->
+> One-line project description.
 
-## Milestone 1
+---
 
-<!-- Guidance: Replace with your first milestone name and list the issues or
-     features it covers. -->
+## Phases
 
-- Issue #1: Description of first issue
+<!-- Add phases as links to individual files: -->
+<!-- - [Phase 1: Name](phase-01.md) -->

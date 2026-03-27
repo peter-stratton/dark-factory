@@ -18,7 +18,7 @@ Run `godark new testproject` from a temporary directory.
 - `testproject/docs/architecture.md` exists
 - `testproject/docs/architecture.json` exists
 - `testproject/docs/conventions.md` exists
-- `testproject/docs/ROADMAP.md` exists
+- `testproject/docs/roadmap/README.md` exists
 - `testproject/prompts/implementer.txt` exists
 - `testproject/godark.yaml` exists
 

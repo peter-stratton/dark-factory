@@ -61,7 +61,7 @@
     },
     "roadmap_path": {
       "type": "string",
-      "default": "docs/ROADMAP.md"
+      "default": "docs/roadmap/"
     },
     "branch_prefix": {
       "type": "string",

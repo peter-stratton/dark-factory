@@ -14,6 +14,6 @@
 
 - Architecture and layer definitions — docs/architecture.md
 - Coding conventions — docs/conventions.md
-- Roadmap and phasing — docs/ROADMAP.md
+- Roadmap and phasing — docs/roadmap/
 - Build, test, and runtime config — godark.yaml
 - godark orchestrator — .claude/godark.md (pipeline docs, config reference, run artifacts)

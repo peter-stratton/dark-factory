@@ -189,7 +189,7 @@ func TestInitWritesHarnessDocs(t *testing.T) {
 		"docs/architecture.md",
 		"docs/architecture.json",
 		"docs/conventions.md",
-		"docs/ROADMAP.md",
+		"docs/roadmap/README.md",
 		"prompts/implementer.txt",
 		"prompts/implementer_retry.txt",
 		"prompts/reviewer.txt",

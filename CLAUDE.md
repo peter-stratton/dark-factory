@@ -8,6 +8,6 @@ implement, review, and merge GitHub issues without human intervention.
 - Architecture and layer definitions — docs/architecture.md
 - Machine-readable layer graph — docs/architecture.json
 - Coding conventions — docs/conventions.md
-- Roadmap and phasing — docs/ROADMAP.md
+- Roadmap and phasing — docs/roadmap/
 - Build, test, and runtime config — godark.yaml
 - Run analytics database — ~/.godark/stats.db (SQLite, queryable for cost/duration/outcome trends)

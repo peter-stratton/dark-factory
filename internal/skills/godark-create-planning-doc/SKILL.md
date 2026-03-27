@@ -13,9 +13,10 @@ description, constraints, acceptance criteria, and test cases.
 
 ## Steps
 
-1. **Read the roadmap** — Read `docs/ROADMAP.md` (or the configured
-   `roadmap_path`) and find the specified phase. Extract the phase name, goal,
-   milestone, and issue slugs.
+1. **Read the roadmap** — Read the phase file from `docs/roadmap/` (or the
+   configured `roadmap_path`), e.g. `docs/roadmap/phase-30.md`. If unsure which
+   file, read `docs/roadmap/README.md` first to find the phase. Extract the
+   phase name, goal, milestone, and issue slugs.
 
 2. **Read prior planning docs** — Read existing files in `docs/planning/` (or
    the configured `planning_dir`) to understand the project's conventions,

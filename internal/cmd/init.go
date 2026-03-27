@@ -30,7 +30,7 @@ type detectedCommands struct {
 // auto-detected runtime and command blocks.
 const configTail = `
 # Paths (defaults shown — override to customize)
-# roadmap_path: docs/ROADMAP.md
+# roadmap_path: docs/roadmap/
 # planning_dir: docs/planning/
 # scenario_dir: tests/scenarios/
 
@@ -316,7 +316,7 @@ func writeHarnessDocs(cmd *cobra.Command) error {
 	resetClaudeMD, _ := cmd.Flags().GetBool("reset-claude-md")
 
 	// Create directories unconditionally; MkdirAll is idempotent.
-	for _, dir := range []string{"docs/planning", "tests/scenarios"} {
+	for _, dir := range []string{"docs/roadmap", "docs/planning", "tests/scenarios"} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}

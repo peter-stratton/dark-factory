@@ -8,7 +8,8 @@ disable-model-invocation: true
 # Create Milestone
 
 Help the user define a phased roadmap for their project and write it to
-`docs/ROADMAP.md`. Create a GitHub milestone for each phase.
+`docs/roadmap/`. Each phase gets its own file. Create a GitHub milestone for
+each phase.
 
 ## Steps
 
@@ -16,7 +17,8 @@ Help the user define a phased roadmap for their project and write it to
    project. Read `docs/architecture.json` and
    `docs/conventions.md` if they exist to understand current architecture layers
    and coding conventions. Read `godark.yaml` to find the `repo` and
-   `roadmap_path` (default: `docs/ROADMAP.md`).
+   `roadmap_path` (default: `docs/roadmap/`). Read `docs/roadmap/README.md` to
+   find existing phases.
 
    If `docs/architecture.json` is empty or missing, note this and suggest running
    `/godark-define-architecture` before or after creating milestones so that
@@ -38,8 +40,15 @@ Help the user define a phased roadmap for their project and write it to
 
    Ask the user to review. Iterate until they're satisfied with the phasing.
 
-4. **Write the roadmap** — Create `docs/ROADMAP.md` (or the configured
-   `roadmap_path`) using the format below. Create parent directories if needed.
+4. **Write the roadmap** — Write each phase to its own file in `docs/roadmap/`
+   (or the configured `roadmap_path`) using the format below. Create parent
+   directories if needed. Update `docs/roadmap/README.md` with the table of
+   contents linking to each phase file.
+
+   - Each phase file is named `phase-NN.md` (zero-padded two digits).
+   - The README contains the project header and a linked list of all phases.
+   - If appending to an existing roadmap, only create new phase files and
+     append entries to the README.
 
 5. **Create milestones** — For each phase, run:
    ```
@@ -55,26 +64,32 @@ Help the user define a phased roadmap for their project and write it to
 
 ## Format
 
+### `docs/roadmap/README.md`
+
 ```markdown
-# <Project Name> — Roadmap
+# <Project Name> - Roadmap
 
 > One-line project description.
 
 ---
 
-## Phase 1: <Name>
+## Phases
+
+- [Phase 1: <Name>](phase-01.md) ✅
+- [Phase 2: <Name>](phase-02.md)
+```
+
+### `docs/roadmap/phase-NN.md`
+
+```markdown
+## Phase N: <Name>
 
 **Goal**: <What's true when this phase is complete.>
 
-**Milestone**: `Phase 1: <Name>` | **Label**: `phase-1`
+**Milestone**: `Phase N: <Name>` | **Label**: `phase-N`
 
 - <Issue slug — brief description of a work item>
 - <Issue slug — brief description of a work item>
-
----
-
-## Phase 2: <Name>
-...
 ```
 
 ## Rules
@@ -84,8 +99,8 @@ Help the user define a phased roadmap for their project and write it to
 - Labels follow the pattern `phase-N`.
 - Issue slugs are short descriptions, not full specs — those come later in
   `/godark-create-planning-doc`.
-- If a roadmap already exists, ask the user whether to replace it or append new
-  phases.
+- If phases already exist in `docs/roadmap/`, ask the user whether to replace
+  or append new phases.
 - Do not create GitHub issues — that is handled by `/godark-create-issues`.
 
 ## CRITICAL — Next step
