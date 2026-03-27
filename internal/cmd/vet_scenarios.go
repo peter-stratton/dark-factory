@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/peter-stratton/dark-factory/internal/vet"
 	"github.com/spf13/cobra"
@@ -20,8 +22,14 @@ var vetScenariosCmd = &cobra.Command{
 			return err
 		}
 
-		if milestone != "" && repo == "" {
-			return fmt.Errorf("--repo is required when --milestone or --tag is specified")
+		if repo == "" || milestone == "" {
+			return fmt.Errorf("--repo and either --milestone or --tag are required")
+		}
+
+		phaseLabel := milestoneToLabel(milestone)
+		scopedDir := filepath.Join(scenarioDir, phaseLabel)
+		if _, err := os.Stat(scopedDir); os.IsNotExist(err) {
+			return fmt.Errorf("no scenario directory found for %s: %s", phaseLabel, scopedDir+"/")
 		}
 
 		issues, allNums, err := fetchVetData(repo, milestone)
@@ -29,7 +37,7 @@ var vetScenariosCmd = &cobra.Command{
 			return err
 		}
 
-		report := vet.ValidateScenarios(scenarioDir, issues, allNums)
+		report := vet.ValidateScenarios(scopedDir, issues, allNums)
 
 		printReport(cmd, report, asJSON)
 		return nil

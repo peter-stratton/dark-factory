@@ -1,6 +1,11 @@
 package cmd
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestVetCommandHasSubcommands(t *testing.T) {
 	names := make(map[string]bool)
@@ -43,6 +48,91 @@ func TestVetArchitectureFlags(t *testing.T) {
 		if vetArchitectureCmd.Flags().Lookup(name) == nil {
 			t.Errorf("vet architecture missing flag --%s", name)
 		}
+	}
+}
+
+func TestVetScenariosRequiresRepoAndMilestone(t *testing.T) {
+	cmd := vetScenariosCmd
+	cmd.ResetFlags()
+	f := cmd.Flags()
+	f.String("repo", "", "")
+	f.String("milestone", "", "")
+	f.String("tag", "", "")
+	f.Bool("json", false, "")
+	f.String("scenario-dir", "tests/scenarios/", "")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error when --repo and --milestone are missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected error to contain 'required', got: %q", err.Error())
+	}
+}
+
+func TestVetScenariosRequiresMilestone(t *testing.T) {
+	cmd := vetScenariosCmd
+	cmd.ResetFlags()
+	f := cmd.Flags()
+	f.String("repo", "", "")
+	f.String("milestone", "", "")
+	f.String("tag", "", "")
+	f.Bool("json", false, "")
+	f.String("scenario-dir", "tests/scenarios/", "")
+	if err := f.Set("repo", "owner/repo"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error when --milestone/--tag is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected error to contain 'required', got: %q", err.Error())
+	}
+}
+
+func TestVetScenariosMissingSubdir(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmp, "phase-1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := vetScenariosCmd
+	cmd.ResetFlags()
+	f := cmd.Flags()
+	f.String("repo", "", "")
+	f.String("milestone", "", "")
+	f.String("tag", "", "")
+	f.Bool("json", false, "")
+	f.String("scenario-dir", tmp, "")
+	if err := f.Set("repo", "owner/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Set("milestone", "Phase 99"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error for missing phase-99 subdir, got nil")
+	}
+	if !strings.Contains(err.Error(), "phase-99") {
+		t.Errorf("expected error to name the missing phase, got: %q", err.Error())
+	}
+}
+
+func TestVetScenariosScopedDir(t *testing.T) {
+	tmp := t.TempDir()
+	phase1 := filepath.Join(tmp, "phase-1")
+	if err := os.Mkdir(phase1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	phaseLabel := milestoneToLabel("Phase 1")
+	scopedDir := filepath.Join(tmp, phaseLabel)
+	if _, err := os.Stat(scopedDir); os.IsNotExist(err) {
+		t.Errorf("expected scoped dir %q to exist", scopedDir)
 	}
 }
 
