@@ -15,10 +15,18 @@ type autoMerge struct {
 	rollup  string
 }
 
+// detailKind distinguishes the two detail panel entry types.
+type detailKind int
+
+const (
+	detailKindError detailKind = iota
+	detailKindJudge
+)
+
 // detailEntry holds a single message shown in the detail panel below the table.
 type detailEntry struct {
 	issueNumber int
-	kind        string // "error" or "judge"
+	kind        detailKind
 	message     string
 }
 
@@ -111,11 +119,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues[idx].judgeReason = reason
 			m.detailMessages = append(m.detailMessages, detailEntry{
 				issueNumber: msg.IssueNumber,
-				kind:        "judge",
+				kind:        detailKindJudge,
 				message:     reason,
 			})
-			if len(m.detailMessages) > 5 {
-				m.detailMessages = m.detailMessages[len(m.detailMessages)-5:]
+			const maxDetail = 5
+			if len(m.detailMessages) > maxDetail {
+				tail := m.detailMessages[len(m.detailMessages)-maxDetail:]
+				m.detailMessages = append(make([]detailEntry, 0, maxDetail), tail...)
 			}
 		}
 
@@ -167,17 +177,21 @@ func (m Model) View() string {
 		if detail == "" {
 			return header + "\n\n" + divider + "\n\n" + summary + hint + "\n"
 		}
+		// detail already opens with a divider; this divider closes it.
 		return header + "\n\n" + detail + "\n\n" + divider + "\n\n" + summary + hint + "\n"
 	}
 	if detail == "" {
 		return header + "\n\n" + table + "\n\n" + divider + "\n\n" + summary + hint + "\n"
 	}
+	// detail already opens with a divider; this divider closes it.
 	return header + "\n\n" + table + "\n\n" + detail + "\n\n" + divider + "\n\n" + summary + hint + "\n"
 }
 
-// renderDetailPanel renders the last N error and judge messages between two
-// dividers, above the summary bar. Returns "" when there are no entries so
-// the caller can omit the block entirely (no empty gap).
+// renderDetailPanel renders the last N error and judge messages with an
+// opening divider, above the summary bar. Returns "" when there are no
+// entries so the caller can omit the block entirely (no empty gap).
+// The closing divider is provided by View() so the panel uses exactly two
+// dividers total when non-empty.
 func renderDetailPanel(entries []detailEntry, width int) string {
 	if len(entries) == 0 {
 		return ""
@@ -186,7 +200,7 @@ func renderDetailPanel(entries []detailEntry, width int) string {
 	lines := []string{divider}
 	for _, e := range entries {
 		num := rowNumberStyle.Render(fmt.Sprintf("#%d", e.issueNumber))
-		if e.kind == "judge" {
+		if e.kind == detailKindJudge {
 			marker := markerJudgeStyle.Render(markerJudge)
 			label := detailLabelStyle.Render("judge:")
 			msg := detailJudgeStyle.Render(e.message)
@@ -198,7 +212,6 @@ func renderDetailPanel(entries []detailEntry, width int) string {
 			lines = append(lines, marker+" "+num+" "+label+" "+msg)
 		}
 	}
-	lines = append(lines, divider)
 	return strings.Join(lines, "\n")
 }
 
@@ -284,11 +297,13 @@ func (m *Model) handleIssueCompleted(msg IssueCompletedMsg) {
 	if msg.ErrMsg != "" {
 		m.detailMessages = append(m.detailMessages, detailEntry{
 			issueNumber: msg.Number,
-			kind:        "error",
+			kind:        detailKindError,
 			message:     msg.ErrMsg,
 		})
-		if len(m.detailMessages) > 5 {
-			m.detailMessages = m.detailMessages[len(m.detailMessages)-5:]
+		const maxDetail = 5
+		if len(m.detailMessages) > maxDetail {
+			tail := m.detailMessages[len(m.detailMessages)-maxDetail:]
+			m.detailMessages = append(make([]detailEntry, 0, maxDetail), tail...)
 		}
 	}
 	switch msg.Status {

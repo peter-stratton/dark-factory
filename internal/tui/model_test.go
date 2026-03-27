@@ -343,8 +343,8 @@ func TestDetailPanelErrorAppearsOnCompletion(t *testing.T) {
 	if e.issueNumber != 43 {
 		t.Errorf("detailMessages[0].issueNumber: got %d, want 43", e.issueNumber)
 	}
-	if e.kind != "error" {
-		t.Errorf("detailMessages[0].kind: got %q, want %q", e.kind, "error")
+	if e.kind != detailKindError {
+		t.Errorf("detailMessages[0].kind: got %v, want detailKindError", e.kind)
 	}
 	if e.message != "go test exit 1" {
 		t.Errorf("detailMessages[0].message: got %q, want %q", e.message, "go test exit 1")
@@ -383,8 +383,8 @@ func TestDetailPanelJudgeEntry(t *testing.T) {
 	if e.issueNumber != 42 {
 		t.Errorf("judge entry issueNumber: got %d, want 42", e.issueNumber)
 	}
-	if e.kind != "judge" {
-		t.Errorf("judge entry kind: got %q, want %q", e.kind, "judge")
+	if e.kind != detailKindJudge {
+		t.Errorf("judge entry kind: got %v, want detailKindJudge", e.kind)
 	}
 	if !strings.Contains(e.message, "idle_timeout") {
 		t.Errorf("judge entry message: %q should contain %q", e.message, "idle_timeout")
@@ -443,7 +443,7 @@ func TestDetailPanelAppearsInView(t *testing.T) {
 		issues:     []issueRow{{number: 43, title: "fix auth"}},
 		width:      80,
 		detailMessages: []detailEntry{
-			{issueNumber: 43, kind: "error", message: "verify: go test exit code 1"},
+			{issueNumber: 43, kind: detailKindError, message: "verify: go test exit code 1"},
 		},
 	}
 	got := stripANSI(m.View())
@@ -478,8 +478,8 @@ func TestRenderDetailPanelEmpty(t *testing.T) {
 
 func TestRenderDetailPanelContent(t *testing.T) {
 	entries := []detailEntry{
-		{issueNumber: 42, kind: "judge", message: "Killed: idle_timeout (recon)"},
-		{issueNumber: 43, kind: "error", message: "verify: exit code 1"},
+		{issueNumber: 42, kind: detailKindJudge, message: "Killed: idle_timeout (recon)"},
+		{issueNumber: 43, kind: detailKindError, message: "verify: exit code 1"},
 	}
 	got := stripANSI(renderDetailPanel(entries, 80))
 
