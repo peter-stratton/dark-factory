@@ -20,4 +20,5 @@ type RunDataHook interface {
 	WriteFailureAnalysis(issueNumber int, analysis rundata.FailureAnalysis) error
 	WriteContainerLog(issueNumber int, log string) error
 	WriteJudgeIntervention(issueNumber int, intervention rundata.JudgeIntervention) error
+	WriteSpecDelta(issueNum int, delta rundata.SpecDeltaData) error
 }
