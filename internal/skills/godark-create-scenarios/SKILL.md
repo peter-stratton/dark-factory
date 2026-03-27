@@ -54,7 +54,14 @@ Follow that file exactly when generating specs.
 
 The structure is: `# Scenario:` header, `Relates to: Issue #N` line, `## Setup`
 section with fixture prerequisites, and `## Cases` section with one or more
-`### <Case name>` subsections each containing GIVEN/WHEN/THEN bullets.
+`### <Case name>` subsections each containing GIVEN/WHEN/THEN bullets:
+
+```markdown
+### <Case name>
+- GIVEN <precondition>
+- WHEN <action>
+- THEN <expected outcome>
+```
 
 ## Rules
 
