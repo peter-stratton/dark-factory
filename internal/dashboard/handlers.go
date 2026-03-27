@@ -604,6 +604,9 @@ func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
 	if hasStepData(issue.Recon) {
 		steps = append(steps, stepToView("Recon", issue.Recon))
 	}
+	if hasStepData(issue.Planner) {
+		steps = append(steps, stepToView("Planner", issue.Planner))
+	}
 	if hasStepData(issue.Implement) {
 		steps = append(steps, stepToView("Implement", issue.Implement))
 	}

@@ -1223,6 +1223,49 @@ func TestIssueCostUSD_ZeroCostSteps(t *testing.T) {
 	}
 }
 
+func TestWritePlannerResult(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{10}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	step := StepResult{Output: "plan output", CostUSD: 0.42}
+	if err := w.WritePlannerResult(10, step); err != nil {
+		t.Fatalf("WritePlannerResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.IssueDir(10), "planner.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("planner.json not written: %v", err)
+	}
+}
+
+func TestIssueCostUSD_IncludesPlanner(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{8}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	if err := w.WriteReconResult(8, StepResult{CostUSD: 0.10}); err != nil {
+		t.Fatalf("WriteReconResult() error: %v", err)
+	}
+	if err := w.WritePlannerResult(8, StepResult{CostUSD: 0.25}); err != nil {
+		t.Fatalf("WritePlannerResult() error: %v", err)
+	}
+	if err := w.WriteImplementResult(8, StepResult{CostUSD: 1.00}); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	const want = 0.10 + 0.25 + 1.00
+	got := IssueCostUSD(w.IssueDir(8))
+	const eps = 1e-9
+	if got < want-eps || got > want+eps {
+		t.Errorf("IssueCostUSD = %.10f, want %.10f", got, want)
+	}
+}
+
 func TestIssueDir(t *testing.T) {
 	base := t.TempDir()
 	w, err := NewWithBase(base, "owner/repo", "m1", []int{5}, "", AutoMerge{})
