@@ -180,8 +180,9 @@ func TestRenderTableFailedRow(t *testing.T) {
 	if !strings.Contains(got, markerFailed) {
 		t.Errorf("renderTable failed: marker %q not found in %q", markerFailed, got)
 	}
-	if !strings.Contains(got, "timeout") {
-		t.Errorf("renderTable failed: errMsg not found in %q", got)
+	// errMsg must NOT appear inline in the row — it belongs in the detail panel.
+	if strings.Contains(got, "timeout") {
+		t.Errorf("renderTable failed: errMsg %q should not appear inline in row %q", "timeout", got)
 	}
 }
 

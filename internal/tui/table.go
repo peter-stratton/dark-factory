@@ -38,7 +38,6 @@ var (
 	markerJudgeStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#D4760A", Dark: "#FF8C00"})
 	rowNumberStyle       = lipgloss.NewStyle().Foreground(colorMuted)
 	rowTitleStyle = lipgloss.NewStyle().Foreground(colorBright)
-	rowErrStyle   = lipgloss.NewStyle().Foreground(colorRed)
 )
 
 // renderTable composes all issue rows into a single styled string.
@@ -90,12 +89,6 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 	}
 
 	line := left + strings.Repeat(" ", gap) + badge
-
-	if row.judgeReason != "" {
-		line += " " + markerJudgeStyle.Render(row.judgeReason)
-	} else if row.errMsg != "" {
-		line += " " + rowErrStyle.Render(row.errMsg)
-	}
 
 	return line
 }

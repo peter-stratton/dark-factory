@@ -326,3 +326,166 @@ func TestModelUpdateAccumulatesCostViaTUIUpdate(t *testing.T) {
 		t.Errorf("totalCost after two updates: got %f, want 3.00", final.totalCost)
 	}
 }
+
+// --- Detail panel tests ---
+
+func TestDetailPanelErrorAppearsOnCompletion(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{43: 0},
+		issues:     []issueRow{{number: 43, title: "fix auth"}},
+	}
+	m.handleIssueCompleted(IssueCompletedMsg{Number: 43, Status: "failed", ErrMsg: "go test exit 1"})
+
+	if len(m.detailMessages) != 1 {
+		t.Fatalf("expected 1 detail entry, got %d", len(m.detailMessages))
+	}
+	e := m.detailMessages[0]
+	if e.issueNumber != 43 {
+		t.Errorf("detailMessages[0].issueNumber: got %d, want 43", e.issueNumber)
+	}
+	if e.kind != detailKindError {
+		t.Errorf("detailMessages[0].kind: got %v, want detailKindError", e.kind)
+	}
+	if e.message != "go test exit 1" {
+		t.Errorf("detailMessages[0].message: got %q, want %q", e.message, "go test exit 1")
+	}
+}
+
+func TestDetailPanelNoEntryWhenNoError(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{1: 0},
+		issues:     []issueRow{{number: 1, title: "success"}},
+	}
+	m.handleIssueCompleted(IssueCompletedMsg{Number: 1, Status: "implemented", ErrMsg: ""})
+
+	if len(m.detailMessages) != 0 {
+		t.Errorf("expected no detail entries for successful completion, got %d", len(m.detailMessages))
+	}
+}
+
+func TestDetailPanelJudgeEntry(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{42: 0},
+		issues:     []issueRow{{number: 42, title: "widget"}},
+	}
+	next, _ := m.Update(JudgeInterventionMsg{
+		IssueNumber: 42,
+		Rule:        "idle_timeout",
+		Judgment:    "killed",
+		Step:        "recon",
+	})
+	updated := next.(Model)
+
+	if len(updated.detailMessages) != 1 {
+		t.Fatalf("expected 1 detail entry, got %d", len(updated.detailMessages))
+	}
+	e := updated.detailMessages[0]
+	if e.issueNumber != 42 {
+		t.Errorf("judge entry issueNumber: got %d, want 42", e.issueNumber)
+	}
+	if e.kind != detailKindJudge {
+		t.Errorf("judge entry kind: got %v, want detailKindJudge", e.kind)
+	}
+	if !strings.Contains(e.message, "idle_timeout") {
+		t.Errorf("judge entry message: %q should contain %q", e.message, "idle_timeout")
+	}
+}
+
+func TestDetailPanelCappedAtFive(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{},
+		issues:     []issueRow{},
+	}
+	// Add 7 issues and complete them all with errors.
+	for i := 1; i <= 7; i++ {
+		m.issueIndex[i] = len(m.issues)
+		m.issues = append(m.issues, issueRow{number: i, title: "issue"})
+	}
+	for i := 1; i <= 7; i++ {
+		m.handleIssueCompleted(IssueCompletedMsg{Number: i, Status: "failed", ErrMsg: "err"})
+	}
+
+	if len(m.detailMessages) != 5 {
+		t.Errorf("detailMessages capped at 5: got %d entries", len(m.detailMessages))
+	}
+	// The last 5 issues (3-7) should be retained.
+	for j, e := range m.detailMessages {
+		wantNum := j + 3
+		if e.issueNumber != wantNum {
+			t.Errorf("detailMessages[%d].issueNumber: got %d, want %d", j, e.issueNumber, wantNum)
+		}
+	}
+}
+
+func TestDetailPanelEmptyHidesPanel(t *testing.T) {
+	m := New("repo", "ms", "ts", "", "", "", nil)
+	m.width = 80
+	got := stripANSI(m.View())
+
+	// With no errors, there should be only one divider line (between table/detail and summary).
+	// Count how many times the divider character repeats — should appear once.
+	dividerRune := "─"
+	lines := strings.Split(got, "\n")
+	dividerCount := 0
+	for _, line := range lines {
+		if strings.Contains(line, dividerRune) {
+			dividerCount++
+		}
+	}
+	if dividerCount != 1 {
+		t.Errorf("View with no errors: expected 1 divider line, got %d\noutput: %q", dividerCount, got)
+	}
+}
+
+func TestDetailPanelAppearsInView(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{43: 0},
+		issues:     []issueRow{{number: 43, title: "fix auth"}},
+		width:      80,
+		detailMessages: []detailEntry{
+			{issueNumber: 43, kind: detailKindError, message: "verify: go test exit code 1"},
+		},
+	}
+	got := stripANSI(m.View())
+
+	if !strings.Contains(got, "#43") {
+		t.Errorf("detail panel: #43 not found in view\ngot: %q", got)
+	}
+	if !strings.Contains(got, "verify: go test exit code 1") {
+		t.Errorf("detail panel: error message not found in view\ngot: %q", got)
+	}
+}
+
+func TestDetailPanelErrorNotInTableRow(t *testing.T) {
+	m := Model{
+		issueIndex: map[int]int{43: 0},
+		issues:     []issueRow{{number: 43, title: "fix auth", status: "failed", errMsg: "timeout"}},
+		width:      80,
+	}
+	tableOut := stripANSI(renderTable(m.issues, newTestSpinner(), 80))
+
+	if strings.Contains(tableOut, "timeout") {
+		t.Errorf("renderTable: error message should not appear inline in row\ngot: %q", tableOut)
+	}
+}
+
+func TestRenderDetailPanelEmpty(t *testing.T) {
+	got := renderDetailPanel(nil, 40)
+	if got != "" {
+		t.Errorf("renderDetailPanel empty: expected empty string, got %q", got)
+	}
+}
+
+func TestRenderDetailPanelContent(t *testing.T) {
+	entries := []detailEntry{
+		{issueNumber: 42, kind: detailKindJudge, message: "Killed: idle_timeout (recon)"},
+		{issueNumber: 43, kind: detailKindError, message: "verify: exit code 1"},
+	}
+	got := stripANSI(renderDetailPanel(entries, 80))
+
+	for _, want := range []string{"#42", "judge:", "Killed: idle_timeout (recon)", "#43", "error:", "verify: exit code 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("renderDetailPanel: %q not found in output\ngot: %q", want, got)
+		}
+	}
+}
