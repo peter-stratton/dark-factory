@@ -19,8 +19,9 @@ Relates to: Issue #10
 
 ### Happy path
 Description of the happy path.
-- Expected outcome 1
-- Expected outcome 2
+- GIVEN a valid repository
+- WHEN the feature runs
+- THEN the expected outcome is observed
 `
 
 func writeSpec(t *testing.T, dir, name, content string) {
@@ -52,7 +53,9 @@ Relates to: Issue #10
 ## Cases
 
 ### Case 1
-- Outcome
+- GIVEN a state
+- WHEN an action
+- THEN a result
 `)
 
 	r := ValidateScenarios(dir, nil, map[int]bool{10: true})
@@ -107,12 +110,12 @@ Just some text, no bullets.
 	r := ValidateScenarios(dir, nil, map[int]bool{10: true})
 	found := false
 	for _, f := range r.Findings() {
-		if f.Severity == Error && contains(f.Message, "no outcome bullets") {
+		if f.Severity == Error && contains(f.Message, "missing GIVEN clause") {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected error about case with no outcome bullets")
+		t.Error("expected error about case missing GIVEN clause")
 	}
 }
 
@@ -126,7 +129,9 @@ func TestValidateScenarios_MissingRelatesTo(t *testing.T) {
 ## Cases
 
 ### Case 1
-- Outcome
+- GIVEN a state
+- WHEN an action
+- THEN a result
 `)
 
 	r := ValidateScenarios(dir, nil, nil)
@@ -153,7 +158,9 @@ Relates to: 5
 ## Cases
 
 ### Case 1
-- Outcome
+- GIVEN a state
+- WHEN an action
+- THEN a result
 `)
 
 	r := ValidateScenarios(dir, nil, nil)
@@ -180,7 +187,9 @@ Relates to: Issue #999
 ## Cases
 
 ### Case 1
-- Outcome
+- GIVEN a state
+- WHEN an action
+- THEN a result
 `)
 
 	r := ValidateScenarios(dir, nil, map[int]bool{1: true})
@@ -228,7 +237,9 @@ Relates to: Issue #10, Issue #11
 ## Cases
 
 ### Case 1
-- Outcome
+- GIVEN a state
+- WHEN an action
+- THEN a result
 `)
 
 	issues := []github.Issue{
@@ -276,5 +287,116 @@ func TestValidateScenarios_EmptyDir(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected coverage warning for empty dir")
+	}
+}
+
+func TestValidateCaseOutcomes_ValidGWT(t *testing.T) {
+	r := &Report{}
+	casesBody := `### Happy path
+- GIVEN a valid repository
+- WHEN the feature runs
+- THEN the expected outcome is observed
+`
+	validateCaseOutcomes(r, "test.md", casesBody)
+	if len(r.Findings()) != 0 {
+		t.Errorf("expected 0 findings, got %d: %+v", len(r.Findings()), r.Findings())
+	}
+}
+
+func TestValidateCaseOutcomes_MissingGiven(t *testing.T) {
+	r := &Report{}
+	casesBody := `### Case A
+- WHEN an action occurs
+- THEN a result is seen
+`
+	validateCaseOutcomes(r, "test.md", casesBody)
+	found := false
+	for _, f := range r.Findings() {
+		if f.Severity == Error && contains(f.Message, "missing GIVEN clause") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected error about missing GIVEN clause")
+	}
+	for _, f := range r.Findings() {
+		if contains(f.Message, "missing WHEN clause") || contains(f.Message, "missing THEN clause") {
+			t.Errorf("unexpected finding: %+v", f)
+		}
+	}
+}
+
+func TestValidateCaseOutcomes_MissingWhen(t *testing.T) {
+	r := &Report{}
+	casesBody := `### Case B
+- GIVEN a precondition
+- THEN a result is seen
+`
+	validateCaseOutcomes(r, "test.md", casesBody)
+	found := false
+	for _, f := range r.Findings() {
+		if f.Severity == Error && contains(f.Message, "missing WHEN clause") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected error about missing WHEN clause")
+	}
+	for _, f := range r.Findings() {
+		if contains(f.Message, "missing GIVEN clause") || contains(f.Message, "missing THEN clause") {
+			t.Errorf("unexpected finding: %+v", f)
+		}
+	}
+}
+
+func TestValidateCaseOutcomes_MissingThen(t *testing.T) {
+	r := &Report{}
+	casesBody := `### Case C
+- GIVEN a precondition
+- WHEN an action occurs
+`
+	validateCaseOutcomes(r, "test.md", casesBody)
+	found := false
+	for _, f := range r.Findings() {
+		if f.Severity == Error && contains(f.Message, "missing THEN clause") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected error about missing THEN clause")
+	}
+	for _, f := range r.Findings() {
+		if contains(f.Message, "missing GIVEN clause") || contains(f.Message, "missing WHEN clause") {
+			t.Errorf("unexpected finding: %+v", f)
+		}
+	}
+}
+
+func TestValidateCaseOutcomes_CaseInsensitive(t *testing.T) {
+	r := &Report{}
+	casesBody := `### Case D
+- given a precondition
+- When an action occurs
+- THEN a result is seen
+`
+	validateCaseOutcomes(r, "test.md", casesBody)
+	if len(r.Findings()) != 0 {
+		t.Errorf("expected 0 findings with mixed-case GWT, got %d: %+v", len(r.Findings()), r.Findings())
+	}
+}
+
+func TestValidateCaseOutcomes_MultipleClauses(t *testing.T) {
+	r := &Report{}
+	casesBody := `### Case E
+- GIVEN first precondition
+- GIVEN second precondition
+- WHEN an action occurs
+- THEN first result
+- THEN second result
+- THEN third result
+`
+	validateCaseOutcomes(r, "test.md", casesBody)
+	if len(r.Findings()) != 0 {
+		t.Errorf("expected 0 findings with multiple GWT clauses, got %d: %+v", len(r.Findings()), r.Findings())
 	}
 }
