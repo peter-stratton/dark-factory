@@ -487,6 +487,23 @@ func (w *Writer) WritePunchlist(issueNum int, data PunchlistData) error {
 	return writeJSONMkdirs(path, data)
 }
 
+// SpecDeltaData holds the scenario spec diff persisted to spec-delta.json.
+type SpecDeltaData struct {
+	Before       string   `json:"before"`
+	After        string   `json:"after"`
+	AddedCases   []string `json:"added_cases,omitempty"`
+	RemovedCases []string `json:"removed_cases,omitempty"`
+	ChangedCases int      `json:"changed_cases"`
+	SetupChanged bool     `json:"setup_changed"`
+}
+
+// WriteSpecDelta writes the spec delta for the given issue.
+// Path: issues/<issueNum>/spec-delta.json
+func (w *Writer) WriteSpecDelta(issueNum int, delta SpecDeltaData) error {
+	path := filepath.Join(w.issueDir(issueNum), "spec-delta.json")
+	return writeJSONMkdirs(path, delta)
+}
+
 // FinalizeRun updates run.json with the finished_at timestamp and summary.
 func (w *Writer) FinalizeRun(summary RunSummary) error {
 	path := filepath.Join(w.dir, "run.json")
