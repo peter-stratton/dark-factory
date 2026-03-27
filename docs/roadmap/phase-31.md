@@ -37,3 +37,7 @@ implementer receives both the recon brief (what code exists) and the plan
   and TUI stage transitions: recon -> plan -> implement -> verify -> review
 - Planner cost aggregated in run reports and `godark analyze`
 - Warning surfaced in dashboard log view when planner fails
+
+**Issues**: #693–#695
+
+**Planning doc**: `docs/planning/phase-31-planner-agent.md`

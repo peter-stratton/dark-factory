@@ -11,7 +11,7 @@
 
 ---
 
-## Issue: Planner agent function and prompt template
+## Issue 693: Planner agent function and prompt template
 
 ### Description
 
@@ -72,9 +72,9 @@ and risk flags. It has read-only permissions and does not modify code.
 
 ---
 
-## Issue: Wire planner into ProcessIssue pipeline
+## Issue 694: Wire planner into ProcessIssue pipeline
 
-**Blocked by**: Planner agent function and prompt template
+**Blocked by**: #693
 
 ### Description
 
@@ -136,9 +136,9 @@ to the implementer via a new `PlannerBrief` template variable.
 
 ---
 
-## Issue: Planner run data, dashboard timeline, and TUI stage
+## Issue 695: Planner run data, dashboard timeline, and TUI stage
 
-**Blocked by**: Wire planner into ProcessIssue pipeline
+**Blocked by**: #694
 
 ### Description
 
