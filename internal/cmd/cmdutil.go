@@ -41,6 +41,10 @@ func parseCLIFlags(cmd *cobra.Command) config.CLIFlags {
 		v, _ := cmd.Flags().GetBool("no-judge")
 		flags.NoJudge = &v
 	}
+	if cmd.Flags().Changed("model") {
+		v, _ := cmd.Flags().GetString("model")
+		flags.Model = &v
+	}
 
 	return flags
 }

@@ -266,6 +266,7 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 		Repo:              cfg.Repo,
 		WorkDir:           "/workspace",
 		Timeout:           timeout,
+		Model:             cfg.Model,
 		MountDockerSocket: cfg.DockerCompose != nil,
 		JudgeConfig:       &jc,
 	}, nil

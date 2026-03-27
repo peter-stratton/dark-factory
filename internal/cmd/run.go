@@ -287,6 +287,7 @@ func init() {
 	f.Bool("dry-run", false, "Print execution plan without taking action")
 	f.Bool("force", false, "Clear any existing run lock before starting (override stale lock)")
 	f.Bool("no-judge", false, "Disable the container health judge")
+	f.String("model", "", "Claude model to use: sonnet (default) or opus")
 	f.Bool("no-tui", false, "Disable TUI and use plain-text output")
 	f.Bool("watch", false, "After first pass, keep running and poll for PR reviews until no more await review")
 	f.String("auto-merge-feature", "none", "Feature branch merge strategy after approval: none (human merges), low_risk (auto-merge small/safe PRs), all (auto-merge everything)")

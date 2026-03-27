@@ -212,6 +212,7 @@ type Config struct {
 	// rebase check entirely. Default: 1.
 	MaxRebaseAttempts int `yaml:"max_rebase_attempts"`
 
+	Model         string            `yaml:"model"`
 	AgentTimeout  string            `yaml:"agent_timeout"`
 	FormatCommand string            `yaml:"format_command"`
 	BuildCommand  string            `yaml:"build_command"`
@@ -365,6 +366,7 @@ type CLIFlags struct {
 	BaseBranch        *string
 	DefaultBranch     *string
 	NoJudge           *bool
+	Model             *string
 	Config            string
 }
 
@@ -599,6 +601,9 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 			cfg.Judge.Enabled = &disabled
 		}
 	}
+	if flags.Model != nil {
+		cfg.Model = *flags.Model
+	}
 }
 
 func validate(cfg *Config) error {
@@ -616,6 +621,12 @@ func validate(cfg *Config) error {
 	}
 	if !cfg.AutoMerge.Rollup.Valid() {
 		return fmt.Errorf("auto_merge.rollup must be \"none\", \"manual\", or \"auto\", got %q", cfg.AutoMerge.Rollup)
+	}
+	switch cfg.Model {
+	case "", "sonnet", "opus":
+		// valid (empty = CLI default, which is sonnet)
+	default:
+		return fmt.Errorf("model must be \"sonnet\" or \"opus\", got %q", cfg.Model)
 	}
 	if err := validateModules(cfg.Modules); err != nil {
 		return err

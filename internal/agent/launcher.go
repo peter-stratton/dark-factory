@@ -28,7 +28,8 @@ type RunOpts struct {
 	Branch            string
 	WorkDir           string
 	Timeout           time.Duration
-	MountDockerSocket bool         // mount /var/run/docker.sock into sandbox container
+	Model             string        // claude CLI model alias: "sonnet", "opus", or "" (default)
+	MountDockerSocket bool          // mount /var/run/docker.sock into sandbox container
 	JudgeConfig       *config.Judge // nil means judge is disabled
 }
 
@@ -183,6 +184,9 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		" --verbose" +
 		" --permission-mode bypassPermissions" +
 		" --setting-sources project"
+	if opts.Model != "" {
+		agentCmd += " --model " + opts.Model
+	}
 	agentCmd += ` "$GODARK_PROMPT"`
 	cloneScript, err := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
 	if err != nil {
