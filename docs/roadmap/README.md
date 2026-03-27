@@ -36,6 +36,6 @@
 - [Phase 27: Agent Efficiency & Resilience](phase-27.md) ⏸️
 - [Phase 28: Container Health Judge](phase-28.md) ✅
 - [Phase 29: Complete CLI Migration](phase-29.md) ✅
-- [Phase 30: Spec Tightening](phase-30.md)
+- [Phase 30: Spec Tightening](phase-30.md) ✅
 - [Phase 31: Planner Agent](phase-31.md)
 - [Future considerations](future-considerations.md)
