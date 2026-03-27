@@ -38,7 +38,6 @@ var (
 	markerJudgeStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#D4760A", Dark: "#FF8C00"})
 	rowNumberStyle       = lipgloss.NewStyle().Foreground(colorMuted)
 	rowTitleStyle = lipgloss.NewStyle().Foreground(colorBright)
-	rowErrStyle   = lipgloss.NewStyle().Foreground(colorRed)
 )
 
 // renderTable composes all issue rows into a single styled string.
