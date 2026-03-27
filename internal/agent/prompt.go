@@ -22,6 +22,7 @@ type Prompts struct {
 	Punchlist        string
 	VerifyFix        string
 	Recon            string
+	Planner          string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -157,6 +158,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		p.Recon = ""
 	} else {
 		p.Recon = recon
+	}
+
+	// Planner is optional — load from config or embedded default.
+	planner, err := loadPromptFile(cfg.Prompts.Planner, "planner.txt")
+	if err != nil {
+		p.Planner = ""
+	} else {
+		p.Planner = planner
 	}
 
 	return p, nil
