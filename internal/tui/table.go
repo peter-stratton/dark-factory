@@ -91,12 +91,6 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 
 	line := left + strings.Repeat(" ", gap) + badge
 
-	if row.judgeReason != "" {
-		line += " " + markerJudgeStyle.Render(row.judgeReason)
-	} else if row.errMsg != "" {
-		line += " " + rowErrStyle.Render(row.errMsg)
-	}
-
 	return line
 }
 

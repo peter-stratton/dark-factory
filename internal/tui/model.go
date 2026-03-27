@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -12,6 +13,13 @@ import (
 type autoMerge struct {
 	feature string
 	rollup  string
+}
+
+// detailEntry holds a single message shown in the detail panel below the table.
+type detailEntry struct {
+	issueNumber int
+	kind        string // "error" or "judge"
+	message     string
 }
 
 // Model is the root Bubble Tea model for the dark-factory TUI.
@@ -35,8 +43,9 @@ type Model struct {
 	totalCost float64
 
 	// Issue table state.
-	issues     []issueRow
-	issueIndex map[int]int // issue number → index in issues slice
+	issues         []issueRow
+	issueIndex     map[int]int   // issue number → index in issues slice
+	detailMessages []detailEntry // last 5 error/judge messages shown in the detail panel
 
 	// Spinner for in-progress rows.
 	spinner spinner.Model
@@ -100,6 +109,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				reason += " (" + msg.Step + ")"
 			}
 			m.issues[idx].judgeReason = reason
+			m.detailMessages = append(m.detailMessages, detailEntry{
+				issueNumber: msg.IssueNumber,
+				kind:        "judge",
+				message:     reason,
+			})
+			if len(m.detailMessages) > 5 {
+				m.detailMessages = m.detailMessages[len(m.detailMessages)-5:]
+			}
 		}
 
 	case IssueCompletedMsg:
@@ -121,7 +138,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View implements tea.Model. Composes the header, issue table, and summary bar.
+// View implements tea.Model. Composes the header, issue table, detail panel, and summary bar.
 func (m Model) View() string {
 	header := renderHeader(m)
 	table := renderTable(m.issues, m.spinner, m.width)
@@ -133,6 +150,7 @@ func (m Model) View() string {
 		divWidth = 40
 	}
 	divider := dividerStyle.Render(strings.Repeat("─", divWidth/2))
+	detail := renderDetailPanel(m.detailMessages, divWidth)
 
 	var hint string
 	if m.done {
@@ -146,9 +164,42 @@ func (m Model) View() string {
 	}
 
 	if table == "" {
-		return header + "\n\n" + divider + "\n\n" + summary + hint + "\n"
+		if detail == "" {
+			return header + "\n\n" + divider + "\n\n" + summary + hint + "\n"
+		}
+		return header + "\n\n" + detail + "\n\n" + divider + "\n\n" + summary + hint + "\n"
 	}
-	return header + "\n\n" + table + "\n\n" + divider + "\n\n" + summary + hint + "\n"
+	if detail == "" {
+		return header + "\n\n" + table + "\n\n" + divider + "\n\n" + summary + hint + "\n"
+	}
+	return header + "\n\n" + table + "\n\n" + detail + "\n\n" + divider + "\n\n" + summary + hint + "\n"
+}
+
+// renderDetailPanel renders the last N error and judge messages between two
+// dividers, above the summary bar. Returns "" when there are no entries so
+// the caller can omit the block entirely (no empty gap).
+func renderDetailPanel(entries []detailEntry, width int) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	divider := dividerStyle.Render(strings.Repeat("─", width/2))
+	lines := []string{divider}
+	for _, e := range entries {
+		num := rowNumberStyle.Render(fmt.Sprintf("#%d", e.issueNumber))
+		if e.kind == "judge" {
+			marker := markerJudgeStyle.Render(markerJudge)
+			label := detailLabelStyle.Render("judge:")
+			msg := detailJudgeStyle.Render(e.message)
+			lines = append(lines, marker+" "+num+" "+label+" "+msg)
+		} else {
+			marker := markerFailedStyle.Render(markerFailed)
+			label := detailLabelStyle.Render("error:")
+			msg := detailErrStyle.Render(e.message)
+			lines = append(lines, marker+" "+num+" "+label+" "+msg)
+		}
+	}
+	lines = append(lines, divider)
+	return strings.Join(lines, "\n")
 }
 
 // New returns a Model pre-populated with run metadata.
@@ -230,6 +281,16 @@ func (m *Model) handleIssueCompleted(msg IssueCompletedMsg) {
 	m.issues[idx].prNumber = msg.PRNumber
 	m.issues[idx].retries = msg.Retries
 	m.issues[idx].errMsg = msg.ErrMsg
+	if msg.ErrMsg != "" {
+		m.detailMessages = append(m.detailMessages, detailEntry{
+			issueNumber: msg.Number,
+			kind:        "error",
+			message:     msg.ErrMsg,
+		})
+		if len(m.detailMessages) > 5 {
+			m.detailMessages = m.detailMessages[len(m.detailMessages)-5:]
+		}
+	}
 	switch msg.Status {
 	case "implemented":
 		m.merged++

@@ -104,4 +104,14 @@ var (
 	// dividerStyle styles the horizontal rule between table and summary.
 	dividerStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
+
+	// Detail panel styles — for error and judge messages shown below the table.
+	detailErrStyle = lipgloss.NewStyle().
+			Foreground(colorRed)
+
+	detailJudgeStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#D4760A", Dark: "#FF8C00"})
+
+	detailLabelStyle = lipgloss.NewStyle().
+				Foreground(colorMuted)
 )
