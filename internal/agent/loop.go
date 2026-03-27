@@ -140,10 +140,31 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		reconBrief = handleNonBlockingResult(reconResult, reconErr, "recon agent", logger, reconWriteHook)
 	}
 
+	// Optional planner step: produce a structured plan before implementation.
+	plannerBrief := ""
+	if prompts.Planner != "" {
+		if reporter != nil {
+			reporter.IssueStageChanged(issue.Number, "plan")
+		}
+		planResult, planErr := Plan(ctx, issue, cfg, prompts, authEnv, logger, reconBrief)
+		if planResult != nil {
+			if handleJudgeIntervention(issue.Number, "plan", planResult, hook, reporter, logger) {
+				runPostMortem(issue.Number, planResult, hook, logger)
+			}
+		}
+		var planWriteHook func(rundata.StepResult) error
+		if hook != nil {
+			planWriteHook = func(step rundata.StepResult) error {
+				return hook.WritePlannerResult(issue.Number, step)
+			}
+		}
+		plannerBrief = handleNonBlockingResult(planResult, planErr, "planner agent", logger, planWriteHook)
+	}
+
 	if reporter != nil {
 		reporter.IssueStageChanged(issue.Number, "implement")
 	}
-	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger, reconBrief)
+	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger, reconBrief, plannerBrief)
 	if err != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent: %w", err)
