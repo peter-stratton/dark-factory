@@ -27,9 +27,9 @@ Relates to: Issue #<number>
 ## Cases
 
 ### <Case name>
-Description of what to do.
-- Expected outcome 1
-- Expected outcome 2
+- GIVEN <precondition>
+- WHEN <action>
+- THEN <expected outcome>
 ```
 
 Steps:
