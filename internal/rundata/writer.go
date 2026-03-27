@@ -184,7 +184,7 @@ func (w *Writer) IssueDir(issueNum int) string {
 // individual files are silently ignored — cost computation is best-effort.
 func IssueCostUSD(issueDir string) float64 {
 	var total float64
-	for _, name := range []string{"recon.json", "spec-generator.json", "implement.json", "quality-review.json", "functional-review.json"} {
+	for _, name := range []string{"recon.json", "spec-generator.json", "planner.json", "implement.json", "quality-review.json", "functional-review.json"} {
 		total += readStepCost(filepath.Join(issueDir, name))
 	}
 	retriesDir := filepath.Join(issueDir, "retries")
@@ -230,6 +230,13 @@ func (w *Writer) issueRetryDir(issueNum, retryNum int) string {
 // Path: issues/<issueNum>/recon.json
 func (w *Writer) WriteReconResult(issueNum int, step StepResult) error {
 	path := filepath.Join(w.issueDir(issueNum), "recon.json")
+	return writeJSONMkdirs(path, step)
+}
+
+// WritePlannerResult writes the planner step result for the given issue.
+// Path: issues/<issueNum>/planner.json
+func (w *Writer) WritePlannerResult(issueNum int, step StepResult) error {
+	path := filepath.Join(w.issueDir(issueNum), "planner.json")
 	return writeJSONMkdirs(path, step)
 }
 

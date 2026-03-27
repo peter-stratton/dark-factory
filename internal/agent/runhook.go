@@ -7,6 +7,7 @@ import "github.com/peter-stratton/dark-factory/internal/rundata"
 // passing; individual methods are not required to be nil-safe themselves.
 type RunDataHook interface {
 	WriteReconResult(issueNumber int, step rundata.StepResult) error
+	WritePlannerResult(issueNumber int, step rundata.StepResult) error
 	WriteSpecGeneratorResult(issueNumber int, step rundata.StepResult) error
 	WriteImplementResult(issueNumber int, step rundata.StepResult) error
 	WriteReviewResult(issueNumber int, kind string, step rundata.StepResult) error

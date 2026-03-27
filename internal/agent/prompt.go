@@ -22,6 +22,7 @@ type Prompts struct {
 	Punchlist        string
 	VerifyFix        string
 	Recon            string
+	Planner          string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -64,6 +65,11 @@ type PromptData struct {
 	// Not set by newPromptData() — set by the caller after running the recon
 	// agent.
 	ReconBrief string
+	// PlannerBrief holds the output from the planner agent. When non-empty
+	// it is injected into the implementer prompt as a structured plan.
+	// Not set by newPromptData() — set by the caller after running the
+	// planner agent.
+	PlannerBrief string
 	// HandoffContext, when non-empty, signals a fresh-session retry. It
 	// contains a chronological summary of prior implementation and review
 	// notes extracted from PR comments so the new agent understands what was
@@ -157,6 +163,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		p.Recon = ""
 	} else {
 		p.Recon = recon
+	}
+
+	// Planner is optional — load from config or embedded default.
+	planner, err := loadPromptFile(cfg.Prompts.Planner, "planner.txt")
+	if err != nil {
+		p.Planner = ""
+	} else {
+		p.Planner = planner
 	}
 
 	return p, nil
