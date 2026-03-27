@@ -6,6 +6,16 @@
   AC rather than requiring every AC to have a scenario case. Deferred from
   Phase 30 because GIVEN/WHEN/THEN enforcement and spec deltas provide most
   of the value without the annotation overhead
+- Planner skip heuristic — skip the planner step for issues labeled
+  `skip-planner` or when the issue body contains a pre-written plan section
+  (e.g., detailed key constraints with file paths). Deferred from Phase 31
+  because the planner is non-blocking and fast (~2-3 min), so the cost of
+  always running it is low
+- Planner complexity signal — parse planner output for a complexity assessment
+  (simple/moderate/complex/needs-splitting) and auto-label issues that are too
+  large. Deferred from Phase 31 because the splitting decision belongs in the
+  planning workflow (/godark-create-planning-doc) where the user has context,
+  not in an automated runtime check
 - Configurable retry on judge Kill — currently only transport_failure retries
   the container; idle_timeout/no_progress/tool_thrash kills fail the step with
   no automatic retry (falls through to the normal max_retries review loop)

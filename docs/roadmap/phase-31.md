@@ -21,31 +21,19 @@ implementer receives both the recon brief (what code exists) and the plan
   - **Task breakdown** - ordered implementation steps with file paths
   - **Risk flags** - anything surprising, ambiguous, or likely to cause
     review failures
-  - **Complexity signal** - simple / moderate / complex / needs-splitting
-- Output parsed by Go side to extract the complexity signal
 
 ### Pipeline integration
 - New step in `ProcessIssue()` between recon and implementation:
   `recon -> planner -> implementer`
-- Planner is a **blocking step** - if it fails or times out, implementation
-  does not proceed (unlike recon which is non-blocking)
-- "Needs-splitting" complexity signal pauses the pipeline and labels the
-  issue `needs-human-review` with a comment explaining why
+- Planner is a **non-blocking step** - if it fails or times out, a warning
+  is logged and implementation proceeds without a plan (same pattern as recon)
 - Planner brief injected into implementer prompt via `{{.PlannerBrief}}`
   template variable, alongside existing `{{.ReconBrief}}`
 
-### Agent function and config wiring
-- `Plan()` function in `internal/agent/planner.go` following existing agent
-  function pattern (`newRunOpts` + `Run()`)
-- Add `Planner string` field to `Prompts` struct in config
-- Timeout configurable via `timeouts.planner` in `godark.yaml` (default 5m)
-- Optional: skip planner for issues labeled `skip-planner` or when issue
-  body contains a pre-written plan section
-
 ### Run data and visibility
-- `planner.json` per issue recording duration, cost, session ID, complexity
-  signal, and the full planner brief
+- `planner.json` per issue recording duration, cost, session ID, and the
+  full planner brief
 - Planner appears as a dedicated step in the dashboard issue detail timeline
   and TUI stage transitions: recon -> plan -> implement -> verify -> review
 - Planner cost aggregated in run reports and `godark analyze`
-
+- Warning surfaced in dashboard log view when planner fails
