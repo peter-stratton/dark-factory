@@ -32,8 +32,9 @@ Generate scenario spec files for all issues in a phase, or for a single issue.
    subdirectories. Skip any issue that already has a scenario spec file
    (matching by `Relates to: Issue #N`). Report which issues are skipped.
 
-4. **Read existing specs for reference** — Read one or two existing specs to
-   understand the project's scenario spec style and conventions.
+4. **Do NOT read existing specs for format reference** — Existing specs may use
+   an outdated format. Use ONLY the template defined in
+   `prompts/spec_generator.txt` and the format section below.
 
 5. **Confirm with user** — Present the list of issues, noting which will get
    new specs and which are being skipped. Ask the user to confirm before
