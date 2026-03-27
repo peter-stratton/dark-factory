@@ -11,6 +11,16 @@ that the brief does not cover. This saves context for writing code.
 
 {{.ReconBrief}}
 {{- end}}
+{{- if .PlannerBrief}}
+
+## Plan
+
+The following plan was produced by the planner agent. Use it to guide your
+implementation — follow the approach, task breakdown, and key decisions unless
+you discover information that invalidates them.
+
+{{.PlannerBrief}}
+{{- end}}
 {{- if .ComposeServices}}
 
 ## Available services

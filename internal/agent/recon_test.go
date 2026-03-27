@@ -80,7 +80,7 @@ func TestImplement_ReconBriefPassedToPrompt(t *testing.T) {
 		Implementer: "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
 	}
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), brief)
+	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), brief, "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -102,7 +102,7 @@ func TestImplement_EmptyReconBriefDoesNotAffectPrompt(t *testing.T) {
 		Implementer: "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
 	}
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "")
+	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}

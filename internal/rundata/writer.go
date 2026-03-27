@@ -233,6 +233,13 @@ func (w *Writer) WriteReconResult(issueNum int, step StepResult) error {
 	return writeJSONMkdirs(path, step)
 }
 
+// WritePlannerResult writes the planner step result for the given issue.
+// Path: issues/<issueNum>/planner.json
+func (w *Writer) WritePlannerResult(issueNum int, step StepResult) error {
+	path := filepath.Join(w.issueDir(issueNum), "planner.json")
+	return writeJSONMkdirs(path, step)
+}
+
 // WriteSpecGeneratorResult writes the spec generator step result for the given issue.
 // Path: issues/<issueNum>/spec-generator.json
 func (w *Writer) WriteSpecGeneratorResult(issueNum int, step StepResult) error {
