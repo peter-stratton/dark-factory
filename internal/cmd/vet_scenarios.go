@@ -28,8 +28,11 @@ var vetScenariosCmd = &cobra.Command{
 
 		phaseLabel := milestoneToLabel(milestone)
 		scopedDir := filepath.Join(scenarioDir, phaseLabel)
-		if _, err := os.Stat(scopedDir); os.IsNotExist(err) {
-			return fmt.Errorf("no scenario directory found for %s: %s", phaseLabel, scopedDir+"/")
+		if _, err := os.Stat(scopedDir); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("no scenario directory found for %s: %s", phaseLabel, scopedDir+"/")
+			}
+			return fmt.Errorf("checking scenario directory %s: %w", scopedDir, err)
 		}
 
 		issues, allNums, err := fetchVetData(repo, milestone)

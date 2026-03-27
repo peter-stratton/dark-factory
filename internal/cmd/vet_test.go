@@ -124,15 +124,31 @@ func TestVetScenariosMissingSubdir(t *testing.T) {
 
 func TestVetScenariosScopedDir(t *testing.T) {
 	tmp := t.TempDir()
-	phase1 := filepath.Join(tmp, "phase-1")
-	if err := os.Mkdir(phase1, 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmp, "phase-1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	phaseLabel := milestoneToLabel("Phase 1")
-	scopedDir := filepath.Join(tmp, phaseLabel)
-	if _, err := os.Stat(scopedDir); os.IsNotExist(err) {
-		t.Errorf("expected scoped dir %q to exist", scopedDir)
+	cmd := vetScenariosCmd
+	cmd.ResetFlags()
+	f := cmd.Flags()
+	f.String("repo", "", "")
+	f.String("milestone", "", "")
+	f.String("tag", "", "")
+	f.Bool("json", false, "")
+	f.String("scenario-dir", tmp, "")
+	if err := f.Set("repo", "owner/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Set("milestone", "Phase 1"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.RunE(cmd, nil)
+	// The command may fail (e.g., GitHub API unavailable in tests), but it must
+	// NOT return the missing-subdir error since phase-1/ exists and is the
+	// correct scoped directory.
+	if err != nil && strings.Contains(err.Error(), "no scenario directory found") {
+		t.Errorf("expected phase-1/ to be found and used, got: %q", err.Error())
 	}
 }
 
