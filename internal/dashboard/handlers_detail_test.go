@@ -979,6 +979,100 @@ func TestServer_IssueDetail_SpecGeneratorInTimeline(t *testing.T) {
 	}
 }
 
+func TestServer_IssueDetail_PlannerInTimeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{5},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "5")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 5, Status: "implemented", PRNumber: 99})
+	writeJSON(t, filepath.Join(issueDir, "recon.json"),
+		rundata.StepResult{Output: "recon trace", DurationSeconds: 10})
+	writeJSON(t, filepath.Join(issueDir, "planner.json"),
+		rundata.StepResult{Output: "plan trace", DurationSeconds: 15})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "impl trace", DurationSeconds: 45})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/5", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	idxRecon := strings.Index(body, "Recon")
+	idxPlanner := strings.Index(body, "Planner")
+	idxImpl := strings.Index(body, "Implement")
+
+	if idxRecon < 0 {
+		t.Error("body missing Recon step")
+	}
+	if idxPlanner < 0 {
+		t.Error("body missing Planner step")
+	}
+	if idxImpl < 0 {
+		t.Error("body missing Implement step")
+	}
+	if idxRecon >= 0 && idxPlanner >= 0 && idxRecon > idxPlanner {
+		t.Error("Recon should appear before Planner in timeline")
+	}
+	if idxPlanner >= 0 && idxImpl >= 0 && idxPlanner > idxImpl {
+		t.Error("Planner should appear before Implement in timeline")
+	}
+}
+
+func TestServer_IssueDetail_PlannerAbsentNoGap(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{6},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "6")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 6, Status: "implemented", PRNumber: 100})
+	writeJSON(t, filepath.Join(issueDir, "recon.json"),
+		rundata.StepResult{Output: "recon trace", DurationSeconds: 10})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "impl trace", DurationSeconds: 45})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/6", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	if strings.Contains(body, "Planner") {
+		t.Error("body should not contain Planner step when planner.json is absent")
+	}
+}
+
 func TestServer_IssueDetail_DescriptionDisplayed(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now().UTC()

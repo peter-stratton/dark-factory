@@ -1062,6 +1062,76 @@ func TestLoadRun_MissingReconJSONNoError(t *testing.T) {
 	}
 }
 
+func TestLoadRun_PlannerJSONLoaded(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120010", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{20},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "20")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	planner := StepResult{Output: "plan brief", SessionID: "p1", CostUSD: 0.03, DurationSeconds: 15}
+	if err := writeJSON(filepath.Join(issueDir, "planner.json"), planner); err != nil {
+		t.Fatalf("writing planner.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120010")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	got := detail.Issues[0].Planner
+	if got.Output != "plan brief" {
+		t.Errorf("Planner.Output = %q, want %q", got.Output, "plan brief")
+	}
+	if got.SessionID != "p1" {
+		t.Errorf("Planner.SessionID = %q, want %q", got.SessionID, "p1")
+	}
+	if got.CostUSD != 0.03 {
+		t.Errorf("Planner.CostUSD = %v, want 0.03", got.CostUSD)
+	}
+}
+
+func TestLoadRun_MissingPlannerJSONNoError(t *testing.T) {
+	base := t.TempDir()
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120011", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{21},
+		StartedAt:    time.Now().UTC(),
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "21")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	outcome := Outcome{IssueNumber: 21, Status: "implemented"}
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), outcome); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120011")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	planner := detail.Issues[0].Planner
+	if planner.Output != "" || planner.CostUSD != 0 || planner.DurationSeconds != 0 {
+		t.Errorf("Planner should be zero value when planner.json absent, got: %+v", planner)
+	}
+}
+
 func TestLoadRunPopulatesTitleForPlaceholderIssues(t *testing.T) {
 	base := t.TempDir()
 	makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{

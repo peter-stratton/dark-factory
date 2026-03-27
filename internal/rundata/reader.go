@@ -28,6 +28,7 @@ type IssueDetail struct {
 	BlockedBy        []int       // open (not-yet-completed) dependencies; derived by LoadRun
 	Recon            StepResult
 	SpecGenerator    StepResult
+	Planner          StepResult
 	Implement        StepResult
 	QualityReview    StepResult
 	FunctionalReview StepResult
@@ -288,6 +289,7 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		IssueNumber:      issueNum,
 		Recon:            r.readStep(filepath.Join(issueDir, "recon.json")),
 		SpecGenerator:    r.readStep(filepath.Join(issueDir, "spec-generator.json")),
+		Planner:          r.readStep(filepath.Join(issueDir, "planner.json")),
 		Implement:        r.readStep(filepath.Join(issueDir, "implement.json")),
 		QualityReview:    r.readStep(filepath.Join(issueDir, "quality-review.json")),
 		FunctionalReview: r.readStep(filepath.Join(issueDir, "functional-review.json")),

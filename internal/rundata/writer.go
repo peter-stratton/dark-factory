@@ -184,7 +184,7 @@ func (w *Writer) IssueDir(issueNum int) string {
 // individual files are silently ignored — cost computation is best-effort.
 func IssueCostUSD(issueDir string) float64 {
 	var total float64
-	for _, name := range []string{"recon.json", "spec-generator.json", "implement.json", "quality-review.json", "functional-review.json"} {
+	for _, name := range []string{"recon.json", "spec-generator.json", "planner.json", "implement.json", "quality-review.json", "functional-review.json"} {
 		total += readStepCost(filepath.Join(issueDir, name))
 	}
 	retriesDir := filepath.Join(issueDir, "retries")
