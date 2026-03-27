@@ -183,10 +183,6 @@ func runSandbox(ctx context.Context, opts RunOpts, logger *slog.Logger) (*Result
 		" --verbose" +
 		" --permission-mode bypassPermissions" +
 		" --setting-sources project"
-	// Session resume for retry scenarios.
-	if sid, ok := env["GODARK_SESSION_ID"]; ok && sid != "" {
-		agentCmd += ` --resume "$GODARK_SESSION_ID"`
-	}
 	agentCmd += ` "$GODARK_PROMPT"`
 	cloneScript, err := sandbox.CloneScript(opts.Repo, opts.Branch, workDir)
 	if err != nil {

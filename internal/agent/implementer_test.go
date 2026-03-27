@@ -68,7 +68,7 @@ func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 	}
 }
 
-func TestRetry_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
+func TestRetry_WithSessionID_DoesNotSetGODARK_SESSION_ID(t *testing.T) {
 	var capturedEnv map[string]string
 	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		capturedEnv = opts.Env
@@ -80,8 +80,8 @@ func TestRetry_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
 		t.Fatalf("Retry() error = %v", err)
 	}
 
-	if capturedEnv["GODARK_SESSION_ID"] != "sess-abc123" {
-		t.Errorf("GODARK_SESSION_ID = %q, want %q", capturedEnv["GODARK_SESSION_ID"], "sess-abc123")
+	if _, ok := capturedEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set (session resume disabled), got %q", capturedEnv["GODARK_SESSION_ID"])
 	}
 }
 
@@ -584,7 +584,7 @@ func TestVerifyFix_RendersPromptWithErrors(t *testing.T) {
 	}
 }
 
-func TestVerifyFix_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
+func TestVerifyFix_WithSessionID_DoesNotSetGODARK_SESSION_ID(t *testing.T) {
 	var capturedEnv map[string]string
 	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
 		capturedEnv = opts.Env
@@ -597,8 +597,8 @@ func TestVerifyFix_WithSessionID_SetsGODARK_SESSION_ID(t *testing.T) {
 		t.Fatalf("VerifyFix() error = %v", err)
 	}
 
-	if capturedEnv["GODARK_SESSION_ID"] != "sess-abc123" {
-		t.Errorf("GODARK_SESSION_ID = %q, want %q", capturedEnv["GODARK_SESSION_ID"], "sess-abc123")
+	if _, ok := capturedEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set (session resume disabled), got %q", capturedEnv["GODARK_SESSION_ID"])
 	}
 }
 

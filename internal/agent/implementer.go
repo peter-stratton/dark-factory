@@ -75,18 +75,9 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID 
 		return nil, err
 	}
 
-	// Only resume the prior session when no handoff context is provided.
-	// A non-empty handoffContext means we want a fresh session — the agent
-	// will get the prior context via the structured handoff in the prompt.
-	if prevSessionID != "" && handoffContext == "" {
-		opts.Env["GODARK_SESSION_ID"] = prevSessionID
-	}
-
 	logger.Info("starting implementer retry agent",
 		"issue_number", issue.Number,
 		"pr_number", prNumber,
-		"resume_session", prevSessionID != "" && handoffContext == "",
-		"fresh_session", handoffContext != "",
 	)
 
 	return Run(ctx, opts, logger)
@@ -112,14 +103,9 @@ func VerifyFix(ctx context.Context, issue github.Issue, prNumber int, verifyErro
 		return nil, err
 	}
 
-	if prevSessionID != "" {
-		opts.Env["GODARK_SESSION_ID"] = prevSessionID
-	}
-
 	logger.Info("starting verify-fix agent",
 		"issue_number", issue.Number,
 		"pr_number", prNumber,
-		"resume_session", prevSessionID != "",
 	)
 
 	return Run(ctx, opts, logger)

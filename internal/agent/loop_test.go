@@ -546,8 +546,8 @@ func TestProcessIssue_PassesSessionIDToFirstRetry(t *testing.T) {
 	if retryEnv == nil {
 		t.Fatal("retry was never called")
 	}
-	if retryEnv["GODARK_SESSION_ID"] != "sess-impl-001" {
-		t.Errorf("GODARK_SESSION_ID passed to first retry = %q, want %q", retryEnv["GODARK_SESSION_ID"], "sess-impl-001")
+	if _, ok := retryEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set (session resume disabled), got %q", retryEnv["GODARK_SESSION_ID"])
 	}
 }
 
@@ -598,8 +598,8 @@ func TestProcessIssue_UpdatesSessionIDFromRetryResult(t *testing.T) {
 	if secondRetryEnv == nil {
 		t.Fatal("second retry was never called")
 	}
-	if secondRetryEnv["GODARK_SESSION_ID"] != "sess-retry-1" {
-		t.Errorf("GODARK_SESSION_ID passed to second retry = %q, want %q", secondRetryEnv["GODARK_SESSION_ID"], "sess-retry-1")
+	if _, ok := secondRetryEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set (session resume disabled), got %q", secondRetryEnv["GODARK_SESSION_ID"])
 	}
 }
 
@@ -2730,8 +2730,8 @@ func TestProcessIssue_VerifyFixSessionContinuity(t *testing.T) {
 	if fixAgentEnv == nil {
 		t.Fatal("verify-fix agent was never called")
 	}
-	if fixAgentEnv["GODARK_SESSION_ID"] != "sess-impl-xyz" {
-		t.Errorf("GODARK_SESSION_ID = %q, want sess-impl-xyz", fixAgentEnv["GODARK_SESSION_ID"])
+	if _, ok := fixAgentEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set (session resume disabled), got %q", fixAgentEnv["GODARK_SESSION_ID"])
 	}
 }
 
@@ -3046,14 +3046,13 @@ func TestProcessIssue_FunctionalRetryHasSessionID(t *testing.T) {
 	if functionalRetryEnv == nil {
 		t.Fatal("functional retry was never called")
 	}
-	if functionalRetryEnv["GODARK_SESSION_ID"] != "sess-impl-001" {
-		t.Errorf("GODARK_SESSION_ID passed to functional retry = %q, want %q", functionalRetryEnv["GODARK_SESSION_ID"], "sess-impl-001")
+	if _, ok := functionalRetryEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set (session resume disabled), got %q", functionalRetryEnv["GODARK_SESSION_ID"])
 	}
 }
 
 // TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry verifies that after a
-// quality-review retry, the retry's session ID is captured and used by a subsequent
-// functional retry (so it resumes the most recent context, not the original implementer's).
+// quality-review retry, the retry's session ID is NOT forwarded (session resume disabled).
 func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
 	cfg := loopConfig()
 	cfg.MaxRetries = 2
@@ -3101,8 +3100,8 @@ func TestProcessIssue_QualityRetrySessionIDUsedByFunctionalRetry(t *testing.T) {
 	if functionalRetryEnv == nil {
 		t.Fatal("functional retry was never called")
 	}
-	if functionalRetryEnv["GODARK_SESSION_ID"] != "sess-qual-retry" {
-		t.Errorf("GODARK_SESSION_ID passed to functional retry = %q, want %q (quality retry's session ID)", functionalRetryEnv["GODARK_SESSION_ID"], "sess-qual-retry")
+	if _, ok := functionalRetryEnv["GODARK_SESSION_ID"]; ok {
+		t.Errorf("GODARK_SESSION_ID should not be set (session resume disabled), got %q", functionalRetryEnv["GODARK_SESSION_ID"])
 	}
 }
 
