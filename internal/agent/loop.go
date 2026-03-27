@@ -820,7 +820,8 @@ func runFunctionalReviewCycle(
 			// Step 5.5: Wait for CI checks if configured.
 			if cfg.WaitForChecks != nil {
 				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
-				ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
+				ciGrace := ParseGraceOrDefault(cfg.WaitForChecks.StartupGrace)
+				ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, ciGrace, logger)
 				if err != nil {
 					return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
 				}
@@ -868,7 +869,7 @@ func runFunctionalReviewCycle(
 						return StatusFailed, false, 0, driftErr
 					}
 
-					ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, logger)
+					ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, ciGrace, logger)
 					if err != nil {
 						return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
 					}

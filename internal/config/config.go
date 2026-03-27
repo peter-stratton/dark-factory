@@ -85,8 +85,9 @@ type Verify struct {
 // polls GitHub status checks after the review cycle and only merges once all
 // required checks succeed.
 type WaitForChecks struct {
-	Timeout  string   `yaml:"timeout"`  // duration string, e.g. "10m"
-	Required []string `yaml:"required"` // check names to wait for
+	Timeout      string   `yaml:"timeout"`       // duration string, e.g. "10m"
+	Required     []string `yaml:"required"`       // check names to wait for
+	StartupGrace string   `yaml:"startup_grace"`  // duration to wait for checks to appear before treating as N/A (default: "60s")
 }
 
 // Module holds per-module build/test/lint/generate commands and dependency
@@ -669,6 +670,15 @@ func validateWaitForChecks(w *WaitForChecks) error {
 	}
 	if len(w.Required) == 0 {
 		return fmt.Errorf("wait_for_checks.required must be non-empty when wait_for_checks is set")
+	}
+	if w.StartupGrace != "" {
+		gd, err := time.ParseDuration(w.StartupGrace)
+		if err != nil {
+			return fmt.Errorf("wait_for_checks.startup_grace %q is not a valid duration: %w", w.StartupGrace, err)
+		}
+		if gd < 0 {
+			return fmt.Errorf("wait_for_checks.startup_grace must be non-negative, got %q", w.StartupGrace)
+		}
 	}
 	return nil
 }

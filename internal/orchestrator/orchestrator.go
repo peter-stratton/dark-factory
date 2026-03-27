@@ -1060,7 +1060,8 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 			if err != nil {
 				return 0, "", fmt.Errorf("parsing wait_for_checks timeout: %w", err)
 			}
-			failures, err := agent.WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, timeout, logger)
+			grace := agent.ParseGraceOrDefault(cfg.WaitForChecks.StartupGrace)
+			failures, err := agent.WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, timeout, grace, logger)
 			if err != nil {
 				return 0, "", fmt.Errorf("waiting for rollup PR checks: %w", err)
 			}

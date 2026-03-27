@@ -40,7 +40,7 @@ func TestWaitForChecks_AllPass(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build", "ci/test"}, time.Minute, testLogger(t))
+		[]string{"ci/build", "ci/test"}, time.Minute, 0, testLogger(t))
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}
@@ -60,7 +60,7 @@ func TestWaitForChecks_CheckFails(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build"}, time.Minute, testLogger(t))
+		[]string{"ci/build"}, time.Minute, 0, testLogger(t))
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}
@@ -86,7 +86,7 @@ func TestWaitForChecks_Timeout(t *testing.T) {
 	})
 
 	_, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build"}, 5*time.Millisecond, testLogger(t))
+		[]string{"ci/build"}, 5*time.Millisecond, 0, testLogger(t))
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
@@ -109,7 +109,7 @@ func TestWaitForChecks_ContextCancelled(t *testing.T) {
 	cancel() // cancel immediately
 
 	_, err := WaitForChecks(ctx, "owner/repo", 42,
-		[]string{"ci/build"}, time.Minute, testLogger(t))
+		[]string{"ci/build"}, time.Minute, 0, testLogger(t))
 	if err == nil {
 		t.Fatal("expected context error, got nil")
 	}
@@ -127,7 +127,7 @@ func TestWaitForChecks_UnrequiredCheckFails(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build"}, time.Minute, testLogger(t))
+		[]string{"ci/build"}, time.Minute, 0, testLogger(t))
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}
@@ -157,7 +157,7 @@ func TestWaitForChecks_PendingThenPass(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build"}, time.Minute, testLogger(t))
+		[]string{"ci/build"}, time.Minute, 0, testLogger(t))
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}
@@ -188,7 +188,7 @@ func TestWaitForChecks_CheckNotPresentInitially(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build"}, time.Minute, testLogger(t))
+		[]string{"ci/build"}, time.Minute, 0, testLogger(t))
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}
@@ -208,7 +208,7 @@ func TestWaitForChecks_CommandError(t *testing.T) {
 	})
 
 	_, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build"}, time.Minute, testLogger(t))
+		[]string{"ci/build"}, time.Minute, 0, testLogger(t))
 	if err == nil {
 		t.Fatal("expected error from gh command failure, got nil")
 	}
@@ -229,7 +229,7 @@ func TestWaitForChecks_FailFastOnFailure(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build", "ci/test"}, time.Minute, testLogger(t))
+		[]string{"ci/build", "ci/test"}, time.Minute, 0, testLogger(t))
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}
@@ -253,7 +253,7 @@ func TestWaitForChecks_NilLogger(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build"}, time.Minute, nil)
+		[]string{"ci/build"}, time.Minute, 0, nil)
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}
@@ -718,7 +718,7 @@ func TestWaitForChecks_SkippingCheck(t *testing.T) {
 	})
 
 	failures, err := WaitForChecks(context.Background(), "owner/repo", 42,
-		[]string{"ci/build", "ci/optional"}, time.Minute, testLogger(t))
+		[]string{"ci/build", "ci/optional"}, time.Minute, 0, testLogger(t))
 	if err != nil {
 		t.Fatalf("WaitForChecks() error = %v", err)
 	}

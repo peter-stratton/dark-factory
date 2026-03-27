@@ -22,15 +22,24 @@ type CheckFailure struct {
 
 // WaitForChecks polls GitHub PR checks until all required checks pass,
 // any required check fails, or the timeout expires.
+// startupGrace controls how long to wait for checks to appear before treating
+// absent checks as N/A (not triggered by this PR). Default 60s if zero.
 // Returns the names of failed checks and their output, or nil if all passed.
 func WaitForChecks(ctx context.Context, repo string, prNum int,
-	required []string, timeout time.Duration, logger *slog.Logger,
+	required []string, timeout time.Duration, startupGrace time.Duration,
+	logger *slog.Logger,
 ) ([]CheckFailure, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if startupGrace == 0 {
+		startupGrace = 60 * time.Second
+	}
 
 	deadline := time.Now().Add(timeout)
+	graceDeadline := time.Now().Add(startupGrace)
+	active := make([]string, len(required))
+	copy(active, required)
 
 	for {
 		if ctx.Err() != nil {
@@ -41,7 +50,18 @@ func WaitForChecks(ctx context.Context, repo string, prNum int,
 			return nil, fmt.Errorf("CI checks timed out after %s", timeout)
 		}
 
-		failures, done, err := pollChecks(repo, prNum, required, logger)
+		// After the grace period, drop any required checks that never appeared.
+		if time.Now().After(graceDeadline) {
+			active = pruneAbsentChecks(ctx, repo, prNum, active, logger)
+			if len(active) == 0 {
+				logger.Info("no required checks triggered after grace period, proceeding", "pr_number", prNum)
+				return nil, nil
+			}
+			// Only prune once — set graceDeadline far in the future.
+			graceDeadline = deadline.Add(time.Hour)
+		}
+
+		failures, done, err := pollChecks(repo, prNum, active, logger)
 		if err != nil {
 			return nil, fmt.Errorf("polling PR checks: %w", err)
 		}
@@ -57,6 +77,41 @@ func WaitForChecks(ctx context.Context, repo string, prNum int,
 		case <-time.After(checksPollInterval):
 		}
 	}
+}
+
+// pruneAbsentChecks queries current checks and removes any required checks
+// that haven't appeared. Returns the filtered list of checks that are present.
+func pruneAbsentChecks(ctx context.Context, repo string, prNum int, required []string, logger *slog.Logger) []string {
+	out, err := GuardRunner("gh", "pr", "checks", strconv.Itoa(prNum),
+		"--repo", repo,
+		"--json", "name",
+	)
+	if err != nil {
+		// Can't determine what's present — keep all required.
+		return required
+	}
+
+	var checks []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out, &checks); err != nil {
+		return required
+	}
+
+	present := make(map[string]bool, len(checks))
+	for _, c := range checks {
+		present[c.Name] = true
+	}
+
+	var kept []string
+	for _, name := range required {
+		if present[name] {
+			kept = append(kept, name)
+		} else {
+			logger.Info("required check not triggered after grace period, skipping", "check", name)
+		}
+	}
+	return kept
 }
 
 // checkEntry is used to parse gh pr checks JSON output.
@@ -145,6 +200,18 @@ func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) 
 	}
 	// All required checks completed successfully.
 	return nil, true, nil
+}
+
+// ParseGraceOrDefault parses a duration string, returning 60s if empty.
+func ParseGraceOrDefault(s string) time.Duration {
+	if s == "" {
+		return 60 * time.Second
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 60 * time.Second
+	}
+	return d
 }
 
 // formatCheckFailures formats a slice of CheckFailure values into a string
