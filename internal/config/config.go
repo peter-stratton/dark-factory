@@ -355,6 +355,7 @@ type Prompts struct {
 	Punchlist        string `yaml:"punchlist"`
 	VerifyFix        string `yaml:"verify_fix"`
 	Recon            string `yaml:"recon"`
+	Planner          string `yaml:"planner"`
 }
 
 // CLIFlags holds flag values passed on the command line.
