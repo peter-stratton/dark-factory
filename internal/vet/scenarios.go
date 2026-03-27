@@ -134,30 +134,49 @@ func validateScenarioFile(r *Report, path string, allIssueNumbers map[int]bool) 
 }
 
 // validateCaseOutcomes checks that each ### case heading is followed by at
-// least one "- " bullet point outcome.
+// least one GIVEN, one WHEN, and one THEN bullet.
 func validateCaseOutcomes(r *Report, loc string, casesBody string) {
 	lines := strings.Split(casesBody, "\n")
 	var currentCase string
-	hasBullet := false
+	var hasGiven, hasWhen, hasThen bool
+
+	flush := func() {
+		if currentCase == "" {
+			return
+		}
+		for _, clause := range []struct {
+			have bool
+			name string
+		}{
+			{hasGiven, "GIVEN"}, {hasWhen, "WHEN"}, {hasThen, "THEN"},
+		} {
+			if !clause.have {
+				r.Add(Finding{Severity: Error, Location: loc,
+					Message: fmt.Sprintf("case %q missing %s clause", currentCase, clause.name)})
+			}
+		}
+	}
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "### ") {
-			// If we had a previous case, check it
-			if currentCase != "" && !hasBullet {
-				r.Add(Finding{Severity: Error, Location: loc, Message: fmt.Sprintf("case %q has no outcome bullets", currentCase)})
-			}
+			flush()
 			currentCase = strings.TrimSpace(trimmed[4:])
-			hasBullet = false
+			hasGiven, hasWhen, hasThen = false, false, false
 			continue
 		}
-		if currentCase != "" && strings.HasPrefix(trimmed, "- ") {
-			hasBullet = true
+		if currentCase != "" {
+			up := strings.ToUpper(trimmed)
+			if strings.HasPrefix(up, "- GIVEN ") {
+				hasGiven = true
+			}
+			if strings.HasPrefix(up, "- WHEN ") {
+				hasWhen = true
+			}
+			if strings.HasPrefix(up, "- THEN ") {
+				hasThen = true
+			}
 		}
 	}
-
-	// Check last case
-	if currentCase != "" && !hasBullet {
-		r.Add(Finding{Severity: Error, Location: loc, Message: fmt.Sprintf("case %q has no outcome bullets", currentCase)})
-	}
+	flush()
 }
