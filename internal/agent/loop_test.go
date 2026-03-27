@@ -972,6 +972,7 @@ type testRunDataHook struct {
 	issueStatuses              []rundata.IssueStatus
 	riskAssessments            []rundata.RiskAssessment
 	judgeInterventions         []rundata.JudgeIntervention
+	specDeltas                 []rundata.SpecDeltaData
 }
 
 func (h *testRunDataHook) WriteReconResult(_ int, _ rundata.StepResult) error {
@@ -1022,6 +1023,10 @@ func (h *testRunDataHook) WriteFailureAnalysis(_ int, _ rundata.FailureAnalysis)
 func (h *testRunDataHook) WriteContainerLog(_ int, _ string) error                     { return nil }
 func (h *testRunDataHook) WriteJudgeIntervention(_ int, ji rundata.JudgeIntervention) error {
 	h.judgeInterventions = append(h.judgeInterventions, ji)
+	return nil
+}
+func (h *testRunDataHook) WriteSpecDelta(_ int, d rundata.SpecDeltaData) error {
+	h.specDeltas = append(h.specDeltas, d)
 	return nil
 }
 
@@ -4890,5 +4895,219 @@ func TestHandleJudgeIntervention_CorrectStepName(t *testing.T) {
 		if hook.judgeInterventions[0].Step != step {
 			t.Errorf("step %q: got Step=%q", step, hook.judgeInterventions[0].Step)
 		}
+	}
+}
+
+// specDeltaGuardFn returns a GuardRunner stub that calls onMerge when the
+// merge command is invoked, then delegates to loopGuardFn for other calls.
+func specDeltaGuardFn(onMerge func()) func(name string, args ...string) ([]byte, error) {
+	return func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			onMerge()
+		}
+		return loopGuardFn(name, args...)
+	}
+}
+
+func TestProcessIssue_SpecDeltaPostedWhenSpecChanges(t *testing.T) {
+	// Set up a scenario dir with a spec file that references issue #5.
+	scenarioDir := t.TempDir()
+	specBefore := "# Scenario\n\nRelates to: #5\n\n## Setup\n- Initial setup\n\n## Cases\n\n### Happy path\nOriginal outcome\n"
+	specAfter := "# Scenario\n\nRelates to: #5\n\n## Setup\n- Initial setup\n\n## Cases\n\n### Happy path\nModified outcome\n\n### New case\nNew case content\n"
+	specPath := filepath.Join(scenarioDir, "spec.md")
+	if err := os.WriteFile(specPath, []byte(specBefore), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := loopConfig()
+	cfg.ScenarioDir = scenarioDir
+	// Disable review dir write check so hasSpec=true doesn't cause reviewer re-runs.
+	cfg.ReviewDir = ""
+
+	hook := &testRunDataHook{}
+	var commentBodies []string
+
+	// When the merge command fires, update the spec file to simulate post-merge content.
+	onMerge := func() {
+		if err := os.WriteFile(specPath, []byte(specAfter), 0o644); err != nil {
+			t.Errorf("failed to update spec file: %v", err)
+		}
+	}
+
+	// Capture gh pr comment calls.
+	origGuardFn := specDeltaGuardFn(onMerge)
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "pr comment") {
+			for i, a := range args {
+				if a == "--body" && i+1 < len(args) {
+					commentBodies = append(commentBodies, args[i+1])
+				}
+			}
+		}
+		return origGuardFn(name, args...)
+	})
+	_ = stubs
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook, nil)
+
+	// A comment containing "## Spec Delta" should have been posted.
+	var found bool
+	for _, body := range commentBodies {
+		if strings.Contains(body, "## Spec Delta") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a gh pr comment with '## Spec Delta' header, got comments: %v", commentBodies)
+	}
+
+	// WriteSpecDelta should have been called.
+	if len(hook.specDeltas) != 1 {
+		t.Errorf("WriteSpecDelta called %d times, want 1", len(hook.specDeltas))
+	} else {
+		if hook.specDeltas[0].Before != specBefore {
+			t.Errorf("SpecDeltaData.Before = %q, want %q", hook.specDeltas[0].Before, specBefore)
+		}
+		if hook.specDeltas[0].After != specAfter {
+			t.Errorf("SpecDeltaData.After = %q, want %q", hook.specDeltas[0].After, specAfter)
+		}
+		if len(hook.specDeltas[0].AddedCases) == 0 {
+			t.Error("SpecDeltaData.AddedCases should be non-empty")
+		}
+	}
+}
+
+func TestProcessIssue_SpecDeltaSkippedWhenNoSpec(t *testing.T) {
+	// ScenarioDir is nonexistent — ReadScenarioSpec returns "" for both reads.
+	hook := &testRunDataHook{}
+	var commentBodies []string
+
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "pr comment") {
+			for i, a := range args {
+				if a == "--body" && i+1 < len(args) {
+					commentBodies = append(commentBodies, args[i+1])
+				}
+			}
+		}
+		return loopGuardFn(name, args...)
+	})
+	_ = stubs
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook, nil)
+
+	// No spec delta comment should be posted.
+	for _, body := range commentBodies {
+		if strings.Contains(body, "## Spec Delta") {
+			t.Errorf("unexpected spec delta comment posted when no spec exists: %q", body)
+		}
+	}
+	// WriteSpecDelta should not be called.
+	if len(hook.specDeltas) != 0 {
+		t.Errorf("WriteSpecDelta called %d times, want 0", len(hook.specDeltas))
+	}
+}
+
+func TestProcessIssue_SpecDeltaSkippedWhenSpecUnchanged(t *testing.T) {
+	// Set up a scenario dir with a spec file that does NOT change across the merge.
+	scenarioDir := t.TempDir()
+	specContent := "# Scenario\n\nRelates to: #5\n\n## Setup\n- Setup\n\n## Cases\n\n### Happy path\nExpected outcome\n"
+	specPath := filepath.Join(scenarioDir, "spec.md")
+	if err := os.WriteFile(specPath, []byte(specContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := loopConfig()
+	cfg.ScenarioDir = scenarioDir
+	// Disable review dir write check so hasSpec=true doesn't cause reviewer re-runs.
+	cfg.ReviewDir = ""
+
+	hook := &testRunDataHook{}
+	var commentBodies []string
+
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "pr comment") {
+			for i, a := range args {
+				if a == "--body" && i+1 < len(args) {
+					commentBodies = append(commentBodies, args[i+1])
+				}
+			}
+		}
+		return loopGuardFn(name, args...)
+	})
+	_ = stubs
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook, nil)
+
+	// No spec delta comment should be posted when spec is unchanged.
+	for _, body := range commentBodies {
+		if strings.Contains(body, "## Spec Delta") {
+			t.Errorf("unexpected spec delta comment when spec is unchanged: %q", body)
+		}
+	}
+}
+
+func TestProcessIssue_SpecDeltaRunDataWritten(t *testing.T) {
+	// Verify WriteSpecDelta is called with the correct issue number.
+	scenarioDir := t.TempDir()
+	specBefore := "# Scenario\n\nRelates to: #5\n\n## Setup\n- Setup\n\n## Cases\n\n### Case A\nContent A\n"
+	specAfter := "# Scenario\n\nRelates to: #5\n\n## Setup\n- Setup\n\n## Cases\n\n### Case A\nContent A\n\n### Case B\nContent B\n"
+	specPath := filepath.Join(scenarioDir, "spec.md")
+	if err := os.WriteFile(specPath, []byte(specBefore), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := loopConfig()
+	cfg.ScenarioDir = scenarioDir
+	// Disable review dir write check so hasSpec=true doesn't cause reviewer re-runs.
+	cfg.ReviewDir = ""
+
+	hook := &testRunDataHook{}
+	onMerge := func() {
+		if err := os.WriteFile(specPath, []byte(specAfter), 0o644); err != nil {
+			t.Errorf("failed to update spec file: %v", err)
+		}
+	}
+	stubs := setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, specDeltaGuardFn(onMerge))
+	_ = stubs
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook, nil)
+
+	if len(hook.specDeltas) != 1 {
+		t.Fatalf("WriteSpecDelta called %d times, want 1", len(hook.specDeltas))
+	}
+	delta := hook.specDeltas[0]
+	if delta.Before != specBefore {
+		t.Errorf("SpecDeltaData.Before mismatch")
+	}
+	if delta.After != specAfter {
+		t.Errorf("SpecDeltaData.After mismatch")
+	}
+	if delta.ChangedCases != 0 {
+		t.Errorf("ChangedCases = %d, want 0", delta.ChangedCases)
+	}
+	if len(delta.AddedCases) != 1 || delta.AddedCases[0] != "Case B" {
+		t.Errorf("AddedCases = %v, want [Case B]", delta.AddedCases)
 	}
 }

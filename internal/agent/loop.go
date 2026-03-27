@@ -13,8 +13,10 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
 	"github.com/peter-stratton/dark-factory/internal/progress"
+	"github.com/peter-stratton/dark-factory/internal/punchlist"
 	"github.com/peter-stratton/dark-factory/internal/quality"
 	"github.com/peter-stratton/dark-factory/internal/rundata"
+	"github.com/peter-stratton/dark-factory/internal/specdelta"
 )
 
 // OutcomeStatus represents the result of processing a single issue.
@@ -872,10 +874,45 @@ func runFunctionalReviewCycle(
 					}
 				}
 			}
+			// Capture pre-merge spec content for delta computation.
+			specBefore, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issue.Number)
+			if err != nil {
+				logger.Warn("failed to read pre-merge scenario spec", "error", err)
+			}
+
 			// Merge the PR.
 			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
 				return StatusFailed, false, 0, fmt.Errorf("merging PR: %w", err)
 			}
+
+			// Capture post-merge spec content and compute delta.
+			specAfter, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issue.Number)
+			if err != nil {
+				logger.Warn("failed to read post-merge scenario spec", "error", err)
+			}
+			if specBefore != "" || specAfter != "" {
+				delta := specdelta.Diff(specBefore, specAfter)
+				if !specdelta.IsEmpty(delta) {
+					comment := "## Spec Delta\n\n" + specdelta.Format(delta)
+					if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+						logger.Warn("failed to comment spec delta on PR", "error", err)
+					}
+				}
+				if hook != nil {
+					deltaData := rundata.SpecDeltaData{
+						Before:       specBefore,
+						After:        specAfter,
+						AddedCases:   delta.AddedCases,
+						RemovedCases: delta.RemovedCases,
+						ChangedCases: len(delta.ChangedCases),
+						SetupChanged: delta.SetupChanged,
+					}
+					if err := hook.WriteSpecDelta(issue.Number, deltaData); err != nil {
+						logger.Warn("failed to write spec delta", "error", err)
+					}
+				}
+			}
+
 			// Explicitly close the issue after merge. GitHub's "Closes #N"
 			// keyword only auto-closes on merge to the default branch, so
 			// when the base branch differs we must close it ourselves.

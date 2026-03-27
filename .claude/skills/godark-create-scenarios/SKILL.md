@@ -54,15 +54,22 @@ Follow that file exactly when generating specs.
 
 The structure is: `# Scenario:` header, `Relates to: Issue #N` line, `## Setup`
 section with fixture prerequisites, and `## Cases` section with one or more
-`### <Case name>` subsections each containing a description and outcome bullets.
+`### <Case name>` subsections each containing GIVEN/WHEN/THEN bullets:
+
+```markdown
+### <Case name>
+- GIVEN <precondition>
+- WHEN <action>
+- THEN <expected outcome>
+```
 
 ## Rules
 
 - Every spec **must** include the `Relates to: Issue #N` line.
 - The `## Setup` section is **required** even if minimal (e.g., a single bullet
   describing the test environment). Never omit it.
-- Every `### Case` **must** have at least one `- ` outcome bullet. A case
-  without expected outcomes is not testable. If the outcome seems obvious,
+- Every `### Case` **must** have GIVEN, WHEN, and THEN bullets. A case
+  without these is not testable. If the outcome seems obvious,
   state it explicitly anyway — agents need concrete expectations.
 - Filenames must be kebab-case and end in `.md`.
 - Do **not** modify or overwrite existing spec files.
