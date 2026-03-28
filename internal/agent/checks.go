@@ -135,10 +135,9 @@ func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) 
 		"--json", "name,state,bucket",
 	)
 	if err != nil {
-		// gh pr checks exits with code 1 when no checks are configured for the
-		// branch (e.g. CI workflow only runs on main). Detect this by checking
-		// for empty output; a genuine command error (network, auth, etc.) will
-		// also produce non-empty stderr.
+		// gh pr checks exits with code 1 when any check hasn't passed yet,
+		// but still returns valid JSON. Try to parse the output as JSON first;
+		// only treat it as a command error if parsing fails too.
 		if strings.TrimSpace(string(out)) == "" {
 			if len(required) > 0 {
 				logger.Warn("no checks reported by gh pr checks; treating as passed",
@@ -146,7 +145,8 @@ func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) 
 			}
 			return nil, true, nil
 		}
-		return nil, false, fmt.Errorf("gh pr checks: %w", err)
+		// Fall through to JSON parse below — exit code 1 with valid JSON
+		// just means some checks are pending/failed.
 	}
 
 	var checks []checkEntry

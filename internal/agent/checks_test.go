@@ -699,10 +699,52 @@ func TestPollChecks_CommandError_NonEmpty(t *testing.T) {
 
 	_, _, err := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
 	if err == nil {
-		t.Fatal("pollChecks() error = nil, want error for non-empty stderr")
+		t.Fatal("pollChecks() error = nil, want error for non-empty non-JSON stderr")
 	}
-	if !strings.Contains(err.Error(), "gh pr checks") {
-		t.Errorf("error = %v, want it to contain 'gh pr checks'", err)
+	if !strings.Contains(err.Error(), "parsing checks JSON") {
+		t.Errorf("error = %v, want it to contain 'parsing checks JSON'", err)
+	}
+}
+
+// TestPollChecks_ExitOneWithValidJSON verifies that pollChecks parses valid
+// JSON even when gh pr checks exits with code 1 (pending/failed checks).
+func TestPollChecks_ExitOneWithValidJSON(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return checksJSON([]checkEntry{
+			{Name: "ci/build", State: "PENDING", Bucket: "pending"},
+		}), fmt.Errorf("exit status 1")
+	})
+
+	failures, done, err := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
+	if err != nil {
+		t.Fatalf("pollChecks() error = %v, want nil (valid JSON despite exit 1)", err)
+	}
+	if done {
+		t.Error("pollChecks() done = true, want false (check still pending)")
+	}
+	if len(failures) != 0 {
+		t.Errorf("pollChecks() failures = %v, want none", failures)
+	}
+}
+
+// TestPollChecks_ExitOneWithFailedCheck verifies that pollChecks reports
+// failures from valid JSON returned alongside exit code 1.
+func TestPollChecks_ExitOneWithFailedCheck(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		return checksJSON([]checkEntry{
+			{Name: "ci/build", State: "FAILURE", Bucket: "fail"},
+		}), fmt.Errorf("exit status 1")
+	})
+
+	failures, done, err := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
+	if err != nil {
+		t.Fatalf("pollChecks() error = %v, want nil (valid JSON despite exit 1)", err)
+	}
+	if !done {
+		t.Error("pollChecks() done = false, want true (check failed = done)")
+	}
+	if len(failures) != 1 || failures[0].Name != "ci/build" {
+		t.Errorf("pollChecks() failures = %v, want 1 failure for ci/build", failures)
 	}
 }
 
