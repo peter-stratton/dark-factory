@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
@@ -29,6 +30,10 @@ const (
 	StatusFailed           OutcomeStatus = "failed"
 )
 
+// generateTraceID returns a new UUID string for correlating all artifacts
+// produced during a single ProcessIssue invocation.
+var generateTraceID = func() string { return uuid.New().String() }
+
 // IssueOutcome records the result of processing a single issue.
 type IssueOutcome struct {
 	IssueNumber int
@@ -36,6 +41,7 @@ type IssueOutcome struct {
 	PRNumber    int
 	Retries     int
 	Err         error
+	TraceID     string
 }
 
 // ProcessIssue runs the full per-issue lifecycle:
@@ -44,6 +50,8 @@ type IssueOutcome struct {
 // run data. Hook errors are logged as warnings and do not abort processing.
 func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook, reporter progress.ProgressReporter) IssueOutcome {
 	outcome := IssueOutcome{IssueNumber: issue.Number}
+	traceID := generateTraceID()
+	outcome.TraceID = traceID
 
 	// Write outcome data on every return path.
 	defer func() {
@@ -55,6 +63,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				Status:      string(outcome.Status),
 				PRNumber:    outcome.PRNumber,
 			}
+			o.TraceID = traceID
 			if outcome.Err != nil {
 				o.Error = outcome.Err.Error()
 			}
@@ -98,6 +107,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		var specWriteHook func(rundata.StepResult) error
 		if hook != nil {
 			specWriteHook = func(step rundata.StepResult) error {
+				step.TraceID = traceID
 				return hook.WriteSpecGeneratorResult(issue.Number, step)
 			}
 		}
@@ -134,6 +144,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		var reconWriteHook func(rundata.StepResult) error
 		if hook != nil {
 			reconWriteHook = func(step rundata.StepResult) error {
+				step.TraceID = traceID
 				return hook.WriteReconResult(issue.Number, step)
 			}
 		}
@@ -155,6 +166,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		var planWriteHook func(rundata.StepResult) error
 		if hook != nil {
 			planWriteHook = func(step rundata.StepResult) error {
+				step.TraceID = traceID
 				return hook.WritePlannerResult(issue.Number, step)
 			}
 		}
@@ -183,7 +195,9 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return outcome
 	}
 	if hook != nil {
-		if err := hook.WriteImplementResult(issue.Number, ResultToStep(implResult)); err != nil {
+		implStep := ResultToStep(implResult)
+		implStep.TraceID = traceID
+		if err := hook.WriteImplementResult(issue.Number, implStep); err != nil {
 			logger.Warn("failed to write implement result", "error", err)
 		}
 	}
@@ -252,7 +266,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if reporter != nil {
 		reporter.IssueStageChanged(issue.Number, "verify")
 	}
-	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, &sessionID, &fixCycles); verifyErr != nil {
+	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, &sessionID, &fixCycles, traceID); verifyErr != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = verifyErr
 		return outcome
@@ -263,7 +277,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		if reporter != nil {
 			reporter.IssueStageChanged(issue.Number, "review")
 		}
-		passed, err := runQualityReviewCycle(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, reporter)
+		passed, err := runQualityReviewCycle(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, reporter, traceID)
 		if err != nil {
 			outcome.Status = StatusFailed
 			outcome.Err = err
@@ -290,7 +304,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		reporter.IssueStageChanged(issue.Number, "review")
 	}
 	outcome.Status, _, outcome.Retries, outcome.Err = runFunctionalReviewCycle(
-		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter,
+		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter, traceID,
 	)
 	return outcome
 }
@@ -314,6 +328,7 @@ func runVerifyPhase(
 	reporter progress.ProgressReporter,
 	sessionID *string,
 	fixCycles *int,
+	traceID string,
 ) error {
 	if cfg.Modules != nil {
 		// Per-module verification in dependency order.
@@ -341,7 +356,9 @@ func runVerifyPhase(
 			)
 			verifyResult := RunVerify(ctx, moduleChecks, verifyRunner, cfg.Truncation)
 			if hook != nil {
-				if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
+				vsr := verifyToRundata(verifyResult, 0, false)
+				vsr.TraceID = traceID
+				if err := hook.WriteVerifyResult(issue.Number, vsr); err != nil {
 					logger.Warn("failed to write verify result", "error", err)
 				}
 			}
@@ -379,7 +396,9 @@ func runVerifyPhase(
 
 					verifyResult = RunVerify(ctx, moduleChecks, verifyRunner, cfg.Truncation)
 					if hook != nil {
-						if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
+						vsr := verifyToRundata(verifyResult, fixAttempt+1, true)
+						vsr.TraceID = traceID
+						if err := hook.WriteVerifyResult(issue.Number, vsr); err != nil {
 							logger.Warn("failed to write verify result", "error", err)
 						}
 					}
@@ -423,7 +442,9 @@ func runVerifyPhase(
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
 		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
 		if hook != nil {
-			if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, 0, false)); err != nil {
+			vsr := verifyToRundata(verifyResult, 0, false)
+			vsr.TraceID = traceID
+			if err := hook.WriteVerifyResult(issue.Number, vsr); err != nil {
 				logger.Warn("failed to write verify result", "error", err)
 			}
 		}
@@ -462,7 +483,9 @@ func runVerifyPhase(
 				// Re-run verify.
 				verifyResult = RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
 				if hook != nil {
-					if err := hook.WriteVerifyResult(issue.Number, verifyToRundata(verifyResult, fixAttempt+1, true)); err != nil {
+					vsr := verifyToRundata(verifyResult, fixAttempt+1, true)
+					vsr.TraceID = traceID
+					if err := hook.WriteVerifyResult(issue.Number, vsr); err != nil {
 						logger.Warn("failed to write verify result", "error", err)
 					}
 				}
@@ -579,6 +602,7 @@ func runQualityReviewCycle(
 	sessionID *string,
 	fixCycles *int,
 	reporter progress.ProgressReporter,
+	traceID string,
 ) (bool, error) {
 	qualityMaxAttempts := cfg.MaxRetries + 1
 	for qAttempt := 0; qAttempt < qualityMaxAttempts; qAttempt++ {
@@ -596,6 +620,7 @@ func runQualityReviewCycle(
 		if hook != nil {
 			qStep := ResultToStep(qResult.AgentResult)
 			qStep.Flags = qRDFlags
+			qStep.TraceID = traceID
 			if qAttempt == 0 {
 				if err := hook.WriteReviewResult(issue.Number, "quality", qStep); err != nil {
 					logger.Warn("failed to write quality review result", "error", err)
@@ -638,7 +663,9 @@ func runQualityReviewCycle(
 				return false, fmt.Errorf("retry agent (quality) timed out")
 			}
 			if hook != nil {
-				if err := hook.WriteRetryResult(issue.Number, qAttempt, ResultToStep(retryResult)); err != nil {
+				qRetryStep := ResultToStep(retryResult)
+				qRetryStep.TraceID = traceID
+				if err := hook.WriteRetryResult(issue.Number, qAttempt, qRetryStep); err != nil {
 					logger.Warn("failed to write retry result", "error", err)
 				}
 			}
@@ -651,7 +678,7 @@ func runQualityReviewCycle(
 
 			// Re-run verify after quality-gate retry so that changes introduced
 			// by the retry agent are caught before the next quality review cycle.
-			if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles); verifyErr != nil {
+			if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID); verifyErr != nil {
 				return false, fmt.Errorf("verify after quality-gate retry: %w", verifyErr)
 			}
 
@@ -683,6 +710,7 @@ func runFunctionalReviewCycle(
 	fixCycles *int,
 	hasSpec bool,
 	reporter progress.ProgressReporter,
+	traceID string,
 ) (status OutcomeStatus, prMerged bool, retries int, err error) {
 	if hook != nil {
 		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "in_review"}); err != nil {
@@ -721,6 +749,7 @@ func runFunctionalReviewCycle(
 		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
 		fStep := ResultToStep(reviewResult.AgentResult)
 		fStep.Flags = fRDFlags
+		fStep.TraceID = traceID
 
 		// Pre-merge guard: if the reviewer approved without writing tests to the
 		// review dir, re-run the reviewer. The reviewer is the agent responsible
@@ -823,7 +852,7 @@ func runFunctionalReviewCycle(
 			// mergeable after approval; if not, attempts automatic rebase or
 			// triggers a conflict-fix cycle.
 			if needsHR, rebaseErr := runPreMergeRebasePhase(
-				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles,
+				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID,
 			); rebaseErr != nil {
 				return StatusFailed, false, 0, rebaseErr
 			} else if needsHR {
@@ -992,7 +1021,9 @@ func runFunctionalReviewCycle(
 				return StatusFailed, false, 0, fmt.Errorf("retry agent timed out")
 			}
 			if hook != nil {
-				if err := hook.WriteRetryResult(issue.Number, attempt, ResultToStep(retryResult)); err != nil {
+				fRetryStep := ResultToStep(retryResult)
+				fRetryStep.TraceID = traceID
+				if err := hook.WriteRetryResult(issue.Number, attempt, fRetryStep); err != nil {
 					logger.Warn("failed to write retry result", "error", err)
 				}
 			}
@@ -1397,6 +1428,7 @@ func runPreMergeRebasePhase(
 	reporter progress.ProgressReporter,
 	sessionID *string,
 	fixCycles *int,
+	traceID string,
 ) (needsHumanReview bool, err error) {
 	if cfg.MaxRebaseAttempts <= 0 {
 		return false, nil
@@ -1452,7 +1484,7 @@ func runPreMergeRebasePhase(
 
 		// Re-run verify since the branch content has changed (either by
 		// automatic rebase or by the implementer's conflict fix).
-		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles); verifyErr != nil {
+		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID); verifyErr != nil {
 			return false, fmt.Errorf("verify after rebase attempt %d: %w", attempt+1, verifyErr)
 		}
 	}

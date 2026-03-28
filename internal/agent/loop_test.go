@@ -4482,6 +4482,7 @@ func TestRunQualityReviewCycle_ApprovedFirstTry(t *testing.T) {
 		&sessionID,
 		&fixCycles,
 		nil,
+		"test-trace-id",
 	)
 
 	if !passed {
@@ -4534,6 +4535,7 @@ func TestRunQualityReviewCycle_ApprovedAfterRetry(t *testing.T) {
 		&sessionID,
 		&fixCycles,
 		nil,
+		"test-trace-id",
 	)
 
 	if !passed {
@@ -4584,6 +4586,7 @@ func TestRunQualityReviewCycle_ExhaustsRetries(t *testing.T) {
 		&sessionID,
 		&fixCycles,
 		nil,
+		"test-trace-id",
 	)
 
 	if passed {
@@ -4647,6 +4650,7 @@ func TestRunQualityReviewCycle_DriftDuringQuality(t *testing.T) {
 		&sessionID,
 		&fixCycles,
 		nil,
+		"test-trace-id",
 	)
 
 	if passed {
@@ -5114,5 +5118,168 @@ func TestProcessIssue_SpecDeltaRunDataWritten(t *testing.T) {
 	}
 	if len(delta.AddedCases) != 1 || delta.AddedCases[0] != "Case B" {
 		t.Errorf("AddedCases = %v, want [Case B]", delta.AddedCases)
+	}
+}
+
+// traceHook captures all StepResult, VerifyStepResult, and Outcome values
+// written through the RunDataHook interface for TraceID assertions.
+type traceHook struct {
+	testRunDataHook
+	steps   []rundata.StepResult
+	vsteps  []rundata.VerifyStepResult
+	outcome *rundata.Outcome
+}
+
+func (h *traceHook) WriteReconResult(_ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.reconCalls++
+	return nil
+}
+func (h *traceHook) WritePlannerResult(_ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.plannerCalls++
+	return nil
+}
+func (h *traceHook) WriteSpecGeneratorResult(_ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.specGeneratorCalls++
+	return nil
+}
+func (h *traceHook) WriteImplementResult(_ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.implementCalls++
+	return nil
+}
+func (h *traceHook) WriteReviewResult(_ int, kind string, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.reviewKinds = append(h.reviewKinds, kind)
+	return nil
+}
+func (h *traceHook) WriteRetryResult(_ int, _ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.retryCalls++
+	return nil
+}
+func (h *traceHook) WriteRetryReviewResult(_ int, _ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.retryReviewCalls++
+	return nil
+}
+func (h *traceHook) WriteRetryFunctionalReviewResult(_ int, _ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.retryFunctionalReviewCalls++
+	return nil
+}
+func (h *traceHook) WriteVerifyResult(_ int, step rundata.VerifyStepResult) error {
+	h.vsteps = append(h.vsteps, step)
+	h.verifyResults = append(h.verifyResults, step)
+	return nil
+}
+func (h *traceHook) WriteOutcome(o rundata.Outcome) error {
+	h.outcome = &o
+	h.outcomes = append(h.outcomes, o)
+	return nil
+}
+
+func TestTraceIDGenerated(t *testing.T) {
+	const fixedTrace = "fixed-trace-id-for-test"
+	origGen := generateTraceID
+	t.Cleanup(func() { generateTraceID = origGen })
+	generateTraceID = func() string { return fixedTrace }
+
+	hook := &traceHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook, nil)
+
+	if outcome.TraceID != fixedTrace {
+		t.Errorf("IssueOutcome.TraceID = %q, want %q", outcome.TraceID, fixedTrace)
+	}
+	if len(hook.steps) == 0 {
+		t.Fatal("no StepResult values captured")
+	}
+	for i, step := range hook.steps {
+		if step.TraceID != fixedTrace {
+			t.Errorf("step[%d].TraceID = %q, want %q", i, step.TraceID, fixedTrace)
+		}
+	}
+}
+
+func TestTraceIDOnOutcome(t *testing.T) {
+	const fixedTrace = "outcome-trace-id"
+	origGen := generateTraceID
+	t.Cleanup(func() { generateTraceID = origGen })
+	generateTraceID = func() string { return fixedTrace }
+
+	hook := &traceHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	ProcessIssue(context.Background(), loopIssue(), loopConfig(), testPrompts(t), nil, testLogger(t), hook, nil)
+
+	if hook.outcome == nil {
+		t.Fatal("outcome was not written")
+	}
+	if hook.outcome.TraceID != fixedTrace {
+		t.Errorf("Outcome.TraceID = %q, want %q", hook.outcome.TraceID, fixedTrace)
+	}
+}
+
+func TestTraceIDIsUUIDFormat(t *testing.T) {
+	id := generateTraceID()
+	// UUID v4 format: 8-4-4-4-12 hex chars.
+	if len(id) != 36 {
+		t.Fatalf("generateTraceID() = %q, length %d, want 36", id, len(id))
+	}
+	for i, c := range id {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				t.Errorf("position %d = %q, want '-'", i, string(c))
+			}
+		default:
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				t.Errorf("position %d = %q, want hex char", i, string(c))
+			}
+		}
+	}
+	// UUID v4: 13th char must be '4'.
+	if id[14] != '4' {
+		t.Errorf("UUID version char = %q, want '4'", string(id[14]))
+	}
+}
+
+func TestTraceIDOnVerifyResults(t *testing.T) {
+	const fixedTrace = "verify-trace-id"
+	origGen := generateTraceID
+	t.Cleanup(func() { generateTraceID = origGen })
+	generateTraceID = func() string { return fixedTrace }
+
+	hook := &traceHook{}
+	setupLoopTest(t, []string{
+		"implementer output",
+		"AGENT_RESULT=APPROVED",
+		"AGENT_RESULT=APPROVED",
+	}, loopGuardFn)
+
+	cfg := loopConfig()
+	cfg.BuildCommand = "echo ok"
+
+	ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), hook, nil)
+
+	if len(hook.vsteps) == 0 {
+		t.Fatal("no VerifyStepResult values captured")
+	}
+	for i, vs := range hook.vsteps {
+		if vs.TraceID != fixedTrace {
+			t.Errorf("vstep[%d].TraceID = %q, want %q", i, vs.TraceID, fixedTrace)
+		}
 	}
 }

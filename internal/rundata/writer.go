@@ -77,6 +77,7 @@ type StepResult struct {
 	SessionID        string     `json:"session_id,omitempty"`
 	PeakMemoryBytes  int64      `json:"peak_memory_bytes,omitempty"`
 	CPUNanoseconds   int64      `json:"cpu_nanoseconds,omitempty"`
+	TraceID          string     `json:"trace_id,omitempty"`
 }
 
 // OutcomeStatus constants mirror the agent.OutcomeStatus values for use in
@@ -97,6 +98,7 @@ type Outcome struct {
 	Status      string `json:"status"`
 	PRNumber    int    `json:"pr_number"`
 	Error       string `json:"error,omitempty"`
+	TraceID     string `json:"trace_id,omitempty"`
 }
 
 // Writer manages a per-run directory and writes JSON files for each agent loop step.
@@ -373,6 +375,7 @@ type VerifyStepResult struct {
 	Checks       []CheckResult `json:"checks"`
 	AllPassed    bool          `json:"all_passed"`
 	FixAttempted bool          `json:"fix_attempted"`
+	TraceID      string        `json:"trace_id,omitempty"`
 }
 
 // WriteVerifyResult writes a verify step result for the given issue and attempt.
