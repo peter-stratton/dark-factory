@@ -28,6 +28,7 @@ type IssueOutcomeRecord struct {
 	Status      string
 	PRNumber    int
 	Error       string
+	TraceID     string
 }
 
 // StepResultRecord holds the data for a single row in step_results.
@@ -44,4 +45,5 @@ type StepResultRecord struct {
 	FinishedAt       time.Time
 	PeakMemoryBytes  int64
 	CPUNanoseconds   int64
+	TraceID          string
 }

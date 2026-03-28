@@ -67,6 +67,8 @@ func migrate(db *sql.DB) error {
 	alterStmts := []string{
 		`ALTER TABLE step_results ADD COLUMN peak_memory_bytes INTEGER DEFAULT 0`,
 		`ALTER TABLE step_results ADD COLUMN cpu_nanoseconds INTEGER DEFAULT 0`,
+		`ALTER TABLE step_results ADD COLUMN trace_id TEXT DEFAULT ''`,
+		`ALTER TABLE issue_outcomes ADD COLUMN trace_id TEXT DEFAULT ''`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil {

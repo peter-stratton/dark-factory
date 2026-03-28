@@ -71,7 +71,7 @@ func QueryRuns(ctx context.Context, db *DB, filter RunFilter) ([]RunRecord, erro
 // sorted by run started_at ascending. An empty filter returns all outcomes.
 func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueOutcomeRecord, error) {
 	where, args := buildRunJoinWhere(filter)
-	const issueOutcomesBase = `SELECT io.run_id, io.issue_number, io.title, io.status, io.pr_number, io.error
+	const issueOutcomesBase = `SELECT io.run_id, io.issue_number, io.title, io.status, io.pr_number, io.error, io.trace_id
 	      FROM issue_outcomes io
 	      INNER JOIN runs r ON r.id = io.run_id`
 	q := issueOutcomesBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
@@ -86,7 +86,7 @@ func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueO
 	for rows.Next() {
 		var o IssueOutcomeRecord
 		if scanErr := rows.Scan(
-			&o.RunID, &o.IssueNumber, &o.Title, &o.Status, &o.PRNumber, &o.Error,
+			&o.RunID, &o.IssueNumber, &o.Title, &o.Status, &o.PRNumber, &o.Error, &o.TraceID,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan issue outcome: %w", scanErr)
 		}
@@ -106,7 +106,7 @@ func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueO
 func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResultRecord, error) {
 	where, args := buildRunJoinWhere(filter)
 	const stepResultsBase = `SELECT sr.run_id, sr.issue_number, sr.step_name, sr.cost_usd, sr.duration_seconds,
-	             sr.flags, sr.started_at, sr.finished_at, sr.peak_memory_bytes, sr.cpu_nanoseconds
+	             sr.flags, sr.started_at, sr.finished_at, sr.peak_memory_bytes, sr.cpu_nanoseconds, sr.trace_id
 	      FROM step_results sr
 	      INNER JOIN runs r ON r.id = sr.run_id`
 	q := stepResultsBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
@@ -123,7 +123,7 @@ func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResu
 		var flagsJSON, startedAt, finishedAt string
 		if scanErr := rows.Scan(
 			&s.RunID, &s.IssueNumber, &s.StepName, &s.CostUSD, &s.DurationSeconds,
-			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds,
+			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan step result: %w", scanErr)
 		}

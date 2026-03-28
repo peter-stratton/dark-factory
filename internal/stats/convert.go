@@ -67,6 +67,7 @@ func ToRunDetails(runs []RunRecord, outcomes []IssueOutcomeRecord, steps []StepR
 					Status:      o.Status,
 					PRNumber:    o.PRNumber,
 					Error:       o.Error,
+					TraceID:     o.TraceID,
 				}
 			}
 
@@ -141,6 +142,7 @@ func toStepResult(s StepResultRecord) rundata.StepResult {
 		DurationSeconds: s.DurationSeconds,
 		PeakMemoryBytes: s.PeakMemoryBytes,
 		CPUNanoseconds:  s.CPUNanoseconds,
+		TraceID:         s.TraceID,
 	}
 
 	if !s.StartedAt.IsZero() {
