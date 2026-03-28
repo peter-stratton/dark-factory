@@ -415,3 +415,163 @@ func TestWriteStepResult_ResourceFields(t *testing.T) {
 		t.Errorf("cpu_nanoseconds: got %d, want %d", gotCPUNano, step.CPUNanoseconds)
 	}
 }
+
+func TestWriteStepResult_TraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	step := StepResultRecord{
+		RunID:       "run-trace",
+		IssueNumber: 10,
+		StepName:    "implement",
+		TraceID:     "abc-123",
+	}
+
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	var gotTraceID string
+	err := db.db.QueryRow(
+		`SELECT trace_id FROM step_results
+		 WHERE run_id = ? AND issue_number = ? AND step_name = ?`,
+		step.RunID, step.IssueNumber, step.StepName,
+	).Scan(&gotTraceID)
+	if err != nil {
+		t.Fatalf("SELECT trace_id: %v", err)
+	}
+	if gotTraceID != step.TraceID {
+		t.Errorf("trace_id: got %q, want %q", gotTraceID, step.TraceID)
+	}
+}
+
+func TestWriteStepResult_EmptyTraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	step := StepResultRecord{
+		RunID:       "run-empty-trace",
+		IssueNumber: 10,
+		StepName:    "implement",
+		TraceID:     "",
+	}
+
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	var gotTraceID string
+	err := db.db.QueryRow(
+		`SELECT trace_id FROM step_results
+		 WHERE run_id = ? AND issue_number = ? AND step_name = ?`,
+		step.RunID, step.IssueNumber, step.StepName,
+	).Scan(&gotTraceID)
+	if err != nil {
+		t.Fatalf("SELECT trace_id: %v", err)
+	}
+	if gotTraceID != "" {
+		t.Errorf("trace_id: got %q, want empty string", gotTraceID)
+	}
+}
+
+func TestWriteIssueOutcome_TraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	outcome := IssueOutcomeRecord{
+		RunID:       "run-trace",
+		IssueNumber: 42,
+		Status:      "implemented",
+		TraceID:     "abc-123",
+	}
+
+	if err := WriteIssueOutcome(context.Background(), db, outcome); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+
+	var gotTraceID string
+	err := db.db.QueryRow(
+		`SELECT trace_id FROM issue_outcomes
+		 WHERE run_id = ? AND issue_number = ?`,
+		outcome.RunID, outcome.IssueNumber,
+	).Scan(&gotTraceID)
+	if err != nil {
+		t.Fatalf("SELECT trace_id: %v", err)
+	}
+	if gotTraceID != outcome.TraceID {
+		t.Errorf("trace_id: got %q, want %q", gotTraceID, outcome.TraceID)
+	}
+}
+
+func TestWriteIssueOutcome_EmptyTraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	outcome := IssueOutcomeRecord{
+		RunID:       "run-empty-trace",
+		IssueNumber: 42,
+		Status:      "implemented",
+		TraceID:     "",
+	}
+
+	if err := WriteIssueOutcome(context.Background(), db, outcome); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+
+	var gotTraceID string
+	err := db.db.QueryRow(
+		`SELECT trace_id FROM issue_outcomes
+		 WHERE run_id = ? AND issue_number = ?`,
+		outcome.RunID, outcome.IssueNumber,
+	).Scan(&gotTraceID)
+	if err != nil {
+		t.Fatalf("SELECT trace_id: %v", err)
+	}
+	if gotTraceID != "" {
+		t.Errorf("trace_id: got %q, want empty string", gotTraceID)
+	}
+}
+
+func TestQueryStepResults_TraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-q-trace", Repo: "org/repo", StartedAt: time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)})
+	writeStep(t, db, StepResultRecord{
+		RunID:       "run-q-trace",
+		IssueNumber: 1,
+		StepName:    "implement",
+		TraceID:     "trace-xyz",
+		StartedAt:   time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC),
+		FinishedAt:  time.Date(2026, 3, 14, 10, 1, 0, 0, time.UTC),
+	})
+
+	results, err := QueryStepResults(context.Background(), db, RunFilter{})
+	if err != nil {
+		t.Fatalf("QueryStepResults: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].TraceID != "trace-xyz" {
+		t.Errorf("TraceID: got %q, want %q", results[0].TraceID, "trace-xyz")
+	}
+}
+
+func TestQueryIssueOutcomes_TraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-q-trace", Repo: "org/repo", StartedAt: time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)})
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID:       "run-q-trace",
+		IssueNumber: 1,
+		Status:      "implemented",
+		TraceID:     "trace-xyz",
+	})
+
+	results, err := QueryIssueOutcomes(context.Background(), db, RunFilter{})
+	if err != nil {
+		t.Fatalf("QueryIssueOutcomes: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].TraceID != "trace-xyz" {
+		t.Errorf("TraceID: got %q, want %q", results[0].TraceID, "trace-xyz")
+	}
+}

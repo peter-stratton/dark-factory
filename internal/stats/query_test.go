@@ -447,3 +447,189 @@ func TestQueryStepResults_ResourceFieldsRoundTrip(t *testing.T) {
 		t.Errorf("CPUNanoseconds: got %d, want %d", s.CPUNanoseconds, 2_500_000_000)
 	}
 }
+
+// TestQueryStepsByTraceID: seed steps with trace_id, verify correct filtering.
+func TestQueryStepsByTraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo", StartedAt: ts1})
+	writeStep(t, db, StepResultRecord{
+		RunID: "run-1", IssueNumber: 42, StepName: "implement",
+		TraceID: "t-1", StartedAt: ts1, FinishedAt: ts1,
+	})
+	writeStep(t, db, StepResultRecord{
+		RunID: "run-1", IssueNumber: 42, StepName: "quality-review",
+		TraceID: "t-1", StartedAt: ts2, FinishedAt: ts2,
+	})
+	writeStep(t, db, StepResultRecord{
+		RunID: "run-1", IssueNumber: 99, StepName: "implement",
+		TraceID: "t-other", StartedAt: ts1, FinishedAt: ts1,
+	})
+
+	got, err := QueryStepsByTraceID(context.Background(), db, "t-1")
+	if err != nil {
+		t.Fatalf("QueryStepsByTraceID: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d steps, want 2", len(got))
+	}
+	if got[0].StepName != "implement" {
+		t.Errorf("steps[0].StepName = %q, want %q", got[0].StepName, "implement")
+	}
+	if got[1].StepName != "quality-review" {
+		t.Errorf("steps[1].StepName = %q, want %q", got[1].StepName, "quality-review")
+	}
+}
+
+// TestQueryStepsByTraceID_NotFound: non-existent trace ID returns empty slice.
+func TestQueryStepsByTraceID_NotFound(t *testing.T) {
+	db := openTestDB(t)
+
+	got, err := QueryStepsByTraceID(context.Background(), db, "nonexistent")
+	if err != nil {
+		t.Fatalf("QueryStepsByTraceID: %v", err)
+	}
+	if got == nil {
+		t.Error("got nil slice, want empty non-nil slice")
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d steps, want 0", len(got))
+	}
+}
+
+// TestQueryOutcomeByTraceID: found and not-found cases.
+func TestQueryOutcomeByTraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo", StartedAt: ts1})
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-1", IssueNumber: 42, Status: "implemented", TraceID: "t-1",
+	})
+
+	got, err := QueryOutcomeByTraceID(context.Background(), db, "t-1")
+	if err != nil {
+		t.Fatalf("QueryOutcomeByTraceID: %v", err)
+	}
+	if got == nil {
+		t.Fatal("got nil, want non-nil outcome")
+	}
+	if got.IssueNumber != 42 {
+		t.Errorf("IssueNumber = %d, want 42", got.IssueNumber)
+	}
+	if got.Status != "implemented" {
+		t.Errorf("Status = %q, want %q", got.Status, "implemented")
+	}
+}
+
+// TestQueryOutcomeByTraceID_NotFound: returns nil for non-existent trace ID.
+func TestQueryOutcomeByTraceID_NotFound(t *testing.T) {
+	db := openTestDB(t)
+
+	got, err := QueryOutcomeByTraceID(context.Background(), db, "nonexistent")
+	if err != nil {
+		t.Fatalf("QueryOutcomeByTraceID: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %+v, want nil", got)
+	}
+}
+
+// TestQueryLatestTraceForIssue: multiple runs, verify most recent returned.
+func TestQueryLatestTraceForIssue(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-old", Repo: "org/repo", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-new", Repo: "org/repo", StartedAt: ts3})
+
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-old", IssueNumber: 42, Status: "failed", TraceID: "t-old",
+	})
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-new", IssueNumber: 42, Status: "implemented", TraceID: "t-new",
+	})
+
+	got, err := QueryLatestTraceForIssue(context.Background(), db, 42, "", "")
+	if err != nil {
+		t.Fatalf("QueryLatestTraceForIssue: %v", err)
+	}
+	if got != "t-new" {
+		t.Errorf("got %q, want %q", got, "t-new")
+	}
+}
+
+// TestQueryLatestTraceForIssue_RepoFilter: repo filter narrows results.
+func TestQueryLatestTraceForIssue_RepoFilter(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-a", Repo: "org/repo-a", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-b", Repo: "org/repo-b", StartedAt: ts3})
+
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-a", IssueNumber: 42, Status: "implemented", TraceID: "t-a",
+	})
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-b", IssueNumber: 42, Status: "implemented", TraceID: "t-b",
+	})
+
+	got, err := QueryLatestTraceForIssue(context.Background(), db, 42, "org/repo-a", "")
+	if err != nil {
+		t.Fatalf("QueryLatestTraceForIssue: %v", err)
+	}
+	if got != "t-a" {
+		t.Errorf("got %q, want %q", got, "t-a")
+	}
+}
+
+// TestQueryLatestTraceForIssue_RunIDFilter: run_id filter narrows results.
+func TestQueryLatestTraceForIssue_RunIDFilter(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-old", Repo: "org/repo", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-new", Repo: "org/repo", StartedAt: ts3})
+
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-old", IssueNumber: 42, Status: "failed", TraceID: "t-old",
+	})
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-new", IssueNumber: 42, Status: "implemented", TraceID: "t-new",
+	})
+
+	got, err := QueryLatestTraceForIssue(context.Background(), db, 42, "", "run-old")
+	if err != nil {
+		t.Fatalf("QueryLatestTraceForIssue: %v", err)
+	}
+	if got != "t-old" {
+		t.Errorf("got %q, want %q", got, "t-old")
+	}
+}
+
+// TestQueryLatestTraceForIssue_NotFound: returns empty string for non-existent issue.
+func TestQueryLatestTraceForIssue_NotFound(t *testing.T) {
+	db := openTestDB(t)
+
+	got, err := QueryLatestTraceForIssue(context.Background(), db, 999, "", "")
+	if err != nil {
+		t.Fatalf("QueryLatestTraceForIssue: %v", err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want empty string", got)
+	}
+}
+
+// TestQueryLatestTraceForIssue_SkipsEmptyTraceID: rows with empty trace_id are ignored.
+func TestQueryLatestTraceForIssue_SkipsEmptyTraceID(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo", StartedAt: ts1})
+	writeOutcome(t, db, IssueOutcomeRecord{
+		RunID: "run-1", IssueNumber: 42, Status: "implemented", TraceID: "",
+	})
+
+	got, err := QueryLatestTraceForIssue(context.Background(), db, 42, "", "")
+	if err != nil {
+		t.Fatalf("QueryLatestTraceForIssue: %v", err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want empty string (should skip empty trace_id)", got)
+	}
+}

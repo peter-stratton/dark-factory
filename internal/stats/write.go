@@ -62,14 +62,15 @@ func WriteIssueOutcomeTx(ctx context.Context, tx *sql.Tx, outcome IssueOutcomeRe
 func doWriteIssueOutcome(ctx context.Context, ex execContext, outcome IssueOutcomeRecord) error {
 	_, err := ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO issue_outcomes
-			(run_id, issue_number, title, status, pr_number, error)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+			(run_id, issue_number, title, status, pr_number, error, trace_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		outcome.RunID,
 		outcome.IssueNumber,
 		outcome.Title,
 		outcome.Status,
 		outcome.PRNumber,
 		outcome.Error,
+		outcome.TraceID,
 	)
 	if err != nil {
 		return fmt.Errorf("write issue outcome (run=%q issue=%d): %w", outcome.RunID, outcome.IssueNumber, err)
@@ -102,8 +103,8 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 	_, err = ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO step_results
 			(run_id, issue_number, step_name, cost_usd, duration_seconds, flags,
-			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		step.RunID,
 		step.IssueNumber,
 		step.StepName,
@@ -114,6 +115,7 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 		step.FinishedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		step.PeakMemoryBytes,
 		step.CPUNanoseconds,
+		step.TraceID,
 	)
 	if err != nil {
 		return fmt.Errorf("write step result (run=%q issue=%d step=%q): %w", step.RunID, step.IssueNumber, step.StepName, err)

@@ -294,6 +294,7 @@ func (m *Model) handleIssueCompleted(msg IssueCompletedMsg) {
 	m.issues[idx].prNumber = msg.PRNumber
 	m.issues[idx].retries = msg.Retries
 	m.issues[idx].errMsg = msg.ErrMsg
+	m.issues[idx].traceID = msg.TraceID
 	if msg.ErrMsg != "" {
 		m.detailMessages = append(m.detailMessages, detailEntry{
 			issueNumber: msg.Number,

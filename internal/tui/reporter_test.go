@@ -61,7 +61,7 @@ func TestIssueStageChangedSendsMessage(t *testing.T) {
 
 func TestIssueCompletedSendsMessage(t *testing.T) {
 	r, s := newTestReporter()
-	r.IssueCompleted(42, "add endpoint", "implemented", 87, 0, "", 0.0)
+	r.IssueCompleted(42, "add endpoint", "implemented", 87, 0, "", 0.0, "abc12345-def")
 
 	if len(s.msgs) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(s.msgs))

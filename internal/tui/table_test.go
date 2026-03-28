@@ -202,6 +202,69 @@ func TestRenderTableTitleTruncation(t *testing.T) {
 	}
 }
 
+// --- renderRow trace ID tests ---
+
+func TestRenderRowTraceIDPresent(t *testing.T) {
+	row := issueRow{
+		number:  42,
+		title:   "fix the bug",
+		status:  "implemented",
+		traceID: "abcd1234-5678-90ef-ghij-klmnopqrstuv",
+	}
+	spin := newTestSpinner()
+	got := stripANSI(renderRow(row, spin, 80))
+	if !strings.Contains(got, "abcd1234") {
+		t.Errorf("renderRow trace: expected truncated trace %q in %q", "abcd1234", got)
+	}
+	// Should not contain the full trace ID.
+	if strings.Contains(got, "abcd1234-5678") {
+		t.Errorf("renderRow trace: should not contain full trace ID in %q", got)
+	}
+}
+
+func TestRenderRowTraceIDEmpty(t *testing.T) {
+	row := issueRow{
+		number: 42,
+		title:  "fix the bug",
+		status: "implemented",
+	}
+	spin := newTestSpinner()
+	got := stripANSI(renderRow(row, spin, 80))
+	// With no trace ID, the row should not contain any trace fragment.
+	// The row should still render normally with a badge.
+	if !strings.Contains(got, "MERGED") {
+		t.Errorf("renderRow no trace: expected MERGED badge in %q", got)
+	}
+}
+
+func TestRenderRowTraceIDInProgress(t *testing.T) {
+	row := issueRow{
+		number: 42,
+		title:  "fix the bug",
+		stage:  "implement",
+	}
+	spin := newTestSpinner()
+	got := stripANSI(renderRow(row, spin, 80))
+	// In-progress rows have no trace ID — should not show any trace fragment.
+	if strings.Contains(got, "abcd") {
+		t.Errorf("renderRow in-progress: should not contain trace fragment in %q", got)
+	}
+}
+
+func TestRenderRowTraceIDShort(t *testing.T) {
+	row := issueRow{
+		number:  42,
+		title:   "fix the bug",
+		status:  "implemented",
+		traceID: "abc",
+	}
+	spin := newTestSpinner()
+	got := stripANSI(renderRow(row, spin, 80))
+	if !strings.Contains(got, "abc") {
+		t.Errorf("renderRow short trace: expected %q in %q", "abc", got)
+	}
+}
+
 // --- Model Update message handler tests ---
 
 func TestModelIssueStartedMsg(t *testing.T) {
@@ -263,6 +326,25 @@ func TestModelIssueCompletedMsg(t *testing.T) {
 	}
 	if updated.issues[idx].prNumber != 100 {
 		t.Errorf("IssueCompletedMsg: prNumber: got %d, want 100", updated.issues[idx].prNumber)
+	}
+}
+
+func TestModelIssueCompletedTraceID(t *testing.T) {
+	m := New("repo", "ms", "ts", "", "", "", nil)
+
+	next, _ := m.Update(IssueStartedMsg{Number: 42, Title: "fix the bug"})
+	m = next.(Model)
+	next, _ = m.Update(IssueCompletedMsg{
+		Number:  42,
+		Title:   "fix the bug",
+		Status:  "implemented",
+		TraceID: "abcd1234-5678",
+	})
+	updated := next.(Model)
+
+	idx := updated.issueIndex[42]
+	if updated.issues[idx].traceID != "abcd1234-5678" {
+		t.Errorf("IssueCompletedMsg: traceID: got %q, want %q", updated.issues[idx].traceID, "abcd1234-5678")
 	}
 }
 
