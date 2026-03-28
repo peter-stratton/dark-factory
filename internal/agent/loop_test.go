@@ -5245,7 +5245,7 @@ func TestTraceIDIsUUIDFormat(t *testing.T) {
 				t.Errorf("position %d = %q, want '-'", i, string(c))
 			}
 		default:
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 				t.Errorf("position %d = %q, want hex char", i, string(c))
 			}
 		}
