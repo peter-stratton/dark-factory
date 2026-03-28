@@ -2,7 +2,9 @@ package stats
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -209,7 +211,7 @@ func QueryOutcomeByTraceID(ctx context.Context, db *DB, traceID string) (*IssueO
 		&o.RunID, &o.IssueNumber, &o.Title, &o.Status, &o.PRNumber, &o.Error, &o.TraceID,
 	)
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("query outcome by trace_id: %w", err)
@@ -247,7 +249,7 @@ func QueryLatestTraceForIssue(ctx context.Context, db *DB, issueNumber int, repo
 	var traceID string
 	err := db.db.QueryRowContext(ctx, q, args...).Scan(&traceID)
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", fmt.Errorf("query latest trace for issue: %w", err)
