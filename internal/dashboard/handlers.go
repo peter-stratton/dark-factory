@@ -96,6 +96,7 @@ type IssueDetailData struct {
 	RunURL          string // link back to run detail page
 	ReviewChainURL  string // URL for the review chain polling partial
 	ErrorReason     string // failure reason from outcome, shown prominently for failed issues
+	TraceID         string // trace ID from outcome; empty for old runs
 	Timeline        []TimelineStepView
 	Punchlist           *rundata.PunchlistData
 	Dialogue            []rundata.DialogueEntry
@@ -124,6 +125,7 @@ type TimelineStepView struct {
 	Output         string
 	ToolTrace      []string           // tool calls recorded during this step
 	CheckSummaries []CheckSummaryView // per-check results for verify steps; nil for other steps
+	TraceID        string             // trace ID for this step; empty for old runs
 }
 
 // IndexData is the data passed to the index template.
@@ -465,6 +467,7 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		RunURL:          runURL,
 		ReviewChainURL:  reviewChainURL,
 		ErrorReason:     found.Outcome.Error,
+		TraceID:         found.Outcome.TraceID,
 		Timeline:           buildTimeline(*found),
 		Punchlist:          found.Punchlist,
 		Dialogue:           found.Dialogue,
@@ -684,6 +687,7 @@ func stepToView(name string, step rundata.StepResult) TimelineStepView {
 		HasOutput:    step.Output != "",
 		Output:       step.Output,
 		ToolTrace:    step.ToolTrace,
+		TraceID:      step.TraceID,
 	}
 }
 
@@ -743,6 +747,7 @@ func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
 		HasOutput:      output != "",
 		Output:         output,
 		CheckSummaries: checkSummaries,
+		TraceID:        vr.TraceID,
 	}
 }
 
