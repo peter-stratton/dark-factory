@@ -149,6 +149,7 @@ what was built and how users experience it. These live in
 | 22 | [Analytics Overhaul](docs/phase-overviews/phase-22-analytics-overhaul.md) — first-pass rate, wasted cost, failure reasons, per-repo breakdown, sprint report command |
 | 28 | [Container Health Judge](docs/phase-overviews/phase-28-container-health-judge.md) — real-time log streaming, idle/thrash/transport rules, container retry, intervention flow |
 | 29 | [Complete CLI Migration](docs/phase-overviews/phase-29-complete-cli-migration.md) — delete Python runner, simplify Run(), remove --no-sandbox, unconditional Docker, test migration |
+| 32 | [Decision Flow Tracing](docs/phase-overviews/phase-32-decision-flow-tracing.md) — trace ID generation, stats.db persistence, `godark trace` CLI, dashboard and TUI display |
 
 To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
 
