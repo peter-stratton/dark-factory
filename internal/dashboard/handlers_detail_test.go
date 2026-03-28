@@ -1945,3 +1945,117 @@ func TestServer_IssueDetail_ResourceStats_MixedSteps(t *testing.T) {
 		t.Errorf("body missing '—' placeholder for quality review step with no resource data")
 	}
 }
+
+func TestServer_IssueDetail_TraceIDDisplayed(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "org", "repo", ts, rundata.RunMeta{
+		Repo:         "org/repo",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{10},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "10")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 10, Status: "implemented", TraceID: "trace-abc123"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "done", DurationSeconds: 5})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/org/repo/"+ts+"/issues/10", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "trace-abc123") {
+		t.Errorf("body missing trace ID; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "trace-copy-btn") {
+		t.Errorf("body missing copy button for trace ID")
+	}
+}
+
+func TestServer_IssueDetail_TraceIDMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "org", "repo", ts, rundata.RunMeta{
+		Repo:         "org/repo",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{11},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "11")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 11, Status: "implemented"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "done", DurationSeconds: 5})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/org/repo/"+ts+"/issues/11", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "trace-id") {
+		t.Errorf("body should not contain trace-id class for old runs without trace ID")
+	}
+	if strings.Contains(body, "trace-copy-btn") {
+		t.Errorf("body should not contain copy button when trace ID is absent")
+	}
+}
+
+func TestServer_IssueDetail_TraceIDInTimeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "org", "repo", ts, rundata.RunMeta{
+		Repo:         "org/repo",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{12},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "12")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 12, Status: "implemented", TraceID: "trace-header"})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "done", DurationSeconds: 5, TraceID: "trace-step-xyz"})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/org/repo/"+ts+"/issues/12", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "trace-header") {
+		t.Errorf("body missing header trace ID; got: %q", truncate(body, 500))
+	}
+	if !strings.Contains(body, "trace-step-xyz") {
+		t.Errorf("body missing step trace ID in timeline")
+	}
+}
