@@ -17,7 +17,7 @@ type ProgressReporter interface {
 	// IssueStageChanged signals a stage transition for an in-progress issue.
 	IssueStageChanged(issueNumber int, stage string)
 	// IssueCompleted signals the final outcome for an issue.
-	IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64)
+	IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64, traceID string)
 	// WaveStarted signals a new dependency re-resolution wave.
 	WaveStarted(wave, count int)
 	// AllBlocked signals that all issues are blocked.

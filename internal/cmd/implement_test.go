@@ -28,13 +28,14 @@ type stubIssueCompleted struct {
 	retries     int
 	errMsg      string
 	costUSD     float64
+	traceID     string
 }
 
 func (r *stubProgressReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
 func (r *stubProgressReporter) IssueStarted(_ int, _ string)                                   {}
 func (r *stubProgressReporter) IssueStageChanged(_ int, _ string)                              {}
-func (r *stubProgressReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64) {
-	r.issueCompleted = append(r.issueCompleted, stubIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg, costUSD})
+func (r *stubProgressReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64, traceID string) {
+	r.issueCompleted = append(r.issueCompleted, stubIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg, costUSD, traceID})
 }
 func (r *stubProgressReporter) WaveStarted(_ int, _ int)                                     {}
 func (r *stubProgressReporter) AllBlocked(_ int, _ int)                                      {}

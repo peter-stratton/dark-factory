@@ -459,22 +459,22 @@ func handleResolveOutcome(
 	switch outcome.Status {
 	case agent.StatusImplemented:
 		*implemented++
-		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost)
+		reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
 		if err := PullAfterMerge(baseBranch, logger); err != nil {
 			logger.Warn("daemon re-resolve: stopping after merge sync failure", "error", err)
 			return fmt.Sprintf("could not sync after merge: %v", err)
 		}
 	case agent.StatusReadyToMerge:
-		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost)
+		reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
 	case agent.StatusNeedsHumanReview:
-		reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost)
+		reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost, outcome.TraceID)
 	default:
 		*failed++
 		errMsg := ""
 		if outcome.Err != nil {
 			errMsg = outcome.Err.Error()
 		}
-		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost)
+		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost, outcome.TraceID)
 	}
 	return ""
 }
@@ -784,22 +784,22 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			case agent.StatusImplemented:
 				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
-				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost)
+				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
 				merged = true
 				justMergedNums = append(justMergedNums, issue.Number)
 			case agent.StatusReadyToMerge:
 				runStats.readyToMerge++
-				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost)
+				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
 			case agent.StatusNeedsHumanReview:
 				runStats.needsHumanReview++
-				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost)
+				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost, outcome.TraceID)
 			default:
 				runStats.failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
 				}
-				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost, outcome.TraceID)
 			}
 
 			logger.Info("issue outcome",
