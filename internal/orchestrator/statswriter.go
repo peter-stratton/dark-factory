@@ -125,6 +125,7 @@ func WriteRunStats(ctx context.Context, db *stats.DB, cfg *config.Config, writer
 			Status:      issue.Outcome.Status,
 			PRNumber:    issue.Outcome.PRNumber,
 			Error:       issue.Outcome.Error,
+			TraceID:     issue.Outcome.TraceID,
 		}
 		if err := stats.WriteIssueOutcomeTx(ctx, tx, outcomeRec); err != nil {
 			logger.Warn("stats: failed to write issue outcome",
@@ -216,5 +217,6 @@ func stepToRecord(runID string, issueNumber int, stepName string, step rundata.S
 		FinishedAt:      finishedAt,
 		PeakMemoryBytes: step.PeakMemoryBytes,
 		CPUNanoseconds:  step.CPUNanoseconds,
+		TraceID:         step.TraceID,
 	}
 }
