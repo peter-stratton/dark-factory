@@ -17,6 +17,7 @@ type issueRow struct {
 	prNumber    int
 	retries     int
 	errMsg      string
+	traceID     string
 	judgeReason string // e.g. "Killed: idle 300s" — set by JudgeInterventionMsg
 }
 
@@ -38,6 +39,7 @@ var (
 	markerJudgeStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#D4760A", Dark: "#FF8C00"})
 	rowNumberStyle       = lipgloss.NewStyle().Foreground(colorMuted)
 	rowTitleStyle = lipgloss.NewStyle().Foreground(colorBright)
+	traceStyle   = lipgloss.NewStyle().Faint(true)
 )
 
 // renderTable composes all issue rows into a single styled string.
@@ -89,6 +91,14 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 	}
 
 	line := left + strings.Repeat(" ", gap) + badge
+
+	if row.traceID != "" {
+		short := row.traceID
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		line += " " + traceStyle.Render(short)
+	}
 
 	return line
 }

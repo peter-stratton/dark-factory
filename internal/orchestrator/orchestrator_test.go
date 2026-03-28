@@ -53,6 +53,7 @@ type fakeIssueCompleted struct {
 	retries     int
 	errMsg      string
 	costUSD     float64
+	traceID     string
 }
 
 type fakeWaveStarted struct {
@@ -82,8 +83,8 @@ type fakeRollupCreated struct {
 func (r *fakeReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
 func (r *fakeReporter) IssueStarted(_ int, _ string)              {}
 func (r *fakeReporter) IssueStageChanged(_ int, _ string)         {}
-func (r *fakeReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64) {
-	r.issueCompleted = append(r.issueCompleted, fakeIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg, costUSD})
+func (r *fakeReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64, traceID string) {
+	r.issueCompleted = append(r.issueCompleted, fakeIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg, costUSD, traceID})
 }
 func (r *fakeReporter) WaveStarted(wave, count int) {
 	r.waveStarted = append(r.waveStarted, fakeWaveStarted{wave, count})
