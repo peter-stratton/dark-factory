@@ -748,6 +748,30 @@ func TestPollChecks_ExitOneWithFailedCheck(t *testing.T) {
 	}
 }
 
+// TestPollChecks_StderrPreamble verifies that pollChecks handles stderr
+// preamble (e.g. auth refresh messages) before the JSON array.
+func TestPollChecks_StderrPreamble(t *testing.T) {
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		json := checksJSON([]checkEntry{
+			{Name: "ci/build", State: "SUCCESS", Bucket: "pass"},
+		})
+		// Simulate stderr preamble mixed into CombinedOutput.
+		out := append([]byte("Granting access to organization...\n"), json...)
+		return out, nil
+	})
+
+	failures, done, err := pollChecks("owner/repo", 42, []string{"ci/build"}, testLogger(t))
+	if err != nil {
+		t.Fatalf("pollChecks() error = %v, want nil (should skip preamble)", err)
+	}
+	if !done {
+		t.Error("pollChecks() done = false, want true")
+	}
+	if len(failures) != 0 {
+		t.Errorf("pollChecks() failures = %v, want none", failures)
+	}
+}
+
 // TestWaitForChecks_SkippingCheck verifies that a check with bucket "skipping"
 // is treated as passing (not a failure or pending).
 func TestWaitForChecks_SkippingCheck(t *testing.T) {

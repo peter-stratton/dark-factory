@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -149,8 +150,14 @@ func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) 
 		// just means some checks are pending/failed.
 	}
 
+	// CombinedOutput may contain stderr preamble (e.g. auth refresh
+	// messages) before the JSON array. Find the first '[' to skip it.
+	jsonStart := bytes.IndexByte(out, '[')
+	if jsonStart < 0 {
+		return nil, false, fmt.Errorf("parsing checks JSON: no JSON array found in output: %s", truncateForError(out))
+	}
 	var checks []checkEntry
-	if err := json.Unmarshal(out, &checks); err != nil {
+	if err := json.Unmarshal(out[jsonStart:], &checks); err != nil {
 		return nil, false, fmt.Errorf("parsing checks JSON: %w", err)
 	}
 
@@ -228,4 +235,13 @@ func formatCheckFailures(failures []CheckFailure) string {
 		sb.WriteString(f.Output)
 	}
 	return sb.String()
+}
+
+// truncateForError returns the first 200 bytes of output for inclusion in
+// error messages, avoiding huge dumps in logs.
+func truncateForError(out []byte) string {
+	if len(out) <= 200 {
+		return string(out)
+	}
+	return string(out[:200]) + "..."
 }
