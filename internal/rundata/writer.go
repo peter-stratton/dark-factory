@@ -257,6 +257,13 @@ func (w *Writer) WriteImplementResult(issueNum int, step StepResult) error {
 	return writeJSONMkdirs(path, step)
 }
 
+// WriteMergeCoordinatorResult writes the merge coordinator step result for the given issue.
+// Path: issues/<issueNum>/merge_coordinator.json
+func (w *Writer) WriteMergeCoordinatorResult(issueNum int, step StepResult) error {
+	path := filepath.Join(w.issueDir(issueNum), "merge_coordinator.json")
+	return writeJSONMkdirs(path, step)
+}
+
 // WriteReviewResult writes a review step result for the given issue.
 // kind must be "quality" or "functional".
 // Path: issues/<issueNum>/<kind>-review.json

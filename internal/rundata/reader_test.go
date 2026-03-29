@@ -1312,3 +1312,74 @@ func TestLoadRunMissingJudgeInterventionsIsNil(t *testing.T) {
 		t.Errorf("JudgeInterventions = %v, want nil", detail.Issues[0].JudgeInterventions)
 	}
 }
+
+func TestLoadRunReadsMergeCoordinatorResult(t *testing.T) {
+	base := t.TempDir()
+	startedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 7",
+		IssueNumbers: []int{42},
+		StartedAt:    startedAt,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "merge_coordinator.json"), StepResult{Output: "merge coord output", CostUSD: 0.33}); err != nil {
+		t.Fatalf("writing merge_coordinator.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "outcome.json"), Outcome{IssueNumber: 42, Status: "implemented"}); err != nil {
+		t.Fatalf("writing outcome.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	if detail.Issues[0].MergeCoordinator.Output != "merge coord output" {
+		t.Errorf("MergeCoordinator.Output = %q, want %q", detail.Issues[0].MergeCoordinator.Output, "merge coord output")
+	}
+	if detail.Issues[0].MergeCoordinator.CostUSD != 0.33 {
+		t.Errorf("MergeCoordinator.CostUSD = %v, want %v", detail.Issues[0].MergeCoordinator.CostUSD, 0.33)
+	}
+}
+
+func TestLoadRunMissingMergeCoordinatorIsZeroValue(t *testing.T) {
+	base := t.TempDir()
+	startedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	runDir := makeRunDir(t, base, "owner", "repo", "20260301-120000", RunMeta{
+		Repo:         "owner/repo",
+		Milestone:    "Phase 7",
+		IssueNumbers: []int{42},
+		StartedAt:    startedAt,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "42")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	if err := writeJSON(filepath.Join(issueDir, "implement.json"), StepResult{Output: "impl output"}); err != nil {
+		t.Fatalf("writing implement.json: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260301-120000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(detail.Issues))
+	}
+	mc := detail.Issues[0].MergeCoordinator
+	if mc.Output != "" || mc.Error != "" || mc.DurationSeconds != 0 {
+		t.Errorf("MergeCoordinator should be zero value when file absent, got: %+v", mc)
+	}
+}
