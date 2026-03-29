@@ -29,6 +29,7 @@ type IssueOutcomeRecord struct {
 	PRNumber    int
 	Error       string
 	TraceID     string
+	CloneSHA    string
 }
 
 // StepResultRecord holds the data for a single row in step_results.

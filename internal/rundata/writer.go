@@ -99,6 +99,7 @@ type Outcome struct {
 	PRNumber    int    `json:"pr_number"`
 	Error       string `json:"error,omitempty"`
 	TraceID     string `json:"trace_id,omitempty"`
+	CloneSHA    string `json:"clone_sha,omitempty"`
 }
 
 // Writer manages a per-run directory and writes JSON files for each agent loop step.

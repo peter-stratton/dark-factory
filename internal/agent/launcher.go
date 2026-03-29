@@ -51,6 +51,7 @@ type Result struct {
 	ContainerLog      string // bounded combined log for post-mortem; only populated on failure
 	PeakMemoryBytes   int64  // peak RSS in bytes; 0 if unavailable
 	CPUNanoseconds    int64  // total CPU time (user + system) in nanoseconds; 0 if unavailable
+	CloneSHA          string // HEAD SHA captured inside the container immediately after clone
 }
 
 // SandboxRunner executes a container run. Replaceable for testing.
@@ -305,6 +306,8 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 		}
 	}
 
+	res.CloneSHA = extractCloneSHA(result.Stdout)
+
 	// Capture bounded container log for post-mortem on failure only.
 	if res.TimedOut || res.JudgeKilled || res.ExitCode != 0 {
 		combined := result.Stdout + result.Stderr
@@ -407,6 +410,18 @@ func extractToolTrace(stdout string) []string {
 		}
 	}
 	return trace
+}
+
+var cloneSHARe = regexp.MustCompile(`(?m)^CLONE_SHA=([0-9a-f]{40})$`)
+
+// extractCloneSHA scans container stdout for the CLONE_SHA sentinel line
+// emitted by CloneScript and returns the 40-character hex SHA, or "" if absent.
+func extractCloneSHA(stdout string) string {
+	m := cloneSHARe.FindStringSubmatch(stdout)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
 }
 
 var verdictRe = regexp.MustCompile(`(?i)REVIEW\s+RESULT:\s*(APPROVED|CHANGES_REQUESTED)`)
