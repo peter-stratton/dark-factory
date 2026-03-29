@@ -82,6 +82,11 @@
             <button onclick="navigator.clipboard.writeText('{{.TraceID}}')" title="Copy trace ID" class="trace-copy-btn" style="background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 2px 6px; margin-left: 4px; font-size: var(--text-xs); color: var(--text-secondary);">Copy</button>
           </span>
           {{end}}
+          {{if .CloneSHA}}
+          &nbsp;&middot;&nbsp;<span class="clone-sha">Clone SHA: <code style="font-family: var(--font-mono); font-size: var(--text-sm);">{{.CloneSHA}}</code>
+            <button onclick="navigator.clipboard.writeText('{{.CloneSHA}}')" title="Copy clone SHA" class="trace-copy-btn" style="background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 2px 6px; margin-left: 4px; font-size: var(--text-xs); color: var(--text-secondary);">Copy</button>
+          </span>
+          {{end}}
         </p>
       </div>
 

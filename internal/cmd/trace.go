@@ -113,6 +113,7 @@ type outcomeJSON struct {
 	Status   string `json:"status"`
 	PRNumber int    `json:"pr_number"`
 	Error    string `json:"error,omitempty"`
+	CloneSHA string `json:"clone_sha,omitempty"`
 }
 
 type stepJSON struct {
@@ -131,6 +132,7 @@ func renderTraceJSON(w io.Writer, traceID string, issueNumber int, outcome *stat
 			Status:   outcome.Status,
 			PRNumber: outcome.PRNumber,
 			Error:    outcome.Error,
+			CloneSHA: outcome.CloneSHA,
 		},
 		Steps: make([]stepJSON, 0, len(steps)),
 	}
@@ -161,6 +163,9 @@ func renderTraceText(w io.Writer, traceID string, issueNumber int, outcome *stat
 	}
 	if outcome.Error != "" {
 		fmt.Fprintf(w, "Error: %s\n", outcome.Error)
+	}
+	if outcome.CloneSHA != "" {
+		fmt.Fprintf(w, "Clone SHA: %s\n", outcome.CloneSHA)
 	}
 	fmt.Fprintln(w)
 

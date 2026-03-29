@@ -97,6 +97,7 @@ type IssueDetailData struct {
 	ReviewChainURL  string // URL for the review chain polling partial
 	ErrorReason     string // failure reason from outcome, shown prominently for failed issues
 	TraceID         string // trace ID from outcome; empty for old runs
+	CloneSHA        string // HEAD SHA captured inside the container after clone; empty for old runs
 	Timeline        []TimelineStepView
 	Punchlist           *rundata.PunchlistData
 	Dialogue            []rundata.DialogueEntry
@@ -469,6 +470,7 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		ReviewChainURL:  reviewChainURL,
 		ErrorReason:     found.Outcome.Error,
 		TraceID:         found.Outcome.TraceID,
+		CloneSHA:        found.Outcome.CloneSHA,
 		Timeline:           buildTimeline(*found),
 		Punchlist:          found.Punchlist,
 		Dialogue:           found.Dialogue,

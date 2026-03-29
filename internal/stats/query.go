@@ -73,7 +73,7 @@ func QueryRuns(ctx context.Context, db *DB, filter RunFilter) ([]RunRecord, erro
 // sorted by run started_at ascending. An empty filter returns all outcomes.
 func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueOutcomeRecord, error) {
 	where, args := buildRunJoinWhere(filter)
-	const issueOutcomesBase = `SELECT io.run_id, io.issue_number, io.title, io.status, io.pr_number, io.error, io.trace_id
+	const issueOutcomesBase = `SELECT io.run_id, io.issue_number, io.title, io.status, io.pr_number, io.error, io.trace_id, io.clone_sha
 	      FROM issue_outcomes io
 	      INNER JOIN runs r ON r.id = io.run_id`
 	q := issueOutcomesBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
@@ -88,7 +88,7 @@ func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueO
 	for rows.Next() {
 		var o IssueOutcomeRecord
 		if scanErr := rows.Scan(
-			&o.RunID, &o.IssueNumber, &o.Title, &o.Status, &o.PRNumber, &o.Error, &o.TraceID,
+			&o.RunID, &o.IssueNumber, &o.Title, &o.Status, &o.PRNumber, &o.Error, &o.TraceID, &o.CloneSHA,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan issue outcome: %w", scanErr)
 		}
@@ -203,12 +203,12 @@ func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepRes
 // QueryOutcomeByTraceID returns the issue outcome for a given trace ID,
 // or nil if no outcome exists with that trace ID.
 func QueryOutcomeByTraceID(ctx context.Context, db *DB, traceID string) (*IssueOutcomeRecord, error) {
-	const q = `SELECT run_id, issue_number, title, status, pr_number, error, trace_id
+	const q = `SELECT run_id, issue_number, title, status, pr_number, error, trace_id, clone_sha
 	      FROM issue_outcomes WHERE trace_id = ? LIMIT 1`
 
 	var o IssueOutcomeRecord
 	err := db.db.QueryRowContext(ctx, q, traceID).Scan(
-		&o.RunID, &o.IssueNumber, &o.Title, &o.Status, &o.PRNumber, &o.Error, &o.TraceID,
+		&o.RunID, &o.IssueNumber, &o.Title, &o.Status, &o.PRNumber, &o.Error, &o.TraceID, &o.CloneSHA,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

@@ -126,6 +126,7 @@ func WriteRunStats(ctx context.Context, db *stats.DB, cfg *config.Config, writer
 			PRNumber:    issue.Outcome.PRNumber,
 			Error:       issue.Outcome.Error,
 			TraceID:     issue.Outcome.TraceID,
+			CloneSHA:    issue.Outcome.CloneSHA,
 		}
 		if err := stats.WriteIssueOutcomeTx(ctx, tx, outcomeRec); err != nil {
 			logger.Warn("stats: failed to write issue outcome",

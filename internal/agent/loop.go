@@ -42,6 +42,7 @@ type IssueOutcome struct {
 	Retries     int
 	Err         error
 	TraceID     string
+	CloneSHA    string // HEAD SHA captured inside the container after clone
 }
 
 // ProcessIssue runs the full per-issue lifecycle:
@@ -62,6 +63,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 				Description: issue.Body,
 				Status:      string(outcome.Status),
 				PRNumber:    outcome.PRNumber,
+				CloneSHA:    outcome.CloneSHA,
 			}
 			o.TraceID = traceID
 			if outcome.Err != nil {
@@ -194,6 +196,8 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		outcome.Err = fmt.Errorf("implementer agent timed out")
 		return outcome
 	}
+	outcome.CloneSHA = implResult.CloneSHA
+
 	if hook != nil {
 		implStep := ResultToStep(implResult)
 		implStep.TraceID = traceID

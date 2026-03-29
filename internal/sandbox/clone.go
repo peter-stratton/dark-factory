@@ -19,6 +19,8 @@ git config --global user.email "${GODARK_GIT_AUTHOR_EMAIL:-dark-factory@noreply}
 		script += fmt.Sprintf("cd %s && git checkout %s\n", workDir, branch)
 	}
 
+	script += fmt.Sprintf("cd %s && echo \"CLONE_SHA=$(git rev-parse HEAD)\"\n", workDir)
+
 	return script, nil
 }
 

@@ -62,8 +62,8 @@ func WriteIssueOutcomeTx(ctx context.Context, tx *sql.Tx, outcome IssueOutcomeRe
 func doWriteIssueOutcome(ctx context.Context, ex execContext, outcome IssueOutcomeRecord) error {
 	_, err := ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO issue_outcomes
-			(run_id, issue_number, title, status, pr_number, error, trace_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			(run_id, issue_number, title, status, pr_number, error, trace_id, clone_sha)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		outcome.RunID,
 		outcome.IssueNumber,
 		outcome.Title,
@@ -71,6 +71,7 @@ func doWriteIssueOutcome(ctx context.Context, ex execContext, outcome IssueOutco
 		outcome.PRNumber,
 		outcome.Error,
 		outcome.TraceID,
+		outcome.CloneSHA,
 	)
 	if err != nil {
 		return fmt.Errorf("write issue outcome (run=%q issue=%d): %w", outcome.RunID, outcome.IssueNumber, err)
