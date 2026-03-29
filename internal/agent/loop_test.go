@@ -974,6 +974,7 @@ type testRunDataHook struct {
 	riskAssessments            []rundata.RiskAssessment
 	judgeInterventions         []rundata.JudgeIntervention
 	specDeltas                 []rundata.SpecDeltaData
+	mergeCoordinatorCalls      int
 }
 
 func (h *testRunDataHook) WriteReconResult(_ int, _ rundata.StepResult) error {
@@ -1032,6 +1033,10 @@ func (h *testRunDataHook) WriteJudgeIntervention(_ int, ji rundata.JudgeInterven
 }
 func (h *testRunDataHook) WriteSpecDelta(_ int, d rundata.SpecDeltaData) error {
 	h.specDeltas = append(h.specDeltas, d)
+	return nil
+}
+func (h *testRunDataHook) WriteMergeCoordinatorResult(_ int, _ rundata.StepResult) error {
+	h.mergeCoordinatorCalls++
 	return nil
 }
 
@@ -5184,6 +5189,11 @@ func (h *traceHook) WriteVerifyResult(_ int, step rundata.VerifyStepResult) erro
 func (h *traceHook) WriteOutcome(o rundata.Outcome) error {
 	h.outcome = &o
 	h.outcomes = append(h.outcomes, o)
+	return nil
+}
+func (h *traceHook) WriteMergeCoordinatorResult(_ int, step rundata.StepResult) error {
+	h.steps = append(h.steps, step)
+	h.mergeCoordinatorCalls++
 	return nil
 }
 

@@ -1177,3 +1177,50 @@ func TestReviewerPrompt_ComposeServicesAbsent(t *testing.T) {
 		t.Error("reviewer prompt should not contain 'Available services' heading when ComposeServices is empty")
 	}
 }
+
+func TestLoadPrompts_MergeCoordinatorLoadedFromEmbedded(t *testing.T) {
+	cfg := &config.Config{}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.MergeCoordinator == "" {
+		t.Error("MergeCoordinator should be loaded from embedded default")
+	}
+}
+
+func TestMergeCoordinatorPrompt_RendersWithConflictInfo(t *testing.T) {
+	p, err := LoadPrompts(&config.Config{})
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	data := PromptData{
+		IssueNumber:  42,
+		IssueTitle:   "Add Widget Support",
+		IssueBody:    "Implement widgets for the dashboard.",
+		BaseBranch:   "main",
+		ConflictInfo: "CONFLICT (content): Merge conflict in pkg/widget.go",
+		BuildCommand: "go build ./...",
+		TestCommand:  "go test ./...",
+	}
+	rendered, err := RenderPrompt(p.MergeCoordinator, data)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if !strings.Contains(rendered, "Add Widget Support") {
+		t.Error("merge coordinator prompt should contain the issue title")
+	}
+	if !strings.Contains(rendered, "main") {
+		t.Error("merge coordinator prompt should contain the base branch")
+	}
+	if !strings.Contains(rendered, "CONFLICT (content): Merge conflict in pkg/widget.go") {
+		t.Error("merge coordinator prompt should contain the conflict info")
+	}
+	if !strings.Contains(rendered, "go build ./...") {
+		t.Error("merge coordinator prompt should contain the build command")
+	}
+	if !strings.Contains(rendered, "go test ./...") {
+		t.Error("merge coordinator prompt should contain the test command")
+	}
+}

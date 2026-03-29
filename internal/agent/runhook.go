@@ -11,6 +11,7 @@ type RunDataHook interface {
 	WriteSpecGeneratorResult(issueNumber int, step rundata.StepResult) error
 	WriteImplementResult(issueNumber int, step rundata.StepResult) error
 	WriteReviewResult(issueNumber int, kind string, step rundata.StepResult) error
+	WriteMergeCoordinatorResult(issueNumber int, step rundata.StepResult) error
 	WriteRetryResult(issueNumber int, attempt int, step rundata.StepResult) error
 	WriteRetryReviewResult(issueNumber int, attempt int, step rundata.StepResult) error
 	WriteRetryFunctionalReviewResult(issueNumber int, attempt int, step rundata.StepResult) error

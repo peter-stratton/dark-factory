@@ -2059,3 +2059,86 @@ func TestServer_IssueDetail_TraceIDInTimeline(t *testing.T) {
 		t.Errorf("body missing step trace ID in timeline")
 	}
 }
+
+func TestServer_IssueDetail_MergeCoordinateInTimeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{7},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "7")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 7, Status: "implemented", PRNumber: 101})
+	writeJSON(t, filepath.Join(issueDir, "functional-review.json"),
+		rundata.StepResult{Output: "AGENT_RESULT=APPROVED", DurationSeconds: 12})
+	writeJSON(t, filepath.Join(issueDir, "merge_coordinator.json"),
+		rundata.StepResult{Output: "conflicts resolved", DurationSeconds: 30, CostUSD: 0.05})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/7", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	idxFR := strings.Index(body, "Functional Review")
+	idxMC := strings.Index(body, "Merge Coordinate")
+
+	if idxFR < 0 {
+		t.Error("body missing Functional Review step")
+	}
+	if idxMC < 0 {
+		t.Error("body missing Merge Coordinate step")
+	}
+	if idxFR >= 0 && idxMC >= 0 && idxMC < idxFR {
+		t.Error("Merge Coordinate should appear after Functional Review in timeline")
+	}
+}
+
+func TestServer_IssueDetail_MergeCoordinateOmittedWhenAbsent(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{8},
+		StartedAt:    now,
+	})
+
+	issueDir := filepath.Join(runDir, "issues", "8")
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("creating issue dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"),
+		rundata.Outcome{IssueNumber: 8, Status: "implemented", PRNumber: 102})
+	writeJSON(t, filepath.Join(issueDir, "implement.json"),
+		rundata.StepResult{Output: "impl done", DurationSeconds: 60})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/8", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	if strings.Contains(body, "Merge Coordinate") {
+		t.Error("body should not contain Merge Coordinate when merge_coordinator.json is absent")
+	}
+}

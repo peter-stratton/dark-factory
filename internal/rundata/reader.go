@@ -32,6 +32,7 @@ type IssueDetail struct {
 	Implement        StepResult
 	QualityReview    StepResult
 	FunctionalReview StepResult
+	MergeCoordinator StepResult
 	Retries          []RetryDetail
 	Punchlist        *PunchlistData
 	Dialogue         []DialogueEntry
@@ -294,6 +295,7 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		Implement:        r.readStep(filepath.Join(issueDir, "implement.json")),
 		QualityReview:    r.readStep(filepath.Join(issueDir, "quality-review.json")),
 		FunctionalReview: r.readStep(filepath.Join(issueDir, "functional-review.json")),
+		MergeCoordinator: r.readStep(filepath.Join(issueDir, "merge_coordinator.json")),
 		Outcome:          r.readOutcome(filepath.Join(issueDir, "outcome.json")),
 		LiveStatus:       r.readIssueStatus(filepath.Join(issueDir, "status.json")),
 		Retries:          r.loadRetries(filepath.Join(issueDir, "retries")),

@@ -2726,3 +2726,209 @@ func TestRefreshAndCategorize_MergedPRUnblocksDependent(t *testing.T) {
 		t.Errorf("expected 0 blocked, got %d", len(blocked))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Rollup merge conflict handling tests (#610)
+// ---------------------------------------------------------------------------
+
+// setupMergeCoordinatorMock stubs mergeCoordinateFn and restores it at cleanup.
+func setupMergeCoordinatorMock(t *testing.T, fn func(ctx context.Context, issue github.Issue, prNum int, conflictInfo string, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) (*agent.Result, error)) {
+	t.Helper()
+	orig := mergeCoordinateFn
+	t.Cleanup(func() { mergeCoordinateFn = orig })
+	mergeCoordinateFn = fn
+}
+
+// setupCheckMergeableMock stubs checkMergeableFn and restores it at cleanup.
+func setupCheckMergeableMock(t *testing.T, fn func(repo string, prNum int) (string, error)) {
+	t.Helper()
+	orig := checkMergeableFn
+	t.Cleanup(func() { checkMergeableFn = orig })
+	checkMergeableFn = fn
+}
+
+func TestHandleRollupPR_CleanMerge(t *testing.T) {
+	merged := setupHandleRollupPRMocks(t)
+
+	var mcCalls int
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+		mcCalls++
+		return &agent.Result{}, nil
+	})
+	setupCheckMergeableMock(t, func(_ string, _ int) (string, error) {
+		return "MERGEABLE", nil
+	})
+
+	var verifyCalls int
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+		verifyCalls++
+		return true, nil
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "auto"
+	cfg.MaxRebaseAttempts = 2
+	reporter := &fakeReporter{}
+
+	prNum, prURL, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	if err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+	if prNum != 999 {
+		t.Errorf("pr number = %d, want 999", prNum)
+	}
+	if prURL == "" {
+		t.Error("pr url should not be empty")
+	}
+	if mcCalls != 0 {
+		t.Errorf("merge coordinator should not be called for clean merge, got %d calls", mcCalls)
+	}
+	if verifyCalls != 1 {
+		t.Errorf("expected 1 verify call, got %d", verifyCalls)
+	}
+	if len(*merged) != 1 || (*merged)[0] != 999 {
+		t.Errorf("expected merge of PR 999, got merges: %v", *merged)
+	}
+}
+
+func TestHandleRollupPR_ConflictResolved(t *testing.T) {
+	merged := setupHandleRollupPRMocks(t)
+
+	var mcCalls int
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+		mcCalls++
+		return &agent.Result{}, nil
+	})
+
+	mergeableCall := 0
+	setupCheckMergeableMock(t, func(_ string, _ int) (string, error) {
+		mergeableCall++
+		if mergeableCall == 1 {
+			return "CONFLICTING", nil
+		}
+		return "MERGEABLE", nil
+	})
+
+	var verifyCalls int
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+		verifyCalls++
+		return true, nil
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "auto"
+	cfg.MaxRebaseAttempts = 2
+	reporter := &fakeReporter{}
+
+	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	if err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+	if prNum != 999 {
+		t.Errorf("pr number = %d, want 999", prNum)
+	}
+	if mcCalls != 1 {
+		t.Errorf("merge coordinator should be called once, got %d calls", mcCalls)
+	}
+	// Verify called once inside the conflict loop (after resolution).
+	// The outer verify is skipped because conflictResolved is true.
+	if verifyCalls != 1 {
+		t.Errorf("expected 1 verify call (inside conflict loop), got %d", verifyCalls)
+	}
+	if len(*merged) != 1 || (*merged)[0] != 999 {
+		t.Errorf("expected merge of PR 999, got merges: %v", *merged)
+	}
+}
+
+func TestHandleRollupPR_ConflictUnresolvable(t *testing.T) {
+	merged := setupHandleRollupPRMocks(t)
+
+	var mcCalls int
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+		mcCalls++
+		return &agent.Result{}, nil
+	})
+
+	setupCheckMergeableMock(t, func(_ string, _ int) (string, error) {
+		return "CONFLICTING", nil
+	})
+
+	var verifyCalls int
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+		verifyCalls++
+		return true, nil
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "auto"
+	cfg.MaxRebaseAttempts = 2
+	reporter := &fakeReporter{}
+
+	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	if err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+	if prNum != 999 {
+		t.Errorf("pr number = %d, want 999", prNum)
+	}
+	if mcCalls != 2 {
+		t.Errorf("merge coordinator should be called exactly 2 times, got %d", mcCalls)
+	}
+	if len(*merged) != 0 {
+		t.Errorf("unresolvable conflict should not merge, got merges: %v", *merged)
+	}
+	if len(reporter.rollupCreated) != 1 {
+		t.Fatalf("expected 1 RollupCreated call, got %d", len(reporter.rollupCreated))
+	}
+	if reporter.rollupCreated[0].merged {
+		t.Error("expected RollupCreated with merged=false")
+	}
+}
+
+func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
+	merged := setupHandleRollupPRMocks(t)
+
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+		return &agent.Result{}, nil
+	})
+
+	mergeableCall := 0
+	setupCheckMergeableMock(t, func(_ string, _ int) (string, error) {
+		mergeableCall++
+		if mergeableCall == 1 {
+			return "CONFLICTING", nil
+		}
+		return "MERGEABLE", nil
+	})
+
+	var verifyCalls int
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+		verifyCalls++
+		return false, nil // verify fails after conflict resolution
+	})
+
+	cfg := testConfig()
+	cfg.AutoMerge.Rollup = "auto"
+	cfg.MaxRebaseAttempts = 2
+	reporter := &fakeReporter{}
+
+	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	if err != nil {
+		t.Fatalf("handleRollupPR() error = %v", err)
+	}
+	if prNum != 999 {
+		t.Errorf("pr number = %d, want 999", prNum)
+	}
+	if verifyCalls != 1 {
+		t.Errorf("expected 1 verify call after conflict resolution, got %d", verifyCalls)
+	}
+	if len(*merged) != 0 {
+		t.Errorf("verify failure after conflict resolution should not merge, got merges: %v", *merged)
+	}
+	if len(reporter.rollupCreated) != 1 {
+		t.Fatalf("expected 1 RollupCreated call, got %d", len(reporter.rollupCreated))
+	}
+	if reporter.rollupCreated[0].merged {
+		t.Error("expected RollupCreated with merged=false when verify fails")
+	}
+}

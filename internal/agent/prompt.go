@@ -23,6 +23,7 @@ type Prompts struct {
 	VerifyFix        string
 	Recon            string
 	Planner          string
+	MergeCoordinator string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -81,6 +82,9 @@ type PromptData struct {
 	// (branch creation, ReviewDir mandates, generated paths) remain in each
 	// individual prompt template.
 	SharedRules string
+	// ConflictInfo holds git conflict output injected by the merge
+	// coordinator caller. Not set by newPromptData().
+	ConflictInfo string
 }
 
 // loadPromptFile reads a prompt from the config path if set, otherwise from
@@ -171,6 +175,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		p.Planner = ""
 	} else {
 		p.Planner = planner
+	}
+
+	// MergeCoordinator is optional — load from config or embedded default.
+	mc, err := loadPromptFile(cfg.Prompts.MergeCoordinator, "merge_coordinator.txt")
+	if err != nil {
+		p.MergeCoordinator = ""
+	} else {
+		p.MergeCoordinator = mc
 	}
 
 	return p, nil

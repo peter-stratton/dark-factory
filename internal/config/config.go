@@ -356,6 +356,7 @@ type Prompts struct {
 	VerifyFix        string `yaml:"verify_fix"`
 	Recon            string `yaml:"recon"`
 	Planner          string `yaml:"planner"`
+	MergeCoordinator string `yaml:"merge_coordinator"`
 }
 
 // CLIFlags holds flag values passed on the command line.

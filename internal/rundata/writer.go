@@ -257,6 +257,13 @@ func (w *Writer) WriteImplementResult(issueNum int, step StepResult) error {
 	return writeJSONMkdirs(path, step)
 }
 
+// WriteMergeCoordinatorResult writes the merge coordinator step result for the given issue.
+// Path: issues/<issueNum>/merge_coordinator.json
+func (w *Writer) WriteMergeCoordinatorResult(issueNum int, step StepResult) error {
+	path := filepath.Join(w.issueDir(issueNum), "merge_coordinator.json")
+	return writeJSONMkdirs(path, step)
+}
+
 // WriteReviewResult writes a review step result for the given issue.
 // kind must be "quality" or "functional".
 // Path: issues/<issueNum>/<kind>-review.json
@@ -390,6 +397,14 @@ func (w *Writer) WriteVerifyResult(issueNum int, step VerifyStepResult) error {
 // Path: rollup/verify-<attempt>.json
 func (w *Writer) WriteRollupVerifyResult(step VerifyStepResult) error {
 	path := filepath.Join(w.dir, "rollup", fmt.Sprintf("verify-%d.json", step.Attempt))
+	return writeJSONMkdirs(path, step)
+}
+
+// WriteRollupMergeCoordinatorResult writes a merge coordinator step result
+// for the rollup PR.
+// Path: rollup/merge_coordinator-<attempt>.json
+func (w *Writer) WriteRollupMergeCoordinatorResult(attempt int, step StepResult) error {
+	path := filepath.Join(w.dir, "rollup", fmt.Sprintf("merge_coordinator-%d.json", attempt))
 	return writeJSONMkdirs(path, step)
 }
 

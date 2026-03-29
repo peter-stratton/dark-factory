@@ -770,6 +770,38 @@ repo: owner/repo
 	}
 }
 
+func TestMergeCoordinatorPromptPathFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+prompts:
+  merge_coordinator: "custom/path.txt"
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Prompts.MergeCoordinator != "custom/path.txt" {
+		t.Errorf("Prompts.MergeCoordinator = %q, want %q", cfg.Prompts.MergeCoordinator, "custom/path.txt")
+	}
+}
+
+func TestMergeCoordinatorPromptPathDefaultEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Prompts.MergeCoordinator != "" {
+		t.Errorf("Prompts.MergeCoordinator = %q, want empty string", cfg.Prompts.MergeCoordinator)
+	}
+}
+
 func TestDeniedCommandsDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
