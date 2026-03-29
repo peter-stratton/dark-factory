@@ -194,8 +194,8 @@ func TestRunPreMergeRebasePhase_ConflictingAutoRebaseSuccess(t *testing.T) {
 	}
 }
 
-func TestRunPreMergeRebasePhase_ConflictingUpdateBranchFails_ImplementerFixes(t *testing.T) {
-	// PR is CONFLICTING. UpdateBranch fails. Retry agent runs. Final check MERGEABLE.
+func TestRunPreMergeRebasePhase_ConflictingUpdateBranchFails_MergeCoordinatorFixes(t *testing.T) {
+	// PR is CONFLICTING. UpdateBranch fails. Merge coordinator runs. Final check MERGEABLE.
 	checkCallCount := 0
 	origGH := github.CommandRunner
 	t.Cleanup(func() { github.CommandRunner = origGH })
@@ -214,9 +214,9 @@ func TestRunPreMergeRebasePhase_ConflictingUpdateBranchFails_ImplementerFixes(t 
 		return []byte(""), nil
 	}
 
-	retryCallCount := 0
+	coordinatorCallCount := 0
 	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
-		retryCallCount++
+		coordinatorCallCount++
 		return &sandbox.RunResult{Stdout: wrapRunnerJSON("conflict fix output")}, nil
 	})
 
@@ -234,10 +234,10 @@ func TestRunPreMergeRebasePhase_ConflictingUpdateBranchFails_ImplementerFixes(t 
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if needsHR {
-		t.Errorf("expected needsHumanReview=false after implementer fixes conflicts")
+		t.Errorf("expected needsHumanReview=false after merge coordinator fixes conflicts")
 	}
-	if retryCallCount == 0 {
-		t.Errorf("expected Retry agent to be called on update-branch failure, got 0 calls")
+	if coordinatorCallCount == 0 {
+		t.Errorf("expected merge coordinator to be called on update-branch failure, got 0 calls")
 	}
 }
 
@@ -281,7 +281,7 @@ func TestRunPreMergeRebasePhase_ExhaustsAttempts_NeedsHumanReview(t *testing.T) 
 func TestRunPreMergeRebasePhase_MultipleAttempts(t *testing.T) {
 	// With MaxRebaseAttempts=2, should try twice before marking needs-human-review.
 	checkCallCount := 0
-	retryCallCount := 0
+	coordinatorCallCount := 0
 
 	origGH := github.CommandRunner
 	t.Cleanup(func() { github.CommandRunner = origGH })
@@ -298,7 +298,7 @@ func TestRunPreMergeRebasePhase_MultipleAttempts(t *testing.T) {
 	}
 
 	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
-		retryCallCount++
+		coordinatorCallCount++
 		return &sandbox.RunResult{Stdout: wrapRunnerJSON("conflict fix output")}, nil
 	})
 
@@ -322,8 +322,213 @@ func TestRunPreMergeRebasePhase_MultipleAttempts(t *testing.T) {
 	if checkCallCount != 3 {
 		t.Errorf("expected 3 CheckMergeable calls (2 loop + 1 final), got %d", checkCallCount)
 	}
-	if retryCallCount != 2 {
-		t.Errorf("expected 2 Retry calls (one per attempt), got %d", retryCallCount)
+	if coordinatorCallCount != 2 {
+		t.Errorf("expected 2 merge coordinator calls (one per attempt), got %d", coordinatorCallCount)
+	}
+}
+
+func TestRunPreMergeRebasePhase_MergeCoordinatorError(t *testing.T) {
+	// Merge coordinator returns an error — attempt is spent, loop continues.
+	origGH := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origGH })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--json mergeable") {
+			return []byte(`{"mergeable":"CONFLICTING"}`), nil
+		}
+		if strings.Contains(joined, "update-branch") {
+			return nil, fmt.Errorf("exit status 1: conflicts")
+		}
+		return []byte(""), nil
+	}
+
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		return nil, fmt.Errorf("sandbox unavailable")
+	})
+
+	stubGuardRunner(t, standardRebaseGuard())
+
+	cfg := rebaseTestConfig()
+	cfg.MaxRebaseAttempts = 1
+	sid := "sess"
+	fc := 0
+	needsHR, err := runPreMergeRebasePhase(
+		context.Background(), testIssue(), 42, "42-test", "abc123",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+	)
+	if err != nil {
+		t.Fatalf("expected no hard error on merge coordinator failure, got: %v", err)
+	}
+	if !needsHR {
+		t.Error("expected needsHumanReview=true after coordinator error exhausts attempt")
+	}
+}
+
+func TestRunPreMergeRebasePhase_MergeCoordinatorNonZeroExit(t *testing.T) {
+	// Merge coordinator exits non-zero — attempt is spent, loop continues.
+	origGH := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origGH })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--json mergeable") {
+			return []byte(`{"mergeable":"CONFLICTING"}`), nil
+		}
+		if strings.Contains(joined, "update-branch") {
+			return nil, fmt.Errorf("exit status 1: conflicts")
+		}
+		return []byte(""), nil
+	}
+
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{ExitCode: 1, Stdout: wrapRunnerJSON("failed to resolve")}, nil
+	})
+
+	stubGuardRunner(t, standardRebaseGuard())
+
+	cfg := rebaseTestConfig()
+	cfg.MaxRebaseAttempts = 1
+	sid := "sess"
+	fc := 0
+	needsHR, err := runPreMergeRebasePhase(
+		context.Background(), testIssue(), 42, "42-test", "abc123",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+	)
+	if err != nil {
+		t.Fatalf("expected no hard error on non-zero exit, got: %v", err)
+	}
+	if !needsHR {
+		t.Error("expected needsHumanReview=true after coordinator non-zero exit exhausts attempt")
+	}
+}
+
+func TestRunPreMergeRebasePhase_AutoRebaseSuccess_NoCoordinator(t *testing.T) {
+	// UpdateBranch succeeds — merge coordinator should not be invoked.
+	checkCallCount := 0
+	origGH := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origGH })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--json mergeable") {
+			checkCallCount++
+			if checkCallCount == 1 {
+				return []byte(`{"mergeable":"CONFLICTING"}`), nil
+			}
+			return []byte(`{"mergeable":"MERGEABLE"}`), nil
+		}
+		if strings.Contains(joined, "update-branch") {
+			return []byte(""), nil // success
+		}
+		return []byte(""), nil
+	}
+
+	coordinatorCalled := false
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		coordinatorCalled = true
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("should not be called")}, nil
+	})
+
+	stubGuardRunner(t, standardRebaseGuard())
+
+	cfg := rebaseTestConfig()
+	cfg.MaxRebaseAttempts = 1
+	sid := "sess"
+	fc := 0
+	needsHR, err := runPreMergeRebasePhase(
+		context.Background(), testIssue(), 42, "42-test", "abc123",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if needsHR {
+		t.Error("expected needsHumanReview=false after successful auto-rebase")
+	}
+	if coordinatorCalled {
+		t.Error("expected merge coordinator not to be called when auto-rebase succeeds")
+	}
+}
+
+func TestRunPreMergeRebasePhase_SessionIDUnchanged(t *testing.T) {
+	// Merge coordinator does not update sessionID.
+	checkCallCount := 0
+	origGH := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origGH })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--json mergeable") {
+			checkCallCount++
+			if checkCallCount == 1 {
+				return []byte(`{"mergeable":"CONFLICTING"}`), nil
+			}
+			return []byte(`{"mergeable":"MERGEABLE"}`), nil
+		}
+		if strings.Contains(joined, "update-branch") {
+			return nil, fmt.Errorf("exit status 1: conflicts")
+		}
+		return []byte(""), nil
+	}
+
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("conflict fix output")}, nil
+	})
+
+	stubGuardRunner(t, standardRebaseGuard())
+
+	cfg := rebaseTestConfig()
+	cfg.MaxRebaseAttempts = 1
+	sid := "original-session"
+	fc := 0
+	_, err := runPreMergeRebasePhase(
+		context.Background(), testIssue(), 42, "42-test", "abc123",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sid != "original-session" {
+		t.Errorf("expected sessionID unchanged, got %q", sid)
+	}
+}
+
+func TestRunPreMergeRebasePhase_FixCyclesUnchanged(t *testing.T) {
+	// Merge coordinator does not increment fixCycles.
+	checkCallCount := 0
+	origGH := github.CommandRunner
+	t.Cleanup(func() { github.CommandRunner = origGH })
+	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--json mergeable") {
+			checkCallCount++
+			if checkCallCount == 1 {
+				return []byte(`{"mergeable":"CONFLICTING"}`), nil
+			}
+			return []byte(`{"mergeable":"MERGEABLE"}`), nil
+		}
+		if strings.Contains(joined, "update-branch") {
+			return nil, fmt.Errorf("exit status 1: conflicts")
+		}
+		return []byte(""), nil
+	}
+
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		return &sandbox.RunResult{Stdout: wrapRunnerJSON("conflict fix output")}, nil
+	})
+
+	stubGuardRunner(t, standardRebaseGuard())
+
+	cfg := rebaseTestConfig()
+	cfg.MaxRebaseAttempts = 1
+	fc := 0
+	sid := "sess"
+	_, err := runPreMergeRebasePhase(
+		context.Background(), testIssue(), 42, "42-test", "abc123",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fc != 0 {
+		t.Errorf("expected fixCycles unchanged at 0, got %d", fc)
 	}
 }
 
