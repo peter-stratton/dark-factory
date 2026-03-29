@@ -51,6 +51,8 @@ prompts:
   punchlist: prompts/punchlist.txt
   verify_fix: prompts/verify_fix.txt
   recon: prompts/recon.txt
+  planner: prompts/planner.txt
+  merge_coordinator: prompts/merge_coordinator.txt
 
 # Default branch of the repository (auto-detected from GitHub if omitted)
 # default_branch: main
