@@ -102,6 +102,7 @@ type IssueDetailData struct {
 	Dialogue            []rundata.DialogueEntry
 	FailureAnalysis     *rundata.FailureAnalysis
 	JudgeInterventions  []rundata.JudgeIntervention
+	SpecDelta           *rundata.SpecDeltaData
 }
 
 // CheckSummaryView is the view model for one check within a verify step summary.
@@ -473,6 +474,7 @@ func (s *Server) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		Dialogue:           found.Dialogue,
 		FailureAnalysis:    found.FailureAnalysis,
 		JudgeInterventions: found.JudgeInterventions,
+		SpecDelta:          found.SpecDelta,
 	}
 
 	var buf bytes.Buffer

@@ -941,26 +941,28 @@ func runFunctionalReviewCycle(
 			if err != nil {
 				logger.Warn("failed to read post-merge scenario spec", "error", err)
 			}
-			if specBefore != "" || specAfter != "" {
-				delta := specdelta.Diff(specBefore, specAfter)
-				if !specdelta.IsEmpty(delta) {
-					comment := "## Spec Delta\n\n" + specdelta.Format(delta)
-					if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
-						logger.Warn("failed to comment spec delta on PR", "error", err)
-					}
+			delta := specdelta.Diff(specBefore, specAfter)
+			logger.Info("spec delta computed", "empty", specdelta.IsEmpty(delta), "added", len(delta.AddedCases), "removed", len(delta.RemovedCases), "changed", len(delta.ChangedCases))
+			if specdelta.IsEmpty(delta) && (specBefore != "" || specAfter != "") {
+				logger.Warn("spec delta is empty despite spec file existing — local checkout may not reflect merged changes")
+			}
+			if !specdelta.IsEmpty(delta) {
+				comment := "## Spec Delta\n\n" + specdelta.Format(delta)
+				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+					logger.Warn("failed to comment spec delta on PR", "error", err)
 				}
-				if hook != nil {
-					deltaData := rundata.SpecDeltaData{
-						Before:       specBefore,
-						After:        specAfter,
-						AddedCases:   delta.AddedCases,
-						RemovedCases: delta.RemovedCases,
-						ChangedCases: len(delta.ChangedCases),
-						SetupChanged: delta.SetupChanged,
-					}
-					if err := hook.WriteSpecDelta(issue.Number, deltaData); err != nil {
-						logger.Warn("failed to write spec delta", "error", err)
-					}
+			}
+			if hook != nil {
+				deltaData := rundata.SpecDeltaData{
+					Before:       specBefore,
+					After:        specAfter,
+					AddedCases:   delta.AddedCases,
+					RemovedCases: delta.RemovedCases,
+					ChangedCases: len(delta.ChangedCases),
+					SetupChanged: delta.SetupChanged,
+				}
+				if err := hook.WriteSpecDelta(issue.Number, deltaData); err != nil {
+					logger.Warn("failed to write spec delta", "error", err)
 				}
 			}
 

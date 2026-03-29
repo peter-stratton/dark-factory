@@ -254,6 +254,35 @@
         </div>
       </div>
       {{end}}
+
+      {{if .SpecDelta}}
+      <!-- Spec Delta -->
+      <div class="card animate-in animate-in-2">
+        <div class="card__header">
+          <span class="card__title">Spec Delta</span>
+        </div>
+        <div class="card__body" style="padding: var(--space-4) var(--space-5); font-size: var(--text-sm);">
+          {{if and (eq (len .SpecDelta.AddedCases) 0) (eq (len .SpecDelta.RemovedCases) 0) (eq .SpecDelta.ChangedCases 0) (not .SpecDelta.SetupChanged)}}
+          <span class="text-secondary">No changes detected</span>
+          {{else}}
+          <ul style="list-style: none; margin: 0; padding: 0;">
+            {{if .SpecDelta.AddedCases}}
+            <li style="margin-bottom: var(--space-1);"><span class="badge badge--success">+{{len .SpecDelta.AddedCases}} added</span></li>
+            {{end}}
+            {{if .SpecDelta.RemovedCases}}
+            <li style="margin-bottom: var(--space-1);"><span class="badge badge--danger">-{{len .SpecDelta.RemovedCases}} removed</span></li>
+            {{end}}
+            {{if .SpecDelta.ChangedCases}}
+            <li style="margin-bottom: var(--space-1);"><span class="badge badge--warning">{{.SpecDelta.ChangedCases}} changed</span></li>
+            {{end}}
+            {{if .SpecDelta.SetupChanged}}
+            <li style="margin-bottom: var(--space-1);"><span class="badge badge--warning">setup changed</span></li>
+            {{end}}
+          </ul>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
     </main>
   </div>
 </body>
