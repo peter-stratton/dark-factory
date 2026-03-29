@@ -23,17 +23,18 @@ type AutoMerge struct {
 
 // RunMeta is the structure persisted to run.json.
 type RunMeta struct {
-	Repo          string            `json:"repo"`
-	Milestone     string            `json:"milestone"`
-	BaseBranch    string            `json:"base_branch,omitempty"`
-	AutoMerge     *AutoMerge        `json:"auto_merge,omitempty"`
-	IssueNumbers  []int             `json:"issue_numbers"`
-	IssueDeps     []IssueDep        `json:"issue_deps,omitempty"`
-	IssueTitles   map[string]string `json:"issue_titles,omitempty"`
-	GodarkVersion string            `json:"godark_version,omitempty"`
-	StartedAt     time.Time         `json:"started_at"`
-	FinishedAt    *time.Time        `json:"finished_at,omitempty"`
-	Summary       *RunSummary       `json:"summary,omitempty"`
+	Repo               string            `json:"repo"`
+	Milestone          string            `json:"milestone"`
+	BaseBranch         string            `json:"base_branch,omitempty"`
+	AutoMerge          *AutoMerge        `json:"auto_merge,omitempty"`
+	IssueNumbers       []int             `json:"issue_numbers"`
+	IssueDeps          []IssueDep        `json:"issue_deps,omitempty"`
+	IssueTitles        map[string]string `json:"issue_titles,omitempty"`
+	GodarkVersion      string            `json:"godark_version,omitempty"`
+	StartedAt          time.Time         `json:"started_at"`
+	FinishedAt         *time.Time        `json:"finished_at,omitempty"`
+	Summary            *RunSummary       `json:"summary,omitempty"`
+	RateLimitResetsAt  *time.Time        `json:"rate_limit_resets_at,omitempty"`
 }
 
 // IssueDep records the dependency info for a single issue.
@@ -530,6 +531,50 @@ type SpecDeltaData struct {
 func (w *Writer) WriteSpecDelta(issueNum int, delta SpecDeltaData) error {
 	path := filepath.Join(w.issueDir(issueNum), "spec-delta.json")
 	return writeJSONMkdirs(path, delta)
+}
+
+// SetRateLimit updates run.json with the time at which the current usage-limit
+// hold period will end. Call ClearRateLimit when the hold ends.
+func (w *Writer) SetRateLimit(resetsAt time.Time) error {
+	path := filepath.Join(w.dir, "run.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading run.json: %w", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("parsing run.json: %w", err)
+	}
+
+	meta.RateLimitResetsAt = &resetsAt
+	if err := writeJSON(path, meta); err != nil {
+		return fmt.Errorf("updating run.json with rate limit: %w", err)
+	}
+	return nil
+}
+
+// ClearRateLimit removes the rate limit reset time from run.json, signalling
+// that the hold period has ended and processing has resumed.
+func (w *Writer) ClearRateLimit() error {
+	path := filepath.Join(w.dir, "run.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading run.json: %w", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("parsing run.json: %w", err)
+	}
+
+	meta.RateLimitResetsAt = nil
+	if err := writeJSON(path, meta); err != nil {
+		return fmt.Errorf("updating run.json to clear rate limit: %w", err)
+	}
+	return nil
 }
 
 // FinalizeRun updates run.json with the finished_at timestamp and summary.

@@ -62,6 +62,7 @@ type RunDetailData struct {
 	Issues         []IssueRowView
 	AwaitingReview []IssueRowView // issues with ready-to-merge status
 	RunURL         string         // canonical URL for this run detail page
+	HoldResetsAt   *time.Time     // non-nil when the run is paused by a Claude usage limit
 }
 
 // IssueRowView is the view model for one issue row in the run detail table.
@@ -353,11 +354,12 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 
 	runURL := fmt.Sprintf("/runs/%s/%s/%s", owner, repo, timestamp)
 	data := RunDetailData{
-		Owner:     owner,
-		Repo:      repo,
-		Timestamp: timestamp,
-		Meta:      detail.RunMeta,
-		RunURL:    runURL,
+		Owner:        owner,
+		Repo:         repo,
+		Timestamp:    timestamp,
+		Meta:         detail.RunMeta,
+		RunURL:       runURL,
+		HoldResetsAt: detail.RateLimitResetsAt,
 	}
 	for _, issue := range detail.Issues {
 		row := issueToRowView(issue, owner, repo, timestamp)

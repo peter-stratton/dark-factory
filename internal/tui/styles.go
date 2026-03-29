@@ -103,7 +103,7 @@ var (
 
 	badgeRateLimitedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFDF5", Dark: "#1A1A1A"}).
-			Background(lipgloss.AdaptiveColor{Light: "#8B4513", Dark: "#CD853F"}).
+			Background(lipgloss.AdaptiveColor{Light: "#7B4EA8", Dark: "#A855F7"}).
 			Bold(true).
 			Padding(0, 1)
 
