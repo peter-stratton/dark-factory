@@ -935,9 +935,11 @@ func runFunctionalReviewCycle(
 				logger.Warn("failed to read pre-merge scenario spec", "error", err)
 			}
 
-			// Merge the PR.
-			if _, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--squash", "--delete-branch"); err != nil {
-				return StatusFailed, false, 0, fmt.Errorf("merging PR: %w", err)
+			// Merge the PR. Retry with exponential backoff because GitHub
+			// may need a moment to recalculate mergeable status after a
+			// rebase or merge coordinator push.
+			if err := mergeWithRetry(cfg.Repo, prNum, logger); err != nil {
+				return StatusFailed, false, 0, err
 			}
 
 			// Capture post-merge spec content and compute delta.
@@ -1406,6 +1408,33 @@ func logAndRecordFlags(flags []quality.Flag, logger *slog.Logger, issueNum int) 
 		rdFlags[i] = rundata.Flag{Code: f.Code, Message: f.Message}
 	}
 	return rdFlags
+}
+
+// mergeWithRetry attempts to merge a PR with exponential backoff. GitHub may
+// need time to recalculate mergeable status after a rebase or merge coordinator
+// push. Retries up to 4 times with delays of 2s, 4s, 8s, 16s (30s total max).
+func mergeWithRetry(repo string, prNum int, logger *slog.Logger) error {
+	const maxAttempts = 5
+	delay := 2 * time.Second
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		_, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", repo, "--squash", "--delete-branch")
+		if err == nil {
+			return nil
+		}
+		if attempt == maxAttempts-1 {
+			return fmt.Errorf("merging PR: %w", err)
+		}
+		logger.Warn("merge attempt failed, retrying",
+			"pr_number", prNum,
+			"attempt", attempt+1,
+			"delay", delay,
+			"error", err,
+		)
+		time.Sleep(delay)
+		delay *= 2
+	}
+	return nil // unreachable
 }
 
 // runPreMergeRebasePhase checks whether the PR has conflicts before merging.
