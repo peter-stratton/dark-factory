@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/peter-stratton/dark-factory/internal/progress"
 )
@@ -107,3 +109,13 @@ func (r *TUIReporter) JudgeIntervention(issueNumber int, rule, judgment, detail,
 // PunchlistText is a no-op in TUI mode. The punchlist is written to a file;
 // the TUI does not display it inline.
 func (r *TUIReporter) PunchlistText(text string) {}
+
+// RateLimited sends RateLimitedMsg to signal the orchestrator is holding.
+func (r *TUIReporter) RateLimited(resetsAt time.Time) {
+	r.p.Send(RateLimitedMsg{ResetsAt: resetsAt})
+}
+
+// RateLimitCleared sends RateLimitClearedMsg to signal the hold has ended.
+func (r *TUIReporter) RateLimitCleared() {
+	r.p.Send(RateLimitClearedMsg{})
+}

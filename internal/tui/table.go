@@ -125,6 +125,9 @@ func badgeFor(row issueRow) string {
 		}
 		return badgeFailedStyle.Render("FAILED")
 	default:
+		if row.stage == "rate-limited" {
+			return badgeRateLimitedStyle.Render("RATE LIMITED")
+		}
 		if row.stage != "" {
 			return badgeInProgressStyle.Render(strings.ToUpper(row.stage))
 		}

@@ -36,13 +36,15 @@ var generateTraceID = func() string { return uuid.New().String() }
 
 // IssueOutcome records the result of processing a single issue.
 type IssueOutcome struct {
-	IssueNumber int
-	Status      OutcomeStatus
-	PRNumber    int
-	Retries     int
-	Err         error
-	TraceID     string
-	CloneSHA    string // HEAD SHA captured inside the container after clone
+	IssueNumber  int
+	Status       OutcomeStatus
+	PRNumber     int
+	Retries      int
+	Err          error
+	TraceID      string
+	CloneSHA     string    // HEAD SHA captured inside the container after clone
+	UsageLimited bool      // true when the implementer hit a Claude usage limit
+	ResetsAt     time.Time // when the usage limit resets; zero if unknown
 }
 
 // ProcessIssue runs the full per-issue lifecycle:
@@ -182,6 +184,12 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if err != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent: %w", err)
+		return outcome
+	}
+	if implResult.UsageLimited {
+		outcome.UsageLimited = true
+		outcome.ResetsAt = implResult.ResetsAt
+		// Do NOT set StatusFailed — the orchestrator will retry.
 		return outcome
 	}
 	if handleJudgeIntervention(issue.Number, "implement", implResult, hook, reporter, logger) {

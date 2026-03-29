@@ -101,6 +101,12 @@ var (
 			Bold(true).
 			Padding(0, 1)
 
+	badgeRateLimitedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#FFFDF5", Dark: "#1A1A1A"}).
+			Background(lipgloss.AdaptiveColor{Light: "#8B4513", Dark: "#CD853F"}).
+			Bold(true).
+			Padding(0, 1)
+
 	// dividerStyle styles the horizontal rule between table and summary.
 	dividerStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)

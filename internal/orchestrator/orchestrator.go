@@ -700,9 +700,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	// Track which issues have been seen (processed or failed) to avoid reprocessing.
 	seen := make(map[int]bool)
 	wave := 0
+	rateLimitHold := false
 
 	for {
 		wave++
+		rateLimitHold = false
 
 		// Filter out already-seen issues from the current processable batch.
 		var batch []github.Issue
@@ -756,6 +758,38 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			seen[issue.Number] = true
 			reporter.IssueStarted(issue.Number, issue.Title)
 			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+
+			// Handle Claude usage limit: hold until reset, then retry the issue.
+			if outcome.UsageLimited {
+				resetsAt := outcome.ResetsAt
+				const holdBuffer = 30 * time.Second
+				const maxHold = 6 * time.Hour
+				if resetsAt.IsZero() || time.Until(resetsAt) > maxHold {
+					logger.Warn("usage limit reset time too far or unknown — failing issue",
+						"issue_number", issue.Number, "resetsAt", resetsAt)
+					runStats.failed++
+					reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, "usage limit: reset time exceeds max hold", 0, outcome.TraceID)
+					continue
+				}
+				sleepUntil := resetsAt.Add(holdBuffer)
+				logger.Info("usage limit hit — entering hold",
+					"issue_number", issue.Number, "resetsAt", resetsAt, "sleep_until", sleepUntil)
+				reporter.IssueStageChanged(issue.Number, "rate-limited")
+				reporter.RateLimited(resetsAt)
+				// Undo seen so we retry this issue.
+				seen[issue.Number] = false
+				rateLimitHold = true
+				select {
+				case <-ctx.Done():
+					logger.Warn("context cancelled during rate-limit hold")
+					goto done
+				case <-time.After(time.Until(sleepUntil)):
+				}
+				reporter.RateLimitCleared()
+				logger.Info("usage limit hold complete — resuming", "issue_number", issue.Number)
+				// Break out of batch loop so the issue is retried in the next iteration.
+				break
+			}
 
 			// Write dialogue after processing if we have a PR and a writer.
 			if writer != nil && outcome.PRNumber > 0 {
@@ -856,8 +890,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 		}
 
-		if !merged {
-			// No merges in this wave — no point re-resolving.
+		if !merged && !rateLimitHold {
+			// No merges in this wave and no rate-limit retry needed — no point re-resolving.
 			break
 		}
 

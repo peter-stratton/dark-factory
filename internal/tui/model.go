@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,10 +60,12 @@ type Model struct {
 	spinner spinner.Model
 
 	// Run lifecycle.
-	done       bool          // true after the orchestrator finishes
-	watching   bool          // true while in watch mode (between run and done)
-	cancelling bool          // true after user requests cancellation
-	cancelFn   func()        // cancels the orchestrator context
+	done              bool      // true after the orchestrator finishes
+	watching          bool      // true while in watch mode (between run and done)
+	cancelling        bool      // true after user requests cancellation
+	cancelFn          func()    // cancels the orchestrator context
+	rateLimited       bool      // true while holding for a Claude usage limit reset
+	rateLimitResetsAt time.Time // when the current usage limit hold will end
 
 	// Terminal dimensions.
 	width  int
@@ -91,6 +94,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case RunDoneMsg:
 		m.done = true
+		return m, nil
+
+	case RateLimitedMsg:
+		m.rateLimited = true
+		m.rateLimitResetsAt = msg.ResetsAt
+		return m, nil
+
+	case RateLimitClearedMsg:
+		m.rateLimited = false
+		m.rateLimitResetsAt = time.Time{}
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -167,6 +180,15 @@ func (m Model) View() string {
 		hint = "\n\n" + headerLabelStyle.Render("press q to exit")
 	} else if m.cancelling {
 		hint = "\n\n" + summaryFailedStyle.Render("cancelling... waiting for current issue to finish")
+	} else if m.rateLimited {
+		var holdMsg string
+		if !m.rateLimitResetsAt.IsZero() {
+			holdMsg = fmt.Sprintf("rate limited — holding until %s · press ctrl+c to cancel",
+				m.rateLimitResetsAt.Local().Format("15:04:05"))
+		} else {
+			holdMsg = "rate limited — holding for reset · press ctrl+c to cancel"
+		}
+		hint = "\n\n" + badgeRateLimitedStyle.Render("RATE LIMITED") + " " + headerLabelStyle.Render(holdMsg)
 	} else if m.watching {
 		hint = "\n\n" + headerLabelStyle.Render("watching for merges · press ctrl+c to cancel")
 	} else {
