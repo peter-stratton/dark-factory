@@ -1449,3 +1449,26 @@ func TestWriteJudgeInterventionAppends(t *testing.T) {
 		t.Errorf("written[1].Rule = %q, want %q", written[1].Rule, "rule_b")
 	}
 }
+
+func TestGodarkVersionWrittenToRunJSON(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("HOME", base)
+	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{}, "1.2.3")
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.GodarkVersion != "1.2.3" {
+		t.Errorf("GodarkVersion = %q, want %q", meta.GodarkVersion, "1.2.3")
+	}
+}
