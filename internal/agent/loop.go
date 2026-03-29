@@ -1493,7 +1493,7 @@ func runPreMergeRebasePhase(
 		}
 
 		// Re-run verify since the branch content has changed (either by
-		// automatic rebase or by the implementer's conflict fix).
+		// automatic rebase or by the merge coordinator's conflict resolution).
 		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID); verifyErr != nil {
 			return false, fmt.Errorf("verify after rebase attempt %d: %w", attempt+1, verifyErr)
 		}
