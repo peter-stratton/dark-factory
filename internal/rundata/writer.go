@@ -400,6 +400,14 @@ func (w *Writer) WriteRollupVerifyResult(step VerifyStepResult) error {
 	return writeJSONMkdirs(path, step)
 }
 
+// WriteRollupMergeCoordinatorResult writes a merge coordinator step result
+// for the rollup PR.
+// Path: rollup/merge_coordinator-<attempt>.json
+func (w *Writer) WriteRollupMergeCoordinatorResult(attempt int, step StepResult) error {
+	path := filepath.Join(w.dir, "rollup", fmt.Sprintf("merge_coordinator-%d.json", attempt))
+	return writeJSONMkdirs(path, step)
+}
+
 // RiskGate records the outcome of a single risk gate evaluation.
 type RiskGate struct {
 	Name   string `json:"name"`
