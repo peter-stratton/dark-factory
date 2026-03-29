@@ -23,17 +23,18 @@ type AutoMerge struct {
 
 // RunMeta is the structure persisted to run.json.
 type RunMeta struct {
-	Repo         string            `json:"repo"`
-	Milestone    string            `json:"milestone"`
-	BaseBranch   string            `json:"base_branch,omitempty"`
-	AutoMerge    *AutoMerge        `json:"auto_merge,omitempty"`
-	IssueNumbers []int             `json:"issue_numbers"`
-	IssueDeps    []IssueDep        `json:"issue_deps,omitempty"`
-	IssueTitles  map[string]string `json:"issue_titles,omitempty"`
-	StartedAt    time.Time         `json:"started_at"`
-	FinishedAt   *time.Time        `json:"finished_at,omitempty"`
-	Summary      *RunSummary       `json:"summary,omitempty"`
-	RunnerInfo   string            `json:"runner_info,omitempty"`
+	Repo          string            `json:"repo"`
+	Milestone     string            `json:"milestone"`
+	BaseBranch    string            `json:"base_branch,omitempty"`
+	AutoMerge     *AutoMerge        `json:"auto_merge,omitempty"`
+	IssueNumbers  []int             `json:"issue_numbers"`
+	IssueDeps     []IssueDep        `json:"issue_deps,omitempty"`
+	IssueTitles   map[string]string `json:"issue_titles,omitempty"`
+	GodarkVersion string            `json:"godark_version,omitempty"`
+	StartedAt     time.Time         `json:"started_at"`
+	FinishedAt    *time.Time        `json:"finished_at,omitempty"`
+	Summary       *RunSummary       `json:"summary,omitempty"`
+	RunnerInfo    string            `json:"runner_info,omitempty"`
 }
 
 // IssueDep records the dependency info for a single issue.
@@ -115,17 +116,17 @@ type Writer struct {
 // directory under ~/.godark/runs/<owner>/<repo>/<YYYYMMDD-HHMMSS>/ and writes
 // an initial run.json. Repo must be in "owner/name" format; components
 // containing ".." or path separators are rejected.
-func New(repo, milestone string, issueNumbers []int, baseBranch string, autoMerge AutoMerge) (*Writer, error) {
+func New(repo, milestone string, issueNumbers []int, baseBranch string, autoMerge AutoMerge, version string) (*Writer, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting home dir: %w", err)
 	}
-	return NewWithBase(filepath.Join(home, ".godark", "runs"), repo, milestone, issueNumbers, baseBranch, autoMerge)
+	return NewWithBase(filepath.Join(home, ".godark", "runs"), repo, milestone, issueNumbers, baseBranch, autoMerge, version)
 }
 
 // NewWithBase creates a new Writer using a custom base directory instead of
 // the default ~/.godark/runs/. Intended for testing.
-func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch string, autoMerge AutoMerge) (*Writer, error) {
+func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch string, autoMerge AutoMerge, version string) (*Writer, error) {
 	owner, repoName, err := validateRepo(repo)
 	if err != nil {
 		return nil, err
@@ -152,12 +153,13 @@ func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch
 		autoMergePtr = &cp
 	}
 	meta := RunMeta{
-		Repo:         repo,
-		Milestone:    milestone,
-		BaseBranch:   baseBranch,
-		AutoMerge:    autoMergePtr,
-		IssueNumbers: issueNumbers,
-		StartedAt:    now,
+		Repo:          repo,
+		Milestone:     milestone,
+		BaseBranch:    baseBranch,
+		AutoMerge:     autoMergePtr,
+		IssueNumbers:  issueNumbers,
+		GodarkVersion: version,
+		StartedAt:     now,
 	}
 	if err := writeJSON(filepath.Join(dir, "run.json"), meta); err != nil {
 		return nil, fmt.Errorf("writing run.json: %w", err)

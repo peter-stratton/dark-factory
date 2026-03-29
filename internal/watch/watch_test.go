@@ -46,7 +46,7 @@ func stubSeams(t *testing.T) {
 		return &agent.Result{SessionID: "sess-stub"}, nil
 	}
 	findSessionIDFn = func(_ string, _ int) (string, error) { return "", nil }
-	newWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string, _ rundata.AutoMerge) (*rundata.Writer, error) {
+	newWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string, _ rundata.AutoMerge, _ string) (*rundata.Writer, error) {
 		return nil, nil
 	}
 	fetchReviewCommentsFn = func(_ string, _ int, _ int) ([]string, error) { return nil, nil }
@@ -70,7 +70,7 @@ func stubSeams(t *testing.T) {
 // TestPollInterval_DefaultWhenNilConfig verifies the 60s default when
 // Watch config is nil.
 func TestPollInterval_DefaultWhenNilConfig(t *testing.T) {
-	w := New(&config.Config{Watch: nil}, nil, nil, slog.Default())
+	w := New(&config.Config{Watch: nil}, nil, nil, slog.Default(), "")
 	got, err := w.pollInterval()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -83,7 +83,7 @@ func TestPollInterval_DefaultWhenNilConfig(t *testing.T) {
 // TestPollInterval_DefaultWhenEmptyInterval verifies the 60s default when
 // Watch is set but PollInterval is empty.
 func TestPollInterval_DefaultWhenEmptyInterval(t *testing.T) {
-	w := New(&config.Config{Watch: &config.Watch{PollInterval: ""}}, nil, nil, slog.Default())
+	w := New(&config.Config{Watch: &config.Watch{PollInterval: ""}}, nil, nil, slog.Default(), "")
 	got, err := w.pollInterval()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -95,7 +95,7 @@ func TestPollInterval_DefaultWhenEmptyInterval(t *testing.T) {
 
 // TestPollInterval_CustomInterval verifies that a configured interval is used.
 func TestPollInterval_CustomInterval(t *testing.T) {
-	w := New(&config.Config{Watch: &config.Watch{PollInterval: "10s"}}, nil, nil, slog.Default())
+	w := New(&config.Config{Watch: &config.Watch{PollInterval: "10s"}}, nil, nil, slog.Default(), "")
 	got, err := w.pollInterval()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -115,7 +115,7 @@ func TestPollOnce_NoPRs(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestPollOnce_DetectsChangesRequestedReview(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestPollOnce_DuplicateSkipped(t *testing.T) {
 	defer func() { github.CommandRunner = orig }()
 
 	// Pre-mark review 101 as already handled.
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.processed[101] = true
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -253,7 +253,7 @@ func TestPollOnce_CommentedSkipped(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestPollOnce_ApprovedPRMerged(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestPollOnce_ApprovedDuplicateSkipped(t *testing.T) {
 	defer func() { github.CommandRunner = orig }()
 
 	// Pre-mark review 200 as already processed.
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.processed[200] = true
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -395,7 +395,7 @@ func TestPollOnce_MixedReviewsMergesOnApproved(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestPollOnce_MergeFailureLogged(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	// PollOnce itself should not return an error — merge errors are logged only.
 	if err := w.PollOnce(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -481,7 +481,7 @@ func TestPollOnce_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before polling
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	// PollOnce calls ListPRsWithLabel before checking ctx — the important thing
 	// is it returns nil (no error) even when context is already cancelled.
 	err := w.PollOnce(ctx)
@@ -508,7 +508,7 @@ func TestHandleChangesRequested_FeedbackFed(t *testing.T) {
 	defer func() { findSessionIDFn = origFindSession }()
 
 	origNewWriter := newWriterFn
-	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge) (*rundata.Writer, error) { return nil, nil }
+	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { newWriterFn = origNewWriter }()
 
 	origFetchComments := fetchReviewCommentsFn
@@ -530,7 +530,7 @@ func TestHandleChangesRequested_FeedbackFed(t *testing.T) {
 	pr := github.PRInfo{Number: 5, HeadRefName: "42-my-issue"}
 	review := github.PRReview{ID: 101, State: "CHANGES_REQUESTED", Body: "Please fix the error handling", Author: "alice"}
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.HandleChangesRequested(context.Background(), pr, review)
 
 	if !strings.Contains(gotFeedback, "Please fix the error handling") {
@@ -555,7 +555,7 @@ func TestHandleChangesRequested_SessionResumed(t *testing.T) {
 	defer func() { findSessionIDFn = origFindSession }()
 
 	origNewWriter := newWriterFn
-	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge) (*rundata.Writer, error) { return nil, nil }
+	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { newWriterFn = origNewWriter }()
 
 	origFetchComments := fetchReviewCommentsFn
@@ -577,7 +577,7 @@ func TestHandleChangesRequested_SessionResumed(t *testing.T) {
 	pr := github.PRInfo{Number: 5, HeadRefName: "42-my-issue"}
 	review := github.PRReview{ID: 101, State: "CHANGES_REQUESTED", Body: "fix this", Author: "alice"}
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.HandleChangesRequested(context.Background(), pr, review)
 
 	if gotSessionID != "sess-abc123" {
@@ -601,7 +601,7 @@ func TestHandleChangesRequested_LabelsSwapped(t *testing.T) {
 	defer func() { findSessionIDFn = origFindSession }()
 
 	origNewWriter := newWriterFn
-	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge) (*rundata.Writer, error) { return nil, nil }
+	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { newWriterFn = origNewWriter }()
 
 	origFetchComments := fetchReviewCommentsFn
@@ -633,7 +633,7 @@ func TestHandleChangesRequested_LabelsSwapped(t *testing.T) {
 	pr := github.PRInfo{Number: 5, HeadRefName: "42-my-issue"}
 	review := github.PRReview{ID: 101, State: "CHANGES_REQUESTED", Body: "fix this", Author: "alice"}
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.HandleChangesRequested(context.Background(), pr, review)
 
 	foundAwaitingReview := false
@@ -677,7 +677,7 @@ func TestHandleChangesRequested_NoSessionID(t *testing.T) {
 	defer func() { findSessionIDFn = origFindSession }()
 
 	origNewWriter := newWriterFn
-	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge) (*rundata.Writer, error) { return nil, nil }
+	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { newWriterFn = origNewWriter }()
 
 	origFetchComments := fetchReviewCommentsFn
@@ -699,7 +699,7 @@ func TestHandleChangesRequested_NoSessionID(t *testing.T) {
 	pr := github.PRInfo{Number: 5, HeadRefName: "42-my-issue"}
 	review := github.PRReview{ID: 101, State: "CHANGES_REQUESTED", Body: "fix this", Author: "alice"}
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.HandleChangesRequested(context.Background(), pr, review)
 
 	if !agentCalled {
@@ -724,10 +724,10 @@ func TestHandleChangesRequested_RunDataWritten(t *testing.T) {
 	defer func() { findSessionIDFn = origFindSession }()
 
 	origNewWriter := newWriterFn
-	newWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string, am rundata.AutoMerge) (*rundata.Writer, error) {
+	newWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string, am rundata.AutoMerge, _ string) (*rundata.Writer, error) {
 		writerCreated = true
 		// Use a custom base dir to verify the call actually happened.
-		w, err := rundata.NewWithBase(base, repo, milestone, issueNumbers, baseBranch, am)
+		w, err := rundata.NewWithBase(base, repo, milestone, issueNumbers, baseBranch, am, "")
 		return w, err
 	}
 	defer func() { newWriterFn = origNewWriter }()
@@ -751,7 +751,7 @@ func TestHandleChangesRequested_RunDataWritten(t *testing.T) {
 	pr := github.PRInfo{Number: 5, HeadRefName: "42-my-issue"}
 	review := github.PRReview{ID: 101, State: "CHANGES_REQUESTED", Body: "fix this", Author: "alice"}
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.HandleChangesRequested(context.Background(), pr, review)
 
 	if !writerCreated {
@@ -785,7 +785,7 @@ func TestHandleChangesRequested_MultipleCommentsConcatenated(t *testing.T) {
 	defer func() { findSessionIDFn = origFindSession }()
 
 	origNewWriter := newWriterFn
-	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge) (*rundata.Writer, error) { return nil, nil }
+	newWriterFn = func(_, _ string, _ []int, _ string, _ rundata.AutoMerge, _ string) (*rundata.Writer, error) { return nil, nil }
 	defer func() { newWriterFn = origNewWriter }()
 
 	origFetchComments := fetchReviewCommentsFn
@@ -809,7 +809,7 @@ func TestHandleChangesRequested_MultipleCommentsConcatenated(t *testing.T) {
 	pr := github.PRInfo{Number: 5, HeadRefName: "42-my-issue"}
 	review := github.PRReview{ID: 101, State: "CHANGES_REQUESTED", Body: "Review body comment", Author: "alice"}
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.HandleChangesRequested(context.Background(), pr, review)
 
 	for _, want := range []string{"Review body comment", "Inline comment A", "Inline comment B"} {
@@ -884,7 +884,7 @@ func TestDetectMergedPRs_DetectsMergedPR(t *testing.T) {
 	}
 	defer func() { listMergedPRsFn = origListMergedPRs }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -906,7 +906,7 @@ func TestDetectMergedPRs_AlreadyDetectedSkipped(t *testing.T) {
 	}
 	defer func() { listMergedPRsFn = origListMergedPRs }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	w.mergedIssues[42] = true // already detected in a prior cycle
 
 	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42})
@@ -927,7 +927,7 @@ func TestDetectMergedPRs_NoMerges(t *testing.T) {
 	}
 	defer func() { listMergedPRsFn = origListMergedPRs }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42, 43})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -949,7 +949,7 @@ func TestDetectMergedPRs_MultipleIssuesMerged(t *testing.T) {
 	}
 	defer func() { listMergedPRsFn = origListMergedPRs }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 	got, err := w.DetectMergedPRs(context.Background(), "owner/repo", []int{42, 43})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -986,7 +986,7 @@ func TestRunUntilDone_ExitsWhenNoPRs(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default(), "")
 	err := w.RunUntilDone(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1017,7 +1017,7 @@ func TestRunUntilDone_ExitsAfterLastPRMerged(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default(), "")
 	err := w.RunUntilDone(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1047,7 +1047,7 @@ func TestRunUntilDone_ContextCancelled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default())
+	w := New(&config.Config{Repo: "owner/repo", Watch: &config.Watch{PollInterval: "10ms"}}, nil, nil, slog.Default(), "")
 
 	done := make(chan error, 1)
 	go func() {
@@ -1088,7 +1088,7 @@ func TestSetMergeCallback_CalledOnExternalMerge(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 
 	var callbackIssues []int
 	w.SetMergeCallback(func(_ context.Context, nums []int) {
@@ -1124,7 +1124,7 @@ func TestSetMergeCallback_NotCalledWhenNothingMerged(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 
 	callbackInvoked := false
 	w.SetMergeCallback(func(_ context.Context, nums []int) {
@@ -1160,7 +1160,7 @@ func TestSetMergeCallback_NotCalledForAlreadyReportedMerge(t *testing.T) {
 	})
 	defer func() { github.CommandRunner = orig }()
 
-	w := New(testWatchCfg(), nil, nil, slog.Default())
+	w := New(testWatchCfg(), nil, nil, slog.Default(), "")
 
 	var callCount int
 	w.SetMergeCallback(func(_ context.Context, nums []int) {

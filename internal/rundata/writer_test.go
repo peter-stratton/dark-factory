@@ -15,7 +15,7 @@ import (
 func newWithBase(t *testing.T, base, repo, milestone string, issueNumbers []int) (*Writer, error) {
 	t.Helper()
 	t.Setenv("HOME", base)
-	return New(repo, milestone, issueNumbers, "", AutoMerge{})
+	return New(repo, milestone, issueNumbers, "", AutoMerge{}, "")
 }
 
 func TestRunDirectoryCreated(t *testing.T) {
@@ -922,7 +922,7 @@ func TestPathTraversalRejected(t *testing.T) {
 	for _, repo := range cases {
 		base := t.TempDir()
 		t.Setenv("HOME", base)
-		_, err := New(repo, "Phase 7", []int{1}, "", AutoMerge{})
+		_, err := New(repo, "Phase 7", []int{1}, "", AutoMerge{}, "")
 		if err == nil {
 			t.Errorf("New(%q) should return error for path traversal, got nil", repo)
 		}
@@ -968,7 +968,7 @@ func TestWriteRiskAssessmentCreatesFile(t *testing.T) {
 func TestBaseBranchWrittenToRunJSON(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", base)
-	w, err := New("owner/repo", "Phase 7", []int{1}, "feature/foo", AutoMerge{})
+	w, err := New("owner/repo", "Phase 7", []int{1}, "feature/foo", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -991,7 +991,7 @@ func TestBaseBranchWrittenToRunJSON(t *testing.T) {
 func TestBaseBranchOmittedWhenEmpty(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", base)
-	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{})
+	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -1013,7 +1013,7 @@ func TestBaseBranchOmittedWhenEmpty(t *testing.T) {
 func TestAutoMergeWrittenToRunJSON(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", base)
-	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{Feature: "low_risk", Rollup: "auto"})
+	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{Feature: "low_risk", Rollup: "auto"}, "")
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -1042,7 +1042,7 @@ func TestAutoMergeWrittenToRunJSON(t *testing.T) {
 func TestAutoMergeOmittedWhenEmpty(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", base)
-	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{})
+	w, err := New("owner/repo", "Phase 7", []int{1}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -1151,7 +1151,7 @@ func TestIssueCostUSD_NoFiles(t *testing.T) {
 
 func TestIssueCostUSD_SingleStep(t *testing.T) {
 	base := t.TempDir()
-	w, err := NewWithBase(base, "owner/repo", "m1", []int{1}, "", AutoMerge{})
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{1}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}
@@ -1168,7 +1168,7 @@ func TestIssueCostUSD_SingleStep(t *testing.T) {
 
 func TestIssueCostUSD_MultipleSteps(t *testing.T) {
 	base := t.TempDir()
-	w, err := NewWithBase(base, "owner/repo", "m1", []int{7}, "", AutoMerge{})
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{7}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}
@@ -1208,7 +1208,7 @@ func TestIssueCostUSD_MultipleSteps(t *testing.T) {
 func TestIssueCostUSD_ZeroCostSteps(t *testing.T) {
 	// Steps written without CostUSD (zero value) should not inflate the total.
 	base := t.TempDir()
-	w, err := NewWithBase(base, "owner/repo", "m1", []int{3}, "", AutoMerge{})
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{3}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}
@@ -1225,7 +1225,7 @@ func TestIssueCostUSD_ZeroCostSteps(t *testing.T) {
 
 func TestWritePlannerResult(t *testing.T) {
 	base := t.TempDir()
-	w, err := NewWithBase(base, "owner/repo", "m1", []int{10}, "", AutoMerge{})
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{10}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}
@@ -1243,7 +1243,7 @@ func TestWritePlannerResult(t *testing.T) {
 
 func TestWriteMergeCoordinatorResult(t *testing.T) {
 	base := t.TempDir()
-	w, err := NewWithBase(base, "owner/repo", "m1", []int{10}, "", AutoMerge{})
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{10}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}
@@ -1273,7 +1273,7 @@ func TestWriteMergeCoordinatorResult(t *testing.T) {
 
 func TestIssueCostUSD_IncludesPlanner(t *testing.T) {
 	base := t.TempDir()
-	w, err := NewWithBase(base, "owner/repo", "m1", []int{8}, "", AutoMerge{})
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{8}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}
@@ -1298,7 +1298,7 @@ func TestIssueCostUSD_IncludesPlanner(t *testing.T) {
 
 func TestIssueDir(t *testing.T) {
 	base := t.TempDir()
-	w, err := NewWithBase(base, "owner/repo", "m1", []int{5}, "", AutoMerge{})
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{5}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}

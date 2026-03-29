@@ -205,7 +205,7 @@ func TestWriteRunStats_EndToEnd(t *testing.T) {
 	defer func() { writeRunStatsNewReaderFn = origFn }()
 
 	fixedBaseDir := t.TempDir()
-	fixedWriter, err := rundata.NewWithBase(fixedBaseDir, "org/myrepo", "v1.0", []int{42}, "main", rundata.AutoMerge{})
+	fixedWriter, err := rundata.NewWithBase(fixedBaseDir, "org/myrepo", "v1.0", []int{42}, "main", rundata.AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase fixed: %v", err)
 	}

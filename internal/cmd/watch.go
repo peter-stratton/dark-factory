@@ -80,7 +80,7 @@ Runs as a long-lived foreground process. Press Ctrl+C to stop.`,
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		watcher := watch.New(cfg, prompts, authEnv, logger)
+		watcher := watch.New(cfg, prompts, authEnv, logger, Version)
 
 		if !useTUI {
 			return watcher.Run(ctx)
