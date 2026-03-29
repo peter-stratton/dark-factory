@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent"
 	"github.com/peter-stratton/dark-factory/internal/config"
@@ -43,6 +44,8 @@ func (r *stubProgressReporter) RollupCreated(_ int, _ string, _ bool)           
 func (r *stubProgressReporter) RunFinished(_ int, _ int, _ int, _ int, _ int)                {}
 func (r *stubProgressReporter) JudgeIntervention(_ int, _, _, _, _ string)                   {}
 func (r *stubProgressReporter) PunchlistText(_ string)                                       {}
+func (r *stubProgressReporter) RateLimited(_ time.Time)                                      {}
+func (r *stubProgressReporter) RateLimitCleared()                                            {}
 
 // stubNotifier records sent events and optionally returns an error.
 type stubNotifier struct {

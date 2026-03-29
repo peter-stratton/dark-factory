@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent"
 	"github.com/peter-stratton/dark-factory/internal/config"
@@ -37,12 +38,14 @@ func (f *fakeNotifier) Send(_ context.Context, event notify.Event) error {
 
 // fakeReporter records all reporter calls for test assertions.
 type fakeReporter struct {
-	issueCompleted []fakeIssueCompleted
-	waveStarted    []fakeWaveStarted
-	runFinished    []fakeRunFinished
-	allBlocked     []fakeAllBlocked
-	rollupCreated  []fakeRollupCreated
-	punchlistTexts []string
+	issueCompleted  []fakeIssueCompleted
+	waveStarted     []fakeWaveStarted
+	runFinished     []fakeRunFinished
+	allBlocked      []fakeAllBlocked
+	rollupCreated   []fakeRollupCreated
+	punchlistTexts  []string
+	rateLimitedAt   []time.Time
+	rateLimitClears int
 }
 
 type fakeIssueCompleted struct {
@@ -102,6 +105,10 @@ func (r *fakeReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
 func (r *fakeReporter) PunchlistText(text string) {
 	r.punchlistTexts = append(r.punchlistTexts, text)
 }
+func (r *fakeReporter) RateLimited(resetsAt time.Time) {
+	r.rateLimitedAt = append(r.rateLimitedAt, resetsAt)
+}
+func (r *fakeReporter) RateLimitCleared() { r.rateLimitClears++ }
 
 // ghIssue mirrors the JSON shape for test fixtures.
 type ghIssue struct {
@@ -2930,5 +2937,151 @@ func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 	}
 	if reporter.rollupCreated[0].merged {
 		t.Error("expected RollupCreated with merged=false when verify fails")
+	}
+}
+
+// TestProcessIssues_HoldAndResume verifies that when an issue returns
+// UsageLimited=true with a near-future resetsAt, the orchestrator:
+//  1. calls reporter.RateLimited / reporter.RateLimitCleared
+//  2. retries the issue (it is not counted as seen)
+//  3. the second attempt succeeds
+func TestProcessIssues_HoldAndResume(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 10, Title: "rate limited issue"},
+	}
+
+	callCount := 0
+	resetsAt := time.Now().Add(50 * time.Millisecond) // tiny hold so test is fast
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			callCount++
+			if callCount == 1 {
+				// First call: signal usage limit.
+				return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
+			}
+			// Second call: succeed.
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if callCount != 2 {
+		t.Errorf("expected 2 processIssueFn calls (1 rate-limited + 1 retry), got %d", callCount)
+	}
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("expected 1 RateLimited call, got %d", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 1 {
+		t.Errorf("expected 1 RateLimitCleared call, got %d", reporter.rateLimitClears)
+	}
+	// The issue should ultimately complete as implemented, not failed.
+	if len(reporter.issueCompleted) != 1 {
+		t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
+	}
+	if reporter.issueCompleted[0].status != "implemented" {
+		t.Errorf("expected final status=implemented, got %q", reporter.issueCompleted[0].status)
+	}
+}
+
+// TestProcessIssues_CancelDuringHold verifies that context cancellation during
+// the hold returns promptly without retrying.
+func TestProcessIssues_CancelDuringHold(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 11, Title: "cancel during hold"},
+	}
+
+	resetsAt := time.Now().Add(10 * time.Second) // long hold — context will cancel first
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			// Cancel the context so the hold select fires ctx.Done.
+			cancel()
+			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+
+	if err := processIssues(ctx, allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Should not have called RateLimitCleared because context was cancelled.
+	if reporter.rateLimitClears != 0 {
+		t.Errorf("expected 0 RateLimitCleared calls on cancel, got %d", reporter.rateLimitClears)
+	}
+}
+
+// TestProcessIssues_NoHoldOnNormalFailure verifies that a normal failure does
+// not trigger the hold path.
+func TestProcessIssues_NoHoldOnNormalFailure(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 12, Title: "normal failure"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("something broke")}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.rateLimitedAt) != 0 {
+		t.Errorf("expected 0 RateLimited calls on normal failure, got %d", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 0 {
+		t.Errorf("expected 0 RateLimitCleared calls on normal failure, got %d", reporter.rateLimitClears)
+	}
+	if len(reporter.issueCompleted) != 1 || reporter.issueCompleted[0].status != "failed" {
+		t.Errorf("expected 1 failed completion, got %v", reporter.issueCompleted)
+	}
+}
+
+// TestProcessIssues_MaxHoldExceeded verifies that a usage-limited outcome with
+// an unknown or excessively far resetsAt is treated as a failure rather than
+// entering an indefinitely long hold.
+func TestProcessIssues_MaxHoldExceeded(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 13, Title: "max hold exceeded"},
+	}
+
+	// resetsAt more than 6 hours away.
+	farFuture := time.Now().Add(7 * time.Hour)
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: farFuture}
+		})
+
+	reporter := &fakeReporter{}
+	closedSet := map[int]bool{}
+	cfg := testConfig()
+
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Should be counted as failed, not retried.
+	if len(reporter.rateLimitedAt) != 0 {
+		t.Errorf("expected 0 RateLimited calls when max hold exceeded, got %d", len(reporter.rateLimitedAt))
+	}
+	if len(reporter.issueCompleted) != 1 || reporter.issueCompleted[0].status != "failed" {
+		t.Errorf("expected 1 failed completion for max-hold-exceeded, got %v", reporter.issueCompleted)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 // TextReporter implements ProgressReporter by writing plain text to an io.Writer.
@@ -93,4 +94,14 @@ func (r *TextReporter) JudgeIntervention(issueNumber int, rule, judgment, detail
 // PunchlistText writes a punchlist fragment directly.
 func (r *TextReporter) PunchlistText(text string) {
 	fmt.Fprint(r.w, text)
+}
+
+// RateLimited writes a notice that the run is holding until the usage limit resets.
+func (r *TextReporter) RateLimited(resetsAt time.Time) {
+	fmt.Fprintf(r.w, "rate limited — holding until reset at %s\n", resetsAt.Local().Format("15:04:05"))
+}
+
+// RateLimitCleared writes a notice that the hold period has ended.
+func (r *TextReporter) RateLimitCleared() {
+	fmt.Fprintln(r.w, "rate limit cleared — resuming")
 }

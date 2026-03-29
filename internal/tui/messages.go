@@ -1,5 +1,7 @@
 package tui
 
+import "time"
+
 // IssueStartedMsg is sent when the orchestrator begins processing an issue.
 type IssueStartedMsg struct {
 	Number int
@@ -81,3 +83,13 @@ type JudgeInterventionMsg struct {
 // RunDoneMsg is sent when the orchestrator goroutine finishes. The TUI stays
 // on screen so the user can review results; pressing q/esc/ctrl+c exits.
 type RunDoneMsg struct{}
+
+// RateLimitedMsg is sent when the orchestrator enters a hold due to a Claude
+// usage limit. ResetsAt is when the limit is expected to reset.
+type RateLimitedMsg struct {
+	ResetsAt time.Time
+}
+
+// RateLimitClearedMsg is sent when the usage-limit hold period ends and the
+// orchestrator resumes processing.
+type RateLimitClearedMsg struct{}
