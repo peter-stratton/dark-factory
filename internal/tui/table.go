@@ -67,8 +67,8 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 	marker := markerFor(row, spin)
 	num := rowNumberStyle.Render(fmt.Sprintf("#%d", row.number))
 
-	// Reserve space for badge (~12 chars with padding) and gutters.
-	badgeReserved := 14
+	// Reserve space for badge (~18 chars with padding) and gutters.
+	badgeReserved := 18
 	titleWidth := width - 22 - badgeReserved
 	if titleWidth < 10 {
 		titleWidth = 10
