@@ -80,7 +80,7 @@
     <main class="main">
       <div class="page-header animate-in">
         <h1 class="page-header__title">{{.Meta.Repo}}</h1>
-        <p class="page-header__subtitle">{{.Meta.Milestone}} &middot; {{.Timestamp}}{{if .Meta.BaseBranch}} &middot; Base branch: {{.Meta.BaseBranch}}{{end}}{{if .Meta.AutoMerge}} &middot; Auto-merge: feature={{.Meta.AutoMerge.Feature}}, rollup={{.Meta.AutoMerge.Rollup}}{{end}}{{if .Meta.GodarkVersion}} &middot; v{{.Meta.GodarkVersion}}{{end}}</p>
+        <p class="page-header__subtitle">{{.Meta.Milestone}} &middot; {{.Timestamp}}{{if .Meta.BaseBranch}} &middot; Base branch: {{.Meta.BaseBranch}}{{end}}{{if .Meta.AutoMerge}} &middot; Auto-merge: feature={{.Meta.AutoMerge.Feature}}, rollup={{.Meta.AutoMerge.Rollup}}{{end}}{{if .Meta.GodarkVersion}} &middot; {{.Meta.GodarkVersion}}{{end}}</p>
       </div>
 
       {{if and .Meta.Summary .Meta.Summary.AbortReason}}

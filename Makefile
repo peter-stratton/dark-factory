@@ -9,3 +9,5 @@ build:
 install: build
 	cp bin/godark ~/bin/godark
 	codesign --force --sign - ~/bin/godark
+	cp bin/godark ~/go/bin/godark
+	codesign --force --sign - ~/go/bin/godark
