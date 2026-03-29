@@ -33,6 +33,7 @@ type RunMeta struct {
 	StartedAt    time.Time         `json:"started_at"`
 	FinishedAt   *time.Time        `json:"finished_at,omitempty"`
 	Summary      *RunSummary       `json:"summary,omitempty"`
+	RunnerInfo   string            `json:"runner_info,omitempty"`
 }
 
 // IssueDep records the dependency info for a single issue.
