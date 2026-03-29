@@ -197,7 +197,7 @@ func TestDryRun_ListsIssuesInOrder(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -223,7 +223,7 @@ func TestDryRun_BlockedIssuesShownSeparately(t *testing.T) {
 	setupFakeGH(t, openIssues, nil) // #99 not closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -249,7 +249,7 @@ func TestDryRun_SummaryCounts(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -273,7 +273,7 @@ func TestDryRun_LogFileCreated(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		if err := Run(context.Background(), testConfig(), logger, progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, ""); err != nil {
+		if err := Run(context.Background(), testConfig(), logger, progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", ""); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
@@ -288,7 +288,7 @@ func TestEmptyMilestone(t *testing.T) {
 	setupFakeGH(t, []ghIssue{}, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -316,12 +316,12 @@ func TestAllBlocked(t *testing.T) {
 	// Run creates a RunDataWriter when dryRun=false; disable it for this test.
 	origWriter := newRunDataWriterFn
 	t.Cleanup(func() { newRunDataWriterFn = origWriter })
-	newRunDataWriterFn = func(repo, milestone string, issueNums []int, baseBranch string, autoMerge rundata.AutoMerge) (*rundata.Writer, error) {
+	newRunDataWriterFn = func(repo, milestone string, issueNums []int, baseBranch string, autoMerge rundata.AutoMerge, version string) (*rundata.Writer, error) {
 		return nil, fmt.Errorf("disabled in test")
 	}
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -342,7 +342,7 @@ func TestDryRun_ClosedDepsUnblock(t *testing.T) {
 	setupFakeGH(t, openIssues, []int{3}) // #3 is closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -388,7 +388,7 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -600,7 +600,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 
-	writer, err := rundata.New("owner/repo", "test-milestone", []int{10, 11}, "", rundata.AutoMerge{})
+	writer, err := rundata.New("owner/repo", "test-milestone", []int{10, 11}, "", rundata.AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("rundata.New: %v", err)
 	}
@@ -724,7 +724,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
-	writer, err := rundata.New("owner/repo", "test-milestone", []int{5}, "", rundata.AutoMerge{})
+	writer, err := rundata.New("owner/repo", "test-milestone", []int{5}, "", rundata.AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("rundata.New: %v", err)
 	}
@@ -875,7 +875,7 @@ func TestRun_DirtyTreeBlocksRun(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -901,7 +901,7 @@ func TestRun_DirtyTreeErrorListsFiles(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -928,7 +928,7 @@ func TestRun_DryRunSkipsDirtyCheck(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("dry-run should not fail on dirty tree: %v", err)
 		}
@@ -1671,7 +1671,7 @@ func TestReporter_DryRunDoesNotCallReporter(t *testing.T) {
 	reporter := &fakeReporter{}
 	cfg := testConfig()
 
-	if err := Run(context.Background(), cfg, testLogger(t), reporter, logging.NewLogger, "Phase 1", true, false, ""); err != nil {
+	if err := Run(context.Background(), cfg, testLogger(t), reporter, logging.NewLogger, "Phase 1", true, false, "", ""); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -1872,7 +1872,7 @@ func TestRollupVerify_WriteResultCalledWhenWriterPresent(t *testing.T) {
 	reporter := &fakeReporter{}
 
 	tmpDir := t.TempDir()
-	writer, err := rundata.NewWithBase(tmpDir, "owner/repo", "m1", []int{1}, "", rundata.AutoMerge{})
+	writer, err := rundata.NewWithBase(tmpDir, "owner/repo", "m1", []int{1}, "", rundata.AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase: %v", err)
 	}
@@ -1931,7 +1931,7 @@ func TestReporter_IssueCompleted_WithCost(t *testing.T) {
 
 	// Create a writer with a known step cost so IssueCostUSD can find it.
 	tmpDir := t.TempDir()
-	writer, err := rundata.NewWithBase(tmpDir, "owner/repo", "m1", []int{42}, "", rundata.AutoMerge{})
+	writer, err := rundata.NewWithBase(tmpDir, "owner/repo", "m1", []int{42}, "", rundata.AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("NewWithBase() error: %v", err)
 	}
@@ -2044,7 +2044,7 @@ func TestDryRun_NoDarkIssuesExcluded(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -2079,7 +2079,7 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "")
+		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -2121,7 +2121,7 @@ func TestReResolveAndProcess_UnblocksAfterMerge(t *testing.T) {
 	seen := map[int]bool{1: true} // issue 1 was processed in the prior run
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}
@@ -2159,7 +2159,7 @@ func TestReResolveAndProcess_MultipleUnblocked(t *testing.T) {
 	seen := map[int]bool{1: true, 2: true}
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}
@@ -2203,7 +2203,7 @@ func TestReResolveAndProcess_NoNewUnblocked(t *testing.T) {
 	seen := map[int]bool{}
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}
@@ -2236,7 +2236,7 @@ func TestReResolveAndProcess_SeenSkipsAlreadyProcessed(t *testing.T) {
 	seen := map[int]bool{1: true} // issue 1 already processed
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil)
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}

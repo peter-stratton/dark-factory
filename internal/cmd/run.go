@@ -118,7 +118,7 @@ Use "godark implement" to process individual issues by number.`,
 
 			errCh := make(chan error, 1)
 			go func() {
-				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath)
+				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath, Version)
 				if err != nil || !watchFlag {
 					errCh <- err
 					program.Send(tui.RunDoneMsg{})
@@ -137,7 +137,7 @@ Use "godark implement" to process individual issues by number.`,
 		}
 
 		reporter := progress.NewTextReporter(os.Stdout)
-		runErr := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath)
+		runErr := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath, Version)
 		if runErr != nil || !watchFlag {
 			return runErr
 		}
@@ -193,13 +193,13 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger,
 	// PRs are already awaiting review or ready to merge are not reprocessed.
 	seen := seedSeenFromProcessedPRs(cfg.Repo, logger)
 
-	w := watch.New(cfg, prompts, authEnv, logger)
+	w := watch.New(cfg, prompts, authEnv, logger, Version)
 
 	if len(allIssues) > 0 {
 		w.SetMergeCallback(func(mCtx context.Context, mergedNums []int) {
 			logger.Info("daemon re-resolve triggered", "merged_issue_count", len(mergedNums))
 			if _, reErr := orchestrator.ReResolveAndProcess(
-				mCtx, allIssues, noDarkNums, seen, cfg, milestone, logger, reporter, nil,
+				mCtx, allIssues, noDarkNums, seen, cfg, milestone, logger, reporter, nil, Version,
 			); reErr != nil {
 				logger.Error("daemon re-resolve failed", "err", reErr)
 			}

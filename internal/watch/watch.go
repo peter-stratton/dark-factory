@@ -26,6 +26,7 @@ type Watch struct {
 	prompts          *agent.Prompts
 	authEnv          map[string]string
 	logger           *slog.Logger
+	version          string
 	processed        map[int]bool
 	mergedIssues     map[int]bool // issue numbers whose merged PRs have already been reported
 	seenIssues       map[int]bool // issue numbers ever seen in awaiting-human-review label
@@ -33,12 +34,13 @@ type Watch struct {
 }
 
 // New creates a Watch instance with the given dependencies.
-func New(cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) *Watch {
+func New(cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, version string) *Watch {
 	return &Watch{
 		cfg:          cfg,
 		prompts:      prompts,
 		authEnv:      authEnv,
 		logger:       logger,
+		version:      version,
 		processed:    make(map[int]bool),
 		mergedIssues: make(map[int]bool),
 		seenIssues:   make(map[int]bool),
@@ -279,7 +281,7 @@ func (w *Watch) HandleChangesRequested(ctx context.Context, pr github.PRInfo, re
 	feedback := buildFeedback(review.Body, fetchReviewCommentsFn, w.cfg.Repo, pr.Number, review.ID, w.logger)
 
 	// Create a run data writer for this watch-initiated fix cycle.
-	writer, writerErr := newWriterFn(w.cfg.Repo, "", []int{issueNum}, w.cfg.BaseBranch, rundata.AutoMerge{Feature: string(w.cfg.AutoMerge.Feature), Rollup: string(w.cfg.AutoMerge.Rollup)})
+	writer, writerErr := newWriterFn(w.cfg.Repo, "", []int{issueNum}, w.cfg.BaseBranch, rundata.AutoMerge{Feature: string(w.cfg.AutoMerge.Feature), Rollup: string(w.cfg.AutoMerge.Rollup)}, w.version)
 	if writerErr != nil {
 		w.logger.Warn("failed to create run data writer", "err", writerErr)
 	}
@@ -389,7 +391,7 @@ func (w *Watch) HandleApproved(ctx context.Context, pr github.PRInfo, review git
 		}()
 	}
 
-	writer, writerErr := newWriterFn(w.cfg.Repo, "", []int{issueNum}, w.cfg.BaseBranch, rundata.AutoMerge{Feature: string(w.cfg.AutoMerge.Feature), Rollup: string(w.cfg.AutoMerge.Rollup)})
+	writer, writerErr := newWriterFn(w.cfg.Repo, "", []int{issueNum}, w.cfg.BaseBranch, rundata.AutoMerge{Feature: string(w.cfg.AutoMerge.Feature), Rollup: string(w.cfg.AutoMerge.Rollup)}, w.version)
 	if writerErr != nil {
 		w.logger.Warn("failed to create run data writer", "err", writerErr)
 	}
@@ -513,7 +515,9 @@ var findSessionIDFn = func(repo string, prNum int) (string, error) {
 	return rundata.FindSessionID(runsDir, repo, prNum, slog.Default())
 }
 
-var newWriterFn = rundata.New
+var newWriterFn = func(repo, milestone string, issueNumbers []int, baseBranch string, autoMerge rundata.AutoMerge, version string) (*rundata.Writer, error) {
+	return rundata.New(repo, milestone, issueNumbers, baseBranch, autoMerge, version)
+}
 
 var fetchReviewCommentsFn = github.FetchReviewComments
 

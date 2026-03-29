@@ -490,7 +490,7 @@ func TestReadDialogueMissingFile(t *testing.T) {
 func TestReadDialogueRoundTrip(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", base)
-	w, err := New("owner/repo", "Phase 7", []int{5}, "", AutoMerge{})
+	w, err := New("owner/repo", "Phase 7", []int{5}, "", AutoMerge{}, "")
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
