@@ -1022,10 +1022,7 @@ var checkMergeableFn = github.CheckMergeable
 
 // mergeCoordinateFn invokes the merge coordinator agent to resolve conflicts.
 // Replaceable for testing.
-// TODO(#607): wire to agent.MergeCoordinate when available.
-var mergeCoordinateFn func(ctx context.Context, issue github.Issue, prNum int,
-	conflictInfo string, cfg *config.Config, prompts *agent.Prompts,
-	authEnv map[string]string, logger *slog.Logger) (*agent.Result, error)
+var mergeCoordinateFn = agent.MergeCoordinate
 
 // handleRollupPR creates (and optionally merges) a PR from cfg.BaseBranch
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
