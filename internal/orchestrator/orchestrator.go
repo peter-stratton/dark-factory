@@ -1016,6 +1016,17 @@ var mergeRollupPRFn = github.MergeRollupPR
 // Replaceable for testing.
 var runRollupVerifyFn = agent.RunRollupVerify
 
+// checkMergeableFn checks the mergeable status of a PR.
+// Replaceable for testing.
+var checkMergeableFn = github.CheckMergeable
+
+// mergeCoordinateFn invokes the merge coordinator agent to resolve conflicts.
+// Replaceable for testing.
+// TODO(#607): wire to agent.MergeCoordinate when available.
+var mergeCoordinateFn func(ctx context.Context, issue github.Issue, prNum int,
+	conflictInfo string, cfg *config.Config, prompts *agent.Prompts,
+	authEnv map[string]string, logger *slog.Logger) (*agent.Result, error)
+
 // handleRollupPR creates (and optionally merges) a PR from cfg.BaseBranch
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
 // least one issue was implemented into the base branch during the run.
@@ -1037,20 +1048,104 @@ func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 
 	logger.Info("rollup PR upserted", "pr_number", prNum, "pr_url", prURL)
 
+	// Conflict resolution loop: check mergeable status and invoke the merge
+	// coordinator if the rollup PR has conflicts. Bounded by MaxRebaseAttempts.
+	verifyPassedInLoop := false
+	if cfg.MaxRebaseAttempts > 0 && mergeCoordinateFn != nil {
+		syntheticIssue := github.Issue{Number: 0, Title: title, Body: body}
+		for attempt := 0; attempt < cfg.MaxRebaseAttempts; attempt++ {
+			mergeable, checkErr := checkMergeableFn(cfg.Repo, prNum)
+			if checkErr != nil {
+				logger.Warn("failed to check mergeable status, proceeding",
+					"pr_number", prNum, "error", checkErr)
+				break
+			}
+			if mergeable != "CONFLICTING" {
+				break
+			}
+
+			logger.Info("rollup PR is conflicting, invoking merge coordinator",
+				"pr_number", prNum,
+				"attempt", attempt+1,
+				"max_attempts", cfg.MaxRebaseAttempts,
+			)
+
+			conflictInfo := fmt.Sprintf(
+				"Rollup PR #%d (%s → %s) has merge conflicts that need to be resolved.",
+				prNum, cfg.BaseBranch, defaultBranch,
+			)
+
+			result, mcErr := mergeCoordinateFn(ctx, syntheticIssue, prNum, conflictInfo, cfg, prompts, authEnv, logger)
+			if mcErr != nil {
+				return 0, "", fmt.Errorf("rollup merge coordinator: %w", mcErr)
+			}
+
+			if writer != nil {
+				step := rundata.StepResult{
+					Output:          result.ResultText,
+					TimedOut:        result.TimedOut,
+					StartedAt:       &result.StartedAt,
+					FinishedAt:      &result.FinishedAt,
+					DurationSeconds: result.FinishedAt.Sub(result.StartedAt).Seconds(),
+					CostUSD:         result.CostUSD,
+					ToolTrace:       result.ToolTrace,
+					SessionID:       result.SessionID,
+					PeakMemoryBytes: result.PeakMemoryBytes,
+					CPUNanoseconds:  result.CPUNanoseconds,
+				}
+				if wErr := writer.WriteRollupMergeCoordinatorResult(attempt, step); wErr != nil {
+					logger.Warn("failed to write rollup merge coordinator result",
+						"attempt", attempt, "error", wErr)
+				}
+			}
+
+			// Re-run verify after conflict resolution since branch content changed.
+			var writeVerify func(rundata.VerifyStepResult) error
+			if writer != nil {
+				writeVerify = writer.WriteRollupVerifyResult
+			}
+			verifyPassed, vErr := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeVerify)
+			if vErr != nil {
+				return 0, "", fmt.Errorf("rollup verify after conflict resolution: %w", vErr)
+			}
+			if !verifyPassed {
+				logger.Warn("rollup verify failed after conflict resolution — leaving PR open for human intervention",
+					"pr_number", prNum, "pr_url", prURL)
+				reporter.RollupCreated(prNum, prURL, false)
+				return prNum, prURL, nil
+			}
+			verifyPassedInLoop = true
+		}
+
+		// Final check: if still conflicting after all attempts, leave open.
+		mergeable, checkErr := checkMergeableFn(cfg.Repo, prNum)
+		if checkErr == nil && mergeable == "CONFLICTING" {
+			logger.Warn("rollup PR still conflicting after all merge coordinator attempts — leaving PR open for human review",
+				"pr_number", prNum,
+				"max_attempts", cfg.MaxRebaseAttempts,
+			)
+			reporter.RollupCreated(prNum, prURL, false)
+			return prNum, prURL, nil
+		}
+	}
+
 	// Run the verify pipeline on the rollup branch before merge or human review.
-	var writeResult func(rundata.VerifyStepResult) error
-	if writer != nil {
-		writeResult = writer.WriteRollupVerifyResult
-	}
-	verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult)
-	if err != nil {
-		return 0, "", fmt.Errorf("rollup verify: %w", err)
-	}
-	if !verifyPassed {
-		logger.Warn("rollup verify failed after all fix attempts — leaving PR open for human intervention",
-			"pr_number", prNum, "pr_url", prURL)
-		reporter.RollupCreated(prNum, prURL, false)
-		return prNum, prURL, nil
+	// Skip if verify already passed during conflict resolution above.
+	if !verifyPassedInLoop {
+		var writeResult func(rundata.VerifyStepResult) error
+		if writer != nil {
+			writeResult = writer.WriteRollupVerifyResult
+		}
+		verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult)
+		if err != nil {
+			return 0, "", fmt.Errorf("rollup verify: %w", err)
+		}
+		if !verifyPassed {
+			logger.Warn("rollup verify failed after all fix attempts — leaving PR open for human intervention",
+				"pr_number", prNum, "pr_url", prURL)
+			reporter.RollupCreated(prNum, prURL, false)
+			return prNum, prURL, nil
+		}
 	}
 
 	if cfg.AutoMerge.Rollup == config.RollupAuto {
