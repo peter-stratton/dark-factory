@@ -95,6 +95,42 @@
       </div>
       {{end}}
 
+      {{if .HoldResetsAt}}
+      <!-- Rate Limit Hold Banner -->
+      <div class="card animate-in animate-in-0"
+           style="border-left: 3px solid var(--color-warning); background: rgba(249,224,75,0.06);"
+           id="rate-limit-banner">
+        <div class="card__header">
+          <span class="card__title">Rate Limited — Run Paused</span>
+          <span class="badge badge--warning">
+            <span class="badge__dot"></span>
+            <span id="rate-limit-countdown">calculating…</span>
+          </span>
+        </div>
+        <div class="card__body" style="padding: var(--space-3) var(--space-5); font-size: var(--text-sm);">
+          Claude usage limit active. Resumes at <strong>{{.HoldResetsAt.Format "15:04:05 UTC"}}</strong>.
+        </div>
+      </div>
+      <script>
+      (function() {
+        const resetsAt = new Date("{{.HoldResetsAt.UTC.Format "2006-01-02T15:04:05Z"}}");
+        const el = document.getElementById("rate-limit-countdown");
+        function tick() {
+          const diff = Math.max(0, Math.floor((resetsAt - Date.now()) / 1000));
+          if (diff === 0) { el.textContent = "resuming…"; return; }
+          const h = Math.floor(diff / 3600);
+          const m = Math.floor((diff % 3600) / 60);
+          const s = diff % 60;
+          if (h > 0) el.textContent = h + "h" + String(m).padStart(2,"0") + "m";
+          else if (m > 0) el.textContent = m + "m" + String(s).padStart(2,"0") + "s";
+          else el.textContent = s + "s";
+          setTimeout(tick, 1000);
+        }
+        tick();
+      })();
+      </script>
+      {{end}}
+
       {{if .AwaitingReview}}
       <!-- PRs Awaiting Review -->
       <div class="card animate-in animate-in-0" style="border-left: 3px solid var(--color-warning);">

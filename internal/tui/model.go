@@ -9,6 +9,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// countdownTick returns a Cmd that fires a CountdownTickMsg after one second.
+func countdownTick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return CountdownTickMsg{Time: t}
+	})
+}
+
 // autoMerge holds the feature and rollup branch names used for auto-merge.
 // A nil pointer means auto-merge is not configured.
 type autoMerge struct {
@@ -99,11 +106,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RateLimitedMsg:
 		m.rateLimited = true
 		m.rateLimitResetsAt = msg.ResetsAt
-		return m, nil
+		return m, countdownTick()
 
 	case RateLimitClearedMsg:
 		m.rateLimited = false
 		m.rateLimitResetsAt = time.Time{}
+		return m, nil
+
+	case CountdownTickMsg:
+		if m.rateLimited {
+			return m, countdownTick()
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -148,7 +161,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View implements tea.Model. Composes the header, issue table, detail panel, and summary bar.
 func (m Model) View() string {
 	header := renderHeader(m)
-	table := renderTable(m.issues, m.spinner, m.width)
+	var rateLimitedUntil *time.Time
+	if m.rateLimited && !m.rateLimitResetsAt.IsZero() {
+		t := m.rateLimitResetsAt
+		rateLimitedUntil = &t
+	}
+	table := renderTable(m.issues, m.spinner, m.width, rateLimitedUntil)
 	summary := renderSummary(m)
 
 	// Horizontal divider between content and summary bar.

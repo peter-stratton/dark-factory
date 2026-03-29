@@ -93,3 +93,8 @@ type RateLimitedMsg struct {
 // RateLimitClearedMsg is sent when the usage-limit hold period ends and the
 // orchestrator resumes processing.
 type RateLimitClearedMsg struct{}
+
+// CountdownTickMsg is sent every second while rate-limited to drive the TUI countdown.
+type CountdownTickMsg struct {
+	Time time.Time
+}

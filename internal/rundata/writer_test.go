@@ -1472,3 +1472,61 @@ func TestGodarkVersionWrittenToRunJSON(t *testing.T) {
 		t.Errorf("GodarkVersion = %q, want %q", meta.GodarkVersion, "1.2.3")
 	}
 }
+
+func TestSetRateLimitPersistsToRunJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	resetsAt := time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC)
+	if err := w.SetRateLimit(resetsAt); err != nil {
+		t.Fatalf("SetRateLimit: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.RateLimitResetsAt == nil {
+		t.Fatal("RateLimitResetsAt is nil after SetRateLimit")
+	}
+	if !meta.RateLimitResetsAt.Equal(resetsAt) {
+		t.Errorf("RateLimitResetsAt = %v, want %v", meta.RateLimitResetsAt, resetsAt)
+	}
+}
+
+func TestClearRateLimitRemovesFromRunJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	resetsAt := time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC)
+	if err := w.SetRateLimit(resetsAt); err != nil {
+		t.Fatalf("SetRateLimit: %v", err)
+	}
+	if err := w.ClearRateLimit(); err != nil {
+		t.Fatalf("ClearRateLimit: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if meta.RateLimitResetsAt != nil {
+		t.Errorf("RateLimitResetsAt = %v, want nil after ClearRateLimit", meta.RateLimitResetsAt)
+	}
+}
