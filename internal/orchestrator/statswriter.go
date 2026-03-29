@@ -75,32 +75,7 @@ func WriteRunStats(ctx context.Context, db *stats.DB, cfg *config.Config, writer
 		return
 	}
 
-	finishedAt := time.Now()
-	if detail.FinishedAt != nil {
-		finishedAt = *detail.FinishedAt
-	}
-
-	autoMergeFeature := ""
-	autoMergeRollup := ""
-	if detail.AutoMerge != nil {
-		autoMergeFeature = detail.AutoMerge.Feature
-		autoMergeRollup = detail.AutoMerge.Rollup
-	}
-
-	runRec := stats.RunRecord{
-		ID:               timestamp,
-		Repo:             cfg.Repo,
-		Milestone:        detail.Milestone,
-		BaseBranch:       detail.BaseBranch,
-		AutoMergeFeature: autoMergeFeature,
-		AutoMergeRollup:  autoMergeRollup,
-		StartedAt:        detail.StartedAt,
-		FinishedAt:       finishedAt,
-		Total:            summary.Total,
-		Implemented:      summary.Implemented,
-		Failed:           summary.Failed,
-		AbortReason:      summary.AbortReason,
-	}
+	runRec := buildRunRecord(timestamp, cfg.Repo, detail, summary)
 
 	tx, err := db.BeginTx(ctx)
 	if err != nil {
@@ -147,6 +122,34 @@ func WriteRunStats(ctx context.Context, db *stats.DB, cfg *config.Config, writer
 
 	if err := tx.Commit(); err != nil {
 		logger.Warn("stats: failed to commit transaction", "error", err)
+	}
+}
+
+// buildRunRecord constructs a stats.RunRecord from run detail and summary data.
+func buildRunRecord(runID, repo string, detail *rundata.RunDetail, summary rundata.RunSummary) stats.RunRecord {
+	finishedAt := time.Now()
+	if detail.FinishedAt != nil {
+		finishedAt = *detail.FinishedAt
+	}
+	autoMergeFeature := ""
+	autoMergeRollup := ""
+	if detail.AutoMerge != nil {
+		autoMergeFeature = detail.AutoMerge.Feature
+		autoMergeRollup = detail.AutoMerge.Rollup
+	}
+	return stats.RunRecord{
+		ID:               runID,
+		Repo:             repo,
+		Milestone:        detail.Milestone,
+		BaseBranch:       detail.BaseBranch,
+		AutoMergeFeature: autoMergeFeature,
+		AutoMergeRollup:  autoMergeRollup,
+		StartedAt:        detail.StartedAt,
+		FinishedAt:       finishedAt,
+		Total:            summary.Total,
+		Implemented:      summary.Implemented,
+		Failed:           summary.Failed,
+		AbortReason:      summary.AbortReason,
 	}
 }
 
