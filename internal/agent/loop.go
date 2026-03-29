@@ -1410,14 +1410,13 @@ func logAndRecordFlags(flags []quality.Flag, logger *slog.Logger, issueNum int) 
 
 // runPreMergeRebasePhase checks whether the PR has conflicts before merging.
 // If the PR is CONFLICTING, it attempts to resolve them via automatic rebase
-// (gh pr update-branch) or by invoking the implementer in a conflict-fix cycle.
-// After any successful rebase, the verify pipeline is re-run since branch
+// (gh pr update-branch) or by invoking the merge coordinator agent.
+// After any successful resolution, the verify pipeline is re-run since branch
 // content has changed. The cycle repeats up to cfg.MaxRebaseAttempts times.
 //
 // Returns (true, nil) when all attempts are exhausted and the caller should
 // label the PR for human review. Returns (false, nil) when the PR is ready to
-// merge. Returns (false, err) on hard errors (agent failure, context cancel,
-// drift detection).
+// merge. Returns (false, err) on hard errors (context cancel, verify failure).
 //
 // If cfg.MaxRebaseAttempts is 0 the function is a no-op and returns (false, nil).
 func runPreMergeRebasePhase(
@@ -1463,9 +1462,9 @@ func runPreMergeRebasePhase(
 
 		updateErr := github.UpdateBranch(cfg.Repo, prNum)
 		if updateErr != nil {
-			// Automatic rebase failed — invoke the implementer in a fix cycle
-			// so it can resolve the conflicts manually.
-			logger.Info("automatic rebase failed, invoking conflict fix cycle",
+			// Automatic rebase failed — invoke the merge coordinator to
+			// resolve conflicts independently of the implementer session.
+			logger.Info("automatic rebase failed, invoking merge coordinator",
 				"pr_number", prNum,
 				"attempt", attempt+1,
 				"error", updateErr,
@@ -1474,17 +1473,22 @@ func runPreMergeRebasePhase(
 				"PR #%d has merge conflicts with the base branch that could not be automatically resolved.\n\nError: %v\n\nPlease resolve the merge conflicts, push the changes, and ensure the branch is up to date with the base branch.",
 				prNum, updateErr,
 			)
-			retryResult, retryErr := Retry(ctx, issue, prNum, *sessionID, conflictInfo, "", cfg, prompts, authEnv, logger)
-			if retryErr != nil {
-				return false, fmt.Errorf("conflict fix agent: %w", retryErr)
+			mcResult, mcErr := MergeCoordinate(ctx, issue, prNum, conflictInfo, cfg, prompts, authEnv, logger)
+			if mcErr != nil {
+				logger.Warn("merge coordinator failed",
+					"pr_number", prNum,
+					"attempt", attempt+1,
+					"error", mcErr,
+				)
+				continue
 			}
-			if retryResult.TimedOut {
-				return false, fmt.Errorf("conflict fix agent timed out")
-			}
-			*sessionID = retryResult.SessionID
-
-			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-				return false, driftErr
+			if mcResult.ExitCode != 0 {
+				logger.Warn("merge coordinator exited non-zero",
+					"pr_number", prNum,
+					"attempt", attempt+1,
+					"exit_code", mcResult.ExitCode,
+				)
+				continue
 			}
 		}
 

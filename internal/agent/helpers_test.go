@@ -94,5 +94,6 @@ func testPrompts(t *testing.T) *Prompts {
 		ImplementerRetry: "Retry PR #{{.PRNumber}} for #{{.IssueNumber}} repo={{.Repo}}",
 		Reviewer:         "Review PR #{{.PRNumber}} for #{{.IssueNumber}}",
 		QualityReviewer:  "Quality review PR #{{.PRNumber}} for #{{.IssueNumber}}",
+		MergeCoordinator: "Resolve conflicts for PR #{{.PRNumber}} issue #{{.IssueNumber}}",
 	}
 }
