@@ -359,7 +359,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		Timestamp:    timestamp,
 		Meta:         detail.RunMeta,
 		RunURL:       runURL,
-		HoldResetsAt: detail.RunMeta.RateLimitResetsAt,
+		HoldResetsAt: detail.RateLimitResetsAt,
 	}
 	for _, issue := range detail.Issues {
 		row := issueToRowView(issue, owner, repo, timestamp)
