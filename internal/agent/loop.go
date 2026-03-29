@@ -1473,8 +1473,20 @@ func runPreMergeRebasePhase(
 				"PR #%d has merge conflicts with the base branch that could not be automatically resolved.\n\nError: %v\n\nPlease resolve the merge conflicts, push the changes, and ensure the branch is up to date with the base branch.",
 				prNum, updateErr,
 			)
+			if reporter != nil {
+				reporter.IssueStageChanged(issue.Number, "merge-coordinate")
+			}
 			mcResult, mcErr := MergeCoordinate(ctx, issue, prNum, conflictInfo, cfg, prompts, authEnv, logger)
+			writeMCResult := func(step rundata.StepResult) {
+				if hook != nil {
+					step.TraceID = traceID
+					if writeErr := hook.WriteMergeCoordinatorResult(issue.Number, step); writeErr != nil {
+						logger.Warn("failed to write merge coordinator result", "error", writeErr)
+					}
+				}
+			}
 			if mcErr != nil {
+				writeMCResult(rundata.StepResult{Error: mcErr.Error()})
 				logger.Warn("merge coordinator failed",
 					"pr_number", prNum,
 					"attempt", attempt+1,
@@ -1482,6 +1494,8 @@ func runPreMergeRebasePhase(
 				)
 				continue
 			}
+			mcStep := ResultToStep(mcResult)
+			writeMCResult(mcStep)
 			if mcResult.ExitCode != 0 {
 				logger.Warn("merge coordinator exited non-zero",
 					"pr_number", prNum,

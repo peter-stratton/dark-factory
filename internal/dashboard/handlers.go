@@ -637,6 +637,9 @@ func buildTimeline(issue rundata.IssueDetail) []TimelineStepView {
 	if hasStepData(issue.FunctionalReview) {
 		steps = append(steps, stepToView("Functional Review", issue.FunctionalReview))
 	}
+	if hasStepData(issue.MergeCoordinator) {
+		steps = append(steps, stepToView("Merge Coordinate", issue.MergeCoordinator))
+	}
 
 	return steps
 }
