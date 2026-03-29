@@ -95,6 +95,4 @@ type RateLimitedMsg struct {
 type RateLimitClearedMsg struct{}
 
 // CountdownTickMsg is sent every second while rate-limited to drive the TUI countdown.
-type CountdownTickMsg struct {
-	Time time.Time
-}
+type CountdownTickMsg struct{}

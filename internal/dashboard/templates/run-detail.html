@@ -117,7 +117,14 @@
         const el = document.getElementById("rate-limit-countdown");
         function tick() {
           const diff = Math.max(0, Math.floor((resetsAt - Date.now()) / 1000));
-          if (diff === 0) { el.textContent = "resuming…"; return; }
+          if (diff === 0) {
+            el.textContent = "resuming…";
+            setTimeout(function() {
+              var banner = document.getElementById("rate-limit-banner");
+              if (banner) { banner.style.display = "none"; }
+            }, 2000);
+            return;
+          }
           const h = Math.floor(diff / 3600);
           const m = Math.floor((diff % 3600) / 60);
           const s = diff % 60;

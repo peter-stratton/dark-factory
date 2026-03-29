@@ -11,8 +11,8 @@ import (
 
 // countdownTick returns a Cmd that fires a CountdownTickMsg after one second.
 func countdownTick() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return CountdownTickMsg{Time: t}
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return CountdownTickMsg{}
 	})
 }
 
