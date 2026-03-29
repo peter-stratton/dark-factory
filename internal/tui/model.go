@@ -124,23 +124,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case JudgeInterventionMsg:
-		if idx, ok := m.issueIndex[msg.IssueNumber]; ok {
-			reason := strings.ToTitle(msg.Judgment) + ": " + msg.Rule
-			if msg.Step != "" {
-				reason += " (" + msg.Step + ")"
-			}
-			m.issues[idx].judgeReason = reason
-			m.detailMessages = append(m.detailMessages, detailEntry{
-				issueNumber: msg.IssueNumber,
-				kind:        detailKindJudge,
-				message:     reason,
-			})
-			const maxDetail = 5
-			if len(m.detailMessages) > maxDetail {
-				tail := m.detailMessages[len(m.detailMessages)-maxDetail:]
-				m.detailMessages = append(make([]detailEntry, 0, maxDetail), tail...)
-			}
-		}
+		m.handleJudgeIntervention(msg)
 
 	case IssueCompletedMsg:
 		m.handleIssueCompleted(msg)
@@ -303,6 +287,29 @@ func (m *Model) handleIssueStarted(msg IssueStartedMsg) {
 	}
 	if m.queued > 0 {
 		m.queued--
+	}
+}
+
+// handleJudgeIntervention records a judge decision on the issue row and detail panel.
+func (m *Model) handleJudgeIntervention(msg JudgeInterventionMsg) {
+	idx, ok := m.issueIndex[msg.IssueNumber]
+	if !ok {
+		return
+	}
+	reason := strings.ToTitle(msg.Judgment) + ": " + msg.Rule
+	if msg.Step != "" {
+		reason += " (" + msg.Step + ")"
+	}
+	m.issues[idx].judgeReason = reason
+	m.detailMessages = append(m.detailMessages, detailEntry{
+		issueNumber: msg.IssueNumber,
+		kind:        detailKindJudge,
+		message:     reason,
+	})
+	const maxDetail = 5
+	if len(m.detailMessages) > maxDetail {
+		tail := m.detailMessages[len(m.detailMessages)-maxDetail:]
+		m.detailMessages = append(make([]detailEntry, 0, maxDetail), tail...)
 	}
 }
 
