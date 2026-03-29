@@ -1241,6 +1241,36 @@ func TestWritePlannerResult(t *testing.T) {
 	}
 }
 
+func TestWriteMergeCoordinatorResult(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{10}, "", AutoMerge{})
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	step := StepResult{Output: "merge coordinator output", CostUSD: 0.55}
+	if err := w.WriteMergeCoordinatorResult(10, step); err != nil {
+		t.Fatalf("WriteMergeCoordinatorResult() error: %v", err)
+	}
+
+	path := filepath.Join(w.IssueDir(10), "merge_coordinator.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("merge_coordinator.json not written: %v", err)
+	}
+
+	var got StepResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshaling merge_coordinator.json: %v", err)
+	}
+	if got.Output != step.Output {
+		t.Errorf("Output = %q, want %q", got.Output, step.Output)
+	}
+	if got.CostUSD != step.CostUSD {
+		t.Errorf("CostUSD = %v, want %v", got.CostUSD, step.CostUSD)
+	}
+}
+
 func TestIssueCostUSD_IncludesPlanner(t *testing.T) {
 	base := t.TempDir()
 	w, err := NewWithBase(base, "owner/repo", "m1", []int{8}, "", AutoMerge{})
