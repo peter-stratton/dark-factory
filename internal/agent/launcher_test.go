@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"testing"
 	"time"
 
@@ -12,27 +13,7 @@ import (
 // rateLimitJSON returns a rate_limit_event JSON line with the given Unix timestamp.
 func rateLimitJSON(resetsAtUnix int64) string {
 	return `{"type":"rate_limit_event","rate_limit_info":{"status":"limit_reached","resetsAt":` +
-		itoa(resetsAtUnix) + `,"rateLimitType":"usage"}}`
-}
-
-// itoa converts an int64 to a decimal string without importing strconv.
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	buf := make([]byte, 0, 20)
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	for n > 0 {
-		buf = append([]byte{byte('0' + n%10)}, buf...)
-		n /= 10
-	}
-	if neg {
-		buf = append([]byte{'-'}, buf...)
-	}
-	return string(buf)
+		strconv.FormatInt(resetsAtUnix, 10) + `,"rateLimitType":"usage"}}`
 }
 
 func TestParseRateLimitEvent_Valid(t *testing.T) {

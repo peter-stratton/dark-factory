@@ -777,13 +777,15 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				reporter.IssueStageChanged(issue.Number, "rate-limited")
 				reporter.RateLimited(resetsAt)
 				// Undo seen so we retry this issue.
-				seen[issue.Number] = false
+				delete(seen, issue.Number)
 				rateLimitHold = true
+				timer := time.NewTimer(time.Until(sleepUntil))
 				select {
 				case <-ctx.Done():
+					timer.Stop()
 					logger.Warn("context cancelled during rate-limit hold")
 					goto done
-				case <-time.After(time.Until(sleepUntil)):
+				case <-timer.C:
 				}
 				reporter.RateLimitCleared()
 				logger.Info("usage limit hold complete — resuming", "issue_number", issue.Number)
