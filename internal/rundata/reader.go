@@ -38,6 +38,7 @@ type IssueDetail struct {
 	VerifyResults    []VerifyStepResult
 	FailureAnalysis    *FailureAnalysis    // from failure-analysis.json; nil if not present
 	JudgeInterventions []JudgeIntervention // from judge-interventions.json; nil if not present
+	SpecDelta          *SpecDeltaData      // from spec-delta.json; nil if not present
 }
 
 // RunDetail holds the full data for one run, including per-issue details.
@@ -301,6 +302,7 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		VerifyResults:      r.loadVerifyResults(issueDir),
 		FailureAnalysis:    r.readFailureAnalysis(filepath.Join(issueDir, "failure-analysis.json")),
 		JudgeInterventions: r.readJudgeInterventions(filepath.Join(issueDir, "judge-interventions.json")),
+		SpecDelta:          r.readSpecDelta(filepath.Join(issueDir, "spec-delta.json")),
 	}
 }
 
@@ -322,6 +324,26 @@ func (r *Reader) readFailureAnalysis(path string) *FailureAnalysis {
 		return nil
 	}
 	return &fa
+}
+
+// readSpecDelta reads a SpecDeltaData from path. Returns nil if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readSpecDelta(path string) *SpecDeltaData {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping spec-delta file", "path", path, "error", err)
+		return nil
+	}
+
+	var sd SpecDeltaData
+	if err := json.Unmarshal(data, &sd); err != nil {
+		r.logger.Warn("corrupt spec-delta file, skipping", "path", path, "error", err)
+		return nil
+	}
+	return &sd
 }
 
 // readIssueStatus reads an IssueStatus from path. Returns zero value if the

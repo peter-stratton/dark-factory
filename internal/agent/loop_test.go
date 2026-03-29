@@ -5023,9 +5023,15 @@ func TestProcessIssue_SpecDeltaSkippedWhenNoSpec(t *testing.T) {
 			t.Errorf("unexpected spec delta comment posted when no spec exists: %q", body)
 		}
 	}
-	// WriteSpecDelta should not be called.
-	if len(hook.specDeltas) != 0 {
-		t.Errorf("WriteSpecDelta called %d times, want 0", len(hook.specDeltas))
+	// WriteSpecDelta should still be called (once) with empty data so
+	// spec-delta.json exists even when no spec files are present.
+	if len(hook.specDeltas) != 1 {
+		t.Errorf("WriteSpecDelta called %d times, want 1", len(hook.specDeltas))
+	} else {
+		d := hook.specDeltas[0]
+		if d.Before != "" || d.After != "" || len(d.AddedCases) != 0 || len(d.RemovedCases) != 0 || d.ChangedCases != 0 || d.SetupChanged {
+			t.Errorf("expected empty SpecDeltaData when no spec exists, got %+v", d)
+		}
 	}
 }
 
