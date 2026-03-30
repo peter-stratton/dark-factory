@@ -3,10 +3,18 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// countdownTick returns a Cmd that fires a CountdownTickMsg after one second.
+func countdownTick() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return CountdownTickMsg{}
+	})
+}
 
 // autoMerge holds the feature and rollup branch names used for auto-merge.
 // A nil pointer means auto-merge is not configured.
@@ -59,10 +67,12 @@ type Model struct {
 	spinner spinner.Model
 
 	// Run lifecycle.
-	done       bool          // true after the orchestrator finishes
-	watching   bool          // true while in watch mode (between run and done)
-	cancelling bool          // true after user requests cancellation
-	cancelFn   func()        // cancels the orchestrator context
+	done              bool      // true after the orchestrator finishes
+	watching          bool      // true while in watch mode (between run and done)
+	cancelling        bool      // true after user requests cancellation
+	cancelFn          func()    // cancels the orchestrator context
+	rateLimited       bool      // true while holding for a Claude usage limit reset
+	rateLimitResetsAt time.Time // when the current usage limit hold will end
 
 	// Terminal dimensions.
 	width  int
@@ -93,6 +103,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 		return m, nil
 
+	case RateLimitedMsg:
+		m.rateLimited = true
+		m.rateLimitResetsAt = msg.ResetsAt
+		return m, countdownTick()
+
+	case RateLimitClearedMsg:
+		m.rateLimited = false
+		m.rateLimitResetsAt = time.Time{}
+		return m, nil
+
+	case CountdownTickMsg:
+		if m.rateLimited {
+			return m, countdownTick()
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -111,23 +137,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case JudgeInterventionMsg:
-		if idx, ok := m.issueIndex[msg.IssueNumber]; ok {
-			reason := strings.ToTitle(msg.Judgment) + ": " + msg.Rule
-			if msg.Step != "" {
-				reason += " (" + msg.Step + ")"
-			}
-			m.issues[idx].judgeReason = reason
-			m.detailMessages = append(m.detailMessages, detailEntry{
-				issueNumber: msg.IssueNumber,
-				kind:        detailKindJudge,
-				message:     reason,
-			})
-			const maxDetail = 5
-			if len(m.detailMessages) > maxDetail {
-				tail := m.detailMessages[len(m.detailMessages)-maxDetail:]
-				m.detailMessages = append(make([]detailEntry, 0, maxDetail), tail...)
-			}
-		}
+		m.handleJudgeIntervention(msg)
 
 	case IssueCompletedMsg:
 		m.handleIssueCompleted(msg)
@@ -151,7 +161,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View implements tea.Model. Composes the header, issue table, detail panel, and summary bar.
 func (m Model) View() string {
 	header := renderHeader(m)
-	table := renderTable(m.issues, m.spinner, m.width)
+	var rateLimitedUntil *time.Time
+	if m.rateLimited && !m.rateLimitResetsAt.IsZero() {
+		t := m.rateLimitResetsAt
+		rateLimitedUntil = &t
+	}
+	table := renderTable(m.issues, m.spinner, m.width, rateLimitedUntil)
 	summary := renderSummary(m)
 
 	// Horizontal divider between content and summary bar.
@@ -167,6 +182,15 @@ func (m Model) View() string {
 		hint = "\n\n" + headerLabelStyle.Render("press q to exit")
 	} else if m.cancelling {
 		hint = "\n\n" + summaryFailedStyle.Render("cancelling... waiting for current issue to finish")
+	} else if m.rateLimited {
+		var holdMsg string
+		if !m.rateLimitResetsAt.IsZero() {
+			holdMsg = fmt.Sprintf("rate limited — holding until %s · press ctrl+c to cancel",
+				m.rateLimitResetsAt.Local().Format("15:04:05"))
+		} else {
+			holdMsg = "rate limited — holding for reset · press ctrl+c to cancel"
+		}
+		hint = "\n\n" + badgeRateLimitedStyle.Render("RATE LIMITED") + " " + headerLabelStyle.Render(holdMsg)
 	} else if m.watching {
 		hint = "\n\n" + headerLabelStyle.Render("watching for merges · press ctrl+c to cancel")
 	} else {
@@ -281,6 +305,29 @@ func (m *Model) handleIssueStarted(msg IssueStartedMsg) {
 	}
 	if m.queued > 0 {
 		m.queued--
+	}
+}
+
+// handleJudgeIntervention records a judge decision on the issue row and detail panel.
+func (m *Model) handleJudgeIntervention(msg JudgeInterventionMsg) {
+	idx, ok := m.issueIndex[msg.IssueNumber]
+	if !ok {
+		return
+	}
+	reason := strings.ToTitle(msg.Judgment) + ": " + msg.Rule
+	if msg.Step != "" {
+		reason += " (" + msg.Step + ")"
+	}
+	m.issues[idx].judgeReason = reason
+	m.detailMessages = append(m.detailMessages, detailEntry{
+		issueNumber: msg.IssueNumber,
+		kind:        detailKindJudge,
+		message:     reason,
+	})
+	const maxDetail = 5
+	if len(m.detailMessages) > maxDetail {
+		tail := m.detailMessages[len(m.detailMessages)-maxDetail:]
+		m.detailMessages = append(make([]detailEntry, 0, maxDetail), tail...)
 	}
 }
 

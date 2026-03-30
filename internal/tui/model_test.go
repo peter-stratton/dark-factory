@@ -462,7 +462,7 @@ func TestDetailPanelErrorNotInTableRow(t *testing.T) {
 		issues:     []issueRow{{number: 43, title: "fix auth", status: "failed", errMsg: "timeout"}},
 		width:      80,
 	}
-	tableOut := stripANSI(renderTable(m.issues, newTestSpinner(), 80))
+	tableOut := stripANSI(renderTable(m.issues, newTestSpinner(), 80, nil))
 
 	if strings.Contains(tableOut, "timeout") {
 		t.Errorf("renderTable: error message should not appear inline in row\ngot: %q", tableOut)

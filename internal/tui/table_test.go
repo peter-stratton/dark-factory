@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 )
@@ -117,7 +118,7 @@ func TestMarkerFailed(t *testing.T) {
 
 func TestRenderTableEmpty(t *testing.T) {
 	spin := newTestSpinner()
-	got := renderTable(nil, spin, 80)
+	got := renderTable(nil, spin, 80, nil)
 	if got != "" {
 		t.Errorf("renderTable empty: got %q, want empty string", got)
 	}
@@ -128,7 +129,7 @@ func TestRenderTableQueuedRow(t *testing.T) {
 		{number: 42, title: "fix the bug"},
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderTable(rows, spin, 80))
+	got := stripANSI(renderTable(rows, spin, 80, nil))
 
 	if !strings.Contains(got, markerQueued) {
 		t.Errorf("renderTable queued: marker %q not found in %q", markerQueued, got)
@@ -146,7 +147,7 @@ func TestRenderTableInProgressRowShowsStage(t *testing.T) {
 		{number: 42, title: "fix the bug", stage: "implement"},
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderTable(rows, spin, 80))
+	got := stripANSI(renderTable(rows, spin, 80, nil))
 
 	// In-progress: should contain the uppercased stage label in a badge.
 	if !strings.Contains(got, "IMPLEMENT") {
@@ -163,7 +164,7 @@ func TestRenderTableCompletedRow(t *testing.T) {
 		{number: 42, title: "fix the bug", status: "implemented", stage: "merged"},
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderTable(rows, spin, 80))
+	got := stripANSI(renderTable(rows, spin, 80, nil))
 
 	if !strings.Contains(got, markerCompleted) {
 		t.Errorf("renderTable completed: marker %q not found in %q", markerCompleted, got)
@@ -175,7 +176,7 @@ func TestRenderTableFailedRow(t *testing.T) {
 		{number: 42, title: "fix the bug", status: "failed", stage: "failed", errMsg: "timeout"},
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderTable(rows, spin, 80))
+	got := stripANSI(renderTable(rows, spin, 80, nil))
 
 	if !strings.Contains(got, markerFailed) {
 		t.Errorf("renderTable failed: marker %q not found in %q", markerFailed, got)
@@ -192,7 +193,7 @@ func TestRenderTableTitleTruncation(t *testing.T) {
 		{number: 1, title: title},
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderTable(rows, spin, 80))
+	got := stripANSI(renderTable(rows, spin, 80, nil))
 
 	if !strings.Contains(got, "…") {
 		t.Errorf("renderTable truncation: expected ellipsis in %q", got)
@@ -212,7 +213,7 @@ func TestRenderRowTraceIDPresent(t *testing.T) {
 		traceID: "abcd1234-5678-90ef-ghij-klmnopqrstuv",
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderRow(row, spin, 80))
+	got := stripANSI(renderRow(row, spin, 80, nil))
 	if !strings.Contains(got, "abcd1234") {
 		t.Errorf("renderRow trace: expected truncated trace %q in %q", "abcd1234", got)
 	}
@@ -229,7 +230,7 @@ func TestRenderRowTraceIDEmpty(t *testing.T) {
 		status: "implemented",
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderRow(row, spin, 80))
+	got := stripANSI(renderRow(row, spin, 80, nil))
 	// With no trace ID, the row should not contain any trace fragment.
 	// The row should still render normally with a badge.
 	if !strings.Contains(got, "MERGED") {
@@ -244,7 +245,7 @@ func TestRenderRowTraceIDInProgress(t *testing.T) {
 		stage:  "implement",
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderRow(row, spin, 80))
+	got := stripANSI(renderRow(row, spin, 80, nil))
 	// In-progress rows have no trace ID — should not show any trace fragment.
 	if strings.Contains(got, "abcd") {
 		t.Errorf("renderRow in-progress: should not contain trace fragment in %q", got)
@@ -259,7 +260,7 @@ func TestRenderRowTraceIDShort(t *testing.T) {
 		traceID: "abc",
 	}
 	spin := newTestSpinner()
-	got := stripANSI(renderRow(row, spin, 80))
+	got := stripANSI(renderRow(row, spin, 80, nil))
 	if !strings.Contains(got, "abc") {
 		t.Errorf("renderRow short trace: expected %q in %q", "abc", got)
 	}
@@ -391,5 +392,93 @@ func TestModelViewContainsTable(t *testing.T) {
 	}
 	if !strings.Contains(got, "fix the bug") {
 		t.Errorf("View with issue: title not found in %q", got)
+	}
+}
+
+// --- formatCountdown tests ---
+
+func TestFormatCountdownZeroTime(t *testing.T) {
+	got := formatCountdown(time.Time{})
+	if got != "" {
+		t.Errorf("formatCountdown zero: got %q, want empty string", got)
+	}
+}
+
+func TestFormatCountdownPast(t *testing.T) {
+	past := time.Now().Add(-10 * time.Second)
+	got := formatCountdown(past)
+	if got != "" {
+		t.Errorf("formatCountdown past: got %q, want empty string", got)
+	}
+}
+
+func TestFormatCountdownSeconds(t *testing.T) {
+	future := time.Now().Add(45 * time.Second)
+	got := formatCountdown(future)
+	if !strings.HasSuffix(got, "s") || strings.Contains(got, "m") {
+		t.Errorf("formatCountdown seconds: got %q, expected format like '45s'", got)
+	}
+}
+
+func TestFormatCountdownMinutes(t *testing.T) {
+	future := time.Now().Add(5*time.Minute + 30*time.Second)
+	got := formatCountdown(future)
+	if !strings.HasPrefix(got, "5m") {
+		t.Errorf("formatCountdown minutes: got %q, expected format like '5m30s'", got)
+	}
+}
+
+func TestFormatCountdownHours(t *testing.T) {
+	future := time.Now().Add(2*time.Hour + 15*time.Minute)
+	got := formatCountdown(future)
+	if !strings.HasPrefix(got, "2h") {
+		t.Errorf("formatCountdown hours: got %q, expected format like '2h15m'", got)
+	}
+}
+
+// --- rate-limited badge tests ---
+
+func TestBadgeForInProgressWithRateLimit(t *testing.T) {
+	row := issueRow{number: 1, title: "fix bug", stage: "implement"}
+	resetsAt := time.Now().Add(90 * time.Minute)
+	got := stripANSI(badgeFor(row, &resetsAt))
+	if !strings.Contains(got, "RATE-LIMITED") {
+		t.Errorf("badgeFor rate-limited: expected RATE-LIMITED in %q", got)
+	}
+}
+
+func TestBadgeForInProgressWithoutRateLimit(t *testing.T) {
+	row := issueRow{number: 1, title: "fix bug", stage: "implement"}
+	got := stripANSI(badgeFor(row, nil))
+	if strings.Contains(got, "RATE-LIMITED") {
+		t.Errorf("badgeFor no rate-limit: should not have RATE-LIMITED in %q", got)
+	}
+	if !strings.Contains(got, "IMPLEMENT") {
+		t.Errorf("badgeFor no rate-limit: expected IMPLEMENT in %q", got)
+	}
+}
+
+func TestBadgeForQueuedWithRateLimitStaysQueued(t *testing.T) {
+	// A queued row (no stage) should NOT show rate-limited badge; it isn't running.
+	row := issueRow{number: 1, title: "fix bug"}
+	resetsAt := time.Now().Add(10 * time.Minute)
+	got := stripANSI(badgeFor(row, &resetsAt))
+	if strings.Contains(got, "RATE-LIMITED") {
+		t.Errorf("badgeFor queued with rate-limit: should not show RATE-LIMITED in %q", got)
+	}
+	if !strings.Contains(got, "QUEUED") {
+		t.Errorf("badgeFor queued with rate-limit: expected QUEUED in %q", got)
+	}
+}
+
+func TestRenderTableRateLimitedShowsBadge(t *testing.T) {
+	rows := []issueRow{
+		{number: 1, title: "fix bug", stage: "implement"},
+	}
+	spin := newTestSpinner()
+	resetsAt := time.Now().Add(90 * time.Minute)
+	got := stripANSI(renderTable(rows, spin, 80, &resetsAt))
+	if !strings.Contains(got, "RATE-LIMITED") {
+		t.Errorf("renderTable rate-limited: expected RATE-LIMITED in %q", got)
 	}
 }

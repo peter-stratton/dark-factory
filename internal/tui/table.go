@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
@@ -42,18 +43,44 @@ var (
 	traceStyle   = lipgloss.NewStyle().Faint(true)
 )
 
+// formatCountdown formats the remaining duration until t as a compact string
+// suitable for a TUI badge, e.g. "1h23m", "45m30s", or "12s".
+// Returns "" if t is zero or already in the past.
+func formatCountdown(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	diff := time.Until(t)
+	if diff <= 0 {
+		return ""
+	}
+	total := int(diff.Seconds())
+	h := total / 3600
+	m := (total % 3600) / 60
+	s := total % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dm", h, m)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm%02ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
 // renderTable composes all issue rows into a single styled string.
 //
 // The spin argument supplies the current spinner frame used for in-progress
 // rows (status == "" with a stage set). width controls title truncation.
-func renderTable(rows []issueRow, spin spinner.Model, width int) string {
+// rateLimitedUntil, when non-nil, causes in-progress rows to display a
+// "RATE-LIMITED <countdown>" badge instead of their stage badge.
+func renderTable(rows []issueRow, spin spinner.Model, width int, rateLimitedUntil *time.Time) string {
 	if len(rows) == 0 {
 		return ""
 	}
 
 	var out string
 	for i, row := range rows {
-		out += renderRow(row, spin, width)
+		out += renderRow(row, spin, width, rateLimitedUntil)
 		if i < len(rows)-1 {
 			out += "\n"
 		}
@@ -63,19 +90,21 @@ func renderTable(rows []issueRow, spin spinner.Model, width int) string {
 
 // renderRow renders a single issue row with the badge right-aligned to a
 // consistent column so badges form a clean vertical edge.
-func renderRow(row issueRow, spin spinner.Model, width int) string {
+// rateLimitedUntil, when non-nil, causes in-progress rows to display a
+// "RATE-LIMITED <countdown>" badge instead of their stage badge.
+func renderRow(row issueRow, spin spinner.Model, width int, rateLimitedUntil *time.Time) string {
 	marker := markerFor(row, spin)
 	num := rowNumberStyle.Render(fmt.Sprintf("#%d", row.number))
 
-	// Reserve space for badge (~18 chars with padding) and gutters.
-	badgeReserved := 18
+	// Reserve space for badge (~22 chars with padding) and gutters.
+	badgeReserved := 22
 	titleWidth := width - 22 - badgeReserved
 	if titleWidth < 10 {
 		titleWidth = 10
 	}
 	title := rowTitleStyle.Render(truncate(row.title, titleWidth))
 
-	badge := badgeFor(row)
+	badge := badgeFor(row, rateLimitedUntil)
 
 	left := marker + " " + num + " " + title
 	leftWidth := lipgloss.Width(left)
@@ -111,9 +140,10 @@ func renderRow(row issueRow, spin spinner.Model, width int) string {
 //   - "ready-to-merge"             → yellow "REVIEW"
 //   - "needs-human-review"         → yellow "REVIEW"
 //   - "failed"                     → red    "FAILED"
+//   - in-progress + rate-limited   → purple "RATE-LIMITED 1h23m"
 //   - in-progress (stage set)      → muted  stage name (e.g. "implement")
 //   - queued (no status, no stage) → muted  "QUEUED"
-func badgeFor(row issueRow) string {
+func badgeFor(row issueRow, rateLimitedUntil *time.Time) string {
 	switch row.status {
 	case "implemented", "merged":
 		return badgeMergedStyle.Render("MERGED")
@@ -125,6 +155,15 @@ func badgeFor(row issueRow) string {
 		}
 		return badgeFailedStyle.Render("FAILED")
 	default:
+		if row.stage == "rate-limited" || (rateLimitedUntil != nil && row.stage != "") {
+			label := "RATE-LIMITED"
+			if rateLimitedUntil != nil {
+				if cd := formatCountdown(*rateLimitedUntil); cd != "" {
+					label = "RATE-LIMITED " + cd
+				}
+			}
+			return badgeRateLimitedStyle.Render(label)
+		}
 		if row.stage != "" {
 			return badgeInProgressStyle.Render(strings.ToUpper(row.stage))
 		}

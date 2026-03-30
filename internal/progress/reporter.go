@@ -1,5 +1,7 @@
 package progress
 
+import "time"
+
 // IssueSummary holds the number and title of an issue in the run. Used to
 // populate the TUI's issue table upfront so all issues appear as queued.
 type IssueSummary struct {
@@ -30,4 +32,10 @@ type ProgressReporter interface {
 	JudgeIntervention(issueNumber int, rule, judgment, detail, step string)
 	// PunchlistText outputs a punchlist fragment as it becomes available.
 	PunchlistText(text string)
+	// RateLimited signals that a Claude usage limit has been hit and the
+	// orchestrator is holding until resetsAt.
+	RateLimited(resetsAt time.Time)
+	// RateLimitCleared signals that the hold period has ended and processing
+	// is resuming.
+	RateLimitCleared()
 }

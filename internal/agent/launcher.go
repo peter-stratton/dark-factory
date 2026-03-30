@@ -52,6 +52,8 @@ type Result struct {
 	PeakMemoryBytes   int64  // peak RSS in bytes; 0 if unavailable
 	CPUNanoseconds    int64  // total CPU time (user + system) in nanoseconds; 0 if unavailable
 	CloneSHA          string // HEAD SHA captured inside the container immediately after clone
+	UsageLimited      bool      // true when Claude hit its usage limit during this run
+	ResetsAt          time.Time // when the usage limit resets; zero if unknown
 }
 
 // SandboxRunner executes a container run. Replaceable for testing.
@@ -287,13 +289,20 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 		CPUNanoseconds:    result.CPUNanoseconds,
 	}
 
+	// Detect usage limit before processing the runner output so the IsError
+	// guard below can check res.UsageLimited correctly.
+	if resetsAt := parseRateLimitEvent(result.Stdout); !resetsAt.IsZero() {
+		res.UsageLimited = true
+		res.ResetsAt = resetsAt
+	}
+
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {
 		res.SessionID = parsed.SessionID
 		res.CostUSD = parsed.CostUSD
 		res.ResultText = parsed.Result
 		res.Verdict = parsed.Verdict
 		res.ToolTrace = parsed.ToolTrace
-		if parsed.IsError && res.ExitCode == 0 {
+		if parsed.IsError && res.ExitCode == 0 && !res.UsageLimited {
 			res.ExitCode = 1
 		}
 		// CLI stream-json mode doesn't include verdict or tool_trace
@@ -304,6 +313,13 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 		if len(res.ToolTrace) == 0 {
 			res.ToolTrace = extractToolTrace(result.Stdout)
 		}
+	}
+
+	// Belt-and-suspenders fallback: detect usage limit from result text if
+	// the structured rate_limit_event was not emitted.
+	if !res.UsageLimited && strings.Contains(res.ResultText, "You've hit your limit") {
+		res.UsageLimited = true
+		// ResetsAt stays zero — orchestrator will apply max-hold guard.
 	}
 
 	res.CloneSHA = extractCloneSHA(result.Stdout)
@@ -331,6 +347,36 @@ type runnerFinalResult struct {
 	IsError       bool     `json:"is_error"`
 	Verdict       string   `json:"verdict,omitempty"`
 	ToolTrace     []string `json:"tool_trace,omitempty"`
+}
+
+// rateLimitEvent is the JSON structure emitted by the Claude CLI when a usage
+// limit is hit during a stream-json run.
+type rateLimitEvent struct {
+	Type          string `json:"type"`
+	RateLimitInfo struct {
+		Status        string `json:"status"`
+		ResetsAt      int64  `json:"resetsAt"` // Unix timestamp
+		RateLimitType string `json:"rateLimitType"`
+	} `json:"rate_limit_info"`
+}
+
+// parseRateLimitEvent scans stdout for a rate_limit_event line and returns the
+// reset time. Returns the zero Time if no such event is found.
+func parseRateLimitEvent(stdout string) time.Time {
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, `"rate_limit_event"`) {
+			continue
+		}
+		var ev rateLimitEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if ev.Type == "rate_limit_event" && ev.RateLimitInfo.ResetsAt > 0 {
+			return time.Unix(ev.RateLimitInfo.ResetsAt, 0)
+		}
+	}
+	return time.Time{}
 }
 
 // parseRunnerOutput extracts the structured final result from runner stdout.

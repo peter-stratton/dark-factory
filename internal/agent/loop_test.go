@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent/judge"
 	"github.com/peter-stratton/dark-factory/internal/config"
@@ -4694,6 +4695,8 @@ func (r *mockReporter) RollupCreated(_ int, _ string, _ bool) {}
 func (r *mockReporter) RunFinished(_, _, _, _, _ int)         {}
 func (r *mockReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
 func (r *mockReporter) PunchlistText(_ string)                    {}
+func (r *mockReporter) RateLimited(_ time.Time)                   {}
+func (r *mockReporter) RateLimitCleared()                         {}
 
 func (r *mockReporter) hasStageChange(number int, stage string) bool {
 	for _, sc := range r.stageChanges {
