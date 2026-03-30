@@ -167,3 +167,39 @@ func TestGenerateSummaryPropagatesError(t *testing.T) {
 		t.Errorf("error %q should mention claude", err.Error())
 	}
 }
+
+func TestBuildCLIEnv_OAuthPreferred(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-tok")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-key")
+
+	env := buildCLIEnv()
+	if env == nil {
+		t.Fatal("buildCLIEnv() = nil, want filtered env")
+	}
+
+	var hasOAuth, hasAPIKey bool
+	for _, e := range env {
+		if strings.HasPrefix(e, "CLAUDE_CODE_OAUTH_TOKEN=") {
+			hasOAuth = true
+		}
+		if strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
+			hasAPIKey = true
+		}
+	}
+	if !hasOAuth {
+		t.Error("CLAUDE_CODE_OAUTH_TOKEN should be present in env")
+	}
+	if hasAPIKey {
+		t.Error("ANTHROPIC_API_KEY should be excluded when OAuth token is set")
+	}
+}
+
+func TestBuildCLIEnv_NoOAuthInheritsParent(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-key")
+
+	env := buildCLIEnv()
+	if env != nil {
+		t.Errorf("buildCLIEnv() = %v, want nil (inherit parent env)", env)
+	}
+}

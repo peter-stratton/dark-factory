@@ -20,6 +20,7 @@ import (
 var claudeRunner = func(ctx context.Context, prompt string) (string, error) {
 	cmd := exec.CommandContext(ctx, "claude", "--print")
 	cmd.Stdin = strings.NewReader(prompt)
+	cmd.Env = buildCLIEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -29,6 +30,24 @@ var claudeRunner = func(ctx context.Context, prompt string) (string, error) {
 		return "", fmt.Errorf("claude --print: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// buildCLIEnv returns the host environment with Anthropic auth vars filtered
+// to match the same OAuth-preferred logic used by sandbox.CollectAuthEnv.
+// When CLAUDE_CODE_OAUTH_TOKEN is set, ANTHROPIC_API_KEY is removed so the
+// claude CLI uses the subscription-backed OAuth token instead of API credits.
+func buildCLIEnv() []string {
+	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+	if oauthToken == "" {
+		return nil // inherit parent env as-is
+	}
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
+			env = append(env, e)
+		}
+	}
+	return env
 }
 
 // generateSummary is a testability seam: replaced in tests to stub the claude CLI call.
