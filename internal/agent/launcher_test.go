@@ -47,6 +47,14 @@ func TestParseRateLimitEvent_EmptyStdout(t *testing.T) {
 	}
 }
 
+func TestParseRateLimitEvent_AllowedStatusIgnored(t *testing.T) {
+	stdout := `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1774854000,"rateLimitType":"five_hour"}}`
+	_, got := parseRateLimitEvent(stdout)
+	if !got.IsZero() {
+		t.Errorf("expected zero time for allowed status, got %v", got)
+	}
+}
+
 func TestParseRateLimitEvent_MalformedJSON(t *testing.T) {
 	stdout := `{"type":"rate_limit_event","rate_limit_info":{"resetsAt":` // truncated
 	_, got := parseRateLimitEvent(stdout)
