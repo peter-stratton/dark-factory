@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/peter-stratton/dark-factory/internal/agent"
@@ -261,7 +262,8 @@ func implementIssues(
 	reporter.RunStarted(cfg.Repo, "", runTimestamp, cfg.BaseBranch,
 		string(cfg.AutoMerge.Feature), string(cfg.AutoMerge.Rollup), summaries)
 
-	for _, issueNumber := range issueNums {
+	for i := 0; i < len(issueNums); i++ {
+		issueNumber := issueNums[i]
 		if ctx.Err() != nil {
 			logger.Warn("context cancelled, stopping", "error", ctx.Err())
 			break
@@ -285,16 +287,13 @@ func implementIssues(
 
 		reporter.IssueStarted(issue.Number, issue.Title)
 		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
-		writeIssueDialogue(writer, cfg.Repo, issueNumber, outcome, logger)
 
-		// Compute per-issue cost from recorded step result files. Gracefully
-		// degrades to 0.0 when the writer is nil or step files have no cost data.
-		var issueCost float64
-		if writer != nil {
-			issueCost = rundata.IssueCostUSD(writer.IssueDir(issueNumber))
+		if held := handleUsageLimitHold(ctx, outcome, issue, cfg, logger, reporter, authEnv); held {
+			i-- // retry this issue
+			continue
 		}
 
-		di, drtm, dnhr, df := applyOutcomeStats(outcome, issue, cfg, reporter, logger, issueCost)
+		di, drtm, dnhr, df := recordOutcome(ctx, issue, outcome, cfg, writer, notifiers, logger, reporter)
 		implemented += di
 		readyToMerge += drtm
 		needsHumanReview += dnhr
@@ -302,11 +301,6 @@ func implementIssues(
 		if outcome.Status == agent.StatusImplemented {
 			implementedIssues = append(implementedIssues, issue)
 		}
-
-		logger.Info("issue outcome", "issue_number", outcome.IssueNumber, "status", outcome.Status,
-			"pr_number", outcome.PRNumber, "retries", outcome.Retries, "error", outcome.Err)
-		fireImplementationNotification(ctx, notifiers, cfg.Repo, issueNumber, outcome, logger)
-
 		if entry, ok := buildPunchlistEntry(cfg, issue, outcome, logger); ok {
 			punchlistEntries = append(punchlistEntries, entry)
 		}
@@ -319,6 +313,60 @@ func implementIssues(
 	maybeCreateRollupPR(ctx, cfg, implementedIssues, logger, reporter, writer, prompts, authEnv)
 
 	return nil
+}
+
+// recordOutcome writes dialogue, computes cost, updates stats, fires notifications,
+// and returns the counter increments for the issue outcome.
+func recordOutcome(ctx context.Context, issue github.Issue, outcome agent.IssueOutcome, cfg *config.Config, writer *rundata.Writer, notifiers []notify.Notifier, logger *slog.Logger, reporter progress.ProgressReporter) (int, int, int, int) {
+	writeIssueDialogue(writer, cfg.Repo, issue.Number, outcome, logger)
+	var issueCost float64
+	if writer != nil {
+		issueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
+	}
+	di, drtm, dnhr, df := applyOutcomeStats(outcome, issue, cfg, reporter, logger, issueCost)
+	logger.Info("issue outcome", "issue_number", outcome.IssueNumber, "status", outcome.Status,
+		"pr_number", outcome.PRNumber, "retries", outcome.Retries, "error", outcome.Err)
+	fireImplementationNotification(ctx, notifiers, cfg.Repo, issue.Number, outcome, logger)
+	return di, drtm, dnhr, df
+}
+
+// handleUsageLimitHold checks if the outcome indicates a usage limit hit. If so,
+// it sleeps until the reset time, refreshes auth tokens, and returns true so the
+// caller can retry the issue. Returns false if no hold was needed.
+func handleUsageLimitHold(ctx context.Context, outcome agent.IssueOutcome, issue github.Issue, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, authEnv map[string]string) bool {
+	if !outcome.UsageLimited {
+		return false
+	}
+	resetsAt := outcome.ResetsAt
+	const holdBuffer = 30 * time.Second
+	const maxHold = 6 * time.Hour
+	if resetsAt.IsZero() || time.Until(resetsAt) > maxHold {
+		logger.Warn("usage limit reset time too far or unknown — failing issue",
+			"issue_number", issue.Number, "resetsAt", resetsAt)
+		reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, "usage limit: reset time exceeds max hold", 0, outcome.TraceID)
+		return false
+	}
+	sleepUntil := resetsAt.Add(holdBuffer)
+	logger.Info("usage limit hit — entering hold",
+		"issue_number", issue.Number, "resetsAt", resetsAt, "sleep_until", sleepUntil)
+	reporter.IssueStageChanged(issue.Number, "rate-limited")
+	reporter.RateLimited(resetsAt)
+	timer := time.NewTimer(time.Until(sleepUntil))
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		logger.Warn("context cancelled during rate-limit hold")
+		return false
+	case <-timer.C:
+	}
+	reporter.RateLimitCleared()
+	logger.Info("usage limit hold complete — resuming", "issue_number", issue.Number)
+	// Refresh GitHub App token — it may have expired during the hold.
+	if token, err := ghapp.RefreshToken(); err == nil && token != "" {
+		_ = os.Setenv("GH_TOKEN", token)
+		authEnv["GH_TOKEN"] = token
+	}
+	return true
 }
 
 // maybeCreateRollupPR creates a rollup PR when using a non-default base branch,

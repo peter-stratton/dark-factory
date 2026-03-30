@@ -789,6 +789,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				}
 				reporter.RateLimitCleared()
 				logger.Info("usage limit hold complete — resuming", "issue_number", issue.Number)
+				// Refresh GitHub App token — it may have expired during the hold.
+				refreshHostGHToken(logger)
+				if newToken, err := ghapp.RefreshToken(); err == nil && newToken != "" {
+					authEnv["GH_TOKEN"] = newToken
+				}
 				// Break out of batch loop so the issue is retried in the next iteration.
 				break
 			}
