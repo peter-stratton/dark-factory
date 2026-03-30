@@ -1777,7 +1777,7 @@ func setupRollupVerifyMock(t *testing.T, fn func(ctx context.Context, prNum int,
 }
 
 // setupHandleRollupPRMocks installs the upsert and merge mocks used by
-// tests that call handleRollupPR directly (bypassing processIssues).
+// tests that call HandleRollupPR directly (bypassing processIssues).
 func setupHandleRollupPRMocks(t *testing.T) (merged *[]int) {
 	t.Helper()
 	var mergedCalls []int
@@ -1811,9 +1811,9 @@ func TestRollupVerify_PassesOnFirstAttempt(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 	reporter := &fakeReporter{}
 
-	prNum, prURL, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, prURL, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 	if prNum != 999 {
 		t.Errorf("pr number = %d, want 999", prNum)
@@ -1843,9 +1843,9 @@ func TestRollupVerify_ExhaustsRetries_LeavesPROpen(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 	reporter := &fakeReporter{}
 
-	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 	if prNum != 999 {
 		t.Errorf("pr number = %d, want 999", prNum)
@@ -1884,8 +1884,8 @@ func TestRollupVerify_WriteResultCalledWhenWriterPresent(t *testing.T) {
 		t.Fatalf("NewWithBase: %v", err)
 	}
 
-	if _, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, writer, &agent.Prompts{}, nil); err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+	if _, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, writer, &agent.Prompts{}, nil); err != nil {
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 
 	if capturedWriteResult == nil {
@@ -1911,8 +1911,8 @@ func TestRollupVerify_ManualMode_VerifyFailsLeavesOpen(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 	reporter := &fakeReporter{}
 
-	if _, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil); err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+	if _, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil); err != nil {
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 
 	if len(*merged) != 0 {
@@ -2777,9 +2777,9 @@ func TestHandleRollupPR_CleanMerge(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, prURL, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, prURL, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 	if prNum != 999 {
 		t.Errorf("pr number = %d, want 999", prNum)
@@ -2827,9 +2827,9 @@ func TestHandleRollupPR_ConflictResolved(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 	if prNum != 999 {
 		t.Errorf("pr number = %d, want 999", prNum)
@@ -2871,9 +2871,9 @@ func TestHandleRollupPR_ConflictUnresolvable(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 	if prNum != 999 {
 		t.Errorf("pr number = %d, want 999", prNum)
@@ -2919,9 +2919,9 @@ func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, _, err := handleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
-		t.Fatalf("handleRollupPR() error = %v", err)
+		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 	if prNum != 999 {
 		t.Errorf("pr number = %d, want 999", prNum)

@@ -245,6 +245,7 @@ func implementIssues(
 
 	var implemented, readyToMerge, needsHumanReview, failed int
 	var punchlistEntries []punchlist.Entry
+	var implementedIssues []github.Issue
 
 	var runTimestamp string
 	if writer != nil {
@@ -299,6 +300,10 @@ func implementIssues(
 		needsHumanReview += dnhr
 		failed += df
 
+		if outcome.Status == agent.StatusImplemented {
+			implementedIssues = append(implementedIssues, issue)
+		}
+
 		logger.Info("issue outcome",
 			"issue_number", outcome.IssueNumber,
 			"status", outcome.Status,
@@ -317,6 +322,19 @@ func implementIssues(
 	reporter.RunFinished(implemented, readyToMerge, needsHumanReview, failed, 0)
 	finalizeRunData(ctx, writer, statsDB, cfg, implemented, readyToMerge, needsHumanReview, failed, logger)
 	finalizePunchlistEntries(ctx, punchlistEntries, writer, prompts, cfg, authEnv, logger, punchlistPath, reporter)
+
+	// Rollup PR: create (and optionally merge) when using a non-default base
+	// branch, rollup is not disabled, and at least one issue was implemented.
+	defaultBranch := cfg.EffectiveDefaultBranch(cfg.Repo)
+	if cfg.AutoMerge.Rollup != config.RollupNone &&
+		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
+		implemented > 0 {
+		_, _, err := orchestrator.HandleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
+		if err != nil {
+			logger.Warn("rollup PR handling failed", "error", err)
+			fmt.Fprintf(os.Stderr, "Rollup PR warning: %v\n", err)
+		}
+	}
 
 	return nil
 }

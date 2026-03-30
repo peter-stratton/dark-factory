@@ -922,7 +922,7 @@ done:
 		cfg.AutoMerge.Rollup != config.RollupNone &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
 		runStats.implemented > 0 {
-		prNum, prURL, err := handleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
+		prNum, prURL, err := HandleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
 		if err != nil {
 			logger.Warn("rollup PR handling failed", "error", err)
 			fmt.Printf("Rollup PR warning: %v\n", err)
@@ -1061,11 +1061,11 @@ var checkMergeableFn = github.CheckMergeable
 // Replaceable for testing.
 var mergeCoordinateFn = agent.MergeCoordinate
 
-// handleRollupPR creates (and optionally merges) a PR from cfg.BaseBranch
+// HandleRollupPR creates (and optionally merges) a PR from cfg.BaseBranch
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
 // least one issue was implemented into the base branch during the run.
 // Returns the PR number, URL, and any error.
-func handleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
+func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
 	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
