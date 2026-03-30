@@ -64,15 +64,15 @@ func TestParseRateLimitEvent_AllowedWarningIgnored(t *testing.T) {
 	}
 }
 
-func TestParseRateLimitEvent_LimitReachedTriggers(t *testing.T) {
+func TestParseRateLimitEvent_UnknownStatusTriggers(t *testing.T) {
 	resetsAt := int64(1774854000)
-	stdout := fmt.Sprintf(`{"type":"rate_limit_event","rate_limit_info":{"status":"limit_reached","resetsAt":%d,"rateLimitType":"five_hour"}}`, resetsAt)
-	_, got := parseRateLimitEvent(stdout)
-	if got.IsZero() {
-		t.Fatal("expected non-zero time for limit_reached status")
-	}
-	if got.Unix() != resetsAt {
-		t.Errorf("got Unix=%d, want %d", got.Unix(), resetsAt)
+	// Any status that isn't "allowed" or "allowed_warning" should trigger.
+	for _, status := range []string{"limit_reached", "exhausted", "rate_limited", "something_new"} {
+		stdout := fmt.Sprintf(`{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%d,"rateLimitType":"five_hour"}}`, status, resetsAt)
+		_, got := parseRateLimitEvent(stdout)
+		if got.IsZero() {
+			t.Errorf("expected non-zero time for status %q, got zero", status)
+		}
 	}
 }
 
