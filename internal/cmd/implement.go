@@ -299,19 +299,12 @@ func implementIssues(
 		readyToMerge += drtm
 		needsHumanReview += dnhr
 		failed += df
-
 		if outcome.Status == agent.StatusImplemented {
 			implementedIssues = append(implementedIssues, issue)
 		}
 
-		logger.Info("issue outcome",
-			"issue_number", outcome.IssueNumber,
-			"status", outcome.Status,
-			"pr_number", outcome.PRNumber,
-			"retries", outcome.Retries,
-			"error", outcome.Err,
-		)
-
+		logger.Info("issue outcome", "issue_number", outcome.IssueNumber, "status", outcome.Status,
+			"pr_number", outcome.PRNumber, "retries", outcome.Retries, "error", outcome.Err)
 		fireImplementationNotification(ctx, notifiers, cfg.Repo, issueNumber, outcome, logger)
 
 		if entry, ok := buildPunchlistEntry(cfg, issue, outcome, logger); ok {
@@ -323,20 +316,25 @@ func implementIssues(
 	finalizeRunData(ctx, writer, statsDB, cfg, implemented, readyToMerge, needsHumanReview, failed, logger)
 	finalizePunchlistEntries(ctx, punchlistEntries, writer, prompts, cfg, authEnv, logger, punchlistPath, reporter)
 
-	// Rollup PR: create (and optionally merge) when using a non-default base
-	// branch, rollup is not disabled, and at least one issue was implemented.
-	defaultBranch := cfg.EffectiveDefaultBranch(cfg.Repo)
-	if cfg.AutoMerge.Rollup != config.RollupNone &&
-		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
-		implemented > 0 {
-		_, _, err := orchestrator.HandleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
-		if err != nil {
-			logger.Warn("rollup PR handling failed", "error", err)
-			fmt.Fprintf(os.Stderr, "Rollup PR warning: %v\n", err)
-		}
-	}
+	maybeCreateRollupPR(ctx, cfg, implementedIssues, logger, reporter, writer, prompts, authEnv)
 
 	return nil
+}
+
+// maybeCreateRollupPR creates a rollup PR when using a non-default base branch,
+// rollup is not disabled, and at least one issue was implemented.
+func maybeCreateRollupPR(ctx context.Context, cfg *config.Config, implementedIssues []github.Issue, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) {
+	defaultBranch := cfg.EffectiveDefaultBranch(cfg.Repo)
+	if cfg.AutoMerge.Rollup == config.RollupNone ||
+		cfg.BaseBranch == "" || cfg.BaseBranch == defaultBranch ||
+		len(implementedIssues) == 0 {
+		return
+	}
+	_, _, err := orchestrator.HandleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
+	if err != nil {
+		logger.Warn("rollup PR handling failed", "error", err)
+		fmt.Fprintf(os.Stderr, "Rollup PR warning: %v\n", err)
+	}
 }
 
 // writeIssueDialogue fetches PR comment bodies and writes dialogue to the run data writer.
