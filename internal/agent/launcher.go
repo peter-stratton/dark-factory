@@ -291,9 +291,15 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 
 	// Detect usage limit before processing the runner output so the IsError
 	// guard below can check res.UsageLimited correctly.
-	if resetsAt := parseRateLimitEvent(result.Stdout); !resetsAt.IsZero() {
+	if rawLine, resetsAt := parseRateLimitEvent(result.Stdout); !resetsAt.IsZero() {
 		res.UsageLimited = true
 		res.ResetsAt = resetsAt
+		logger.Warn("rate_limit_event detected in container stdout",
+			"raw_json", rawLine,
+			"resets_at", resetsAt,
+			"resets_at_unix", resetsAt.Unix(),
+			"exit_code", res.ExitCode,
+		)
 	}
 
 	if parsed := parseRunnerOutput(result.Stdout); parsed != nil {
@@ -361,8 +367,8 @@ type rateLimitEvent struct {
 }
 
 // parseRateLimitEvent scans stdout for a rate_limit_event line and returns the
-// reset time. Returns the zero Time if no such event is found.
-func parseRateLimitEvent(stdout string) time.Time {
+// raw JSON line and parsed reset time. Returns ("", zero Time) if no such event is found.
+func parseRateLimitEvent(stdout string) (string, time.Time) {
 	for _, line := range strings.Split(stdout, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || !strings.Contains(line, `"rate_limit_event"`) {
@@ -373,10 +379,10 @@ func parseRateLimitEvent(stdout string) time.Time {
 			continue
 		}
 		if ev.Type == "rate_limit_event" && ev.RateLimitInfo.ResetsAt > 0 {
-			return time.Unix(ev.RateLimitInfo.ResetsAt, 0)
+			return line, time.Unix(ev.RateLimitInfo.ResetsAt, 0)
 		}
 	}
-	return time.Time{}
+	return "", time.Time{}
 }
 
 // parseRunnerOutput extracts the structured final result from runner stdout.

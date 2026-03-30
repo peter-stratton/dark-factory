@@ -20,25 +20,28 @@ func TestParseRateLimitEvent_Valid(t *testing.T) {
 	resetsAt := time.Now().Add(2 * time.Hour).Unix()
 	stdout := "some output\n" + rateLimitJSON(resetsAt) + "\n{\"type\":\"result\"}"
 
-	got := parseRateLimitEvent(stdout)
+	rawLine, got := parseRateLimitEvent(stdout)
 	if got.IsZero() {
 		t.Fatal("expected non-zero time, got zero")
 	}
 	if got.Unix() != resetsAt {
 		t.Errorf("got Unix=%d, want %d", got.Unix(), resetsAt)
 	}
+	if rawLine == "" {
+		t.Error("expected non-empty raw JSON line")
+	}
 }
 
 func TestParseRateLimitEvent_NoEvent(t *testing.T) {
 	stdout := `{"type":"result","session_id":"abc","result":"done","is_error":false}`
-	got := parseRateLimitEvent(stdout)
+	_, got := parseRateLimitEvent(stdout)
 	if !got.IsZero() {
 		t.Errorf("expected zero time for stdout with no rate_limit_event, got %v", got)
 	}
 }
 
 func TestParseRateLimitEvent_EmptyStdout(t *testing.T) {
-	got := parseRateLimitEvent("")
+	_, got := parseRateLimitEvent("")
 	if !got.IsZero() {
 		t.Errorf("expected zero time for empty stdout, got %v", got)
 	}
@@ -46,7 +49,7 @@ func TestParseRateLimitEvent_EmptyStdout(t *testing.T) {
 
 func TestParseRateLimitEvent_MalformedJSON(t *testing.T) {
 	stdout := `{"type":"rate_limit_event","rate_limit_info":{"resetsAt":` // truncated
-	got := parseRateLimitEvent(stdout)
+	_, got := parseRateLimitEvent(stdout)
 	if !got.IsZero() {
 		t.Errorf("expected zero time for malformed JSON, got %v", got)
 	}
