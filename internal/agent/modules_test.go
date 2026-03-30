@@ -113,9 +113,9 @@ func TestTopologicalSortModules_CycleReturnsError(t *testing.T) {
 
 func TestBuildModuleVerifyChecks_UsesModuleCommands(t *testing.T) {
 	mod := config.Module{
-		BuildCommand: "go build ./cmd/...",
-		TestCommand:  "go test ./cmd/...",
-		LintCommand:  "golint ./cmd/...",
+		BuildCommand: "cd mymodule && go build ./cmd/...",
+		TestCommand:  "cd mymodule && go test ./cmd/...",
+		LintCommand:  "cd mymodule && golint ./cmd/...",
 	}
 	cfg := &config.Config{
 		BuildCommand: "go build ./...",
@@ -128,9 +128,6 @@ func TestBuildModuleVerifyChecks_UsesModuleCommands(t *testing.T) {
 		t.Fatalf("got %d checks, want 3", len(checks))
 	}
 	for _, ch := range checks {
-		if !strings.Contains(ch.Command, "cd mymodule && ") {
-			t.Errorf("command %q missing cd prefix", ch.Command)
-		}
 		if !strings.Contains(ch.Command, "./cmd/...") {
 			t.Errorf("command %q should use module command (./cmd/...), not root (./...)", ch.Command)
 		}
@@ -149,16 +146,17 @@ func TestBuildModuleVerifyChecks_InheritsRootCommands(t *testing.T) {
 	if len(checks) != 2 {
 		t.Fatalf("got %d checks, want 2", len(checks))
 	}
-	for _, ch := range checks {
-		if !strings.HasPrefix(ch.Command, "cd svc && ") {
-			t.Errorf("command %q should start with \"cd svc && \"", ch.Command)
-		}
-	}
 	if checks[0].Name != "build" {
 		t.Errorf("checks[0].Name = %q, want \"build\"", checks[0].Name)
 	}
+	if checks[0].Command != "go build ./..." {
+		t.Errorf("checks[0].Command = %q, want \"go build ./...\"", checks[0].Command)
+	}
 	if checks[1].Name != "test" {
 		t.Errorf("checks[1].Name = %q, want \"test\"", checks[1].Name)
+	}
+	if checks[1].Command != "go test ./..." {
+		t.Errorf("checks[1].Command = %q, want \"go test ./...\"", checks[1].Command)
 	}
 }
 
@@ -188,9 +186,9 @@ func TestBuildModuleVerifyChecks_PartialInheritance(t *testing.T) {
 	}
 }
 
-func TestBuildModuleVerifyChecks_CommandPrefixedWithModuleDir(t *testing.T) {
+func TestBuildModuleVerifyChecks_CommandUsedVerbatim(t *testing.T) {
 	mod := config.Module{
-		BuildCommand: "make build",
+		BuildCommand: "cd subdir/mymod && make build",
 	}
 	cfg := &config.Config{}
 	checks := buildModuleVerifyChecks("subdir/mymod", mod, cfg)

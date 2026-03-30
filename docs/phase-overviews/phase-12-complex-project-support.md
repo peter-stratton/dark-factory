@@ -33,7 +33,7 @@ Module: service
 service/handler.go:42:15: cannot use resp (variable of type *Response) as *OldResponse...
 ```
 
-The agent sees exactly which module broke and why. If `service` passes, `admin-cli` runs next. Each module's commands execute with `cd <module-name> &&` prepended, so they run in the correct subdirectory.
+The agent sees exactly which module broke and why. If `service` passes, `admin-cli` runs next. Module commands run exactly as written — authors include any `cd` needed to target the correct subdirectory.
 
 When no `modules:` block is present, everything works exactly as before -- single-module mode with root-level commands.
 

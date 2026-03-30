@@ -1118,8 +1118,8 @@ func topologicalSortModules(modules map[string]config.Module) ([]string, error) 
 
 // buildModuleVerifyChecks builds the ordered list of verify checks for a
 // single module. Module-level commands take precedence; empty fields fall back
-// to the root-level config commands. Each command is prefixed with
-// "cd <modName> && " so it runs in the module's subdirectory.
+// to the root-level config commands. Commands are used exactly as written —
+// they must include any directory changes needed (e.g. "cd app && flutter test").
 // Order: format → generate → build → lint → test.
 func buildModuleVerifyChecks(modName string, mod config.Module, cfg *config.Config) []Check {
 	format := mod.FormatCommand
@@ -1143,23 +1143,21 @@ func buildModuleVerifyChecks(modName string, mod config.Module, cfg *config.Conf
 		test = cfg.TestCommand
 	}
 
-	prefix := "cd " + modName + " && "
-
 	var checks []Check
 	if format != "" {
-		checks = append(checks, Check{Name: "format", Command: prefix + format})
+		checks = append(checks, Check{Name: "format", Command: format})
 	}
 	if generate != "" {
-		checks = append(checks, Check{Name: "generate", Command: prefix + generate})
+		checks = append(checks, Check{Name: "generate", Command: generate})
 	}
 	if build != "" {
-		checks = append(checks, Check{Name: "build", Command: prefix + build})
+		checks = append(checks, Check{Name: "build", Command: build})
 	}
 	if lint != "" {
-		checks = append(checks, Check{Name: "lint", Command: prefix + lint})
+		checks = append(checks, Check{Name: "lint", Command: lint})
 	}
 	if test != "" {
-		checks = append(checks, Check{Name: "test", Command: prefix + test})
+		checks = append(checks, Check{Name: "test", Command: test})
 	}
 	return checks
 }

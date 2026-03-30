@@ -224,8 +224,7 @@ In v1, all modules are verified unconditionally (no change detection).
     - Topologically sort modules by `depends_on`
     - For each module in order, build a `[]Check` list from the module's
       commands (falling back to root-level commands if a module field is empty)
-    - Each command runs with `cd <module-dir> &&` prepended (or the
-      `CommandRunner` is scoped to the module directory)
+    - Commands run exactly as written; authors include any `cd` needed
     - If any module fails, stop (don't run dependent modules)
   - When `cfg.Modules` is nil: existing single-module behavior unchanged
 - Fix cycle handling for the verify fix loop: when modules are configured,

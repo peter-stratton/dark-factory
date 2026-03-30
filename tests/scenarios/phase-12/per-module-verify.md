@@ -13,10 +13,10 @@ Relates to: Issue #223
 Config has modules `service` (no deps) and `admin-cli` (depends on `service`).
 - `service` verify runs before `admin-cli`
 
-### Module commands run in subdirectory
-Config has module `service` with `build_command: "go build ./..."`.
-- The command runner receives a command prefixed with `cd service &&` or equivalent
-- The build runs in the `service/` subdirectory context
+### Module commands run verbatim
+Config has module `service` with `build_command: "cd service && go build ./..."`.
+- The command runner receives the command exactly as written
+- Module commands must include any `cd` needed to run in the correct directory
 
 ### Module inherits root commands
 Config has root `lint_command: "golangci-lint run"`. Module `service` has no `lint_command`.

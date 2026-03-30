@@ -121,17 +121,18 @@ set `base_branch: main` (or your repo's default branch name) in `godark.yaml`.
 ```yaml
 modules:
   backend:
-    build_command: go build ./...
-    test_command: go test ./...
+    build_command: "cd backend && go build ./..."
+    test_command: "cd backend && go test ./..."
     depends_on: []
   frontend:
-    build_command: npm run build
-    test_command: npm test
+    build_command: "cd frontend && npm run build"
+    test_command: "cd frontend && npm test"
     depends_on: [backend]
 ```
 
 Modules are verified in dependency order. Each module can override the root-level
-build, test, lint, and generate commands.
+build, test, lint, and generate commands. Commands run from the repo root — include
+any `cd` needed to target the correct subdirectory.
 
 ### Notifications
 
