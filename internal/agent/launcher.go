@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -325,7 +326,11 @@ func runSandboxOnce(ctx context.Context, opts RunOpts, sandboxOpts sandbox.RunOp
 	// the structured rate_limit_event was not emitted.
 	if !res.UsageLimited && strings.Contains(res.ResultText, "You've hit your limit") {
 		res.UsageLimited = true
-		// ResetsAt stays zero — orchestrator will apply max-hold guard.
+		res.ResetsAt = parseTextResetTime(res.ResultText)
+		logger.Warn("usage limit detected from result text (no structured event)",
+			"result_text", res.ResultText,
+			"resets_at", res.ResetsAt,
+		)
 	}
 
 	res.CloneSHA = extractCloneSHA(result.Stdout)
@@ -384,6 +389,35 @@ func parseRateLimitEvent(stdout string) (string, time.Time) {
 		}
 	}
 	return "", time.Time{}
+}
+
+// textResetRe matches "resets 2am (UTC)" or "resets 8pm (UTC)" in the rate limit text message.
+var textResetRe = regexp.MustCompile(`resets\s+(\d{1,2})(am|pm)\s*\(UTC\)`)
+
+// parseTextResetTime extracts a reset time from a human-readable rate limit
+// message like "You've hit your limit · resets 8pm (UTC)". Returns the next
+// occurrence of that UTC hour. Returns zero Time if parsing fails.
+func parseTextResetTime(text string) time.Time {
+	m := textResetRe.FindStringSubmatch(text)
+	if len(m) < 3 {
+		return time.Time{}
+	}
+	hour, err := strconv.Atoi(m[1])
+	if err != nil {
+		return time.Time{}
+	}
+	if m[2] == "pm" && hour != 12 {
+		hour += 12
+	} else if m[2] == "am" && hour == 12 {
+		hour = 0
+	}
+
+	now := time.Now().UTC()
+	reset := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, time.UTC)
+	if reset.Before(now) {
+		reset = reset.Add(24 * time.Hour)
+	}
+	return reset
 }
 
 // parseRunnerOutput extracts the structured final result from runner stdout.

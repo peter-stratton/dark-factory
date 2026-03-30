@@ -76,6 +76,46 @@ func TestParseRateLimitEvent_UnknownStatusTriggers(t *testing.T) {
 	}
 }
 
+func TestParseTextResetTime_8pmUTC(t *testing.T) {
+	got := parseTextResetTime("You've hit your limit · resets 8pm (UTC)")
+	if got.IsZero() {
+		t.Fatal("expected non-zero time")
+	}
+	if got.Hour() != 20 || got.Minute() != 0 {
+		t.Errorf("got %v, want 20:00 UTC", got)
+	}
+	if got.Location() != time.UTC {
+		t.Errorf("got location %v, want UTC", got.Location())
+	}
+}
+
+func TestParseTextResetTime_2amUTC(t *testing.T) {
+	got := parseTextResetTime("You've hit your limit · resets 2am (UTC)")
+	if got.IsZero() {
+		t.Fatal("expected non-zero time")
+	}
+	if got.Hour() != 2 || got.Minute() != 0 {
+		t.Errorf("got %v, want 02:00 UTC", got)
+	}
+}
+
+func TestParseTextResetTime_NoMatch(t *testing.T) {
+	got := parseTextResetTime("some random output")
+	if !got.IsZero() {
+		t.Errorf("expected zero time, got %v", got)
+	}
+}
+
+func TestParseTextResetTime_12pmUTC(t *testing.T) {
+	got := parseTextResetTime("You've hit your limit · resets 12pm (UTC)")
+	if got.IsZero() {
+		t.Fatal("expected non-zero time")
+	}
+	if got.Hour() != 12 {
+		t.Errorf("got hour %d, want 12", got.Hour())
+	}
+}
+
 func TestParseRateLimitEvent_MalformedJSON(t *testing.T) {
 	stdout := `{"type":"rate_limit_event","rate_limit_info":{"resetsAt":` // truncated
 	_, got := parseRateLimitEvent(stdout)
