@@ -378,7 +378,7 @@ func parseRateLimitEvent(stdout string) (string, time.Time) {
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			continue
 		}
-		if ev.Type == "rate_limit_event" && ev.RateLimitInfo.ResetsAt > 0 && ev.RateLimitInfo.Status != "allowed" {
+		if ev.Type == "rate_limit_event" && ev.RateLimitInfo.ResetsAt > 0 && ev.RateLimitInfo.Status == "limit_reached" {
 			return line, time.Unix(ev.RateLimitInfo.ResetsAt, 0)
 		}
 	}

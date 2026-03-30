@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"testing"
@@ -52,6 +53,26 @@ func TestParseRateLimitEvent_AllowedStatusIgnored(t *testing.T) {
 	_, got := parseRateLimitEvent(stdout)
 	if !got.IsZero() {
 		t.Errorf("expected zero time for allowed status, got %v", got)
+	}
+}
+
+func TestParseRateLimitEvent_AllowedWarningIgnored(t *testing.T) {
+	stdout := `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1774854000,"rateLimitType":"five_hour","utilization":0.9}}`
+	_, got := parseRateLimitEvent(stdout)
+	if !got.IsZero() {
+		t.Errorf("expected zero time for allowed_warning status, got %v", got)
+	}
+}
+
+func TestParseRateLimitEvent_LimitReachedTriggers(t *testing.T) {
+	resetsAt := int64(1774854000)
+	stdout := fmt.Sprintf(`{"type":"rate_limit_event","rate_limit_info":{"status":"limit_reached","resetsAt":%d,"rateLimitType":"five_hour"}}`, resetsAt)
+	_, got := parseRateLimitEvent(stdout)
+	if got.IsZero() {
+		t.Fatal("expected non-zero time for limit_reached status")
+	}
+	if got.Unix() != resetsAt {
+		t.Errorf("got Unix=%d, want %d", got.Unix(), resetsAt)
 	}
 }
 
