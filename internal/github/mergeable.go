@@ -3,6 +3,7 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // CheckMergeable returns the mergeable status of a pull request.
@@ -26,6 +27,35 @@ func CheckMergeable(repo string, prNum int) (string, error) {
 	}
 
 	return result.Mergeable, nil
+}
+
+// WaitForMergeable polls GitHub until the mergeable status resolves from
+// UNKNOWN to either MERGEABLE or CONFLICTING. Returns the resolved status.
+// Times out after the given duration, returning "UNKNOWN" if still unresolved.
+func WaitForMergeable(repo string, prNum int, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	delay := 2 * time.Second
+
+	for time.Now().Before(deadline) {
+		status, err := CheckMergeable(repo, prNum)
+		if err != nil {
+			return "", err
+		}
+		if status != "UNKNOWN" {
+			return status, nil
+		}
+		remaining := time.Until(deadline)
+		if delay > remaining {
+			delay = remaining
+		}
+		if delay <= 0 {
+			break
+		}
+		time.Sleep(delay)
+		delay = min(delay*2, 10*time.Second)
+	}
+
+	return "UNKNOWN", nil
 }
 
 // UpdateBranch updates a PR branch by rebasing it onto the base branch via

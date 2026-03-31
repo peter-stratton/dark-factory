@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
@@ -102,10 +103,15 @@ func TestRunPreMergeRebasePhase_Mergeable(t *testing.T) {
 func TestRunPreMergeRebasePhase_Unknown(t *testing.T) {
 	origGH := github.CommandRunner
 	t.Cleanup(func() { github.CommandRunner = origGH })
+	// Simulate UNKNOWN resolving to MERGEABLE after a couple of polls.
+	var calls atomic.Int32
 	github.CommandRunner = func(name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		if strings.Contains(joined, "--json mergeable") {
-			return []byte(`{"mergeable":"UNKNOWN"}`), nil
+			if calls.Add(1) <= 2 {
+				return []byte(`{"mergeable":"UNKNOWN"}`), nil
+			}
+			return []byte(`{"mergeable":"MERGEABLE"}`), nil
 		}
 		return []byte(""), nil
 	}

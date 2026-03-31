@@ -1416,26 +1416,41 @@ func logAndRecordFlags(flags []quality.Flag, logger *slog.Logger, issueNum int) 
 	return rdFlags
 }
 
-// mergeWithRetry attempts to merge a PR with exponential backoff. GitHub may
-// need time to recalculate mergeable status after a rebase or merge coordinator
-// push. Retries up to 4 times with delays of 2s, 4s, 8s, 16s (30s total max).
+// mergeWithRetry attempts to merge a PR with exponential backoff. Before the
+// first attempt it waits for GitHub to resolve the mergeable status from
+// UNKNOWN, which avoids wasting retries on a status GitHub hasn't computed yet.
+// Retries up to 4 times with delays of 2s, 4s, 8s, 16s (30s total max).
 func mergeWithRetry(repo string, prNum int, logger *slog.Logger) error {
+	// Wait for GitHub to resolve mergeable status before attempting merge.
+	// This avoids burning retries when the status is simply not yet computed.
+	status, waitErr := github.WaitForMergeable(repo, prNum, 30*time.Second)
+	if waitErr != nil {
+		logger.Warn("failed to poll mergeable status before merge, proceeding",
+			"pr_number", prNum, "error", waitErr)
+	} else if status == "CONFLICTING" {
+		return fmt.Errorf("merging PR: PR has merge conflicts")
+	} else if status == "UNKNOWN" {
+		logger.Warn("mergeable status still UNKNOWN after 30s, attempting merge anyway",
+			"pr_number", prNum)
+	}
+
 	const maxAttempts = 5
 	delay := 2 * time.Second
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		_, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", repo, "--squash", "--delete-branch")
+		out, err := GuardRunner("gh", "pr", "merge", fmt.Sprintf("%d", prNum), "--repo", repo, "--squash", "--delete-branch")
 		if err == nil {
 			return nil
 		}
 		if attempt == maxAttempts-1 {
-			return fmt.Errorf("merging PR: %w", err)
+			return fmt.Errorf("merging PR: %s: %w", strings.TrimSpace(string(out)), err)
 		}
 		logger.Warn("merge attempt failed, retrying",
 			"pr_number", prNum,
 			"attempt", attempt+1,
 			"delay", delay,
 			"error", err,
+			"output", strings.TrimSpace(string(out)),
 		)
 		time.Sleep(delay)
 		delay *= 2
@@ -1484,8 +1499,25 @@ func runPreMergeRebasePhase(
 			return false, nil
 		}
 
+		// GitHub may return UNKNOWN while computing mergeability (e.g. after
+		// a push or rebase). Poll until it resolves so we don't attempt a
+		// merge that will be rejected.
+		if mergeable == "UNKNOWN" {
+			logger.Info("mergeable status is UNKNOWN, waiting for GitHub to resolve",
+				"pr_number", prNum)
+			mergeable, checkErr = github.WaitForMergeable(cfg.Repo, prNum, 60*time.Second)
+			if checkErr != nil {
+				logger.Warn("failed to poll mergeable status, proceeding to merge",
+					"pr_number", prNum, "error", checkErr)
+				return false, nil
+			}
+			if mergeable == "UNKNOWN" {
+				logger.Warn("mergeable status still UNKNOWN after polling, proceeding to merge",
+					"pr_number", prNum)
+			}
+		}
+
 		if mergeable != "CONFLICTING" {
-			// MERGEABLE or UNKNOWN — proceed with merge.
 			return false, nil
 		}
 
@@ -1548,8 +1580,8 @@ func runPreMergeRebasePhase(
 		}
 	}
 
-	// All attempts used; check one final time.
-	mergeable, checkErr := github.CheckMergeable(cfg.Repo, prNum)
+	// All attempts used; check one final time, waiting for UNKNOWN to resolve.
+	mergeable, checkErr := github.WaitForMergeable(cfg.Repo, prNum, 60*time.Second)
 	if checkErr != nil {
 		logger.Warn("failed to check mergeable status after rebase attempts, proceeding",
 			"pr_number", prNum, "error", checkErr)

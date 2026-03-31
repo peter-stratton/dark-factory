@@ -2,7 +2,9 @@ package github
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCheckMergeable_Mergeable(t *testing.T) {
@@ -107,6 +109,85 @@ func TestCheckMergeable_PassesCorrectArgs(t *testing.T) {
 		if capturedArgs[i] != w {
 			t.Errorf("arg[%d]: got %q, want %q", i, capturedArgs[i], w)
 		}
+	}
+}
+
+func TestWaitForMergeable_ResolvesFromUnknown(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	var calls atomic.Int32
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		n := calls.Add(1)
+		if n <= 2 {
+			return []byte(`{"mergeable":"UNKNOWN"}`), nil
+		}
+		return []byte(`{"mergeable":"MERGEABLE"}`), nil
+	}
+
+	status, err := WaitForMergeable("owner/repo", 1, 30*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != "MERGEABLE" {
+		t.Errorf("got %q, want MERGEABLE", status)
+	}
+	if c := calls.Load(); c < 3 {
+		t.Errorf("expected at least 3 calls, got %d", c)
+	}
+}
+
+func TestWaitForMergeable_ImmediatelyResolved(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`{"mergeable":"CONFLICTING"}`), nil
+	}
+
+	status, err := WaitForMergeable("owner/repo", 1, 10*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != "CONFLICTING" {
+		t.Errorf("got %q, want CONFLICTING", status)
+	}
+}
+
+func TestWaitForMergeable_TimesOut(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte(`{"mergeable":"UNKNOWN"}`), nil
+	}
+
+	start := time.Now()
+	status, err := WaitForMergeable("owner/repo", 1, 3*time.Second)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != "UNKNOWN" {
+		t.Errorf("got %q, want UNKNOWN", status)
+	}
+	if elapsed < 2*time.Second {
+		t.Errorf("expected to wait at least 2s, waited %v", elapsed)
+	}
+}
+
+func TestWaitForMergeable_PropagatesError(t *testing.T) {
+	orig := CommandRunner
+	defer func() { CommandRunner = orig }()
+
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("network error")
+	}
+
+	_, err := WaitForMergeable("owner/repo", 1, 10*time.Second)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 
