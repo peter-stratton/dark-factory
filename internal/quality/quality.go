@@ -127,6 +127,38 @@ func CheckReviewTestExecution(toolTrace []string, reviewDir, testCommand string,
 	return flags
 }
 
+// CheckSemiformalConsistency parses the reviewer's semi-formal analysis output
+// and returns a flag when the verdict contradicts the stated traces.
+// Returns nil if output does not contain "FORMAL CONCLUSION" (not a semiformal review).
+// Returns nil when the verdict is not APPROVED (no contradiction possible).
+func CheckSemiformalConsistency(output string) *Flag {
+	if !strings.Contains(output, "FORMAL CONCLUSION") {
+		return nil
+	}
+	if !strings.Contains(output, "AGENT_RESULT=APPROVED") {
+		return nil
+	}
+	if strings.Contains(output, "NOT SATISFIED") {
+		return &Flag{
+			Code:    "semiformal_inconsistency",
+			Message: "verdict APPROVED but acceptance trace contains NOT SATISFIED",
+		}
+	}
+	if strings.Contains(output, ": BROKEN") {
+		return &Flag{
+			Code:    "semiformal_inconsistency",
+			Message: "verdict APPROVED but regression trace contains BROKEN",
+		}
+	}
+	if strings.Contains(output, "Risk: HIGH") {
+		return &Flag{
+			Code:    "semiformal_inconsistency",
+			Message: "verdict APPROVED but uncovered paths contain Risk: HIGH",
+		}
+	}
+	return nil
+}
+
 // testRunnerSignature extracts the core test runner tokens from a configured
 // test command. It strips cd prefixes, directory targets, and shell operators
 // to produce the minimal set of tokens that identify the test runner.

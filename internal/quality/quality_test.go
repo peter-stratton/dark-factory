@@ -115,6 +115,71 @@ func TestCheckDuration(t *testing.T) {
 	}
 }
 
+func TestCheckSemiformalConsistency(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		wantCode string // empty means expect nil
+	}{
+		{
+			name:     "no formal conclusion",
+			output:   "some review output without the marker",
+			wantCode: "",
+		},
+		{
+			name:     "clean approval",
+			output:   "FORMAL CONCLUSION\nAll checks SATISFIED\nAGENT_RESULT=APPROVED",
+			wantCode: "",
+		},
+		{
+			name:     "NOT SATISFIED with APPROVED",
+			output:   "FORMAL CONCLUSION\nAC1: Verdict: NOT SATISFIED\nAGENT_RESULT=APPROVED",
+			wantCode: "semiformal_inconsistency",
+		},
+		{
+			name:     "BROKEN with APPROVED",
+			output:   "FORMAL CONCLUSION\nStatus: BROKEN\nAGENT_RESULT=APPROVED",
+			wantCode: "semiformal_inconsistency",
+		},
+		{
+			name:     "HIGH risk with APPROVED",
+			output:   "FORMAL CONCLUSION\nRisk: HIGH\nAGENT_RESULT=APPROVED",
+			wantCode: "semiformal_inconsistency",
+		},
+		{
+			name:     "NOT SATISFIED with CHANGES_REQUESTED",
+			output:   "FORMAL CONCLUSION\nAC1: Verdict: NOT SATISFIED\nAGENT_RESULT=CHANGES_REQUESTED",
+			wantCode: "",
+		},
+		{
+			name:     "BROKEN with CHANGES_REQUESTED",
+			output:   "FORMAL CONCLUSION\nStatus: BROKEN\nAGENT_RESULT=CHANGES_REQUESTED",
+			wantCode: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CheckSemiformalConsistency(tt.output)
+			if tt.wantCode == "" {
+				if got != nil {
+					t.Errorf("expected nil, got flag with code %q", got.Code)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("expected flag with code %q, got nil", tt.wantCode)
+			}
+			if got.Code != tt.wantCode {
+				t.Errorf("got code %q, want %q", got.Code, tt.wantCode)
+			}
+			if got.Message == "" {
+				t.Error("expected non-empty message")
+			}
+		})
+	}
+}
+
 func TestCheckToolTrace(t *testing.T) {
 	tests := []struct {
 		name         string
