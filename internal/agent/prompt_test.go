@@ -80,6 +80,31 @@ func TestLoadPrompts_EmbeddedDefaults(t *testing.T) {
 	if p.SpecGenerator == "" {
 		t.Error("SpecGenerator should be loaded from embedded default")
 	}
+	if p.ReviewerSemiformal == "" {
+		t.Error("ReviewerSemiformal should be loaded from embedded default")
+	}
+}
+
+func TestLoadPrompts_SemiformalFromFile(t *testing.T) {
+	dir := t.TempDir()
+	want := "semiformal reviewer prompt content"
+	if err := os.WriteFile(filepath.Join(dir, "rev_sf.txt"), []byte(want), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Prompts: config.Prompts{
+			ReviewerSemiformal: filepath.Join(dir, "rev_sf.txt"),
+		},
+	}
+
+	p, err := LoadPrompts(cfg)
+	if err != nil {
+		t.Fatalf("LoadPrompts() error = %v", err)
+	}
+	if p.ReviewerSemiformal != want {
+		t.Errorf("ReviewerSemiformal = %q, want %q", p.ReviewerSemiformal, want)
+	}
 }
 
 func TestLoadPrompts_SpecGeneratorDefaultsToEmbedded(t *testing.T) {

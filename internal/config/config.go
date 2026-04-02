@@ -251,6 +251,7 @@ type Config struct {
 
 	Docker      Docker           `yaml:"docker"`
 	Prompts     Prompts          `yaml:"prompts"`
+	Review      Review           `yaml:"review"`
 	Quality     Quality          `yaml:"quality"`
 	Verify      Verify           `yaml:"verify"`
 	Truncation  TruncationLimits `yaml:"truncation"`
@@ -347,16 +348,23 @@ type HostService struct {
 
 // Prompts holds paths to prompt template files.
 type Prompts struct {
-	Implementer      string `yaml:"implementer"`
-	ImplementerRetry string `yaml:"implementer_retry"`
-	Reviewer         string `yaml:"reviewer"`
-	QualityReviewer  string `yaml:"quality_reviewer"`
-	SpecGenerator    string `yaml:"spec_generator"`
-	Punchlist        string `yaml:"punchlist"`
-	VerifyFix        string `yaml:"verify_fix"`
-	Recon            string `yaml:"recon"`
-	Planner          string `yaml:"planner"`
-	MergeCoordinator string `yaml:"merge_coordinator"`
+	Implementer          string `yaml:"implementer"`
+	ImplementerRetry     string `yaml:"implementer_retry"`
+	Reviewer             string `yaml:"reviewer"`
+	ReviewerSemiformal   string `yaml:"reviewer_semiformal"`
+	QualityReviewer      string `yaml:"quality_reviewer"`
+	SpecGenerator        string `yaml:"spec_generator"`
+	Punchlist            string `yaml:"punchlist"`
+	VerifyFix            string `yaml:"verify_fix"`
+	Recon                string `yaml:"recon"`
+	Planner              string `yaml:"planner"`
+	MergeCoordinator     string `yaml:"merge_coordinator"`
+}
+
+// Review holds configuration for the functional review step.
+type Review struct {
+	Semiformal        bool `yaml:"semiformal"`
+	SemiformalOnRetry bool `yaml:"semiformal_on_retry"`
 }
 
 // CLIFlags holds flag values passed on the command line.
