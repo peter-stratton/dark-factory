@@ -9,6 +9,17 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/github"
 )
 
+// selectReviewerPrompt returns the reviewer prompt to use for the given attempt.
+// When cfg.Review.Semiformal is true, the semiformal prompt is always used.
+// When cfg.Review.SemiformalOnRetry is true, the semiformal prompt is used for
+// attempt > 0 (retry cycles). Otherwise, the standard prompt is returned.
+func selectReviewerPrompt(cfg *config.Config, prompts *Prompts, attempt int) string {
+	if cfg.Review.Semiformal || (cfg.Review.SemiformalOnRetry && attempt > 0) {
+		return prompts.ReviewerSemiformal
+	}
+	return prompts.Reviewer
+}
+
 // ReviewResult holds the outcome of a reviewer agent run.
 type ReviewResult struct {
 	Verdict     string // "APPROVED", "CHANGES_REQUESTED", or ""
@@ -16,12 +27,14 @@ type ReviewResult struct {
 }
 
 // Review runs the reviewer agent for the given PR and returns the verdict.
-func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hasSpec bool) (*ReviewResult, error) {
+// reviewerPrompt is the prompt template string to use; callers select the
+// appropriate prompt (standard or semi-formal) before calling.
+func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, prompts *Prompts, reviewerPrompt string, authEnv map[string]string, logger *slog.Logger, hasSpec bool) (*ReviewResult, error) {
 	data := newPromptData(issue, cfg, Slugify(issue.Title))
 	data.PRNumber = prNum
 	data.HasScenarioSpec = hasSpec
 
-	rendered, err := RenderPrompt(prompts.Reviewer, data)
+	rendered, err := RenderPrompt(reviewerPrompt, data)
 	if err != nil {
 		return nil, fmt.Errorf("rendering reviewer prompt: %w", err)
 	}
