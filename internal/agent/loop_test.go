@@ -1419,7 +1419,7 @@ func TestComputeReviewFlags_QualityReviewerExemptFromTestExecution(t *testing.T)
 	}
 
 	// Quality reviewer (checkTestExecution=false): should NOT produce test-execution or test-run flags.
-	qFlags := computeReviewFlags(result, cfg, false, false)
+	qFlags := computeReviewFlags(result, cfg, false, false, false)
 	for _, f := range qFlags {
 		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" || f.Code == "no_tests_run" {
 			t.Errorf("quality reviewer should be exempt from %q, got flag: %+v", f.Code, f)
@@ -1427,7 +1427,7 @@ func TestComputeReviewFlags_QualityReviewerExemptFromTestExecution(t *testing.T)
 	}
 
 	// Functional reviewer (checkTestExecution=true): SHOULD produce test-execution flags.
-	fFlags := computeReviewFlags(result, cfg, true, true)
+	fFlags := computeReviewFlags(result, cfg, true, true, false)
 	var hasTestFlag bool
 	for _, f := range fFlags {
 		if f.Code == "no_review_tests_written" || f.Code == "no_review_tests_run" {
@@ -1449,7 +1449,7 @@ func TestComputeReviewFlags_CostFloorFlag(t *testing.T) {
 		Quality: config.Quality{MinReviewCostUSD: 0.10},
 	}
 
-	flags := computeReviewFlags(result, cfg, false, false)
+	flags := computeReviewFlags(result, cfg, false, false, false)
 
 	var found bool
 	for _, f := range flags {
@@ -1473,7 +1473,7 @@ func TestComputeReviewFlags_DisabledWhenZeroThreshold(t *testing.T) {
 		Quality: config.Quality{MinReviewCostUSD: 0, MinReviewDurationSeconds: 0},
 	}
 
-	flags := computeReviewFlags(result, cfg, false, false)
+	flags := computeReviewFlags(result, cfg, false, false, false)
 	for _, f := range flags {
 		if f.Code == "low_cost" || f.Code == "short_duration" {
 			t.Errorf("cost/duration flags should be disabled when threshold is 0, got: %+v", f)
@@ -1695,6 +1695,150 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 	}
 	if mergeCallCount != 1 {
 		t.Errorf("gh pr merge should be called once at the end, got %d calls", mergeCallCount)
+	}
+}
+
+// TestProcessIssue_SemiformalInconsistencyRerunsReviewer verifies that when the
+// functional reviewer approves a PR but the semiformal_inconsistency flag is
+// detected (APPROVED verdict contradicts NOT SATISFIED trace), the reviewer is
+// re-run rather than the loop returning approved.
+func TestProcessIssue_SemiformalInconsistencyRerunsReviewer(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 1
+	cfg.TestCommand = "go test ./..."
+	cfg.ReviewDir = "tests/review/"
+	cfg.Review.Semiformal = true
+
+	origRunner := SandboxRunner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		SandboxRunner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var mergeCallCount int
+
+	// inconsistentReviewer returns a result that triggers semiformal_inconsistency:
+	// APPROVED verdict with NOT SATISFIED in the acceptance trace.
+	inconsistentReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: NOT SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	// cleanReviewer returns a result with no contradictions.
+	cleanReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
+		case 2: // quality reviewer — approve
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
+		case 3: // functional reviewer — approved but inconsistent (guard re-runs reviewer)
+			return &sandbox.RunResult{Stdout: inconsistentReviewer()}, nil
+		default: // second functional reviewer — clean approval
+			return &sandbox.RunResult{Stdout: cleanReviewer()}, nil
+		}
+	}
+
+	guardFn := func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			mergeCallCount++
+		}
+		return loopGuardFn(name, args...)
+	}
+	GuardRunner = guardFn
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// 4 agent calls: implementer, quality reviewer, reviewer (inconsistent), reviewer (clean).
+	// No implementer retry — the guard re-runs the reviewer directly.
+	if callIdx != 4 {
+		t.Errorf("expected exactly 4 agent calls (no implementer retry), got %d", callIdx)
+	}
+	if mergeCallCount != 1 {
+		t.Errorf("gh pr merge should be called once at the end, got %d calls", mergeCallCount)
+	}
+}
+
+// TestProcessIssue_SemiformalOnRetryInconsistencyDetected verifies that when
+// cfg.Review.SemiformalOnRetry is true (but Semiformal is false), the
+// consistency check still runs on retry attempts where the semiformal prompt
+// is actually used.
+func TestProcessIssue_SemiformalOnRetryInconsistencyDetected(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+	cfg.TestCommand = "go test ./..."
+	cfg.ReviewDir = "tests/review/"
+	cfg.Review.Semiformal = false
+	cfg.Review.SemiformalOnRetry = true
+
+	origRunner := SandboxRunner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		SandboxRunner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+
+	inconsistentReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: NOT SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	cleanReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
+		case 2: // quality reviewer — approve
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
+		case 3: // functional reviewer attempt 0 — CHANGES_REQUESTED (standard prompt)
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
+		case 4: // implementer retry
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer retry output")}, nil
+		case 5: // functional reviewer attempt 1 (semiformal) — inconsistent
+			return &sandbox.RunResult{Stdout: inconsistentReviewer()}, nil
+		default: // functional reviewer attempt 1 re-run — clean
+			return &sandbox.RunResult{Stdout: cleanReviewer()}, nil
+		}
+	}
+
+	GuardRunner = loopGuardFn
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// 6 calls: impl, quality, reviewer(CR), impl-retry, reviewer-semiformal(inconsistent), reviewer-semiformal(clean)
+	if callIdx != 6 {
+		t.Errorf("expected 6 agent calls, got %d", callIdx)
 	}
 }
 

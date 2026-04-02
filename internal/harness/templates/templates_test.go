@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/peter-stratton/dark-factory/internal/harness/templates"
 	"github.com/peter-stratton/dark-factory/prompts"
@@ -201,5 +202,71 @@ func TestGitignoreIncludesRequiredEntries(t *testing.T) {
 		if !strings.Contains(content, entry) {
 			t.Errorf("gitignore does not contain %q", entry)
 		}
+	}
+}
+
+func TestSemiformalReviewerPromptHasFiveSections(t *testing.T) {
+	data, err := prompts.FS.ReadFile("reviewer_semiformal.txt")
+	if err != nil {
+		t.Fatalf("reading reviewer_semiformal prompt: %v", err)
+	}
+	content := string(data)
+	for _, section := range []string{
+		"### PREMISES",
+		"### ACCEPTANCE TRACE",
+		"### REGRESSION TRACE",
+		"### UNCOVERED PATHS",
+		"### FORMAL CONCLUSION",
+	} {
+		if !strings.Contains(content, section) {
+			t.Errorf("reviewer_semiformal prompt missing section %q", section)
+		}
+	}
+}
+
+func TestSemiformalReviewerPromptSemiformalPresentWithoutSpec(t *testing.T) {
+	data, err := prompts.FS.ReadFile("reviewer_semiformal.txt")
+	if err != nil {
+		t.Fatalf("reading reviewer_semiformal prompt: %v", err)
+	}
+
+	tmpl, err := template.New("reviewer_semiformal").Parse(string(data))
+	if err != nil {
+		t.Fatalf("parsing reviewer_semiformal prompt: %v", err)
+	}
+
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, map[string]any{
+		"HasScenarioSpec": false,
+	}); err != nil {
+		t.Fatalf("executing reviewer_semiformal prompt: %v", err)
+	}
+
+	output := buf.String()
+	for _, section := range []string{
+		"### PREMISES",
+		"### ACCEPTANCE TRACE",
+		"### REGRESSION TRACE",
+		"### UNCOVERED PATHS",
+		"### FORMAL CONCLUSION",
+	} {
+		if !strings.Contains(output, section) {
+			t.Errorf("reviewer_semiformal output missing %q with HasScenarioSpec=false", section)
+		}
+	}
+	if strings.Contains(output, "MANDATORY: Generate integration tests") {
+		t.Error("reviewer_semiformal output should not contain integration test step when HasScenarioSpec=false")
+	}
+}
+
+func TestSemiformalReviewerPromptSemiformalAnalysisPresentTwice(t *testing.T) {
+	data, err := prompts.FS.ReadFile("reviewer_semiformal.txt")
+	if err != nil {
+		t.Fatalf("reading reviewer_semiformal prompt: %v", err)
+	}
+	content := string(data)
+	count := strings.Count(content, "### Semi-Formal Analysis")
+	if count < 2 {
+		t.Errorf("reviewer_semiformal prompt should contain '### Semi-Formal Analysis' at least twice (once per comment template), got %d", count)
 	}
 }

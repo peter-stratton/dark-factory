@@ -14,16 +14,17 @@ import (
 
 // Prompts holds the loaded template text for each agent prompt.
 type Prompts struct {
-	Implementer      string
-	ImplementerRetry string
-	Reviewer         string
-	QualityReviewer  string
-	SpecGenerator    string
-	Punchlist        string
-	VerifyFix        string
-	Recon            string
-	Planner          string
-	MergeCoordinator string
+	Implementer        string
+	ImplementerRetry   string
+	Reviewer           string
+	ReviewerSemiformal string
+	QualityReviewer    string
+	SpecGenerator      string
+	Punchlist          string
+	VerifyFix          string
+	Recon              string
+	Planner            string
+	MergeCoordinator   string
 }
 
 // PromptData contains the values substituted into prompt templates.
@@ -126,6 +127,14 @@ func LoadPrompts(cfg *config.Config) (*Prompts, error) {
 		Implementer:      impl,
 		ImplementerRetry: retry,
 		Reviewer:         rev,
+	}
+
+	// ReviewerSemiformal is optional — load from config or embedded default.
+	revSemiformal, err := loadPromptFile(cfg.Prompts.ReviewerSemiformal, "reviewer_semiformal.txt")
+	if err != nil {
+		p.ReviewerSemiformal = ""
+	} else {
+		p.ReviewerSemiformal = revSemiformal
 	}
 
 	// QualityReviewer is optional — load from config or embedded default.

@@ -199,6 +199,41 @@ max_retries: 2
 	}
 }
 
+func TestConfigUnmarshalsReviewSection(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+review:
+  semiformal: true
+  semiformal_on_retry: false
+`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Review.Semiformal {
+		t.Errorf("Review.Semiformal = false, want true")
+	}
+	if cfg.Review.SemiformalOnRetry {
+		t.Errorf("Review.SemiformalOnRetry = true, want false")
+	}
+}
+
+func TestConfigReviewDefaultsFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `repo: owner/repo`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Review.Semiformal {
+		t.Errorf("Review.Semiformal = true, want false (default)")
+	}
+	if cfg.Review.SemiformalOnRetry {
+		t.Errorf("Review.SemiformalOnRetry = true, want false (default)")
+	}
+}
+
 func TestMissingFileFlagsSufficient(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nonexistent.yaml")
 

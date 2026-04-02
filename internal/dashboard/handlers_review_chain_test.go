@@ -268,6 +268,127 @@ func TestServer_ReviewChain_ContentType(t *testing.T) {
 	}
 }
 
+func TestServer_ReviewChain_SemiformalOutput(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{10},
+		StartedAt:    now,
+	})
+
+	semiformalOutput := `## PREMISES
+- The function must return a sorted list.
+- Input may be empty.
+
+## ACCEPTANCE TRACE
+1. Call sort([3,1,2]) → expect [1,2,3]. Passes.
+2. Call sort([]) → expect []. Passes.
+
+## REGRESSION TRACE
+- No prior failures detected for this function.
+
+## UNCOVERED PATHS
+- sort with duplicate values not tested.
+
+## FORMAL CONCLUSION
+All acceptance criteria met. Implementation is correct.`
+
+	writeIssueFiles(t, runDir, 10,
+		rundata.Outcome{IssueNumber: 10, Status: "implemented", PRNumber: 77},
+		rundata.StepResult{Output: "impl done AGENT_RESULT=APPROVED", DurationSeconds: 30},
+		rundata.StepResult{Output: "quality check done AGENT_RESULT=APPROVED", DurationSeconds: 10},
+		rundata.StepResult{Output: semiformalOutput, DurationSeconds: 20},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/10/review-chain", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	for _, section := range []string{"PREMISES", "ACCEPTANCE TRACE", "REGRESSION TRACE", "UNCOVERED PATHS", "FORMAL CONCLUSION"} {
+		if !strings.Contains(body, section) {
+			t.Errorf("body missing section %q", section)
+		}
+	}
+}
+
+func TestServer_ReviewChain_SemiformalWithFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "proj", ts, rundata.RunMeta{
+		Repo:         "acme/proj",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{11},
+		StartedAt:    now,
+	})
+
+	semiformalOutput := `## PREMISES
+- The function must return a sorted list.
+- Input may be empty.
+
+## ACCEPTANCE TRACE
+1. Call sort([3,1,2]) → expect [1,2,3]. Passes.
+2. Call sort([]) → expect []. Passes.
+
+## REGRESSION TRACE
+- No prior failures detected for this function.
+
+## UNCOVERED PATHS
+- sort with duplicate values not tested.
+
+## FORMAL CONCLUSION
+All acceptance criteria met. Implementation is correct.`
+
+	writeIssueFiles(t, runDir, 11,
+		rundata.Outcome{IssueNumber: 11, Status: "implemented", PRNumber: 88},
+		rundata.StepResult{Output: "impl done AGENT_RESULT=APPROVED", DurationSeconds: 30},
+		rundata.StepResult{Output: "quality check done AGENT_RESULT=APPROVED", DurationSeconds: 10},
+		rundata.StepResult{
+			Output:          semiformalOutput,
+			DurationSeconds: 20,
+			Flags: []rundata.Flag{
+				{Code: "semiformal_inconsistency", Message: "PREMISES contradict ACCEPTANCE TRACE on line 3"},
+			},
+		},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/proj/"+ts+"/issues/11/review-chain", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 500))
+	}
+	body := rr.Body.String()
+
+	for _, section := range []string{"PREMISES", "ACCEPTANCE TRACE", "REGRESSION TRACE", "UNCOVERED PATHS", "FORMAL CONCLUSION"} {
+		if !strings.Contains(body, section) {
+			t.Errorf("body missing section %q", section)
+		}
+	}
+	if !strings.Contains(body, "semiformal_inconsistency") {
+		t.Error("body missing flag code semiformal_inconsistency")
+	}
+	if !strings.Contains(body, "PREMISES contradict ACCEPTANCE TRACE on line 3") {
+		t.Error("body missing flag message")
+	}
+	if !strings.Contains(body, "Flagged") {
+		t.Error("body missing Flagged verdict")
+	}
+}
+
 func TestServer_IssueDetail_HasPollingAttributes(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now().UTC()
