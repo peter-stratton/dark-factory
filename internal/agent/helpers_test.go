@@ -90,10 +90,11 @@ func testConfig() *config.Config {
 func testPrompts(t *testing.T) *Prompts {
 	t.Helper()
 	return &Prompts{
-		Implementer:      "Implement #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} slug={{.Slug}}",
-		ImplementerRetry: "Retry PR #{{.PRNumber}} for #{{.IssueNumber}} repo={{.Repo}}",
-		Reviewer:         "Review PR #{{.PRNumber}} for #{{.IssueNumber}}",
-		QualityReviewer:  "Quality review PR #{{.PRNumber}} for #{{.IssueNumber}}",
-		MergeCoordinator: "Resolve conflicts for PR #{{.PRNumber}} issue #{{.IssueNumber}}",
+		Implementer:        "Implement #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} slug={{.Slug}}",
+		ImplementerRetry:   "Retry PR #{{.PRNumber}} for #{{.IssueNumber}} repo={{.Repo}}",
+		Reviewer:           "Review PR #{{.PRNumber}} for #{{.IssueNumber}}",
+		ReviewerSemiformal: "Semiformal review PR #{{.PRNumber}} for #{{.IssueNumber}}",
+		QualityReviewer:    "Quality review PR #{{.PRNumber}} for #{{.IssueNumber}}",
+		MergeCoordinator:   "Resolve conflicts for PR #{{.PRNumber}} issue #{{.IssueNumber}}",
 	}
 }

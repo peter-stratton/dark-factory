@@ -1775,6 +1775,73 @@ func TestProcessIssue_SemiformalInconsistencyRerunsReviewer(t *testing.T) {
 	}
 }
 
+// TestProcessIssue_SemiformalOnRetryInconsistencyDetected verifies that when
+// cfg.Review.SemiformalOnRetry is true (but Semiformal is false), the
+// consistency check still runs on retry attempts where the semiformal prompt
+// is actually used.
+func TestProcessIssue_SemiformalOnRetryInconsistencyDetected(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 2
+	cfg.TestCommand = "go test ./..."
+	cfg.ReviewDir = "tests/review/"
+	cfg.Review.Semiformal = false
+	cfg.Review.SemiformalOnRetry = true
+
+	origRunner := SandboxRunner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		SandboxRunner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+
+	inconsistentReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: NOT SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	cleanReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
+		case 2: // quality reviewer — approve
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
+		case 3: // functional reviewer attempt 0 — CHANGES_REQUESTED (standard prompt)
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=CHANGES_REQUESTED")}, nil
+		case 4: // implementer retry
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer retry output")}, nil
+		case 5: // functional reviewer attempt 1 (semiformal) — inconsistent
+			return &sandbox.RunResult{Stdout: inconsistentReviewer()}, nil
+		default: // functional reviewer attempt 1 re-run — clean
+			return &sandbox.RunResult{Stdout: cleanReviewer()}, nil
+		}
+	}
+
+	GuardRunner = loopGuardFn
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// 6 calls: impl, quality, reviewer(CR), impl-retry, reviewer-semiformal(inconsistent), reviewer-semiformal(clean)
+	if callIdx != 6 {
+		t.Errorf("expected 6 agent calls, got %d", callIdx)
+	}
+}
+
 // TestProcessIssue_SpecGeneratedNoFetchNeeded verifies that after
 // GenerateSpec succeeds, no git fetch or checkout is performed — the
 // specGenerated flag is used instead of pulling files to the host.

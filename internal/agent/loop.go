@@ -752,12 +752,14 @@ func runFunctionalReviewCycle(
 			return StatusFailed, false, 0, ctx.Err()
 		}
 
-		reviewResult, err := Review(ctx, issue, prNum, cfg, selectReviewerPrompt(cfg, prompts, attempt), authEnv, logger, hasSpec)
+		reviewerPrompt := selectReviewerPrompt(cfg, prompts, attempt)
+		usedSemiformal := reviewerPrompt == prompts.ReviewerSemiformal && prompts.ReviewerSemiformal != ""
+		reviewResult, err := Review(ctx, issue, prNum, cfg, reviewerPrompt, authEnv, logger, hasSpec)
 		if err != nil {
 			return StatusFailed, false, 0, fmt.Errorf("reviewer agent: %w", err)
 		}
 		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
-		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec, cfg.Review.Semiformal)
+		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec, usedSemiformal)
 		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
 		fStep := ResultToStep(reviewResult.AgentResult)
 		fStep.Flags = fRDFlags
