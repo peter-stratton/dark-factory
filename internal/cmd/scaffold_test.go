@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestWriteFileWithDirsCreatesDirs(t *testing.T) {
@@ -39,6 +42,28 @@ func TestWriteFileWithDirsWritesContent(t *testing.T) {
 	}
 	if string(got) != string(content) {
 		t.Errorf("content mismatch: got %q, want %q", got, content)
+	}
+}
+
+func TestSemiformalReviewerScaffoldInstalled(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	if err := writeHarnessPrompts(cmd); err != nil {
+		t.Fatalf("writeHarnessPrompts: %v", err)
+	}
+
+	dest := filepath.Join("prompts", "reviewer_semiformal.txt")
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("reviewer_semiformal.txt not written: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("reviewer_semiformal.txt is empty")
 	}
 }
 
