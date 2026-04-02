@@ -1698,6 +1698,83 @@ func TestProcessIssue_PreMergeGuardRerunsReviewer(t *testing.T) {
 	}
 }
 
+// TestProcessIssue_SemiformalInconsistencyRerunsReviewer verifies that when the
+// functional reviewer approves a PR but the semiformal_inconsistency flag is
+// detected (APPROVED verdict contradicts NOT SATISFIED trace), the reviewer is
+// re-run rather than the loop returning approved.
+func TestProcessIssue_SemiformalInconsistencyRerunsReviewer(t *testing.T) {
+	cfg := loopConfig()
+	cfg.MaxRetries = 1
+	cfg.TestCommand = "go test ./..."
+	cfg.ReviewDir = "tests/review/"
+	cfg.Review.Semiformal = true
+
+	origRunner := SandboxRunner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		SandboxRunner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	callIdx := 0
+	var mergeCallCount int
+
+	// inconsistentReviewer returns a result that triggers semiformal_inconsistency:
+	// APPROVED verdict with NOT SATISFIED in the acceptance trace.
+	inconsistentReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: NOT SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	// cleanReviewer returns a result with no contradictions.
+	cleanReviewer := func() string {
+		text := "FORMAL CONCLUSION\n\nACCEPTANCE TRACE\nAC1: Feature works. Verdict: SATISFIED\n\nAGENT_RESULT=APPROVED"
+		final := runnerFinalResult{Result: text}
+		b, _ := json.Marshal(final)
+		return string(b)
+	}
+
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		callIdx++
+		switch callIdx {
+		case 1: // implementer
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
+		case 2: // quality reviewer — approve
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
+		case 3: // functional reviewer — approved but inconsistent (guard re-runs reviewer)
+			return &sandbox.RunResult{Stdout: inconsistentReviewer()}, nil
+		default: // second functional reviewer — clean approval
+			return &sandbox.RunResult{Stdout: cleanReviewer()}, nil
+		}
+	}
+
+	guardFn := func(name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "pr merge") {
+			mergeCallCount++
+		}
+		return loopGuardFn(name, args...)
+	}
+	GuardRunner = guardFn
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
+
+	if outcome.Status != "implemented" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "implemented", outcome.Err)
+	}
+	// 4 agent calls: implementer, quality reviewer, reviewer (inconsistent), reviewer (clean).
+	// No implementer retry — the guard re-runs the reviewer directly.
+	if callIdx != 4 {
+		t.Errorf("expected exactly 4 agent calls (no implementer retry), got %d", callIdx)
+	}
+	if mergeCallCount != 1 {
+		t.Errorf("gh pr merge should be called once at the end, got %d calls", mergeCallCount)
+	}
+}
+
 // TestProcessIssue_SpecGeneratedNoFetchNeeded verifies that after
 // GenerateSpec succeeds, no git fetch or checkout is performed — the
 // specGenerated flag is used instead of pulling files to the host.

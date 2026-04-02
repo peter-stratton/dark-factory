@@ -757,7 +757,7 @@ func runFunctionalReviewCycle(
 			return StatusFailed, false, 0, fmt.Errorf("reviewer agent: %w", err)
 		}
 		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
-		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec, false /* isSemiformal — enable after #729 */)
+		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec, cfg.Review.Semiformal)
 		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
 		fStep := ResultToStep(reviewResult.AgentResult)
 		fStep.Flags = fRDFlags
