@@ -39,4 +39,5 @@
 - [Phase 30: Spec Tightening](phase-30.md) ✅
 - [Phase 31: Planner Agent](phase-31.md) ✅
 - [Phase 32: Decision Flow Tracing](phase-32.md)
+- [Phase 33: Semi-Structured Review](phase-33.md)
 - [Future considerations](future-considerations.md)
