@@ -15,7 +15,9 @@ import (
 // attempt > 0 (retry cycles). Otherwise, the standard prompt is returned.
 func selectReviewerPrompt(cfg *config.Config, prompts *Prompts, attempt int) string {
 	if cfg.Review.Semiformal || (cfg.Review.SemiformalOnRetry && attempt > 0) {
-		return prompts.ReviewerSemiformal
+		if prompts.ReviewerSemiformal != "" {
+			return prompts.ReviewerSemiformal
+		}
 	}
 	return prompts.Reviewer
 }
@@ -29,7 +31,7 @@ type ReviewResult struct {
 // Review runs the reviewer agent for the given PR and returns the verdict.
 // reviewerPrompt is the prompt template string to use; callers select the
 // appropriate prompt (standard or semi-formal) before calling.
-func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, prompts *Prompts, reviewerPrompt string, authEnv map[string]string, logger *slog.Logger, hasSpec bool) (*ReviewResult, error) {
+func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, reviewerPrompt string, authEnv map[string]string, logger *slog.Logger, hasSpec bool) (*ReviewResult, error) {
 	data := newPromptData(issue, cfg, Slugify(issue.Title))
 	data.PRNumber = prNum
 	data.HasScenarioSpec = hasSpec

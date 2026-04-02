@@ -752,7 +752,7 @@ func runFunctionalReviewCycle(
 			return StatusFailed, false, 0, ctx.Err()
 		}
 
-		reviewResult, err := Review(ctx, issue, prNum, cfg, prompts, selectReviewerPrompt(cfg, prompts, attempt), authEnv, logger, hasSpec)
+		reviewResult, err := Review(ctx, issue, prNum, cfg, selectReviewerPrompt(cfg, prompts, attempt), authEnv, logger, hasSpec)
 		if err != nil {
 			return StatusFailed, false, 0, fmt.Errorf("reviewer agent: %w", err)
 		}
