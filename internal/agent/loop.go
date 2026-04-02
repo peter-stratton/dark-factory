@@ -627,7 +627,7 @@ func runQualityReviewCycle(
 			return false, fmt.Errorf("quality reviewer agent: %w", err)
 		}
 		// Quality reviewer is exempt from CheckReviewTestExecution.
-		qFlags := computeReviewFlags(qResult.AgentResult, cfg, false, false)
+		qFlags := computeReviewFlags(qResult.AgentResult, cfg, false, false, false)
 		qRDFlags := logAndRecordFlags(qFlags, logger, issue.Number)
 		if hook != nil {
 			qStep := ResultToStep(qResult.AgentResult)
@@ -757,7 +757,7 @@ func runFunctionalReviewCycle(
 			return StatusFailed, false, 0, fmt.Errorf("reviewer agent: %w", err)
 		}
 		// Functional reviewer is subject to all quality checks including CheckReviewTestExecution.
-		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec)
+		fFlags := computeReviewFlags(reviewResult.AgentResult, cfg, true, hasSpec, cfg.Review.Semiformal)
 		fRDFlags := logAndRecordFlags(fFlags, logger, issue.Number)
 		fStep := ResultToStep(reviewResult.AgentResult)
 		fStep.Flags = fRDFlags
@@ -773,6 +773,19 @@ func runFunctionalReviewCycle(
 				"attempt", attempt+1,
 			)
 			// Delete the stale review comment so the dialogue doesn't show a phantom round.
+			if err := github.DeleteLastPRCommentWithHeader(cfg.Repo, prNum, "## Review Notes"); err != nil {
+				logger.Warn("failed to delete stale review comment", "error", err)
+			}
+			continue
+		}
+
+		// Consistency guard: if the semiformal review verdict contradicts the
+		// stated traces, re-run the reviewer.
+		if hasQualityFlag(fFlags, "semiformal_inconsistency") {
+			logger.Warn("semiformal review inconsistency detected — re-running reviewer",
+				"issue_number", issue.Number,
+				"attempt", attempt+1,
+			)
 			if err := github.DeleteLastPRCommentWithHeader(cfg.Repo, prNum, "## Review Notes"); err != nil {
 				logger.Warn("failed to delete stale review comment", "error", err)
 			}
@@ -1204,7 +1217,8 @@ func trimOutput(b []byte) string {
 // computeReviewFlags runs quality analysis on an agent Result and returns any flags found.
 // If checkTestExecution is false, CheckReviewTestExecution is skipped (used for the
 // quality reviewer, which is exempt from that check).
-func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution bool, hasScenarioSpec bool) []quality.Flag {
+// If isSemiformal is true, CheckSemiformalConsistency is called on the result output.
+func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution bool, hasScenarioSpec bool, isSemiformal bool) []quality.Flag {
 	var flags []quality.Flag
 
 	if f := quality.CheckCostFloor(result.CostUSD, cfg.Quality.MinReviewCostUSD); f != nil {
@@ -1221,6 +1235,12 @@ func computeReviewFlags(result *Result, cfg *config.Config, checkTestExecution b
 
 	if checkTestExecution {
 		flags = append(flags, quality.CheckReviewTestExecution(result.ToolTrace, cfg.ReviewDir, cfg.TestCommand, hasScenarioSpec)...)
+	}
+
+	if isSemiformal {
+		if f := quality.CheckSemiformalConsistency(result.ResultText); f != nil {
+			flags = append(flags, *f)
+		}
 	}
 
 	return flags
