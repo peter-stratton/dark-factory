@@ -53,6 +53,7 @@ prompts:
   recon: prompts/recon.txt
   planner: prompts/planner.txt
   merge_coordinator: prompts/merge_coordinator.txt
+  reviewer_semiformal: prompts/reviewer_semiformal.txt
 
 # Default branch of the repository (auto-detected from GitHub if omitted)
 # default_branch: main
