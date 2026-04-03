@@ -224,8 +224,8 @@ func parseTimestampForDir(dbTimestamp string) (string, error) {
 }
 
 func init() {
-	purgeCmd.Flags().String("repo", "owner/repo", "Filter by repo (owner/repo)")
-	purgeCmd.Flags().String("milestone", "test-milestone", "Filter by milestone")
+	purgeCmd.Flags().String("repo", "", "Filter by repo (owner/repo)")
+	purgeCmd.Flags().String("milestone", "", "Filter by milestone")
 	purgeCmd.Flags().Bool("dry-run", false, "Show what would be deleted without deleting")
 	rootCmd.AddCommand(purgeCmd)
 }

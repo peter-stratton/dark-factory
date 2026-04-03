@@ -258,9 +258,6 @@ func isTestRun(m rundata.RunMeta) bool {
 func filteredRuns(metas []rundata.RunMeta, repoFilter string, awaitingCounts map[string]int) []RunView {
 	views := make([]RunView, 0, len(metas))
 	for _, m := range metas {
-		if isTestRun(m) {
-			continue
-		}
 		if repoFilter != "" && m.Repo != repoFilter {
 			continue
 		}
