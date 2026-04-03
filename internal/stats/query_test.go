@@ -633,3 +633,117 @@ func TestQueryLatestTraceForIssue_SkipsEmptyTraceID(t *testing.T) {
 		t.Errorf("got %q, want empty string (should skip empty trace_id)", got)
 	}
 }
+
+// TestQueryRuns_ExcludeRepo: ExcludeRepo filters out matching repos.
+func TestQueryRuns_ExcludeRepo(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo-a", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-2", Repo: "org/repo-b", StartedAt: ts2})
+	writeRun(t, db, RunRecord{ID: "run-3", Repo: "org/repo-c", StartedAt: ts3})
+
+	got, err := QueryRuns(context.Background(), db, RunFilter{
+		ExcludeRepo: []string{"org/repo-a", "org/repo-b"},
+	})
+	if err != nil {
+		t.Fatalf("QueryRuns: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d runs, want 1", len(got))
+	}
+	if got[0].ID != "run-3" {
+		t.Errorf("got run %q, want %q", got[0].ID, "run-3")
+	}
+}
+
+// TestQueryRuns_ExcludeMilestone: ExcludeMilestone filters out matching milestones.
+func TestQueryRuns_ExcludeMilestone(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-1", Repo: "org/repo", Milestone: "test-milestone", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-2", Repo: "org/repo", Milestone: "Phase 21", StartedAt: ts2})
+
+	got, err := QueryRuns(context.Background(), db, RunFilter{
+		ExcludeMilestone: []string{"test-milestone"},
+	})
+	if err != nil {
+		t.Fatalf("QueryRuns: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d runs, want 1", len(got))
+	}
+	if got[0].ID != "run-2" {
+		t.Errorf("got run %q, want %q", got[0].ID, "run-2")
+	}
+}
+
+// TestQueryRuns_ExcludeRepoAndMilestone: both exclusions are AND'd together.
+func TestQueryRuns_ExcludeRepoAndMilestone(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-1", Repo: "owner/repo", Milestone: "Phase 21", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-2", Repo: "org/real", Milestone: "test-milestone", StartedAt: ts2})
+	writeRun(t, db, RunRecord{ID: "run-3", Repo: "org/real", Milestone: "Phase 21", StartedAt: ts3})
+
+	got, err := QueryRuns(context.Background(), db, RunFilter{
+		ExcludeRepo:      []string{"owner/repo"},
+		ExcludeMilestone: []string{"test-milestone"},
+	})
+	if err != nil {
+		t.Fatalf("QueryRuns: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d runs, want 1", len(got))
+	}
+	if got[0].ID != "run-3" {
+		t.Errorf("got run %q, want %q", got[0].ID, "run-3")
+	}
+}
+
+// TestQueryIssueOutcomes_ExcludeRepo: exclusion works through the join query.
+func TestQueryIssueOutcomes_ExcludeRepo(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-a", Repo: "owner/repo", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-b", Repo: "org/real", StartedAt: ts2})
+
+	writeOutcome(t, db, IssueOutcomeRecord{RunID: "run-a", IssueNumber: 1, Status: "implemented"})
+	writeOutcome(t, db, IssueOutcomeRecord{RunID: "run-b", IssueNumber: 2, Status: "implemented"})
+
+	got, err := QueryIssueOutcomes(context.Background(), db, RunFilter{
+		ExcludeRepo: []string{"owner/repo"},
+	})
+	if err != nil {
+		t.Fatalf("QueryIssueOutcomes: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d outcomes, want 1", len(got))
+	}
+	if got[0].RunID != "run-b" {
+		t.Errorf("got run_id %q, want %q", got[0].RunID, "run-b")
+	}
+}
+
+// TestQueryStepResults_ExcludeMilestone: exclusion works through the join query.
+func TestQueryStepResults_ExcludeMilestone(t *testing.T) {
+	db := openTestDB(t)
+
+	writeRun(t, db, RunRecord{ID: "run-a", Repo: "org/repo", Milestone: "test-milestone", StartedAt: ts1})
+	writeRun(t, db, RunRecord{ID: "run-b", Repo: "org/repo", Milestone: "Phase 21", StartedAt: ts2})
+
+	writeStep(t, db, StepResultRecord{RunID: "run-a", IssueNumber: 1, StepName: "implement"})
+	writeStep(t, db, StepResultRecord{RunID: "run-b", IssueNumber: 2, StepName: "implement"})
+
+	got, err := QueryStepResults(context.Background(), db, RunFilter{
+		ExcludeMilestone: []string{"test-milestone"},
+	})
+	if err != nil {
+		t.Fatalf("QueryStepResults: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d step results, want 1", len(got))
+	}
+	if got[0].RunID != "run-b" {
+		t.Errorf("got run_id %q, want %q", got[0].RunID, "run-b")
+	}
+}

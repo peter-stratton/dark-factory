@@ -19,6 +19,13 @@ type RunFilter struct {
 	Milestone string
 	Since     time.Time
 	Until     time.Time
+
+	// ExcludeRepo lists repos whose runs should be excluded from results.
+	// Produces a "repo NOT IN (?,…)" clause (AND'd with ExcludeMilestone).
+	ExcludeRepo []string
+	// ExcludeMilestone lists milestones whose runs should be excluded.
+	// Produces a "milestone NOT IN (?,…)" clause (AND'd with ExcludeRepo).
+	ExcludeMilestone []string
 }
 
 // QueryRuns returns all runs matching the filter, sorted by started_at ascending.
@@ -280,6 +287,22 @@ func buildRunWhere(filter RunFilter) (string, []any) {
 		conds = append(conds, "started_at <= ?")
 		args = append(args, filter.Until.UTC().Format(timeLayout))
 	}
+	if len(filter.ExcludeRepo) > 0 {
+		placeholders := make([]string, len(filter.ExcludeRepo))
+		for i, r := range filter.ExcludeRepo {
+			placeholders[i] = "?"
+			args = append(args, r)
+		}
+		conds = append(conds, "repo NOT IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if len(filter.ExcludeMilestone) > 0 {
+		placeholders := make([]string, len(filter.ExcludeMilestone))
+		for i, m := range filter.ExcludeMilestone {
+			placeholders[i] = "?"
+			args = append(args, m)
+		}
+		conds = append(conds, "milestone NOT IN ("+strings.Join(placeholders, ",")+")")
+	}
 
 	if len(conds) == 0 {
 		return "", args
@@ -308,6 +331,22 @@ func buildRunJoinWhere(filter RunFilter) (string, []any) {
 	if !filter.Until.IsZero() {
 		conds = append(conds, "r.started_at <= ?")
 		args = append(args, filter.Until.UTC().Format(timeLayout))
+	}
+	if len(filter.ExcludeRepo) > 0 {
+		placeholders := make([]string, len(filter.ExcludeRepo))
+		for i, r := range filter.ExcludeRepo {
+			placeholders[i] = "?"
+			args = append(args, r)
+		}
+		conds = append(conds, "r.repo NOT IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if len(filter.ExcludeMilestone) > 0 {
+		placeholders := make([]string, len(filter.ExcludeMilestone))
+		for i, m := range filter.ExcludeMilestone {
+			placeholders[i] = "?"
+			args = append(args, m)
+		}
+		conds = append(conds, "r.milestone NOT IN ("+strings.Join(placeholders, ",")+")")
 	}
 
 	if len(conds) == 0 {

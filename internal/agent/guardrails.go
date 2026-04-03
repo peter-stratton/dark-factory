@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	gexec "github.com/peter-stratton/dark-factory/internal/exec"
 	"github.com/peter-stratton/dark-factory/internal/mdutil"
@@ -19,30 +20,54 @@ var GuardRunner gexec.CommandRunnerFunc = func(name string, args ...string) ([]b
 	return exec.Command(name, args...).CombinedOutput()
 }
 
+// findPRSleep is the sleep function used between FindPR retries.
+// Replaceable in tests.
+var findPRSleep = time.Sleep
+
 // FindPR returns the PR number for the given branch in the given repo,
 // or 0 if no PR is found. Authentication and network errors are returned
 // as errors rather than being treated as "no PR found".
+//
+// Because the GitHub API can have brief propagation delays after PR creation,
+// FindPR retries up to 3 times with 5-second intervals before concluding
+// that no PR exists.
 func FindPR(repo, branch string) (int, error) {
-	out, err := GuardRunner("gh", "pr", "view", branch, "--repo", repo, "--json", "number")
-	if err != nil {
-		combined := strings.ToLower(string(out))
-		// gh pr view exits non-zero for multiple reasons. Only treat "no pull
-		// requests found" as a clean zero; surface auth/network failures so
-		// callers can distinguish infrastructure errors from missing PRs.
-		if strings.Contains(combined, "no pull requests found") ||
-			strings.Contains(combined, "could not resolve to a pullrequest") {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("gh pr view: %w\noutput: %s", err, out)
-	}
+	const maxAttempts = 3
+	const retryDelay = 5 * time.Second
 
-	var result struct {
-		Number int `json:"number"`
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		out, err := GuardRunner("gh", "pr", "view", branch, "--repo", repo, "--json", "number")
+		if err != nil {
+			combined := strings.ToLower(string(out))
+			// gh pr view exits non-zero for multiple reasons. Only treat "no pull
+			// requests found" as a clean zero; surface auth/network failures so
+			// callers can distinguish infrastructure errors from missing PRs.
+			if strings.Contains(combined, "no pull requests found") ||
+				strings.Contains(combined, "could not resolve to a pullrequest") {
+				if attempt < maxAttempts {
+					slog.Default().Warn("PR not found yet, retrying",
+						"repo", repo,
+						"branch", branch,
+						"attempt", attempt,
+						"delay", retryDelay,
+					)
+					findPRSleep(retryDelay)
+					continue
+				}
+				return 0, nil
+			}
+			return 0, fmt.Errorf("gh pr view: %w\noutput: %s", err, out)
+		}
+
+		var result struct {
+			Number int `json:"number"`
+		}
+		if err := json.Unmarshal(out, &result); err != nil {
+			return 0, fmt.Errorf("parsing PR JSON: %w", err)
+		}
+		return result.Number, nil
 	}
-	if err := json.Unmarshal(out, &result); err != nil {
-		return 0, fmt.Errorf("parsing PR JSON: %w", err)
-	}
-	return result.Number, nil
+	return 0, nil // unreachable
 }
 
 // EnsureClosesRef checks whether the PR body contains "Closes #N".

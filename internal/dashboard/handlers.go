@@ -186,6 +186,15 @@ func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
 		return nil, err
 	}
 
+	// Exclude test runs before building repo set, run list, and analytics.
+	filtered := allMetas[:0]
+	for _, m := range allMetas {
+		if !isTestRun(m) {
+			filtered = append(filtered, m)
+		}
+	}
+	allMetas = filtered
+
 	repoSet := make(map[string]struct{})
 	for _, m := range allMetas {
 		repoSet[m.Repo] = struct{}{}
@@ -240,9 +249,18 @@ func (s *Server) buildIndexData(repoFilter string) (*IndexData, error) {
 	}, nil
 }
 
+// isTestRun returns true for runs created during testing that should be
+// excluded from the dashboard and analytics (test-data sentinels).
+func isTestRun(m rundata.RunMeta) bool {
+	return m.Repo == "owner/repo" || m.Milestone == "test-milestone"
+}
+
 func filteredRuns(metas []rundata.RunMeta, repoFilter string, awaitingCounts map[string]int) []RunView {
 	views := make([]RunView, 0, len(metas))
 	for _, m := range metas {
+		if isTestRun(m) {
+			continue
+		}
 		if repoFilter != "" && m.Repo != repoFilter {
 			continue
 		}
@@ -940,7 +958,10 @@ func (s *Server) buildAnalysisData(ctx context.Context, repoFilter string) (*Ana
 // and passes them to the analysis functions.
 func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string) (*AnalysisData, error) {
 	// Build repo list for the filter dropdown from all runs in the DB.
-	allRuns, err := stats.QueryRuns(ctx, s.statsDB, stats.RunFilter{})
+	allRuns, err := stats.QueryRuns(ctx, s.statsDB, stats.RunFilter{
+		ExcludeRepo:      []string{"owner/repo"},
+		ExcludeMilestone: []string{"test-milestone"},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying repos from stats db: %w", err)
 	}
@@ -955,7 +976,11 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 	sort.Strings(repos)
 
 	// Query runs, outcomes, and steps filtered by repo.
-	filter := stats.RunFilter{Repo: repoFilter}
+	filter := stats.RunFilter{
+		Repo:             repoFilter,
+		ExcludeRepo:      []string{"owner/repo"},
+		ExcludeMilestone: []string{"test-milestone"},
+	}
 	runRecords, err := stats.QueryRuns(ctx, s.statsDB, filter)
 	if err != nil {
 		return nil, fmt.Errorf("querying runs from stats db: %w", err)
