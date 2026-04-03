@@ -958,7 +958,10 @@ func (s *Server) buildAnalysisData(ctx context.Context, repoFilter string) (*Ana
 // and passes them to the analysis functions.
 func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string) (*AnalysisData, error) {
 	// Build repo list for the filter dropdown from all runs in the DB.
-	allRuns, err := stats.QueryRuns(ctx, s.statsDB, stats.RunFilter{})
+	allRuns, err := stats.QueryRuns(ctx, s.statsDB, stats.RunFilter{
+		ExcludeRepo:      []string{"owner/repo"},
+		ExcludeMilestone: []string{"test-milestone"},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying repos from stats db: %w", err)
 	}
@@ -973,7 +976,11 @@ func (s *Server) buildAnalysisDataFromDB(ctx context.Context, repoFilter string)
 	sort.Strings(repos)
 
 	// Query runs, outcomes, and steps filtered by repo.
-	filter := stats.RunFilter{Repo: repoFilter}
+	filter := stats.RunFilter{
+		Repo:             repoFilter,
+		ExcludeRepo:      []string{"owner/repo"},
+		ExcludeMilestone: []string{"test-milestone"},
+	}
 	runRecords, err := stats.QueryRuns(ctx, s.statsDB, filter)
 	if err != nil {
 		return nil, fmt.Errorf("querying runs from stats db: %w", err)

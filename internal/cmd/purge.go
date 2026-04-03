@@ -89,6 +89,7 @@ Use --dry-run to preview what would be deleted without making changes.`,
 		if err != nil {
 			return fmt.Errorf("querying runs: %w", err)
 		}
+		defer rows.Close()
 
 		type runInfo struct {
 			id        string
@@ -99,7 +100,6 @@ Use --dry-run to preview what would be deleted without making changes.`,
 		for rows.Next() {
 			var ri runInfo
 			if scanErr := rows.Scan(&ri.id, &ri.repo, &ri.startedAt); scanErr != nil {
-				_ = rows.Close()
 				return fmt.Errorf("scanning run: %w", scanErr)
 			}
 			runs = append(runs, ri)
@@ -107,7 +107,6 @@ Use --dry-run to preview what would be deleted without making changes.`,
 		if err = rows.Err(); err != nil {
 			return fmt.Errorf("iterating runs: %w", err)
 		}
-		_ = rows.Close()
 
 		if len(runs) == 0 {
 			fmt.Fprintln(cmd.OutOrStdout(), "No matching runs found — nothing to purge.")
@@ -172,6 +171,12 @@ Use --dry-run to preview what would be deleted without making changes.`,
 		for _, ri := range runs {
 			parts := strings.SplitN(ri.repo, "/", 2)
 			if len(parts) != 2 {
+				continue
+			}
+			// Validate path components to prevent directory traversal.
+			if parts[0] == "" || parts[1] == "" || parts[0] == ".." || parts[1] == ".." ||
+				strings.ContainsAny(parts[0], "/\\") || strings.ContainsAny(parts[1], "/\\") {
+				logger.Warn("skipping filesystem cleanup for run with invalid repo", "id", ri.id, "repo", ri.repo)
 				continue
 			}
 			// Parse the DB timestamp to the filesystem format.
