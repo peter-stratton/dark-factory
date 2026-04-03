@@ -640,13 +640,8 @@ func validate(cfg *Config) error {
 	default:
 		return fmt.Errorf("model must be \"sonnet\" or \"opus\", got %q", cfg.Model)
 	}
-	for role, model := range cfg.ModelOverrides {
-		switch model {
-		case "sonnet", "opus":
-			// valid
-		default:
-			return fmt.Errorf("model_overrides.%s must be \"sonnet\" or \"opus\", got %q", role, model)
-		}
+	if err := validateModelOverrides(cfg.ModelOverrides); err != nil {
+		return err
 	}
 	if err := validateModules(cfg.Modules); err != nil {
 		return err
@@ -734,6 +729,18 @@ func validateRiskThresholds(r *RiskThresholds) error {
 }
 
 // validateModules checks that module names are safe, that all depends_on
+func validateModelOverrides(overrides map[string]string) error {
+	for role, model := range overrides {
+		switch model {
+		case "sonnet", "opus":
+			// valid
+		default:
+			return fmt.Errorf("model_overrides.%s must be \"sonnet\" or \"opus\", got %q", role, model)
+		}
+	}
+	return nil
+}
+
 // references name existing modules (with no duplicates), and that there are no
 // dependency cycles.
 func validateModules(modules map[string]Module) error {
