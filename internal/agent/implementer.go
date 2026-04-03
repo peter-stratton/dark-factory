@@ -259,6 +259,11 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 	env["GODARK_GENERATED_PATHS"] = strings.Join(cfg.GeneratedPaths, ",")
 	env["GODARK_DENIED_COMMANDS"] = strings.Join(cfg.DeniedCommands, ",")
 
+	model := cfg.Model
+	if m, ok := cfg.ModelOverrides[role]; ok {
+		model = m
+	}
+
 	jc := cfg.JudgeConfig()
 	return RunOpts{
 		Prompt:            rendered,
@@ -268,7 +273,7 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 		Repo:              cfg.Repo,
 		WorkDir:           "/workspace",
 		Timeout:           timeout,
-		Model:             cfg.Model,
+		Model:             model,
 		MountDockerSocket: cfg.DockerCompose != nil,
 		JudgeConfig:       &jc,
 	}, nil

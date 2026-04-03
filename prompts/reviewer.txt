@@ -17,12 +17,8 @@ Steps:
 3. Read the issue body for acceptance criteria
 4. Read the implementer's ## Implementation Notes PR comment for context on their approach
 5. Review the code changes: gh pr diff {{.PRNumber}} --repo {{.Repo}}
-{{- if .ArchitectureDocContent}}
-6. Check that imports respect the dependency layers per the following architecture rules and verify that no layer boundary violations were introduced:
-{{.ArchitectureDocContent}}
-{{- end}}
 {{- if .ArchitectureJSON}}
-   Machine-readable layer definitions — for each changed file, verify that its imports respect the `may_depend_on` and `must_not_depend_on` rules for its layer:
+6. Check that imports respect the dependency layers — for each changed file, verify that its imports respect the `may_depend_on` and `must_not_depend_on` rules for its layer:
 {{.ArchitectureJSON}}
 {{- if .EnforceArchitecture}}
    Layer violations MUST result in CHANGES_REQUESTED. Do not approve PRs with layer violations.
@@ -48,10 +44,8 @@ CRITICAL RULES:
 - Do NOT edit generated files directly ({{.GeneratedPaths}}); edit source files or re-run code generation instead
 {{- end}}
 {{- if .HasScenarioSpec}}
-- You MUST create integration tests in {{.ReviewDir}} (step 9) using Bash before making your verdict. This is non-negotiable.
-- Judging existing tests sufficient is NOT acceptable — you must create your own ephemeral tests in {{.ReviewDir}}.
-- The orchestrator verifies that you created files in {{.ReviewDir}} by inspecting your tool trace. If no file creation in {{.ReviewDir}} is detected, your APPROVED verdict will be automatically rejected and the implementation retried.
-- Do NOT use the Write or Edit tools — you do not have access to them. Use Bash with heredocs or cat/tee to create files.
+- The orchestrator verifies that you created files in {{.ReviewDir}} by inspecting your tool trace. If no file creation is detected, your APPROVED verdict will be automatically rejected and the implementation retried.
+- Do NOT use the Write or Edit tools — use Bash with heredocs or cat/tee to create files.
 - After running tests, delete the {{.ReviewDir}} directory before finishing.
 {{- end}}
 

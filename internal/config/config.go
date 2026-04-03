@@ -213,7 +213,8 @@ type Config struct {
 	// rebase check entirely. Default: 1.
 	MaxRebaseAttempts int `yaml:"max_rebase_attempts"`
 
-	Model         string            `yaml:"model"`
+	Model          string            `yaml:"model"`
+	ModelOverrides map[string]string `yaml:"model_overrides"`
 	AgentTimeout  string            `yaml:"agent_timeout"`
 	FormatCommand string            `yaml:"format_command"`
 	BuildCommand  string            `yaml:"build_command"`
@@ -638,6 +639,14 @@ func validate(cfg *Config) error {
 		// valid (empty = CLI default, which is sonnet)
 	default:
 		return fmt.Errorf("model must be \"sonnet\" or \"opus\", got %q", cfg.Model)
+	}
+	for role, model := range cfg.ModelOverrides {
+		switch model {
+		case "sonnet", "opus":
+			// valid
+		default:
+			return fmt.Errorf("model_overrides.%s must be \"sonnet\" or \"opus\", got %q", role, model)
+		}
 	}
 	if err := validateModules(cfg.Modules); err != nil {
 		return err

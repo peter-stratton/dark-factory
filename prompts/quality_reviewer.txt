@@ -17,12 +17,8 @@ Steps:
    - N+1 query patterns
    - Missing context propagation
    - Unbounded operations (missing limits, timeouts)
-{{- if .ArchitectureDocContent}}
-6. Audit for architecture compliance — verify that imports respect the dependency layers defined below. Pay attention to documented exceptions (e.g., `dependency_exceptions` in architecture.json) — these are intentional and should NOT be flagged:
-{{.ArchitectureDocContent}}
-{{- end}}
 {{- if .ArchitectureJSON}}
-   Machine-readable layer definitions — for each changed file, verify that its imports respect the `may_depend_on`, `must_not_depend_on`, and `dependency_exceptions` rules for its layer:
+6. Audit for architecture compliance — for each changed file, verify that its imports respect the `may_depend_on`, `must_not_depend_on`, and `dependency_exceptions` rules for its layer. Documented exceptions are intentional and should NOT be flagged:
 {{.ArchitectureJSON}}
 {{- end}}
 7. Audit for language idioms (infer conventions from the project's CLAUDE.md and codebase):

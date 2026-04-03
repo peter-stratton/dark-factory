@@ -780,3 +780,44 @@ func TestBuildSharedRules_BothEmpty(t *testing.T) {
 		t.Errorf("buildSharedRules() = %q, want empty string when both inputs are empty", got)
 	}
 }
+
+func TestNewRunOpts_ModelOverride(t *testing.T) {
+	cfg := testConfig()
+	cfg.Model = "opus"
+	cfg.ModelOverrides = map[string]string{"recon": "sonnet"}
+
+	opts, err := newRunOpts("prompt", cfg, nil, "recon")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	if opts.Model != "sonnet" {
+		t.Errorf("Model = %q, want sonnet (override)", opts.Model)
+	}
+}
+
+func TestNewRunOpts_ModelFallsBackToGlobal(t *testing.T) {
+	cfg := testConfig()
+	cfg.Model = "opus"
+	cfg.ModelOverrides = map[string]string{"recon": "sonnet"}
+
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	if opts.Model != "opus" {
+		t.Errorf("Model = %q, want opus (global fallback)", opts.Model)
+	}
+}
+
+func TestNewRunOpts_NilModelOverrides(t *testing.T) {
+	cfg := testConfig()
+	cfg.Model = "opus"
+
+	opts, err := newRunOpts("prompt", cfg, nil, "recon")
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	if opts.Model != "opus" {
+		t.Errorf("Model = %q, want opus (no overrides configured)", opts.Model)
+	}
+}

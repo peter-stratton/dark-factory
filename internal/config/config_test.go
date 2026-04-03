@@ -2698,3 +2698,55 @@ judge:
 		t.Errorf("IdleTimeoutByRole[\"implementer\"] = %d, want 300", j.IdleTimeoutByRole["implementer"])
 	}
 }
+
+func TestModelOverridesFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+model: opus
+model_overrides:
+  recon: sonnet
+  quality_reviewer: sonnet
+`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Model != "opus" {
+		t.Errorf("Model = %q, want opus", cfg.Model)
+	}
+	if cfg.ModelOverrides["recon"] != "sonnet" {
+		t.Errorf("ModelOverrides[recon] = %q, want sonnet", cfg.ModelOverrides["recon"])
+	}
+	if cfg.ModelOverrides["quality_reviewer"] != "sonnet" {
+		t.Errorf("ModelOverrides[quality_reviewer] = %q, want sonnet", cfg.ModelOverrides["quality_reviewer"])
+	}
+}
+
+func TestModelOverridesInvalidValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+model_overrides:
+  recon: gpt-4
+`)
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid model override")
+	}
+	if !strings.Contains(err.Error(), "model_overrides.recon") {
+		t.Errorf("error = %q, want mention of model_overrides.recon", err.Error())
+	}
+}
+
+func TestModelOverridesEmptyIsNil(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `repo: owner/repo`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ModelOverrides != nil {
+		t.Errorf("ModelOverrides = %v, want nil", cfg.ModelOverrides)
+	}
+}

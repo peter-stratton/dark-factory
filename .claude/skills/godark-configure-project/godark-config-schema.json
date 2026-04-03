@@ -97,6 +97,19 @@
       "type": "string",
       "default": "docs/conventions.md"
     },
+    "model": {
+      "type": "string",
+      "enum": ["sonnet", "opus"],
+      "description": "Default Claude model for all agent steps. Empty means CLI default (sonnet)."
+    },
+    "model_overrides": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["sonnet", "opus"]
+      },
+      "description": "Per-role model overrides. Keys are role names (e.g. recon, quality_reviewer, spec_generator), values are model names."
+    },
     "auto_merge": {
       "type": "object",
       "description": "Merge behavior for feature PRs and rollup PRs",

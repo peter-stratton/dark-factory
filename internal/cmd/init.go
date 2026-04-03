@@ -87,6 +87,13 @@ prompts:
 # Agent timeout (Go duration format: "30m", "1h", etc.)
 # agent_timeout: "30m"
 
+# Model selection (default: sonnet via CLI)
+# model: opus
+# model_overrides:
+#   recon: sonnet
+#   quality_reviewer: sonnet
+#   spec_generator: sonnet
+
 # Customizable prefixes for branch names and GitHub labels (default: "godark")
 # branch_prefix: godark
 # label_prefix: godark
