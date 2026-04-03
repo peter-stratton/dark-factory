@@ -13,6 +13,12 @@ protected_paths: ["CLAUDE.md", "tests/scenarios/"]
 
 lint_command: "golangci-lint run ./..."
 
+model: opus
+model_overrides:
+  recon: sonnet
+  spec_generator: sonnet
+  quality_reviewer: sonnet
+
 timeouts:
   recon: 5m
   spec_generator: 3m
