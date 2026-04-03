@@ -6,12 +6,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// stubFindPRSleep replaces findPRSleep with a no-op for the duration of the
+// test and returns a pointer to the call count.
+func stubFindPRSleep(t *testing.T) *int {
+	t.Helper()
+	calls := 0
+	orig := findPRSleep
+	t.Cleanup(func() { findPRSleep = orig })
+	findPRSleep = func(time.Duration) { calls++ }
+	return &calls
+}
 
 func TestFindPR_ReturnsPRNumber(t *testing.T) {
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return []byte(`{"number": 42}`), nil
 	})
+	sleeps := stubFindPRSleep(t)
 
 	num, err := FindPR("owner/repo", "test-branch")
 	if err != nil {
@@ -20,12 +33,18 @@ func TestFindPR_ReturnsPRNumber(t *testing.T) {
 	if num != 42 {
 		t.Errorf("FindPR() = %d, want 42", num)
 	}
+	if *sleeps != 0 {
+		t.Errorf("expected 0 sleeps, got %d", *sleeps)
+	}
 }
 
-func TestFindPR_ReturnsZeroWhenNoPR(t *testing.T) {
+func TestFindPR_ReturnsZeroAfterAllRetries(t *testing.T) {
+	calls := 0
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		calls++
 		return []byte("no pull requests found for branch \"test-branch\""), fmt.Errorf("exit status 1")
 	})
+	sleeps := stubFindPRSleep(t)
 
 	num, err := FindPR("owner/repo", "test-branch")
 	if err != nil {
@@ -34,12 +53,45 @@ func TestFindPR_ReturnsZeroWhenNoPR(t *testing.T) {
 	if num != 0 {
 		t.Errorf("FindPR() = %d, want 0", num)
 	}
+	if calls != 3 {
+		t.Errorf("expected 3 GuardRunner calls, got %d", calls)
+	}
+	if *sleeps != 2 {
+		t.Errorf("expected 2 sleeps, got %d", *sleeps)
+	}
 }
 
-func TestFindPR_ReturnsErrorOnAuthFailure(t *testing.T) {
+func TestFindPR_ReturnsOnSecondAttempt(t *testing.T) {
+	calls := 0
+	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte("no pull requests found for branch \"test-branch\""), fmt.Errorf("exit status 1")
+		}
+		return []byte(`{"number": 42}`), nil
+	})
+	sleeps := stubFindPRSleep(t)
+
+	num, err := FindPR("owner/repo", "test-branch")
+	if err != nil {
+		t.Fatalf("FindPR() error = %v", err)
+	}
+	if num != 42 {
+		t.Errorf("FindPR() = %d, want 42", num)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 GuardRunner calls, got %d", calls)
+	}
+	if *sleeps != 1 {
+		t.Errorf("expected 1 sleep, got %d", *sleeps)
+	}
+}
+
+func TestFindPR_DoesNotRetryOnError(t *testing.T) {
 	stubGuardRunner(t, func(name string, args ...string) ([]byte, error) {
 		return []byte("HTTP 401: Bad credentials"), fmt.Errorf("exit status 1")
 	})
+	sleeps := stubFindPRSleep(t)
 
 	num, err := FindPR("owner/repo", "test-branch")
 	if err == nil {
@@ -50,6 +102,9 @@ func TestFindPR_ReturnsErrorOnAuthFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "gh pr view") {
 		t.Errorf("error = %v, want 'gh pr view' prefix", err)
+	}
+	if *sleeps != 0 {
+		t.Errorf("expected 0 sleeps on error, got %d", *sleeps)
 	}
 }
 
