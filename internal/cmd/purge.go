@@ -99,7 +99,7 @@ Use --dry-run to preview what would be deleted without making changes.`,
 		for rows.Next() {
 			var ri runInfo
 			if scanErr := rows.Scan(&ri.id, &ri.repo, &ri.startedAt); scanErr != nil {
-				rows.Close()
+				_ = rows.Close()
 				return fmt.Errorf("scanning run: %w", scanErr)
 			}
 			runs = append(runs, ri)
@@ -107,7 +107,7 @@ Use --dry-run to preview what would be deleted without making changes.`,
 		if err = rows.Err(); err != nil {
 			return fmt.Errorf("iterating runs: %w", err)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		if len(runs) == 0 {
 			fmt.Fprintln(cmd.OutOrStdout(), "No matching runs found — nothing to purge.")
