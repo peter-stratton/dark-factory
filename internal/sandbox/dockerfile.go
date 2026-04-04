@@ -94,7 +94,7 @@ RUN {{.}}
 # Install Claude Code CLI via native installer (not the Python SDK, which has
 # critical bugs — see claude-agent-sdk-python#666, #739).
 WORKDIR /tmp
-RUN curl -fsSL https://claude.ai/install.sh | bash \
+RUN curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors https://claude.ai/install.sh | bash \
     && cp -L /root/.local/bin/claude /usr/local/bin/claude \
     && chmod +x /usr/local/bin/claude
 
