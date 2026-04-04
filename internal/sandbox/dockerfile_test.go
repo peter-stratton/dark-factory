@@ -888,3 +888,31 @@ func TestGenerateDockerfileClaudeCLIInstalled(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileGoRuntimeSetsGOBIN(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "go", Version: "1.26.0"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(df, "ENV GOBIN=/usr/local/bin") {
+		t.Error("Dockerfile missing GOBIN env for go runtime")
+	}
+}
+
+func TestGenerateDockerfileNonGoRuntimeOmitsGOBIN(t *testing.T) {
+	cfg := DefaultDockerConfig()
+	cfg.Runtime = config.Runtime{Name: "node", Version: "20"}
+
+	df, err := GenerateDockerfile(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(df, "GOBIN") {
+		t.Error("Dockerfile should not contain GOBIN for non-Go runtime")
+	}
+}
+

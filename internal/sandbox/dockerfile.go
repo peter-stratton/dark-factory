@@ -52,6 +52,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL https://go.dev/dl/go{{.RuntimeVersion}}.linux-${ARCH}.tar.gz \
       | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOBIN=/usr/local/bin
 {{else if eq .RuntimeName "flutter"}}
 # Install Flutter SDK
 RUN apt-get update && apt-get install -y --no-install-recommends unzip xz-utils \
