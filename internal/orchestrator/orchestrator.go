@@ -535,6 +535,83 @@ type blockedIssue struct {
 	BlockedBy []int
 }
 
+// waveResult captures the outcome of processing a single issue in a wave,
+// without accessing shared mutable state.
+type waveResult struct {
+	IssueNumber  int
+	Issue        github.Issue
+	Outcome      agent.IssueOutcome
+	IssueCost    float64
+	Merged       bool
+	UsageLimited bool
+	ResetsAt     time.Time
+}
+
+// runOneIssue processes a single issue within a wave: sets up per-issue
+// logging, calls processIssueFn, writes dialogue, and computes cost. It
+// returns early with UsageLimited set when the agent hits a Claude usage
+// limit. Shared mutable state (runStats, seen, implementedIssues, punchlist)
+// is left to the caller.
+func runOneIssue(ctx context.Context, issue github.Issue, cfg *config.Config,
+	prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger,
+	hook agent.RunDataHook, reporter progress.ProgressReporter,
+	writer *rundata.Writer) waveResult {
+
+	// Create a per-issue file logger when a run-data writer is available.
+	issueLogger := logger
+	if writer != nil {
+		if il, err := logging.NewFileLogger(writer.IssueDir(issue.Number)); err != nil {
+			logger.Warn("failed to create per-issue logger", "issue", issue.Number, "error", err)
+		} else {
+			issueLogger = il
+		}
+	}
+
+	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
+
+	if outcome.UsageLimited {
+		return waveResult{
+			IssueNumber:  issue.Number,
+			Issue:        issue,
+			Outcome:      outcome,
+			UsageLimited: true,
+			ResetsAt:     outcome.ResetsAt,
+		}
+	}
+
+	// Write dialogue after processing if we have a PR and a writer.
+	if writer != nil && outcome.PRNumber > 0 {
+		bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+		if fetchErr != nil {
+			logger.Warn("failed to fetch PR comment bodies for dialogue",
+				"issue_number", issue.Number, "error", fetchErr)
+		} else {
+			entries := BuildDialogueEntries(bodies)
+			if len(entries) > 0 {
+				if err := writer.WriteDialogue(issue.Number, entries); err != nil {
+					logger.Warn("failed to write dialogue",
+						"issue_number", issue.Number, "error", err)
+				}
+			}
+		}
+	}
+
+	// Compute per-issue cost from recorded step result files. Gracefully
+	// degrades to 0.0 when the writer is nil or step files have no cost data.
+	var issueCost float64
+	if writer != nil {
+		issueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
+	}
+
+	return waveResult{
+		IssueNumber: issue.Number,
+		Issue:       issue,
+		Outcome:     outcome,
+		IssueCost:   issueCost,
+		Merged:      outcome.Status == agent.StatusImplemented,
+	}
+}
+
 // openDependencies returns the subset of dep numbers that are not in closedSet.
 func openDependencies(depNumbers []int, closedSet map[int]bool) []int {
 	var open []int
@@ -766,19 +843,12 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 			seen[issue.Number] = true
 			reporter.IssueStarted(issue.Number, issue.Title)
-			issueLogger := logger
-			if writer != nil {
-				if il, err := logging.NewFileLogger(writer.IssueDir(issue.Number)); err != nil {
-					logger.Warn("failed to create per-issue logger", "issue", issue.Number, "error", err)
-				} else {
-					issueLogger = il
-				}
-			}
-			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
+			result := runOneIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, writer)
+			outcome := result.Outcome
 
 			// Handle Claude usage limit: hold until reset, then retry the issue.
-			if outcome.UsageLimited {
-				resetsAt := outcome.ResetsAt
+			if result.UsageLimited {
+				resetsAt := result.ResetsAt
 				const holdBuffer = 30 * time.Second
 				const maxHold = 6 * time.Hour
 				if resetsAt.IsZero() || time.Until(resetsAt) > maxHold {
@@ -815,50 +885,26 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				break
 			}
 
-			// Write dialogue after processing if we have a PR and a writer.
-			if writer != nil && outcome.PRNumber > 0 {
-				bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
-				if fetchErr != nil {
-					logger.Warn("failed to fetch PR comment bodies for dialogue",
-						"issue_number", issue.Number, "error", fetchErr)
-				} else {
-					entries := BuildDialogueEntries(bodies)
-					if len(entries) > 0 {
-						if err := writer.WriteDialogue(issue.Number, entries); err != nil {
-							logger.Warn("failed to write dialogue",
-								"issue_number", issue.Number, "error", err)
-						}
-					}
-				}
-			}
-
-			// Compute per-issue cost from recorded step result files. Gracefully
-			// degrades to 0.0 when the writer is nil or step files have no cost data.
-			var issueCost float64
-			if writer != nil {
-				issueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
-			}
-
 			switch outcome.Status {
 			case agent.StatusImplemented:
 				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
-				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", result.IssueCost, outcome.TraceID)
 				merged = true
 				justMergedNums = append(justMergedNums, issue.Number)
 			case agent.StatusReadyToMerge:
 				runStats.readyToMerge++
-				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", result.IssueCost, outcome.TraceID)
 			case agent.StatusNeedsHumanReview:
 				runStats.needsHumanReview++
-				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", result.IssueCost, outcome.TraceID)
 			default:
 				runStats.failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
 				}
-				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, result.IssueCost, outcome.TraceID)
 			}
 
 			logger.Info("issue outcome",
@@ -905,7 +951,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 						"issue_number", iss.Number,
 						"count", len(entry.AcceptanceTests),
 					)
-				}(issue, outcome)
+				}(result.Issue, result.Outcome)
 			}
 
 			// After a merge, break out of the inner loop to re-resolve.
