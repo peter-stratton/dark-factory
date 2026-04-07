@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2945,23 +2946,16 @@ func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 //  1. calls reporter.RateLimited / reporter.RateLimitCleared
 //  2. retries the issue (it is not counted as seen)
 //  3. the second attempt succeeds
-func TestProcessIssues_HoldAndResume(t *testing.T) {
+func TestProcessIssues_UsageLimitedTreatedAsFailure(t *testing.T) {
 	allIssues := []github.Issue{
 		{Number: 10, Title: "rate limited issue"},
 	}
 
-	callCount := 0
-	resetsAt := time.Now().Add(50 * time.Millisecond) // tiny hold so test is fast
+	resetsAt := time.Now().Add(50 * time.Millisecond)
 
 	setupProcessMocks(t, func() []int { return nil },
 		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
-			callCount++
-			if callCount == 1 {
-				// First call: signal usage limit.
-				return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
-			}
-			// Second call: succeed.
-			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
+			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
 		})
 
 	reporter := &fakeReporter{}
@@ -2972,40 +2966,28 @@ func TestProcessIssues_HoldAndResume(t *testing.T) {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	if callCount != 2 {
-		t.Errorf("expected 2 processIssueFn calls (1 rate-limited + 1 retry), got %d", callCount)
-	}
-	if len(reporter.rateLimitedAt) != 1 {
-		t.Errorf("expected 1 RateLimited call, got %d", len(reporter.rateLimitedAt))
-	}
-	if reporter.rateLimitClears != 1 {
-		t.Errorf("expected 1 RateLimitCleared call, got %d", reporter.rateLimitClears)
-	}
-	// The issue should ultimately complete as implemented, not failed.
+	// Usage-limited issues are treated as failures until #752 adds hold logic.
 	if len(reporter.issueCompleted) != 1 {
 		t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
 	}
-	if reporter.issueCompleted[0].status != "implemented" {
-		t.Errorf("expected final status=implemented, got %q", reporter.issueCompleted[0].status)
+	if reporter.issueCompleted[0].status != "failed" {
+		t.Errorf("expected final status=failed, got %q", reporter.issueCompleted[0].status)
 	}
 }
 
-// TestProcessIssues_CancelDuringHold verifies that context cancellation during
-// the hold returns promptly without retrying.
-func TestProcessIssues_CancelDuringHold(t *testing.T) {
+// TestProcessIssues_CancelDuringWave verifies that context cancellation during
+// a wave stops dispatch promptly.
+func TestProcessIssues_CancelDuringWave(t *testing.T) {
 	allIssues := []github.Issue{
-		{Number: 11, Title: "cancel during hold"},
+		{Number: 11, Title: "cancel during wave"},
 	}
-
-	resetsAt := time.Now().Add(10 * time.Second) // long hold — context will cancel first
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
-			// Cancel the context so the hold select fires ctx.Done.
+		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
 			cancel()
-			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("cancelled")}
 		})
 
 	reporter := &fakeReporter{}
@@ -3016,9 +2998,9 @@ func TestProcessIssues_CancelDuringHold(t *testing.T) {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	// Should not have called RateLimitCleared because context was cancelled.
-	if reporter.rateLimitClears != 0 {
-		t.Errorf("expected 0 RateLimitCleared calls on cancel, got %d", reporter.rateLimitClears)
+	// Should complete without hanging.
+	if len(reporter.issueCompleted) != 1 {
+		t.Errorf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
 	}
 }
 
@@ -3053,15 +3035,13 @@ func TestProcessIssues_NoHoldOnNormalFailure(t *testing.T) {
 	}
 }
 
-// TestProcessIssues_MaxHoldExceeded verifies that a usage-limited outcome with
-// an unknown or excessively far resetsAt is treated as a failure rather than
-// entering an indefinitely long hold.
-func TestProcessIssues_MaxHoldExceeded(t *testing.T) {
+// TestProcessIssues_UsageLimitedFarFuture verifies that a usage-limited outcome
+// with a far-future resetsAt is treated as a failure.
+func TestProcessIssues_UsageLimitedFarFuture(t *testing.T) {
 	allIssues := []github.Issue{
 		{Number: 13, Title: "max hold exceeded"},
 	}
 
-	// resetsAt more than 6 hours away.
 	farFuture := time.Now().Add(7 * time.Hour)
 
 	setupProcessMocks(t, func() []int { return nil },
@@ -3077,11 +3057,240 @@ func TestProcessIssues_MaxHoldExceeded(t *testing.T) {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	// Should be counted as failed, not retried.
-	if len(reporter.rateLimitedAt) != 0 {
-		t.Errorf("expected 0 RateLimited calls when max hold exceeded, got %d", len(reporter.rateLimitedAt))
-	}
 	if len(reporter.issueCompleted) != 1 || reporter.issueCompleted[0].status != "failed" {
-		t.Errorf("expected 1 failed completion for max-hold-exceeded, got %v", reporter.issueCompleted)
+		t.Errorf("expected 1 failed completion for usage-limited, got %v", reporter.issueCompleted)
+	}
+}
+
+// TestWaveDispatch_SerialMode verifies that max_workers=1 processes issues
+// one at a time, producing results identical to the old serial loop.
+func TestWaveDispatch_SerialMode(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+		{Number: 3, Title: "third"},
+	}
+
+	var mu sync.Mutex
+	var current, peak int
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			mu.Lock()
+			current++
+			if current > peak {
+				peak = current
+			}
+			mu.Unlock()
+
+			time.Sleep(10 * time.Millisecond)
+
+			mu.Lock()
+			current--
+			mu.Unlock()
+
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 1
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	mu.Lock()
+	p := peak
+	mu.Unlock()
+
+	if p != 1 {
+		t.Errorf("peak concurrency = %d, want 1 for serial mode", p)
+	}
+}
+
+// TestWaveDispatch_ConcurrentExecution verifies that multiple workers run
+// simultaneously when max_workers > 1.
+func TestWaveDispatch_ConcurrentExecution(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "a"},
+		{Number: 2, Title: "b"},
+		{Number: 3, Title: "c"},
+	}
+
+	var mu sync.Mutex
+	var current, peak int
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			mu.Lock()
+			current++
+			if current > peak {
+				peak = current
+			}
+			mu.Unlock()
+
+			time.Sleep(50 * time.Millisecond)
+
+			mu.Lock()
+			current--
+			mu.Unlock()
+
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 3
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	mu.Lock()
+	p := peak
+	mu.Unlock()
+
+	if p < 2 {
+		t.Errorf("peak concurrency = %d, want >= 2 for concurrent mode", p)
+	}
+}
+
+// TestWaveDispatch_WorkerCapRespected verifies that at most max_workers
+// goroutines run simultaneously even when the batch is larger.
+func TestWaveDispatch_WorkerCapRespected(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1}, {Number: 2}, {Number: 3}, {Number: 4}, {Number: 5},
+	}
+
+	var mu sync.Mutex
+	var current, peak int
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			mu.Lock()
+			current++
+			if current > peak {
+				peak = current
+			}
+			mu.Unlock()
+
+			time.Sleep(20 * time.Millisecond)
+
+			mu.Lock()
+			current--
+			mu.Unlock()
+
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 2
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	mu.Lock()
+	p := peak
+	mu.Unlock()
+
+	if p > 2 {
+		t.Errorf("peak concurrency = %d, want <= 2", p)
+	}
+}
+
+// TestWaveDispatch_ContextCancellation verifies that cancelling the context
+// mid-wave causes all workers to exit and results to be collected without hanging.
+func TestWaveDispatch_ContextCancellation(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1}, {Number: 2}, {Number: 3},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var once sync.Once
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			// Cancel the context once any worker starts.
+			once.Do(func() { cancel() })
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 3
+
+	done := make(chan struct{})
+	go func() {
+		captureStdout(t, func() {
+			// best-effort: ignore error since context is cancelled
+			_ = processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil)
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Completed without hanging.
+	case <-time.After(10 * time.Second):
+		t.Fatal("processIssues did not return after context cancellation")
+	}
+}
+
+// TestWaveDispatch_ResultCollection verifies that all worker results are
+// collected with correct issue numbers and statuses.
+func TestWaveDispatch_ResultCollection(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "impl"},
+		{Number: 2, Title: "fail"},
+		{Number: 3, Title: "review"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			switch issue.Number {
+			case 1:
+				return agent.IssueOutcome{IssueNumber: 1, Status: agent.StatusImplemented, PRNumber: 101}
+			case 2:
+				return agent.IssueOutcome{IssueNumber: 2, Status: "failed", Err: fmt.Errorf("broken")}
+			case 3:
+				return agent.IssueOutcome{IssueNumber: 3, Status: agent.StatusNeedsHumanReview, PRNumber: 103}
+			default:
+				return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+			}
+		})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 3
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(reporter.issueCompleted) != 3 {
+		t.Fatalf("expected 3 IssueCompleted calls, got %d", len(reporter.issueCompleted))
+	}
+
+	// Collect statuses by issue number (order is non-deterministic).
+	statuses := make(map[int]string)
+	for _, ic := range reporter.issueCompleted {
+		statuses[ic.issueNumber] = ic.status
+	}
+
+	if statuses[1] != "implemented" {
+		t.Errorf("issue 1: got status %q, want implemented", statuses[1])
+	}
+	if statuses[2] != "failed" {
+		t.Errorf("issue 2: got status %q, want failed", statuses[2])
+	}
+	if statuses[3] != "needs-human-review" {
+		t.Errorf("issue 3: got status %q, want needs-human-review", statuses[3])
 	}
 }
