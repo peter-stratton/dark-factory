@@ -800,6 +800,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	wave := 0
 	for {
 		wave++
+		waveStart := time.Now()
 
 		// Filter out already-seen issues from the current processable batch.
 		var batch []github.Issue
@@ -963,6 +964,19 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 						"count", len(entry.AcceptanceTests),
 					)
 				}(res.Issue, res.Outcome)
+			}
+		}
+
+		// Write wave metadata for dashboard grouping.
+		if writer != nil {
+			waveResult := rundata.WaveResult{
+				Wave:         wave,
+				IssueNumbers: batchNums,
+				StartedAt:    waveStart,
+				FinishedAt:   time.Now(),
+			}
+			if err := writer.WriteWaveResult(waveResult); err != nil {
+				logger.Warn("failed to write wave result", "wave", wave, "error", err)
 			}
 		}
 

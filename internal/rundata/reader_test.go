@@ -1383,3 +1383,71 @@ func TestLoadRunMissingMergeCoordinatorIsZeroValue(t *testing.T) {
 		t.Errorf("MergeCoordinator should be zero value when file absent, got: %+v", mc)
 	}
 }
+
+func TestLoadWaves(t *testing.T) {
+	base := t.TempDir()
+	now := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
+
+	runDir := makeRunDir(t, base, "owner", "repo", "20260407-100000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{1, 2, 3},
+		StartedAt:    now,
+	})
+
+	// Write wave files directly.
+	wavesDir := filepath.Join(runDir, "waves")
+	if err := os.MkdirAll(wavesDir, 0o755); err != nil {
+		t.Fatalf("creating waves dir: %v", err)
+	}
+	wave1 := WaveResult{Wave: 1, IssueNumbers: []int{1, 2}, StartedAt: now, FinishedAt: now.Add(5 * time.Minute)}
+	wave2 := WaveResult{Wave: 2, IssueNumbers: []int{3}, StartedAt: now.Add(5 * time.Minute), FinishedAt: now.Add(8 * time.Minute)}
+	if err := writeJSON(filepath.Join(wavesDir, "1.json"), wave1); err != nil {
+		t.Fatalf("writing wave 1: %v", err)
+	}
+	if err := writeJSON(filepath.Join(wavesDir, "2.json"), wave2); err != nil {
+		t.Fatalf("writing wave 2: %v", err)
+	}
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260407-100000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if len(detail.Waves) != 2 {
+		t.Fatalf("expected 2 waves, got %d", len(detail.Waves))
+	}
+	if detail.Waves[0].Wave != 1 {
+		t.Errorf("wave[0].Wave = %d, want 1", detail.Waves[0].Wave)
+	}
+	if detail.Waves[1].Wave != 2 {
+		t.Errorf("wave[1].Wave = %d, want 2", detail.Waves[1].Wave)
+	}
+	if len(detail.Waves[0].IssueNumbers) != 2 {
+		t.Errorf("wave[0] issue count = %d, want 2", len(detail.Waves[0].IssueNumbers))
+	}
+	if len(detail.Waves[1].IssueNumbers) != 1 {
+		t.Errorf("wave[1] issue count = %d, want 1", len(detail.Waves[1].IssueNumbers))
+	}
+}
+
+func TestLoadWaves_Empty(t *testing.T) {
+	base := t.TempDir()
+	now := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
+
+	makeRunDir(t, base, "owner", "repo", "20260407-100000", RunMeta{
+		Repo:         "owner/repo",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+	})
+
+	r := newReaderWithBase(base)
+	detail, err := r.LoadRun("owner", "repo", "20260407-100000")
+	if err != nil {
+		t.Fatalf("LoadRun() error: %v", err)
+	}
+
+	if detail.Waves != nil {
+		t.Errorf("expected nil Waves for run with no waves dir, got %v", detail.Waves)
+	}
+}
