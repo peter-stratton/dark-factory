@@ -134,9 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleIssueStarted(msg)
 
 	case IssueStageChangedMsg:
-		if idx, ok := m.issueIndex[msg.Number]; ok {
-			m.issues[idx].stage = msg.Stage
-		}
+		m.handleIssueStageChanged(msg)
 
 	case JudgeInterventionMsg:
 		m.handleJudgeIntervention(msg)
@@ -290,6 +288,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// handleIssueStageChanged updates the stage for an in-progress issue.
+func (m *Model) handleIssueStageChanged(msg IssueStageChangedMsg) {
+	if idx, ok := m.issueIndex[msg.Number]; ok {
+		m.issues[idx].stage = msg.Stage
+	}
 }
 
 // handleIssueStarted adds a new issue row or skips if already pre-populated.
