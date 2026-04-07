@@ -110,6 +110,7 @@ func (r *fakeReporter) RateLimited(resetsAt time.Time) {
 	r.rateLimitedAt = append(r.rateLimitedAt, resetsAt)
 }
 func (r *fakeReporter) RateLimitCleared() { r.rateLimitClears++ }
+func (r *fakeReporter) WorkersActive(_, _ int)                  {}
 
 // ghIssue mirrors the JSON shape for test fixtures.
 type ghIssue struct {

@@ -46,6 +46,7 @@ func (r *stubProgressReporter) JudgeIntervention(_ int, _, _, _, _ string)      
 func (r *stubProgressReporter) PunchlistText(_ string)                                       {}
 func (r *stubProgressReporter) RateLimited(_ time.Time)                                      {}
 func (r *stubProgressReporter) RateLimitCleared()                                            {}
+func (r *stubProgressReporter) WorkersActive(_ int, _ int)                                   {}
 
 // stubNotifier records sent events and optionally returns an error.
 type stubNotifier struct {

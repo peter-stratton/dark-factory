@@ -476,6 +476,84 @@ func TestRenderDetailPanelEmpty(t *testing.T) {
 	}
 }
 
+// --- Worker count tests ---
+
+func TestWorkersActiveUpdatesModel(t *testing.T) {
+	m := Model{}
+	next, cmd := m.Update(WorkersActiveMsg{Active: 3, Total: 5})
+	if cmd != nil {
+		t.Errorf("Update(WorkersActiveMsg): expected nil cmd, got %v", cmd)
+	}
+	updated := next.(Model)
+	if updated.activeWorkers != 3 {
+		t.Errorf("activeWorkers: got %d, want 3", updated.activeWorkers)
+	}
+	if updated.totalWorkers != 5 {
+		t.Errorf("totalWorkers: got %d, want 5", updated.totalWorkers)
+	}
+}
+
+func TestWorkerCountDisplayedWhenConcurrent(t *testing.T) {
+	m := Model{activeWorkers: 3, totalWorkers: 5}
+	got := stripANSI(renderSummary(m))
+	if !strings.Contains(got, "3/5 workers") {
+		t.Errorf("renderSummary: expected '3/5 workers' in output\ngot: %q", got)
+	}
+}
+
+func TestWorkerCountHiddenInSerialMode(t *testing.T) {
+	m := Model{activeWorkers: 1, totalWorkers: 1}
+	got := stripANSI(renderSummary(m))
+	if strings.Contains(got, "workers") {
+		t.Errorf("renderSummary serial mode: 'workers' should not appear\ngot: %q", got)
+	}
+}
+
+func TestWorkerCountHiddenWhenZero(t *testing.T) {
+	m := Model{}
+	got := stripANSI(renderSummary(m))
+	if strings.Contains(got, "workers") {
+		t.Errorf("renderSummary zero state: 'workers' should not appear\ngot: %q", got)
+	}
+}
+
+func TestWorkerCountUpdates(t *testing.T) {
+	m := Model{}
+	next, _ := m.Update(WorkersActiveMsg{Active: 3, Total: 5})
+	updated := next.(Model)
+	next2, _ := updated.Update(WorkersActiveMsg{Active: 1, Total: 5})
+	final := next2.(Model)
+
+	got := stripANSI(renderSummary(final))
+	if !strings.Contains(got, "1/5 workers") {
+		t.Errorf("renderSummary after update: expected '1/5 workers'\ngot: %q", got)
+	}
+}
+
+func TestConcurrentSpinners(t *testing.T) {
+	m := Model{issueIndex: map[int]int{}}
+	// Start two issues without completing the first.
+	next, _ := m.Update(IssueStartedMsg{Number: 1, Title: "first"})
+	updated := next.(Model)
+	next2, _ := updated.Update(IssueStartedMsg{Number: 2, Title: "second"})
+	final := next2.(Model)
+
+	// Both rows should have a non-empty stage (indicating in-progress).
+	for _, num := range []int{1, 2} {
+		idx, ok := final.issueIndex[num]
+		if !ok {
+			t.Errorf("issue #%d not in issueIndex", num)
+			continue
+		}
+		if final.issues[idx].stage == "" {
+			t.Errorf("issue #%d stage should be non-empty (in-progress), got empty", num)
+		}
+		if final.issues[idx].status != "" {
+			t.Errorf("issue #%d should have no terminal status, got %q", num, final.issues[idx].status)
+		}
+	}
+}
+
 func TestRenderDetailPanelContent(t *testing.T) {
 	entries := []detailEntry{
 		{issueNumber: 42, kind: detailKindJudge, message: "Killed: idle_timeout (recon)"},

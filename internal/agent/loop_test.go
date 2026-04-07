@@ -4841,6 +4841,7 @@ func (r *mockReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
 func (r *mockReporter) PunchlistText(_ string)                    {}
 func (r *mockReporter) RateLimited(_ time.Time)                   {}
 func (r *mockReporter) RateLimitCleared()                         {}
+func (r *mockReporter) WorkersActive(_, _ int)                    {}
 
 func (r *mockReporter) hasStageChange(number int, stage string) bool {
 	for _, sc := range r.stageChanges {
