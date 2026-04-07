@@ -1,32 +1,29 @@
 # Scenario: extract per-issue processing into worker function
 
-Relates to: Issue #595
+Relates to: Issue #749
 
 ## Setup
-- `internal/orchestrator/orchestrator.go` with extracted worker function
-- Stubbed `ProcessIssue` returning controlled outcomes
-- `waveResult` struct definition
+- The `processIssues` function in `internal/orchestrator/orchestrator.go`
+- Stubbed `processIssueFn` for controlling issue outcomes
 
 ## Cases
 
-### Successful issue returns implemented result
-Stub `ProcessIssue` to return `StatusImplemented` with PR #42.
-- `waveResult.Status` equals `StatusImplemented`
-- `waveResult.PRNumber` equals `42`
-- `waveResult.Err` is nil
+### Successful issue returns merged result
+- GIVEN a stub that returns `StatusImplemented` with PR number 42
+- WHEN `runOneIssue` is called
+- THEN the result has `Merged: true`, `IssueNumber` matching the input, and `Outcome.PRNumber == 42`
 
-### Failed issue returns error result
-Stub `ProcessIssue` to return `StatusFailed` with an error.
-- `waveResult.Status` equals `StatusFailed`
-- `waveResult.Err` is non-nil
+### Failed issue returns non-merged result
+- GIVEN a stub that returns `StatusFailed` with an error
+- WHEN `runOneIssue` is called
+- THEN the result has `Merged: false` and `Outcome.Err` is non-nil
 
-### Function does not mutate shared state
-Inspect the worker function signature.
-- No package-level variables referenced inside the function body
-- Parameters are all value types or immutable references (issue, config, prompts, auth env, logger, hook, reporter)
-- Return type is `waveResult` struct (no pointer to shared state)
+### No shared state mutation
+- GIVEN the `runOneIssue` function signature
+- WHEN inspecting its parameters
+- THEN it takes only values and pointers to immutable or per-issue data (no runStats, seen, implementedIssues)
 
-### Existing test suite passes unchanged
-Run `go test ./internal/orchestrator/...` after the refactor.
-- All existing tests pass without modification
-- No new test failures introduced
+### Existing test suite passes
+- GIVEN the existing orchestrator test suite
+- WHEN `go test ./internal/orchestrator/...` is run
+- THEN all tests pass without modification

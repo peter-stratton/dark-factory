@@ -1,42 +1,35 @@
 # Scenario: wave barrier dispatcher with concurrent workers
 
-Relates to: Issue #598
+Relates to: Issue #750
 
 ## Setup
-- `internal/orchestrator/orchestrator.go` with wave barrier dispatch logic
-- Stubbed `ProcessIssue` with configurable delays and outcomes
-- Config with `concurrency.max_workers` set
+- An orchestrator run with `concurrency.max_workers` configured
+- Multiple independent (non-blocked) issues in the milestone
+- Stubbed `processIssueFn` with configurable delays
 
 ## Cases
 
-### Serial mode identical to current behavior
-Run with `max_workers: 1` and 3 independent issues.
-- Issues process one at a time in order
-- Output matches pre-concurrency behavior exactly
-- Each issue completes before the next starts
+### Serial mode unchanged
+- GIVEN `max_workers: 1` and 3 independent issues
+- WHEN `processIssues` runs
+- THEN issues are processed one at a time in sequence, identical to pre-concurrency behavior
 
-### Concurrent dispatch within wave
-Run with `max_workers: 3` and 3 independent issues.
-- All three issues start processing before any completes
-- All three results are collected after the wave
+### Concurrent dispatch
+- GIVEN `max_workers: 3` and 3 independent issues
+- WHEN `processIssues` runs
+- THEN all three workers run concurrently (overlapping execution times)
 
 ### Worker cap respected
-Run with `max_workers: 2` and 5 independent issues.
-- At most 2 issues process simultaneously at any point
-- All 5 issues complete across multiple waves
+- GIVEN `max_workers: 2` and 5 independent issues
+- WHEN `processIssues` runs
+- THEN at most 2 issues execute simultaneously at any point
 
 ### Context cancellation stops workers
-Start a wave with 3 concurrent workers and cancel the context mid-wave.
-- All workers receive cancellation and exit
-- No new waves are dispatched after cancellation
+- GIVEN `max_workers: 3` and 3 independent issues
+- WHEN the context is cancelled mid-wave
+- THEN all workers exit and results are collected without deadlock
 
-### Results collected with correct issue numbers
-Run with `max_workers: 3` and 3 issues with different outcomes (pass, fail, needs-review).
-- Each result maps to the correct issue number
-- Statuses match the stubbed outcomes
-- No result is lost or duplicated
-
-### Shared state updated after wave only
-Run with `max_workers: 2` and 4 independent issues.
-- `runStats` counters are updated only after each wave completes
-- No concurrent writes to shared state during wave execution
+### All batch issues marked seen before dispatch
+- GIVEN `max_workers: 3` and 3 independent issues
+- WHEN the wave dispatches
+- THEN all 3 issues are in the `seen` map before any worker starts

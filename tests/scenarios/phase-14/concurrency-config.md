@@ -1,32 +1,24 @@
 # Scenario: concurrency config block with max_workers
 
-Relates to: Issue #593
+Relates to: Issue #745
 
 ## Setup
-- `internal/config/config.go` with `Concurrency` struct
-- Test configs with various `concurrency` block states
+- A `godark.yaml` file loadable by `internal/config`
+- No changes to runtime behavior - config parsing and validation only
 
 ## Cases
 
 ### Valid max_workers parsed
-Parse a `godark.yaml` with `concurrency.max_workers: 3`.
-- `Config.Concurrency` is non-nil
-- `Config.Concurrency.MaxWorkers` equals `3`
+- GIVEN a `godark.yaml` with `concurrency.max_workers: 3`
+- WHEN the config is loaded
+- THEN `cfg.Concurrency.MaxWorkers` equals 3
 
-### Default value when block absent
-Parse a `godark.yaml` without a `concurrency` block.
-- `Config.Concurrency.MaxWorkers` equals `1`
-- No validation error
+### Absent concurrency block defaults to 1
+- GIVEN a `godark.yaml` with no `concurrency` block
+- WHEN the config is loaded
+- THEN `cfg.Concurrency.MaxWorkers` equals 1
 
-### Zero rejected
-Parse a `godark.yaml` with `concurrency.max_workers: 0`.
-- Validation returns an error mentioning `max_workers`
-
-### Negative value rejected
-Parse a `godark.yaml` with `concurrency.max_workers: -1`.
-- Validation returns an error mentioning `max_workers`
-
-### Partial block uses default
-Parse a `godark.yaml` with `concurrency:` block but no `max_workers` field.
-- `Config.Concurrency.MaxWorkers` equals `1`
-- No validation error
+### Negative max_workers rejected
+- GIVEN a `godark.yaml` with `concurrency.max_workers: -1`
+- WHEN the config is validated
+- THEN a validation error is returned mentioning max_workers

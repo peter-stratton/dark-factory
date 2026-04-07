@@ -32,12 +32,15 @@
 - [Phase 23: Watch & Daemon Mode](phase-23.md) ✅
 - [Phase 24: Container Resource Tracking](phase-24.md) ✅
 - [Phase 25: Docker Socket Mount & Compose Lifecycle](phase-25.md) ✅
-- [Phase 26: Merge Coordinator Agent](phase-26.md)
-- [Phase 27: Agent Efficiency & Resilience](phase-27.md) ⏸️
+- [Phase 26: Merge Coordinator Agent](phase-26.md) ✅
+- [Phase 27: Agent Efficiency & Resilience](phase-27.md) ✅
 - [Phase 28: Container Health Judge](phase-28.md) ✅
 - [Phase 29: Complete CLI Migration](phase-29.md) ✅
 - [Phase 30: Spec Tightening](phase-30.md) ✅
 - [Phase 31: Planner Agent](phase-31.md) ✅
-- [Phase 32: Decision Flow Tracing](phase-32.md)
-- [Phase 33: Semi-Structured Review](phase-33.md)
+- [Phase 32: Decision Flow Tracing](phase-32.md) ✅
+- [Phase 33: Semi-Structured Review](phase-33.md) ✅
+- [Phase 34: Frontend-Aware Verification](phase-34.md)
+- [Phase 35: Issue Completeness Auditing](phase-35.md)
+- [Phase 36: Structured Frontend Issue Decomposition](phase-36.md)
 - [Future considerations](future-considerations.md)

@@ -1,44 +1,40 @@
-# Scenario: post-wave merge serializer and failure abort
+# Scenario: post-wave merge serializer and continuation
 
-Relates to: Issue #599
+Relates to: Issue #751
 
 ## Setup
-- Wave barrier dispatcher producing wave results
-- Stubbed merge and rebase functions
-- Config with `max_rebase_attempts` set
+- An orchestrator run with `max_workers > 1`
+- Multiple issues completing a wave with mixed outcomes
+- Stubbed merge and dependency resolution functions
 
 ## Cases
 
-### All issues succeed and merge in order
-Wave of 3 issues (#10, #5, #8) all return StatusImplemented.
-- Issues merge in ascending order: #5, #8, #10
-- Rebase phase runs before merging #8 and #10
-- Dependency re-resolution runs after all merges
+### All succeed and merge in order
+- GIVEN a wave of 3 issues all returning `StatusImplemented`
+- WHEN the wave completes
+- THEN all 3 merge in ascending issue number order and dependency re-resolution runs
 
-### Mixed results merge successes then abort
-Wave of 3 issues: #1 succeeds, #2 fails, #3 succeeds.
-- #1 and #3 merge successfully
-- Run aborts after wave — no further waves dispatched
-- Summary reports #2 as failed
+### Mixed results continue the run
+- GIVEN a wave of 3 issues where 1 fails and 2 succeed
+- WHEN the wave completes
+- THEN the 2 successes merge, the failure is counted, and the run continues to the next wave
 
-### All issues fail skips merge
-Wave of 3 issues all return StatusFailed.
-- No merge attempts are made
-- Run aborts with failure summary
-- All 3 issues reported as failed
+### All fail exits wave loop
+- GIVEN a wave of 3 issues all returning `StatusFailed`
+- WHEN the wave completes
+- THEN no merges are attempted and the wave loop exits
 
-### Rebase failure labels PR for human review
-During post-wave merge, PR for issue #2 fails rebase after `max_rebase_attempts`.
-- Issue #2 PR is labeled `needs-human-review`
-- Other successful issues in the wave still merge
-- Run continues to next wave if no failures otherwise
+### Merge order is deterministic
+- GIVEN issues completing in order #3, #1, #2
+- WHEN the post-wave merge runs
+- THEN merges execute in order #1, #2, #3
 
-### Blocked issues counted in summary
-Wave of 2 issues: #1 fails. Issues #3 and #4 are blocked by #1.
-- #3 and #4 are reported as blocked in the run summary
-- Blocked count in summary equals 2
+### Blocked by failure reported
+- GIVEN issue B depends on issue A, and issue A fails in wave 1
+- WHEN dependency re-resolution runs after wave 1
+- THEN issue B does not appear in the next wave's processable list and is counted as blocked in the final summary
 
-### Re-resolution only on all-success wave
-Wave of 3 issues: all succeed. Second wave available after re-resolution.
-- `refreshAndCategorize()` is called after merging
-- Newly unblocked issues are dispatched in the next wave
+### Rebase runs between consecutive merges
+- GIVEN a wave with 3 successful issues
+- WHEN the post-wave merge serializes them
+- THEN `runPreMergeRebasePhase` executes before each merge after the first

@@ -2,22 +2,23 @@
 
 **Goal**: Independent issues within a run execute in parallel, bounded by a
 configurable worker pool. Dependent issues still respect topological ordering.
-Merge serialization ensures `main` stays linear.
+Wave-barrier dispatch groups independent issues, processes them concurrently,
+then merges all successes serially before re-resolving dependencies for the
+next wave.
 
 **Milestone**: `Phase 14` | **Label**: `phase-14`
 
-- Worker pool with configurable max concurrency (`concurrency.max_workers`, default 1)
-- Wave barrier scheduling: process independent issues in parallel, wait for wave, merge all, re-resolve dependencies, next wave
-- Dependency-aware scheduling from existing topological sort
-- Per-worker sandbox containers with isolated git worktrees
-- Concurrent/integration run modes: compose skipped when `max_workers > 1`; `--with-compose` forces single-worker integration mode
-- Single-goroutine merge serializer (squash-merge, rebase, signal next)
-- Merge coordinator agent (from Phase 26) used for post-wave conflict resolution
-- Thread-safe run data writer (mutex or per-issue writers)
-- Per-issue log files for concurrent debuggability
-- Active workers indicator and concurrent status badges in dashboard
+- Concurrency config block (`concurrency.max_workers`, default 1)
+- `--with-compose` flag forcing single-worker mode when compose is configured
+- Thread-safe run data writer (mutex on run.json read-modify-write methods)
+- Per-issue log files (`issues/{num}/debug.log`) for concurrent debuggability
+- Extract per-issue processing into `runOneIssue` worker function (pure refactor)
+- Wave barrier dispatcher with bounded goroutines and channel-based result collection
+- Post-wave serial merge with continuation on failure (no abort) and dependency re-resolution
+- Rate-limit handling at wave boundaries (sleep until reset, re-dispatch rate-limited issues)
+- TUI concurrent status display (multiple spinners, worker count in summary bar)
+- Dashboard wave grouping (wave metadata in run data, wall-clock savings)
 
-**Issues**: #593–#602
+**Issues**: #745–#754
 
 **Planning doc**: `docs/planning/phase-14-bounded-concurrency.md`
-

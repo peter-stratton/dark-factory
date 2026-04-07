@@ -147,8 +147,14 @@ what was built and how users experience it. These live in
 | 24 | [Container Resource Tracking](docs/phase-overviews/phase-24-container-resource-tracking.md) — Docker stats capture, per-step memory/CPU, analyze output, dashboard columns, host mode |
 | 25 | [Docker Socket Mount & Compose Lifecycle](docs/phase-overviews/phase-25-docker-socket-mount-and-compose-lifecycle.md) — compose config, socket mount, up/down lifecycle, env forwarding, doctor checks |
 | 22 | [Analytics Overhaul](docs/phase-overviews/phase-22-analytics-overhaul.md) — first-pass rate, wasted cost, failure reasons, per-repo breakdown, sprint report command |
+| 26 | [Merge Coordinator Agent](docs/phase-overviews/phase-26-merge-coordinator-agent.md) - dedicated conflict resolver, per-issue and rollup integration, telemetry, dashboard step |
+| 27 | [Agent Efficiency & Resilience](docs/phase-overviews/phase-27-agent-efficiency-and-resilience.md) - per-role judge thresholds, benign kill handling, model overrides, handoff context, generalized recon |
 | 28 | [Container Health Judge](docs/phase-overviews/phase-28-container-health-judge.md) — real-time log streaming, idle/thrash/transport rules, container retry, intervention flow |
-| 29 | [Complete CLI Migration](docs/phase-overviews/phase-29-complete-cli-migration.md) — delete Python runner, simplify Run(), remove --no-sandbox, unconditional Docker, test migration |
+| 29 | [Complete CLI Migration](docs/phase-overviews/phase-29-complete-cli-migration.md) - delete Python runner, simplify Run(), remove --no-sandbox, unconditional Docker, test migration |
+| 30 | [Spec Tightening](docs/phase-overviews/phase-30-spec-tightening.md) - GIVEN/WHEN/THEN validation, phase-scoped vet, spec delta generation, pipeline integration |
+| 31 | [Planner Agent](docs/phase-overviews/phase-31-planner-agent.md) - structured implementation plans, non-blocking pipeline step, implementer prompt injection, model override |
+| 32 | [Decision Flow Tracing](docs/phase-overviews/phase-32-decision-flow-tracing.md) - trace ID generation, SQLite persistence, `godark trace` CLI, dashboard copy button, TUI column |
+| 33 | [Semi-Structured Review](docs/phase-overviews/phase-33-semi-structured-review.md) - semi-formal reviewer prompt, config toggle, consistency quality gate, automatic re-run on contradiction |
 
 To generate an overview for a newly completed phase, use `/godark-create-phase-overview <phase-number>`.
 
