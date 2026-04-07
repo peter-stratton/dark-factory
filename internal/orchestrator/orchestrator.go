@@ -786,11 +786,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	// Track which issues have been seen (processed or failed) to avoid reprocessing.
 	seen := make(map[int]bool)
 	wave := 0
-	rateLimitHold := false
-
 	for {
 		wave++
-		rateLimitHold = false
 
 		// Filter out already-seen issues from the current processable batch.
 		var batch []github.Issue
@@ -832,79 +829,83 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 		allLockedNums = append(allLockedNums, batchNums...)
 
-		// Process each issue in the batch.
+		// Process each issue in the batch concurrently.
 		merged := false
 		var justMergedNums []int
-		for _, issue := range batch {
-			if ctx.Err() != nil {
-				logger.Warn("context cancelled, stopping", "error", ctx.Err())
-				goto done
-			}
 
+		// Mark all issues as seen before dispatch to prevent reprocessing
+		// in concurrent waves.
+		for _, issue := range batch {
 			seen[issue.Number] = true
 			reporter.IssueStarted(issue.Number, issue.Title)
-			result := runOneIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, writer)
-			outcome := result.Outcome
+		}
 
-			// Handle Claude usage limit: hold until reset, then retry the issue.
-			if result.UsageLimited {
-				resetsAt := result.ResetsAt
-				const holdBuffer = 30 * time.Second
-				const maxHold = 6 * time.Hour
-				if resetsAt.IsZero() || time.Until(resetsAt) > maxHold {
-					logger.Warn("usage limit reset time too far or unknown — failing issue",
-						"issue_number", issue.Number, "resetsAt", resetsAt)
-					runStats.failed++
-					reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, "usage limit: reset time exceeds max hold", 0, outcome.TraceID)
-					continue
-				}
-				sleepUntil := resetsAt.Add(holdBuffer)
-				logger.Info("usage limit hit — entering hold",
-					"issue_number", issue.Number, "resetsAt", resetsAt, "sleep_until", sleepUntil)
-				reporter.IssueStageChanged(issue.Number, "rate-limited")
-				reporter.RateLimited(resetsAt)
-				// Undo seen so we retry this issue.
-				delete(seen, issue.Number)
-				rateLimitHold = true
-				timer := time.NewTimer(time.Until(sleepUntil))
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					logger.Warn("context cancelled during rate-limit hold")
-					goto done
-				case <-timer.C:
-				}
-				reporter.RateLimitCleared()
-				logger.Info("usage limit hold complete — resuming", "issue_number", issue.Number)
-				// Refresh GitHub App token — it may have expired during the hold.
-				refreshHostGHToken(logger)
-				if newToken, err := ghapp.RefreshToken(); err == nil && newToken != "" {
-					authEnv["GH_TOKEN"] = newToken
-				}
-				// Break out of batch loop so the issue is retried in the next iteration.
+		// Fan out workers, capped by MaxWorkers.
+		maxWorkers := cfg.Concurrency.MaxWorkers
+		if maxWorkers < 1 {
+			maxWorkers = 1
+		}
+		results := make(chan waveResult, len(batch))
+		sem := make(chan struct{}, maxWorkers)
+		var wg sync.WaitGroup
+		for _, issue := range batch {
+			// Use select on semaphore send so context cancellation is not
+			// blocked waiting for a worker slot.
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
 				break
+			}
+			if ctx.Err() != nil {
+				break
+			}
+			wg.Add(1)
+			go func(iss github.Issue) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				results <- runOneIssue(ctx, iss, cfg, prompts, authEnv, logger, hook, reporter, writer)
+			}(issue)
+		}
+		wg.Wait()
+		close(results)
+
+		// Collect results on the main goroutine — no locks needed for
+		// shared state (runStats, implementedIssues, punchlist).
+		for res := range results {
+			issue := res.Issue
+			outcome := res.Outcome
+
+			// Usage-limited results are treated as failures for now.
+			// Full rate-limit hold logic is deferred to #752.
+			if res.UsageLimited {
+				runStats.failed++
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0,
+					"usage limit: rate-limit handling deferred", 0, outcome.TraceID)
+				logger.Warn("usage-limited issue treated as failure (rate-limit hold deferred)",
+					"issue_number", issue.Number, "resets_at", res.ResetsAt)
+				continue
 			}
 
 			switch outcome.Status {
 			case agent.StatusImplemented:
 				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
-				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", result.IssueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", res.IssueCost, outcome.TraceID)
 				merged = true
 				justMergedNums = append(justMergedNums, issue.Number)
 			case agent.StatusReadyToMerge:
 				runStats.readyToMerge++
-				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", result.IssueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", res.IssueCost, outcome.TraceID)
 			case agent.StatusNeedsHumanReview:
 				runStats.needsHumanReview++
-				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", result.IssueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", res.IssueCost, outcome.TraceID)
 			default:
 				runStats.failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
 				}
-				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, result.IssueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, res.IssueCost, outcome.TraceID)
 			}
 
 			logger.Info("issue outcome",
@@ -916,8 +917,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			)
 
 			if outcome.PRNumber > 0 {
-				// Enrich punchlist in the background so it's available as
-				// soon as possible without blocking the next issue.
 				plWg.Add(1)
 				go func(iss github.Issue, oc agent.IssueOutcome) {
 					defer plWg.Done()
@@ -926,7 +925,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 					plEntries = append(plEntries, entry)
 					plMu.Unlock()
 
-					// Write run data immediately.
 					if writer != nil {
 						status := punchlistEnrichmentStatus(prompts, entry.AcceptanceTests)
 						plData := rundata.PunchlistData{
@@ -942,7 +940,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 						}
 					}
 
-					// Print this entry's punchlist to stdout immediately.
 					text := punchlist.Generate([]punchlist.Entry{entry})
 					if text != "" {
 						reporter.PunchlistText(text)
@@ -951,16 +948,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 						"issue_number", iss.Number,
 						"count", len(entry.AcceptanceTests),
 					)
-				}(result.Issue, result.Outcome)
-			}
-
-			// After a merge, break out of the inner loop to re-resolve.
-			if outcome.Status == "implemented" {
-				break
+				}(res.Issue, res.Outcome)
 			}
 		}
 
-		if !merged && !rateLimitHold {
+		if !merged {
 			// No merges in this wave and no rate-limit retry needed — no point re-resolving.
 			break
 		}
@@ -976,7 +968,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 	}
 
-done:
 	runStats.blocked = len(blocked)
 	reporter.RunFinished(runStats.implemented, runStats.readyToMerge, runStats.needsHumanReview, runStats.failed, runStats.blocked)
 
