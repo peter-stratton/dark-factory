@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1528,5 +1530,76 @@ func TestClearRateLimitRemovesFromRunJSON(t *testing.T) {
 
 	if meta.RateLimitResetsAt != nil {
 		t.Errorf("RateLimitResetsAt = %v, want nil after ClearRateLimit", meta.RateLimitResetsAt)
+	}
+}
+
+func TestConcurrentSetClearRateLimit(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if n%2 == 0 {
+				if err := w.ClearRateLimit(); err != nil {
+					t.Errorf("ClearRateLimit goroutine %d: %v", n, err)
+				}
+			} else {
+				resetsAt := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+				if err := w.SetRateLimit(resetsAt); err != nil {
+					t.Errorf("SetRateLimit goroutine %d: %v", n, err)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("run.json is not valid JSON after concurrent writes: %v", err)
+	}
+}
+
+func TestConcurrentPerIssueWrites(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1, 2}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if err := w.WriteImplementResult(1, StepResult{Output: "issue1"}); err != nil {
+			t.Errorf("WriteImplementResult(1): %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if err := w.WriteImplementResult(2, StepResult{Output: "issue2"}); err != nil {
+			t.Errorf("WriteImplementResult(2): %v", err)
+		}
+	}()
+	wg.Wait()
+
+	for issueNum, want := range map[int]string{1: "issue1", 2: "issue2"} {
+		path := filepath.Join(w.Dir(), "issues", strconv.Itoa(issueNum), "implement.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading implement.json for issue %d: %v", issueNum, err)
+		}
+		if !strings.Contains(string(data), want) {
+			t.Errorf("issue %d implement.json does not contain %q; got %s", issueNum, want, data)
+		}
 	}
 }
