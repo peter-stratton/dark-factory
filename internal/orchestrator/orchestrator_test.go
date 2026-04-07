@@ -3294,3 +3294,267 @@ func TestWaveDispatch_ResultCollection(t *testing.T) {
 		t.Errorf("issue 3: got status %q, want needs-human-review", statuses[3])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Post-wave merge serializer tests (#751)
+// ---------------------------------------------------------------------------
+
+func TestPostWave_AllSucceed(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+		{Number: 3, Title: "third"},
+	}
+
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		return closedNumbers
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		closedNumbers = append(closedNumbers, issue.Number)
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.runFinished) == 0 {
+		t.Fatal("RunFinished not called")
+	}
+	rf := reporter.runFinished[0]
+	if rf.implemented != 3 {
+		t.Errorf("implemented = %d, want 3", rf.implemented)
+	}
+
+	// All 3 should be reported as implemented.
+	for _, ic := range reporter.issueCompleted {
+		if ic.status != "implemented" {
+			t.Errorf("issue %d: got status %q, want implemented", ic.issueNumber, ic.status)
+		}
+	}
+}
+
+func TestPostWave_MixedResults(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "succeeds"},
+		{Number: 2, Title: "fails"},
+		{Number: 3, Title: "succeeds"},
+	}
+
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		return closedNumbers
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		if issue.Number == 2 {
+			return agent.IssueOutcome{
+				IssueNumber: 2,
+				Status:      agent.StatusFailed,
+				Err:         fmt.Errorf("test failure"),
+			}
+		}
+		closedNumbers = append(closedNumbers, issue.Number)
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 2 {
+		t.Errorf("implemented = %d, want 2", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+}
+
+func TestPostWave_AllFail(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "fails"},
+		{Number: 2, Title: "fails"},
+		{Number: 3, Title: "fails"},
+	}
+
+	setupProcessMocks(t, func() []int {
+		return nil
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusFailed,
+			Err:         fmt.Errorf("boom"),
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 0 {
+		t.Errorf("implemented = %d, want 0", rf.implemented)
+	}
+	if rf.failed != 3 {
+		t.Errorf("failed = %d, want 3", rf.failed)
+	}
+
+	// No second wave should have been triggered.
+	if len(reporter.waveStarted) > 0 {
+		t.Errorf("expected no wave 2, got %d wave-started events", len(reporter.waveStarted))
+	}
+}
+
+func TestPostWave_MergeOrder(t *testing.T) {
+	// Issues complete from workers in arbitrary order, but reporter
+	// should see completions in ascending issue-number order.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+		{Number: 3, Title: "third"},
+	}
+
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		return closedNumbers
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		closedNumbers = append(closedNumbers, issue.Number)
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Verify reporter received completions in issue-number order.
+	if len(reporter.issueCompleted) < 3 {
+		t.Fatalf("expected at least 3 completions, got %d", len(reporter.issueCompleted))
+	}
+	// The first 3 completions (wave 1) should be in ascending order.
+	for i := 0; i < 3; i++ {
+		if reporter.issueCompleted[i].issueNumber != i+1 {
+			t.Errorf("completion[%d]: got issue %d, want %d",
+				i, reporter.issueCompleted[i].issueNumber, i+1)
+		}
+	}
+}
+
+func TestPostWave_BlockedByFailure(t *testing.T) {
+	// A(#1) fails, B(#2) depends on A, C(#3) is independent and succeeds.
+	// After wave 1: B should remain blocked.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "will fail"},
+		{Number: 2, Title: "depends on 1", Body: "**Blocked by**: #1"},
+		{Number: 3, Title: "independent"},
+	}
+
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		return closedNumbers
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		if issue.Number == 1 {
+			return agent.IssueOutcome{
+				IssueNumber: 1,
+				Status:      agent.StatusFailed,
+				Err:         fmt.Errorf("test failure"),
+			}
+		}
+		closedNumbers = append(closedNumbers, issue.Number)
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 1 {
+		t.Errorf("implemented = %d, want 1", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+	if rf.blocked != 1 {
+		t.Errorf("blocked = %d, want 1", rf.blocked)
+	}
+}
+
+func TestPostWave_RebaseBetweenMerges(t *testing.T) {
+	// Verify PullAfterMerge is called for each merged issue.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+	}
+
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		return closedNumbers
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		closedNumbers = append(closedNumbers, issue.Number)
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	// Track PullAfterMerge calls via CommandRunner.
+	var pullCalls [][]string
+	var pullMu sync.Mutex
+	origCmdRunner := CommandRunner
+	t.Cleanup(func() { CommandRunner = origCmdRunner })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		pullMu.Lock()
+		pullCalls = append(pullCalls, append([]string{name}, args...))
+		pullMu.Unlock()
+		return []byte("ok"), nil
+	}
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Should have at least 2 pull calls (one per merged issue in wave 1).
+	pullCount := 0
+	for _, call := range pullCalls {
+		if len(call) >= 3 && call[0] == "git" && call[1] == "pull" {
+			pullCount++
+		}
+	}
+	if pullCount < 2 {
+		t.Errorf("expected at least 2 PullAfterMerge calls, got %d (calls: %v)", pullCount, pullCalls)
+	}
+}

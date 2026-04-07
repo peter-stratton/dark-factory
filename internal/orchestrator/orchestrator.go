@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -867,9 +868,19 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		wg.Wait()
 		close(results)
 
-		// Collect results on the main goroutine — no locks needed for
-		// shared state (runStats, implementedIssues, punchlist).
+		// Drain results into a slice and sort by issue number for
+		// deterministic merge order and reproducible log output.
+		var collected []waveResult
 		for res := range results {
+			collected = append(collected, res)
+		}
+		slices.SortFunc(collected, func(a, b waveResult) int {
+			return a.IssueNumber - b.IssueNumber
+		})
+
+		// Process results in ascending issue-number order: update stats,
+		// report completions, and spawn punchlist enrichment goroutines.
+		for _, res := range collected {
 			issue := res.Issue
 			outcome := res.Outcome
 
@@ -950,8 +961,18 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 		}
 
+		// Serial merge pass: update the local base branch after each
+		// successful merge so subsequent merges rebase against the latest
+		// state. The merges themselves already happened inside processIssueFn.
+		for _, num := range justMergedNums {
+			if err := PullAfterMerge(cfg.BaseBranch, logger); err != nil {
+				logger.Warn("post-wave pull failed after merge",
+					"issue_number", num, "error", err)
+			}
+		}
+
 		if !merged {
-			// No merges in this wave and no rate-limit retry needed — no point re-resolving.
+			// No merges in this wave — no point re-resolving.
 			break
 		}
 
