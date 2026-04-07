@@ -161,5 +161,15 @@ func TestNoOpMethods(t *testing.T) {
 	}
 }
 
+func TestWorkersActive(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextReporter(&buf)
+	r.WorkersActive(3, 5)
+	want := "3/5 workers active\n"
+	if got := buf.String(); got != want {
+		t.Errorf("WorkersActive\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
 // Verify TextReporter satisfies the ProgressReporter interface at compile time.
 var _ ProgressReporter = (*TextReporter)(nil)

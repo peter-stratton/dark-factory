@@ -105,3 +105,8 @@ func (r *TextReporter) RateLimited(resetsAt time.Time) {
 func (r *TextReporter) RateLimitCleared() {
 	fmt.Fprintln(r.w, "rate limit cleared — resuming")
 }
+
+// WorkersActive writes the current worker utilization.
+func (r *TextReporter) WorkersActive(active, total int) {
+	fmt.Fprintf(r.w, "%d/%d workers active\n", active, total)
+}

@@ -14,18 +14,24 @@ import (
 func renderSummary(m Model) string {
 	styledSep := summaryBarStyle.Render(sep)
 
-	parts := []string{
-		summaryMergedStyle.Render(fmt.Sprintf("%d", m.merged)) +
-			summaryBarStyle.Render(" merged"),
-		summaryInReviewStyle.Render(fmt.Sprintf("%d", m.inReview)) +
-			summaryBarStyle.Render(" in review"),
-		summaryNeutralStyle.Render(fmt.Sprintf("%d", m.queued)) +
-			summaryBarStyle.Render(" queued"),
-		summaryFailedStyle.Render(fmt.Sprintf("%d", m.failed)) +
-			summaryBarStyle.Render(" failed"),
-		summaryNeutralStyle.Render(fmt.Sprintf("$%.2f", m.totalCost)) +
-			summaryBarStyle.Render(" total cost"),
+	var parts []string
+	if m.totalWorkers > 1 {
+		parts = append(parts,
+			summaryNeutralStyle.Render(fmt.Sprintf("%d/%d", m.activeWorkers, m.totalWorkers))+
+				summaryBarStyle.Render(" workers"))
 	}
+	parts = append(parts,
+		summaryMergedStyle.Render(fmt.Sprintf("%d", m.merged))+
+			summaryBarStyle.Render(" merged"),
+		summaryInReviewStyle.Render(fmt.Sprintf("%d", m.inReview))+
+			summaryBarStyle.Render(" in review"),
+		summaryNeutralStyle.Render(fmt.Sprintf("%d", m.queued))+
+			summaryBarStyle.Render(" queued"),
+		summaryFailedStyle.Render(fmt.Sprintf("%d", m.failed))+
+			summaryBarStyle.Render(" failed"),
+		summaryNeutralStyle.Render(fmt.Sprintf("$%.2f", m.totalCost))+
+			summaryBarStyle.Render(" total cost"),
+	)
 
 	return strings.Join(parts, styledSep)
 }

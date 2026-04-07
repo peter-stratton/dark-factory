@@ -119,3 +119,8 @@ func (r *TUIReporter) RateLimited(resetsAt time.Time) {
 func (r *TUIReporter) RateLimitCleared() {
 	r.p.Send(RateLimitClearedMsg{})
 }
+
+// WorkersActive sends WorkersActiveMsg with the current worker utilization.
+func (r *TUIReporter) WorkersActive(active, total int) {
+	r.p.Send(WorkersActiveMsg{Active: active, Total: total})
+}

@@ -55,8 +55,10 @@ type Model struct {
 	merged    int
 	inReview  int
 	queued    int
-	failed    int
-	totalCost float64
+	failed        int
+	totalCost     float64
+	activeWorkers int
+	totalWorkers  int
 
 	// Issue table state.
 	issues         []issueRow
@@ -144,6 +146,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case RunStartedMsg:
 		m.handleRunStarted(msg)
+
+	case WorkersActiveMsg:
+		m.activeWorkers = msg.Active
+		m.totalWorkers = msg.Total
 
 	case WaveStartedMsg:
 		// Wave metadata is informational; no per-row state changes here.

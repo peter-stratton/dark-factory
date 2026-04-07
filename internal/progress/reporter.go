@@ -38,4 +38,6 @@ type ProgressReporter interface {
 	// RateLimitCleared signals that the hold period has ended and processing
 	// is resuming.
 	RateLimitCleared()
+	// WorkersActive signals the current worker utilization.
+	WorkersActive(active, total int)
 }
