@@ -3583,3 +3583,293 @@ func TestPostWave_RebaseBetweenMerges(t *testing.T) {
 		t.Errorf("expected 1 PullAfterMerge call, got %d (calls: %v)", pullCount, pullCalls)
 	}
 }
+
+// TestWaveLoop_SingleRateLimit verifies that when one issue in a wave hits
+// a rate limit while others succeed, the successes merge and the rate-limited
+// issue is retried in the next wave.
+func TestWaveLoop_SingleRateLimit(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "ok-1"},
+		{Number: 2, Title: "ok-2"},
+		{Number: 3, Title: "rate-limited"},
+	}
+
+	var mu sync.Mutex
+	callCounts := map[int]int{}
+	closedNumbers := []int{}
+
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		mu.Lock()
+		callCounts[issue.Number]++
+		call := callCounts[issue.Number]
+		mu.Unlock()
+
+		if issue.Number == 3 && call == 1 {
+			return agent.IssueOutcome{
+				IssueNumber:  3,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(-1 * time.Minute),
+			}
+		}
+
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 3 {
+		t.Errorf("implemented = %d, want 3", rf.implemented)
+	}
+	if rf.failed != 0 {
+		t.Errorf("failed = %d, want 0", rf.failed)
+	}
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 1 {
+		t.Errorf("rateLimitClears = %d, want 1", reporter.rateLimitClears)
+	}
+
+	mu.Lock()
+	if callCounts[3] != 2 {
+		t.Errorf("issue 3 call count = %d, want 2 (initial + retry)", callCounts[3])
+	}
+	mu.Unlock()
+}
+
+// TestWaveLoop_AllRateLimited verifies that when all issues in a wave hit
+// rate limits, none merge, and all are retried after the hold.
+func TestWaveLoop_AllRateLimited(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "a"},
+		{Number: 2, Title: "b"},
+		{Number: 3, Title: "c"},
+	}
+
+	var mu sync.Mutex
+	callCounts := map[int]int{}
+	closedNumbers := []int{}
+
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		mu.Lock()
+		callCounts[issue.Number]++
+		call := callCounts[issue.Number]
+		mu.Unlock()
+
+		if call == 1 {
+			return agent.IssueOutcome{
+				IssueNumber:  issue.Number,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(-1 * time.Minute),
+			}
+		}
+
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 3 {
+		t.Errorf("implemented = %d, want 3", rf.implemented)
+	}
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 1 {
+		t.Errorf("rateLimitClears = %d, want 1", reporter.rateLimitClears)
+	}
+
+	mu.Lock()
+	for n := 1; n <= 3; n++ {
+		if callCounts[n] != 2 {
+			t.Errorf("issue %d call count = %d, want 2", n, callCounts[n])
+		}
+	}
+	mu.Unlock()
+}
+
+// TestWaveLoop_MixedRateLimitAndFailure verifies correct handling when a wave
+// contains a mix of rate-limited, failed, and succeeded issues.
+func TestWaveLoop_MixedRateLimitAndFailure(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "rate-limited"},
+		{Number: 2, Title: "fails"},
+		{Number: 3, Title: "succeeds"},
+	}
+
+	var mu sync.Mutex
+	callCounts := map[int]int{}
+	closedNumbers := []int{}
+
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		mu.Lock()
+		callCounts[issue.Number]++
+		call := callCounts[issue.Number]
+		mu.Unlock()
+
+		switch issue.Number {
+		case 1:
+			if call == 1 {
+				return agent.IssueOutcome{
+					IssueNumber:  1,
+					UsageLimited: true,
+					ResetsAt:     time.Now().Add(-1 * time.Minute),
+				}
+			}
+			mu.Lock()
+			closedNumbers = append(closedNumbers, issue.Number)
+			mu.Unlock()
+			return agent.IssueOutcome{
+				IssueNumber: 1,
+				Status:      agent.StatusImplemented,
+				PRNumber:    101,
+			}
+		case 2:
+			return agent.IssueOutcome{
+				IssueNumber: 2,
+				Status:      agent.StatusFailed,
+				Err:         fmt.Errorf("test failure"),
+			}
+		default:
+			mu.Lock()
+			closedNumbers = append(closedNumbers, issue.Number)
+			mu.Unlock()
+			return agent.IssueOutcome{
+				IssueNumber: 3,
+				Status:      agent.StatusImplemented,
+				PRNumber:    103,
+			}
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 2 {
+		t.Errorf("implemented = %d, want 2", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+}
+
+// TestWaveLoop_MaxHoldExceeded verifies that a rate-limited issue whose reset
+// time exceeds maxHold is failed immediately without sleeping.
+func TestWaveLoop_MaxHoldExceeded(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "far-future-reset"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			return agent.IssueOutcome{
+				IssueNumber:  issue.Number,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(7 * time.Hour),
+			}
+		})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 0 {
+		t.Errorf("implemented = %d, want 0", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+	// No hold should have been entered.
+	if len(reporter.rateLimitedAt) != 0 {
+		t.Errorf("rateLimitedAt calls = %d, want 0 (no hold for max exceeded)", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 0 {
+		t.Errorf("rateLimitClears = %d, want 0", reporter.rateLimitClears)
+	}
+}
+
+// TestWaveLoop_ContextCancelledDuringHold verifies that cancelling the context
+// during a rate-limit hold exits cleanly without error.
+func TestWaveLoop_ContextCancelledDuringHold(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "rate-limited"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+			return agent.IssueOutcome{
+				IssueNumber:  issue.Number,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(1 * time.Minute),
+			}
+		})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel shortly after the hold begins.
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v, want nil", err)
+	}
+
+	// RateLimited should have been called, but not RateLimitCleared.
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 0 {
+		t.Errorf("rateLimitClears = %d, want 0 (context cancelled before clear)", reporter.rateLimitClears)
+	}
+}

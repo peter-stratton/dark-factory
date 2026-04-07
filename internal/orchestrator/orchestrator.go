@@ -32,6 +32,16 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
+const (
+	// holdBuffer is the extra time to wait after a rate-limit resets before
+	// retrying, giving the upstream quota a moment to replenish.
+	holdBuffer = 30 * time.Second
+
+	// maxHold is the longest the orchestrator will sleep waiting for a
+	// rate-limit reset. If a reset time exceeds this, the issue is failed.
+	maxHold = 6 * time.Hour
+)
+
 // Run is the main entry point for the orchestration loop.
 // It fetches issues, resolves dependencies, and either prints the execution
 // plan (dry-run) or iterates through processable issues. After each successful
@@ -885,14 +895,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			issue := res.Issue
 			outcome := res.Outcome
 
-			// Usage-limited results are treated as failures for now.
-			// Full rate-limit hold logic is deferred to #752.
+			// Rate-limited results are handled in a post-loop batch step.
 			if res.UsageLimited {
-				runStats.failed++
-				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0,
-					"usage limit: rate-limit handling deferred", 0, outcome.TraceID)
-				logger.Warn("usage-limited issue treated as failure (rate-limit hold deferred)",
-					"issue_number", issue.Number, "resets_at", res.ResetsAt)
 				continue
 			}
 
@@ -962,6 +966,85 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 		}
 
+		// --- Post-wave rate-limit handling (#752) ---
+		var rateLimitHold bool
+		var rateLimitedResults []waveResult
+		for _, res := range collected {
+			if res.UsageLimited {
+				rateLimitedResults = append(rateLimitedResults, res)
+			}
+		}
+
+		if len(rateLimitedResults) > 0 {
+			// Partition: fail issues whose reset time exceeds maxHold or is
+			// unknown; mark the rest for retry.
+			var retryable []waveResult
+			for _, res := range rateLimitedResults {
+				if res.ResetsAt.IsZero() || time.Until(res.ResetsAt) > maxHold {
+					runStats.failed++
+					reporter.IssueCompleted(res.Issue.Number, res.Issue.Title, "failed", 0, 0,
+						"usage limit: reset time exceeds max hold", 0, res.Outcome.TraceID)
+					logger.Warn("usage-limited issue failed (reset exceeds max hold)",
+						"issue_number", res.Issue.Number, "resets_at", res.ResetsAt)
+				} else {
+					retryable = append(retryable, res)
+				}
+			}
+
+			if len(retryable) > 0 {
+				// Find the latest ResetsAt among retryable issues.
+				var latestResetsAt time.Time
+				for _, res := range retryable {
+					if res.ResetsAt.After(latestResetsAt) {
+						latestResetsAt = res.ResetsAt
+					}
+				}
+
+				// Remove retryable issues from seen so they re-enter the next wave.
+				for _, res := range retryable {
+					delete(seen, res.Issue.Number)
+				}
+
+				sleepUntil := latestResetsAt.Add(holdBuffer)
+				logger.Info("usage limit hit — entering hold",
+					"rate_limited_count", len(retryable),
+					"resets_at", latestResetsAt,
+					"sleep_until", sleepUntil,
+				)
+				reporter.RateLimited(latestResetsAt)
+				if writer != nil {
+					if err := writer.SetRateLimit(latestResetsAt); err != nil {
+						logger.Warn("failed to set rate limit in run data", "error", err)
+					}
+				}
+
+				// Sleep until the reset time plus buffer. A negative or zero
+				// duration causes the timer to fire immediately, which is fine
+				// when the reset is already in the past.
+				timer := time.NewTimer(time.Until(sleepUntil))
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					logger.Warn("context cancelled during rate-limit hold")
+					return nil
+				case <-timer.C:
+				}
+
+				reporter.RateLimitCleared()
+				if writer != nil {
+					if err := writer.ClearRateLimit(); err != nil {
+						logger.Warn("failed to clear rate limit in run data", "error", err)
+					}
+				}
+				refreshHostGHToken(logger)
+				if newToken, err := ghapp.RefreshToken(); err == nil && newToken != "" {
+					authEnv["GH_TOKEN"] = newToken
+				}
+
+				rateLimitHold = true
+			}
+		}
+
 		// Pull the base branch once after all merges in this wave so the
 		// local checkout is current before re-resolution.
 		if len(justMergedNums) > 0 {
@@ -970,8 +1053,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 		}
 
-		if !merged {
-			// No merges in this wave — no point re-resolving.
+		if !merged && !rateLimitHold {
+			// No merges and no rate-limit retries — no point re-resolving.
 			break
 		}
 
