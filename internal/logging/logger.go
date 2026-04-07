@@ -41,6 +41,26 @@ func NewLoggerFileOnly(dir string) (*slog.Logger, error) {
 	return slog.New(jsonHandler), nil
 }
 
+// NewFileLogger creates a logger that writes structured JSON to debug.log
+// in dir with append semantics. The directory is created if it does not exist.
+// Use for per-entity log files (e.g. per-issue logs) where stdout output is
+// not needed and the file must survive retries without truncation.
+func NewFileLogger(dir string) (*slog.Logger, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create log directory: %w", err)
+	}
+
+	path := filepath.Join(dir, "debug.log")
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open log file: %w", err)
+	}
+
+	jsonHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
+	return slog.New(jsonHandler), nil
+}
+
 // NewLogger creates a logger that writes structured JSON to debug.log in dir
 // and human-readable text to stdout. The directory is created if it does not exist.
 func NewLogger(dir string) (*slog.Logger, error) {

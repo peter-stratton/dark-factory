@@ -21,6 +21,7 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
 	"github.com/peter-stratton/dark-factory/internal/lock"
+	"github.com/peter-stratton/dark-factory/internal/logging"
 	"github.com/peter-stratton/dark-factory/internal/notify"
 	"github.com/peter-stratton/dark-factory/internal/progress"
 	"github.com/peter-stratton/dark-factory/internal/punchlist"
@@ -390,7 +391,15 @@ func processUnblockedLoop(
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
-		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+		issueLogger := logger
+		if writer != nil {
+			if il, err := logging.NewFileLogger(writer.IssueDir(issue.Number)); err != nil {
+				logger.Warn("failed to create per-issue logger", "issue", issue.Number, "error", err)
+			} else {
+				issueLogger = il
+			}
+		}
+		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
 		attempted++
 
 		writeResolveDialogue(writer, issue, outcome, cfg, logger)
@@ -757,7 +766,15 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 
 			seen[issue.Number] = true
 			reporter.IssueStarted(issue.Number, issue.Title)
-			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+			issueLogger := logger
+			if writer != nil {
+				if il, err := logging.NewFileLogger(writer.IssueDir(issue.Number)); err != nil {
+					logger.Warn("failed to create per-issue logger", "issue", issue.Number, "error", err)
+				} else {
+					issueLogger = il
+				}
+			}
+			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
 
 			// Handle Claude usage limit: hold until reset, then retry the issue.
 			if outcome.UsageLimited {

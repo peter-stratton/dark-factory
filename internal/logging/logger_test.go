@@ -67,6 +67,43 @@ func TestNewLoggerFileOnly_NoStdout(t *testing.T) {
 	}
 }
 
+func TestNewFileLogger_CreatesDebugLog(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewFileLogger(dir)
+	if err != nil {
+		t.Fatalf("NewFileLogger() error = %v", err)
+	}
+
+	logger.Info("per-issue test entry", "issue", 42)
+
+	data, err := os.ReadFile(filepath.Join(dir, "debug.log"))
+	if err != nil {
+		t.Fatalf("reading debug.log: %v", err)
+	}
+
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("log line is not valid JSON: %v\nraw: %s", err, data)
+	}
+	if record["msg"] != "per-issue test entry" {
+		t.Errorf("expected msg 'per-issue test entry', got %q", record["msg"])
+	}
+	if record["issue"] != float64(42) {
+		t.Errorf("expected issue 42, got %v", record["issue"])
+	}
+}
+
+func TestNewFileLogger_CreatesDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "issues", "42")
+	_, err := NewFileLogger(dir)
+	if err != nil {
+		t.Fatalf("NewFileLogger() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "debug.log")); os.IsNotExist(err) {
+		t.Fatal("expected debug.log to be created in nested directory")
+	}
+}
+
 func TestNewLogger_CreatesDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "logs")
 	_, err := NewLogger(dir)
