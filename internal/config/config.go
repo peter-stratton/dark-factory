@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -385,6 +386,7 @@ type CLIFlags struct {
 	DefaultBranch     *string
 	NoJudge           *bool
 	Model             *string
+	WithCompose       *bool
 	Config            string
 }
 
@@ -622,6 +624,15 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.Model != nil {
 		cfg.Model = *flags.Model
+	}
+	if flags.WithCompose != nil && *flags.WithCompose {
+		cfg.Concurrency.MaxWorkers = 1
+		if cfg.DockerCompose == nil {
+			slog.Warn("--with-compose set but no docker_compose block in config")
+		}
+	} else if cfg.Concurrency.MaxWorkers > 1 && cfg.DockerCompose != nil {
+		slog.Info("compose skipped: max_workers > 1")
+		cfg.DockerCompose = nil
 	}
 }
 
