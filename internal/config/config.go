@@ -257,6 +257,7 @@ type Config struct {
 	Verify      Verify           `yaml:"verify"`
 	Truncation  TruncationLimits `yaml:"truncation"`
 	Judge       Judge            `yaml:"judge"`
+	Concurrency Concurrency      `yaml:"concurrency"`
 
 	// Modules maps module names to per-module build/test/lint/generate commands
 	// and dependency relationships. Nil (absent) means single-module mode.
@@ -360,6 +361,11 @@ type Prompts struct {
 	Recon                string `yaml:"recon"`
 	Planner              string `yaml:"planner"`
 	MergeCoordinator     string `yaml:"merge_coordinator"`
+}
+
+// Concurrency holds concurrency settings for the run orchestrator.
+type Concurrency struct {
+	MaxWorkers int `yaml:"max_workers"`
 }
 
 // Review holds configuration for the functional review step.
@@ -585,6 +591,7 @@ func defaults() *Config {
 			VerifyOutput: 4096,
 			PRDiff:       30000,
 		},
+		Concurrency: Concurrency{MaxWorkers: 1},
 	}
 }
 
@@ -665,6 +672,9 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if err := validateHostServices(cfg.HostServices); err != nil {
+		return err
+	}
+	if err := validateConcurrency(cfg.Concurrency); err != nil {
 		return err
 	}
 	return nil
@@ -822,6 +832,14 @@ func expandNotifySettings(cfg *Config) {
 		}
 		cfg.Notify[i].Settings = expanded
 	}
+}
+
+// validateConcurrency ensures Concurrency fields are valid.
+func validateConcurrency(c Concurrency) error {
+	if c.MaxWorkers < 1 {
+		return fmt.Errorf("concurrency.max_workers must be >= 1, got %d", c.MaxWorkers)
+	}
+	return nil
 }
 
 // validateTruncationLimits ensures TruncationLimits fields are positive.
