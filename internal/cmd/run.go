@@ -296,6 +296,7 @@ func init() {
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
 	f.String("default-branch", "", "Default branch of the repository (auto-detected if omitted)")
+	f.Bool("with-compose", false, "Enable Docker Compose services (forces max_workers=1; skipped by default when max_workers > 1)")
 
 	rootCmd.AddCommand(runCmd)
 }

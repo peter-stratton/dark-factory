@@ -11,6 +11,7 @@ import (
 
 func strPtr(s string) *string { return &s }
 func intPtr(i int) *int       { return &i }
+func boolPtr(b bool) *bool    { return &b }
 
 func writeYAML(t *testing.T, dir, content string) string {
 	t.Helper()
@@ -2796,4 +2797,55 @@ func TestConfigConcurrencyRejectsInvalid(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyFlagsWithCompose(t *testing.T) {
+	compose := &DockerCompose{File: "docker-compose.test.yml"}
+
+	t.Run("concurrent skips compose", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 3},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml"},
+		}
+		applyFlags(cfg, CLIFlags{})
+		if cfg.DockerCompose != nil {
+			t.Error("expected DockerCompose to be nil when max_workers > 1 and WithCompose not set")
+		}
+	})
+
+	t.Run("with-compose forces serial", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 3},
+			DockerCompose: &DockerCompose{File: compose.File},
+		}
+		applyFlags(cfg, CLIFlags{WithCompose: boolPtr(true)})
+		if cfg.Concurrency.MaxWorkers != 1 {
+			t.Errorf("expected MaxWorkers=1, got %d", cfg.Concurrency.MaxWorkers)
+		}
+		if cfg.DockerCompose == nil {
+			t.Error("expected DockerCompose to be preserved when --with-compose is set")
+		}
+	})
+
+	t.Run("no compose config warning", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency: Concurrency{MaxWorkers: 1},
+		}
+		applyFlags(cfg, CLIFlags{WithCompose: boolPtr(true)})
+		if cfg.Concurrency.MaxWorkers != 1 {
+			t.Errorf("expected MaxWorkers=1, got %d", cfg.Concurrency.MaxWorkers)
+		}
+		// Warning is logged but no error — function should not panic.
+	})
+
+	t.Run("default serial preserves compose", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 1},
+			DockerCompose: &DockerCompose{File: compose.File},
+		}
+		applyFlags(cfg, CLIFlags{})
+		if cfg.DockerCompose == nil {
+			t.Error("expected DockerCompose to be preserved when max_workers=1")
+		}
+	})
 }
