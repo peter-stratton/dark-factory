@@ -41,6 +41,13 @@ func NewLoggerFileOnly(dir string) (*slog.Logger, error) {
 	return slog.New(jsonHandler), nil
 }
 
+// NewFileLogger creates a logger that writes structured JSON to debug.log
+// in dir. The directory is created if it does not exist. Use for per-entity
+// log files (e.g. per-issue logs) where stdout output is not needed.
+func NewFileLogger(dir string) (*slog.Logger, error) {
+	return NewLoggerFileOnly(dir)
+}
+
 // NewLogger creates a logger that writes structured JSON to debug.log in dir
 // and human-readable text to stdout. The directory is created if it does not exist.
 func NewLogger(dir string) (*slog.Logger, error) {
