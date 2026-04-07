@@ -1603,3 +1603,49 @@ func TestConcurrentPerIssueWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteWaveResult(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{1, 2, 3}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	t1 := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 4, 7, 10, 5, 0, 0, time.UTC)
+	t3 := time.Date(2026, 4, 7, 10, 5, 0, 0, time.UTC)
+	t4 := time.Date(2026, 4, 7, 10, 8, 0, 0, time.UTC)
+
+	wave1 := WaveResult{Wave: 1, IssueNumbers: []int{1, 2}, StartedAt: t1, FinishedAt: t2}
+	wave2 := WaveResult{Wave: 2, IssueNumbers: []int{3}, StartedAt: t3, FinishedAt: t4}
+
+	if err := w.WriteWaveResult(wave1); err != nil {
+		t.Fatalf("WriteWaveResult(1) error: %v", err)
+	}
+	if err := w.WriteWaveResult(wave2); err != nil {
+		t.Fatalf("WriteWaveResult(2) error: %v", err)
+	}
+
+	for _, waveNum := range []int{1, 2} {
+		path := filepath.Join(w.Dir(), "waves", strconv.Itoa(waveNum)+".json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading waves/%d.json: %v", waveNum, err)
+		}
+		var got WaveResult
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("unmarshaling waves/%d.json: %v", waveNum, err)
+		}
+		if got.Wave != waveNum {
+			t.Errorf("wave %d: got Wave=%d", waveNum, got.Wave)
+		}
+	}
+
+	// Verify issue numbers round-trip correctly.
+	data, _ := os.ReadFile(filepath.Join(w.Dir(), "waves", "1.json"))
+	var got WaveResult
+	_ = json.Unmarshal(data, &got)
+	if len(got.IssueNumbers) != 2 || got.IssueNumbers[0] != 1 || got.IssueNumbers[1] != 2 {
+		t.Errorf("wave 1 issue numbers: got %v, want [1 2]", got.IssueNumbers)
+	}
+}

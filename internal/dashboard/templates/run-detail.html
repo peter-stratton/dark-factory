@@ -192,7 +192,43 @@
         </div>
       </div>
 
-      <!-- Issues Table -->
+      {{if .Waves}}
+      <!-- Concurrency Savings Banner -->
+      {{if .ConcurrencySaved}}
+      <div class="card animate-in animate-in-1" style="border-left: 3px solid var(--color-success);">
+        <div class="card__header">
+          <span class="card__title">Concurrency saved {{.ConcurrencySaved}}</span>
+        </div>
+      </div>
+      {{end}}
+
+      <!-- Wave-grouped Issues -->
+      {{range .Waves}}
+      <div class="card animate-in animate-in-1">
+        <div class="card__header">
+          <span class="card__title">Wave {{.Wave}}</span>
+          <span class="badge badge--info">{{len .Issues}} issues &middot; {{.Duration}}</span>
+        </div>
+        <table class="data-table data-table--clickable">
+          <thead>
+            <tr>
+              <th>Issue</th>
+              <th>Status</th>
+              <th>PR</th>
+              <th class="cell-num">Retries</th>
+              <th>Flags</th>
+              <th class="cell-num">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{template "issues-rows" .Issues}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
+
+      {{else}}
+      <!-- Issues Table (serial run / single wave) -->
       <div class="card animate-in animate-in-1">
         <table class="data-table data-table--clickable">
           <thead>
@@ -214,6 +250,7 @@
           </tbody>
         </table>
       </div>
+      {{end}}
     </main>
   </div>
 </body>

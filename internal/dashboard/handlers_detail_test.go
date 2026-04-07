@@ -2142,3 +2142,167 @@ func TestServer_IssueDetail_MergeCoordinateOmittedWhenAbsent(t *testing.T) {
 		t.Error("body should not contain Merge Coordinate when merge_coordinator.json is absent")
 	}
 }
+
+func TestRunDetail_WaveGrouping(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "waverepo", ts, rundata.RunMeta{
+		Repo:         "acme/waverepo",
+		Milestone:    "v2.0",
+		IssueNumbers: []int{10, 20, 30},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 10,
+		rundata.Outcome{IssueNumber: 10, Status: "implemented", PRNumber: 100},
+		rundata.StepResult{DurationSeconds: 120},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+	writeIssueFiles(t, runDir, 20,
+		rundata.Outcome{IssueNumber: 20, Status: "implemented", PRNumber: 200},
+		rundata.StepResult{DurationSeconds: 90},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+	writeIssueFiles(t, runDir, 30,
+		rundata.Outcome{IssueNumber: 30, Status: "implemented", PRNumber: 300},
+		rundata.StepResult{DurationSeconds: 60},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	// Write 2 wave files.
+	wavesDir := filepath.Join(runDir, "waves")
+	if err := os.MkdirAll(wavesDir, 0o755); err != nil {
+		t.Fatalf("creating waves dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(wavesDir, "1.json"), rundata.WaveResult{
+		Wave: 1, IssueNumbers: []int{10, 20},
+		StartedAt: now, FinishedAt: now.Add(3 * time.Minute),
+	})
+	writeJSON(t, filepath.Join(wavesDir, "2.json"), rundata.WaveResult{
+		Wave: 2, IssueNumbers: []int{30},
+		StartedAt: now.Add(3 * time.Minute), FinishedAt: now.Add(5 * time.Minute),
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/waverepo/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %q", rr.Code, truncate(rr.Body.String(), 300))
+	}
+	body := rr.Body.String()
+
+	if !strings.Contains(body, "Wave 1") {
+		t.Error("body missing 'Wave 1'")
+	}
+	if !strings.Contains(body, "Wave 2") {
+		t.Error("body missing 'Wave 2'")
+	}
+	if !strings.Contains(body, "2 issues") {
+		t.Error("body missing '2 issues' badge for wave 1")
+	}
+	if !strings.Contains(body, "1 issues") {
+		t.Error("body missing '1 issues' badge for wave 2")
+	}
+}
+
+func TestRunDetail_SerialFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+
+	runDir := buildRunDir(t, tmpDir, "acme", "serialrepo", ts, rundata.RunMeta{
+		Repo:         "acme/serialrepo",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1},
+		StartedAt:    now,
+	})
+
+	writeIssueFiles(t, runDir, 1,
+		rundata.Outcome{IssueNumber: 1, Status: "implemented", PRNumber: 10},
+		rundata.StepResult{DurationSeconds: 30},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/serialrepo/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+
+	if strings.Contains(body, "Wave") {
+		t.Error("body should not contain 'Wave' for serial run")
+	}
+}
+
+func TestRunDetail_ConcurrencySaved(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC()
+	ts := now.Format("20060102-150405")
+	finished := now.Add(6 * time.Minute)
+
+	runDir := buildRunDir(t, tmpDir, "acme", "conc", ts, rundata.RunMeta{
+		Repo:         "acme/conc",
+		Milestone:    "v1.0",
+		IssueNumbers: []int{1, 2},
+		StartedAt:    now,
+		FinishedAt:   &finished,
+	})
+
+	// Two issues each taking 5 minutes of implement time, but wall clock is 6 minutes.
+	// Serial would be 10 minutes, so savings = 10 - 6 = 4 minutes.
+	writeIssueFiles(t, runDir, 1,
+		rundata.Outcome{IssueNumber: 1, Status: "implemented", PRNumber: 10},
+		rundata.StepResult{DurationSeconds: 300},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+	writeIssueFiles(t, runDir, 2,
+		rundata.Outcome{IssueNumber: 2, Status: "implemented", PRNumber: 20},
+		rundata.StepResult{DurationSeconds: 300},
+		rundata.StepResult{},
+		rundata.StepResult{},
+	)
+
+	wavesDir := filepath.Join(runDir, "waves")
+	if err := os.MkdirAll(wavesDir, 0o755); err != nil {
+		t.Fatalf("creating waves dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(wavesDir, "1.json"), rundata.WaveResult{
+		Wave: 1, IssueNumbers: []int{1, 2},
+		StartedAt: now, FinishedAt: now.Add(5 * time.Minute),
+	})
+	writeJSON(t, filepath.Join(wavesDir, "2.json"), rundata.WaveResult{
+		Wave: 2, IssueNumbers: []int{},
+		StartedAt: now.Add(5 * time.Minute), FinishedAt: now.Add(6 * time.Minute),
+	})
+
+	srv := newServer(t, tmpDir)
+	req := httptest.NewRequest(http.MethodGet, "/runs/acme/conc/"+ts, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+
+	if !strings.Contains(body, "Concurrency saved") {
+		t.Error("body missing 'Concurrency saved' banner")
+	}
+	// 600s - 360s = 240s = 4m0s
+	if !strings.Contains(body, "4m") {
+		t.Errorf("expected savings around 4m, body: %s", truncate(body, 500))
+	}
+}

@@ -46,6 +46,7 @@ type IssueDetail struct {
 type RunDetail struct {
 	RunMeta
 	Issues []IssueDetail
+	Waves  []WaveResult
 }
 
 // Reader reads run data from a base directory (default: ~/.godark/runs/).
@@ -224,6 +225,8 @@ func (r *Reader) LoadRun(owner, repo, timestamp string) (*RunDetail, error) {
 
 	// Compute BlockedBy for each incomplete issue using the stored dep graph.
 	r.computeBlockedBy(detail.Issues, meta.IssueDeps)
+
+	detail.Waves = r.loadWaves(filepath.Join(runDir, "waves"))
 
 	return detail, nil
 }
@@ -566,4 +569,66 @@ func (r *Reader) loadRetries(retriesDir string) []RetryDetail {
 	})
 
 	return retries
+}
+
+// loadWaves reads all <N>.json files from wavesDir, sorted by wave number ascending.
+// Returns nil if the directory is absent or contains no valid wave files.
+func (r *Reader) loadWaves(wavesDir string) []WaveResult {
+	entries, err := os.ReadDir(wavesDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping waves dir", "dir", wavesDir, "error", err)
+		return nil
+	}
+
+	var results []WaveResult
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		numStr := strings.TrimSuffix(name, ".json")
+		waveNum, err := strconv.Atoi(numStr)
+		if err != nil {
+			r.logger.Warn("skipping non-numeric wave file", "file", name)
+			continue
+		}
+		path := filepath.Join(wavesDir, name)
+		wr := r.readWaveResult(path, waveNum)
+		results = append(results, wr)
+	}
+
+	if len(results) == 0 {
+		return nil
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Wave < results[j].Wave
+	})
+	return results
+}
+
+// readWaveResult reads a WaveResult from path. On missing or corrupt files,
+// returns a zero-value WaveResult with the given wave number.
+func (r *Reader) readWaveResult(path string, waveNum int) WaveResult {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return WaveResult{Wave: waveNum}
+	}
+	if err != nil {
+		r.logger.Warn("skipping wave file", "path", path, "error", err)
+		return WaveResult{Wave: waveNum}
+	}
+
+	var wr WaveResult
+	if err := json.Unmarshal(data, &wr); err != nil {
+		r.logger.Warn("corrupt wave file, using zero value", "path", path, "error", err)
+		return WaveResult{Wave: waveNum}
+	}
+	return wr
 }

@@ -642,6 +642,20 @@ func validateRepo(repo string) (owner, name string, err error) {
 	return parts[0], parts[1], nil
 }
 
+// WaveResult holds metadata for one concurrent wave of issues.
+type WaveResult struct {
+	Wave         int       `json:"wave"`
+	IssueNumbers []int     `json:"issue_numbers"`
+	StartedAt    time.Time `json:"started_at"`
+	FinishedAt   time.Time `json:"finished_at"`
+}
+
+// WriteWaveResult writes wave metadata to waves/<N>.json.
+func (w *Writer) WriteWaveResult(wave WaveResult) error {
+	path := filepath.Join(w.dir, "waves", strconv.Itoa(wave.Wave)+".json")
+	return writeJSONMkdirs(path, wave)
+}
+
 // writeJSON marshals v and writes it to path, truncating any existing file.
 func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
