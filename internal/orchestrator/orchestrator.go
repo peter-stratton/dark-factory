@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -875,7 +876,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			collected = append(collected, res)
 		}
 		slices.SortFunc(collected, func(a, b waveResult) int {
-			return a.IssueNumber - b.IssueNumber
+			return cmp.Compare(a.IssueNumber, b.IssueNumber)
 		})
 
 		// Process results in ascending issue-number order: update stats,
@@ -961,13 +962,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			}
 		}
 
-		// Serial merge pass: update the local base branch after each
-		// successful merge so subsequent merges rebase against the latest
-		// state. The merges themselves already happened inside processIssueFn.
-		for _, num := range justMergedNums {
+		// Pull the base branch once after all merges in this wave so the
+		// local checkout is current before re-resolution.
+		if len(justMergedNums) > 0 {
 			if err := PullAfterMerge(cfg.BaseBranch, logger); err != nil {
-				logger.Warn("post-wave pull failed after merge",
-					"issue_number", num, "error", err)
+				logger.Warn("post-wave pull failed", "error", err)
 			}
 		}
 

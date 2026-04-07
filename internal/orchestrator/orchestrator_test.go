@@ -3306,11 +3306,16 @@ func TestPostWave_AllSucceed(t *testing.T) {
 		{Number: 3, Title: "third"},
 	}
 
+	var mu sync.Mutex
 	closedNumbers := []int{}
 	setupProcessMocks(t, func() []int {
-		return closedNumbers
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
 	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		mu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
 			Status:      agent.StatusImplemented,
@@ -3348,9 +3353,12 @@ func TestPostWave_MixedResults(t *testing.T) {
 		{Number: 3, Title: "succeeds"},
 	}
 
+	var mu sync.Mutex
 	closedNumbers := []int{}
 	setupProcessMocks(t, func() []int {
-		return closedNumbers
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
 	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
 		if issue.Number == 2 {
 			return agent.IssueOutcome{
@@ -3359,7 +3367,9 @@ func TestPostWave_MixedResults(t *testing.T) {
 				Err:         fmt.Errorf("test failure"),
 			}
 		}
+		mu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
 			Status:      agent.StatusImplemented,
@@ -3430,11 +3440,16 @@ func TestPostWave_MergeOrder(t *testing.T) {
 		{Number: 3, Title: "third"},
 	}
 
+	var mu sync.Mutex
 	closedNumbers := []int{}
 	setupProcessMocks(t, func() []int {
-		return closedNumbers
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
 	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		mu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
 			Status:      agent.StatusImplemented,
@@ -3471,9 +3486,12 @@ func TestPostWave_BlockedByFailure(t *testing.T) {
 		{Number: 3, Title: "independent"},
 	}
 
+	var mu sync.Mutex
 	closedNumbers := []int{}
 	setupProcessMocks(t, func() []int {
-		return closedNumbers
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
 	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
 		if issue.Number == 1 {
 			return agent.IssueOutcome{
@@ -3482,7 +3500,9 @@ func TestPostWave_BlockedByFailure(t *testing.T) {
 				Err:         fmt.Errorf("test failure"),
 			}
 		}
+		mu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
 			Status:      agent.StatusImplemented,
@@ -3510,17 +3530,22 @@ func TestPostWave_BlockedByFailure(t *testing.T) {
 }
 
 func TestPostWave_RebaseBetweenMerges(t *testing.T) {
-	// Verify PullAfterMerge is called for each merged issue.
+	// Verify PullAfterMerge is called once after all merges in the wave.
 	allIssues := []github.Issue{
 		{Number: 1, Title: "first"},
 		{Number: 2, Title: "second"},
 	}
 
+	var closedMu sync.Mutex
 	closedNumbers := []int{}
 	setupProcessMocks(t, func() []int {
-		return closedNumbers
+		closedMu.Lock()
+		defer closedMu.Unlock()
+		return append([]int(nil), closedNumbers...)
 	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		closedMu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
+		closedMu.Unlock()
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
 			Status:      agent.StatusImplemented,
@@ -3547,14 +3572,14 @@ func TestPostWave_RebaseBetweenMerges(t *testing.T) {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	// Should have at least 2 pull calls (one per merged issue in wave 1).
+	// Should have exactly 1 pull call (single pull after all merges in the wave).
 	pullCount := 0
 	for _, call := range pullCalls {
 		if len(call) >= 3 && call[0] == "git" && call[1] == "pull" {
 			pullCount++
 		}
 	}
-	if pullCount < 2 {
-		t.Errorf("expected at least 2 PullAfterMerge calls, got %d (calls: %v)", pullCount, pullCalls)
+	if pullCount != 1 {
+		t.Errorf("expected 1 PullAfterMerge call, got %d (calls: %v)", pullCount, pullCalls)
 	}
 }
