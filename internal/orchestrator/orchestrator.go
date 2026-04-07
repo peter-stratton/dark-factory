@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent"
-	"github.com/peter-stratton/dark-factory/internal/logging"
 	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/deps"
 	"github.com/peter-stratton/dark-factory/internal/dialogue"
@@ -22,6 +21,7 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
 	"github.com/peter-stratton/dark-factory/internal/lock"
+	"github.com/peter-stratton/dark-factory/internal/logging"
 	"github.com/peter-stratton/dark-factory/internal/notify"
 	"github.com/peter-stratton/dark-factory/internal/progress"
 	"github.com/peter-stratton/dark-factory/internal/punchlist"
