@@ -837,7 +837,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		// in concurrent waves.
 		for _, issue := range batch {
 			seen[issue.Number] = true
-			reporter.IssueStarted(issue.Number, issue.Title)
 		}
 
 		// Fan out workers, capped by MaxWorkers.
@@ -848,17 +847,16 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		results := make(chan waveResult, len(batch))
 		sem := make(chan struct{}, maxWorkers)
 		var wg sync.WaitGroup
+	dispatch:
 		for _, issue := range batch {
 			// Use select on semaphore send so context cancellation is not
 			// blocked waiting for a worker slot.
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Done():
-				break
+				break dispatch
 			}
-			if ctx.Err() != nil {
-				break
-			}
+			reporter.IssueStarted(issue.Number, issue.Title)
 			wg.Add(1)
 			go func(iss github.Issue) {
 				defer wg.Done()
