@@ -7,7 +7,8 @@ import (
 
 // renderSummary returns the summary bar string for a given model.
 //
-// Format: N merged · N in review · N queued · N failed · $X.XX total cost
+// Format: [N/M workers ·] N merged · N in review · N queued · N failed · $X.XX total cost
+// The worker segment is omitted when totalWorkers ≤ 1 (serial mode or not yet wired).
 //
 // Each count is styled according to its meaning (green/yellow/red/neutral).
 // The cost uses two decimal places (e.g. $0.00, $1.23).
