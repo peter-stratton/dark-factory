@@ -2750,3 +2750,50 @@ func TestModelOverridesEmptyIsNil(t *testing.T) {
 		t.Errorf("ModelOverrides = %v, want nil", cfg.ModelOverrides)
 	}
 }
+
+func TestConfigConcurrencyMaxWorkers(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+concurrency:
+  max_workers: 3
+`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Concurrency.MaxWorkers != 3 {
+		t.Errorf("Concurrency.MaxWorkers = %d, want 3", cfg.Concurrency.MaxWorkers)
+	}
+}
+
+func TestConfigConcurrencyDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `repo: owner/repo`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Concurrency.MaxWorkers != 1 {
+		t.Errorf("Concurrency.MaxWorkers = %d, want 1 (default)", cfg.Concurrency.MaxWorkers)
+	}
+}
+
+func TestConfigConcurrencyRejectsInvalid(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+	}{
+		{"zero", "repo: owner/repo\nconcurrency:\n  max_workers: 0"},
+		{"negative", "repo: owner/repo\nconcurrency:\n  max_workers: -1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeYAML(t, dir, tc.yaml)
+			_, err := Load(path, CLIFlags{})
+			if err == nil {
+				t.Fatal("Load() expected error, got nil")
+			}
+		})
+	}
+}
