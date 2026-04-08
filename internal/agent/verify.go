@@ -164,13 +164,14 @@ func RunRollupVerify(
 	authEnv map[string]string,
 	logger *slog.Logger,
 	writeResult func(rundata.VerifyStepResult) error,
+	integration bool,
 ) (bool, error) {
 	verifyChecks := buildVerifyChecks(cfg)
 	if len(verifyChecks) == 0 {
 		return true, nil
 	}
 
-	verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
+	verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, integration, logger)
 
 	logger.Info("running rollup verify step", "check_count", len(verifyChecks))
 	verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
@@ -205,7 +206,7 @@ func RunRollupVerify(
 			"max_attempts", cfg.Verify.MaxFixAttempts,
 		)
 
-		fixResult, err := verifyFixFn(ctx, rollupIssue, prNum, verifyErrors, sessionID, cfg, prompts, authEnv, logger)
+		fixResult, err := verifyFixFn(ctx, rollupIssue, prNum, verifyErrors, sessionID, integration, cfg, prompts, authEnv, logger)
 		if err != nil {
 			return false, fmt.Errorf("rollup verify-fix agent: %w", err)
 		}

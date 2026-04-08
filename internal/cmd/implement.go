@@ -286,7 +286,7 @@ func implementIssues(
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, cfg.DockerCompose != nil)
 
 		if held := handleUsageLimitHold(ctx, outcome, issue, cfg, logger, reporter, authEnv); held {
 			i-- // retry this issue

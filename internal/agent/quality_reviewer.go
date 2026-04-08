@@ -17,10 +17,10 @@ type QualityReviewResult struct {
 
 // QualityReview runs the quality reviewer agent for the given PR and returns the verdict.
 // cycle is 0-indexed: 0 = first pass, 1 = first retry, etc.
-func QualityReview(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, cycle int) (*QualityReviewResult, error) {
+func QualityReview(ctx context.Context, issue github.Issue, prNum int, integration bool, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, cycle int) (*QualityReviewResult, error) {
 	maxAttempts := cfg.MaxRetries + 1
 
-	data := newPromptData(issue, cfg, Slugify(issue.Title))
+	data := newPromptData(issue, cfg, Slugify(issue.Title), integration)
 	data.PRNumber = prNum
 	data.StrictnessDirective = strictnessDirective(cycle, maxAttempts, cfg.QualityStrictnessDecay)
 
@@ -29,7 +29,7 @@ func QualityReview(ctx context.Context, issue github.Issue, prNum int, cfg *conf
 		return nil, fmt.Errorf("rendering quality_reviewer prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "quality_reviewer")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "quality_reviewer", integration)
 	if err != nil {
 		return nil, err
 	}

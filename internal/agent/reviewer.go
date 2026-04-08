@@ -31,8 +31,8 @@ type ReviewResult struct {
 // Review runs the reviewer agent for the given PR and returns the verdict.
 // reviewerPrompt is the prompt template string to use; callers select the
 // appropriate prompt (standard or semi-formal) before calling.
-func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Config, reviewerPrompt string, authEnv map[string]string, logger *slog.Logger, hasSpec bool) (*ReviewResult, error) {
-	data := newPromptData(issue, cfg, Slugify(issue.Title))
+func Review(ctx context.Context, issue github.Issue, prNum int, integration bool, cfg *config.Config, reviewerPrompt string, authEnv map[string]string, logger *slog.Logger, hasSpec bool) (*ReviewResult, error) {
+	data := newPromptData(issue, cfg, Slugify(issue.Title), integration)
 	data.PRNumber = prNum
 	data.HasScenarioSpec = hasSpec
 
@@ -41,7 +41,7 @@ func Review(ctx context.Context, issue github.Issue, prNum int, cfg *config.Conf
 		return nil, fmt.Errorf("rendering reviewer prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "reviewer")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "reviewer", integration)
 	if err != nil {
 		return nil, err
 	}

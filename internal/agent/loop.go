@@ -51,7 +51,7 @@ type IssueOutcome struct {
 // implement → find PR → guard rails → review/retry loop → merge or label.
 // hook is optional; if non-nil, it is called after each agent step to record
 // run data. Hook errors are logged as warnings and do not abort processing.
-func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook, reporter progress.ProgressReporter) IssueOutcome {
+func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook, reporter progress.ProgressReporter, integration bool) IssueOutcome {
 	outcome := IssueOutcome{IssueNumber: issue.Number}
 	traceID := generateTraceID()
 	outcome.TraceID = traceID
@@ -104,7 +104,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	specGenerated := false
 	if prompts.SpecGenerator != "" && !HasScenarioSpec(cfg.ScenarioDir, issue.Number) {
 		logger.Info("no scenario spec found, generating", "issue_number", issue.Number)
-		specResult, err := GenerateSpec(ctx, issue, cfg, prompts, authEnv, logger)
+		specResult, err := GenerateSpec(ctx, issue, integration, cfg, prompts, authEnv, logger)
 		if specResult != nil {
 			handleJudgeIntervention(issue.Number, "spec_generator", specResult, hook, reporter, logger)
 		}
@@ -139,7 +139,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		if reporter != nil {
 			reporter.IssueStageChanged(issue.Number, "recon")
 		}
-		reconResult, reconErr := Recon(ctx, issue, cfg, prompts, authEnv, logger)
+		reconResult, reconErr := Recon(ctx, issue, integration, cfg, prompts, authEnv, logger)
 		if reconResult != nil {
 			if handleJudgeIntervention(issue.Number, "recon", reconResult, hook, reporter, logger) {
 				runPostMortem(issue.Number, reconResult, hook, logger)
@@ -161,7 +161,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		if reporter != nil {
 			reporter.IssueStageChanged(issue.Number, "plan")
 		}
-		planResult, planErr := Plan(ctx, issue, cfg, prompts, authEnv, logger, reconBrief)
+		planResult, planErr := Plan(ctx, issue, integration, cfg, prompts, authEnv, logger, reconBrief)
 		if planResult != nil {
 			if handleJudgeIntervention(issue.Number, "plan", planResult, hook, reporter, logger) {
 				runPostMortem(issue.Number, planResult, hook, logger)
@@ -180,7 +180,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if reporter != nil {
 		reporter.IssueStageChanged(issue.Number, "implement")
 	}
-	implResult, err := Implement(ctx, issue, cfg, prompts, authEnv, logger, reconBrief, plannerBrief)
+	implResult, err := Implement(ctx, issue, integration, cfg, prompts, authEnv, logger, reconBrief, plannerBrief)
 	if err != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = fmt.Errorf("implementer agent: %w", err)
@@ -278,7 +278,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if reporter != nil {
 		reporter.IssueStageChanged(issue.Number, "verify")
 	}
-	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, &sessionID, &fixCycles, traceID); verifyErr != nil {
+	if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, &sessionID, &fixCycles, traceID, integration); verifyErr != nil {
 		outcome.Status = StatusFailed
 		outcome.Err = verifyErr
 		return outcome
@@ -289,7 +289,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		if reporter != nil {
 			reporter.IssueStageChanged(issue.Number, "review")
 		}
-		passed, err := runQualityReviewCycle(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, reporter, traceID)
+		passed, err := runQualityReviewCycle(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, reporter, traceID, integration)
 		if err != nil {
 			outcome.Status = StatusFailed
 			outcome.Err = err
@@ -316,7 +316,7 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		reporter.IssueStageChanged(issue.Number, "review")
 	}
 	outcome.Status, _, outcome.Retries, outcome.Err = runFunctionalReviewCycle(
-		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter, traceID,
+		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter, traceID, integration,
 	)
 	return outcome
 }
@@ -341,6 +341,7 @@ func runVerifyPhase(
 	sessionID *string,
 	fixCycles *int,
 	traceID string,
+	integration bool,
 ) error {
 	if cfg.Modules != nil {
 		// Per-module verification in dependency order.
@@ -349,7 +350,7 @@ func runVerifyPhase(
 			return fmt.Errorf("sorting modules for verify: %w", err)
 		}
 
-		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
+		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, integration, logger)
 
 		moduleFailed := false
 		var failedModName string
@@ -390,7 +391,7 @@ func runVerifyPhase(
 						"max_attempts", cfg.Verify.MaxFixAttempts,
 					)
 
-					fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, cfg, prompts, authEnv, logger)
+					fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, integration, cfg, prompts, authEnv, logger)
 					if err != nil {
 						return fmt.Errorf("verify-fix agent: %w", err)
 					}
@@ -450,7 +451,7 @@ func runVerifyPhase(
 			)
 		}
 	} else if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
-		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, cfg.DockerCompose != nil, logger)
+		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, integration, logger)
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
 		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
 		if hook != nil {
@@ -475,7 +476,7 @@ func runVerifyPhase(
 					"max_attempts", cfg.Verify.MaxFixAttempts,
 				)
 
-				fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, cfg, prompts, authEnv, logger)
+				fixResult, err := VerifyFix(ctx, issue, prNum, verifyErrors, *sessionID, integration, cfg, prompts, authEnv, logger)
 				if err != nil {
 					return fmt.Errorf("verify-fix agent: %w", err)
 				}
@@ -615,6 +616,7 @@ func runQualityReviewCycle(
 	fixCycles *int,
 	reporter progress.ProgressReporter,
 	traceID string,
+	integration bool,
 ) (bool, error) {
 	qualityMaxAttempts := cfg.MaxRetries + 1
 	for qAttempt := 0; qAttempt < qualityMaxAttempts; qAttempt++ {
@@ -622,7 +624,7 @@ func runQualityReviewCycle(
 			return false, ctx.Err()
 		}
 
-		qResult, err := QualityReview(ctx, issue, prNum, cfg, prompts, authEnv, logger, qAttempt)
+		qResult, err := QualityReview(ctx, issue, prNum, integration, cfg, prompts, authEnv, logger, qAttempt)
 		if err != nil {
 			return false, fmt.Errorf("quality reviewer agent: %w", err)
 		}
@@ -667,7 +669,7 @@ func runQualityReviewCycle(
 			if reporter != nil {
 				reporter.IssueStageChanged(issue.Number, "implement")
 			}
-			retryResult, err := Retry(ctx, issue, prNum, "", "", qualityHandoff, cfg, prompts, authEnv, logger)
+			retryResult, err := Retry(ctx, issue, prNum, "", "", qualityHandoff, integration, cfg, prompts, authEnv, logger)
 			if err != nil {
 				return false, fmt.Errorf("retry agent (quality): %w", err)
 			}
@@ -690,7 +692,7 @@ func runQualityReviewCycle(
 
 			// Re-run verify after quality-gate retry so that changes introduced
 			// by the retry agent are caught before the next quality review cycle.
-			if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID); verifyErr != nil {
+			if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID, integration); verifyErr != nil {
 				return false, fmt.Errorf("verify after quality-gate retry: %w", verifyErr)
 			}
 
@@ -723,6 +725,7 @@ func runFunctionalReviewCycle(
 	hasSpec bool,
 	reporter progress.ProgressReporter,
 	traceID string,
+	integration bool,
 ) (status OutcomeStatus, prMerged bool, retries int, err error) {
 	if hook != nil {
 		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "in_review"}); err != nil {
@@ -754,7 +757,7 @@ func runFunctionalReviewCycle(
 
 		reviewerPrompt := selectReviewerPrompt(cfg, prompts, attempt)
 		usedSemiformal := reviewerPrompt == prompts.ReviewerSemiformal && prompts.ReviewerSemiformal != ""
-		reviewResult, err := Review(ctx, issue, prNum, cfg, reviewerPrompt, authEnv, logger, hasSpec)
+		reviewResult, err := Review(ctx, issue, prNum, integration, cfg, reviewerPrompt, authEnv, logger, hasSpec)
 		if err != nil {
 			return StatusFailed, false, 0, fmt.Errorf("reviewer agent: %w", err)
 		}
@@ -879,7 +882,7 @@ func runFunctionalReviewCycle(
 			// mergeable after approval; if not, attempts automatic rebase or
 			// triggers a conflict-fix cycle.
 			if needsHR, rebaseErr := runPreMergeRebasePhase(
-				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID,
+				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID, integration,
 			); rebaseErr != nil {
 				return StatusFailed, false, 0, rebaseErr
 			} else if needsHR {
@@ -930,7 +933,7 @@ func runFunctionalReviewCycle(
 					)
 
 					ciErrors := formatCheckFailures(ciFailures)
-					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, *sessionID, cfg, prompts, authEnv, logger)
+					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, *sessionID, integration, cfg, prompts, authEnv, logger)
 					if err != nil {
 						return StatusFailed, false, 0, fmt.Errorf("CI fix agent: %w", err)
 					}
@@ -1041,7 +1044,7 @@ func runFunctionalReviewCycle(
 			if reporter != nil {
 				reporter.IssueStageChanged(issue.Number, "implement")
 			}
-			retryResult, err := Retry(ctx, issue, prNum, *sessionID, "", handoff, cfg, prompts, authEnv, logger)
+			retryResult, err := Retry(ctx, issue, prNum, *sessionID, "", handoff, integration, cfg, prompts, authEnv, logger)
 			if err != nil {
 				return StatusFailed, false, 0, fmt.Errorf("retry agent: %w", err)
 			}
@@ -1506,6 +1509,7 @@ func runPreMergeRebasePhase(
 	sessionID *string,
 	fixCycles *int,
 	traceID string,
+	integration bool,
 ) (needsHumanReview bool, err error) {
 	if cfg.MaxRebaseAttempts <= 0 {
 		return false, nil
@@ -1565,7 +1569,7 @@ func runPreMergeRebasePhase(
 			if reporter != nil {
 				reporter.IssueStageChanged(issue.Number, "merge-coordinate")
 			}
-			mcResult, mcErr := MergeCoordinate(ctx, issue, prNum, conflictInfo, cfg, prompts, authEnv, logger)
+			mcResult, mcErr := MergeCoordinate(ctx, issue, prNum, conflictInfo, integration, cfg, prompts, authEnv, logger)
 			writeMCResult := func(step rundata.StepResult) {
 				if hook != nil {
 					step.TraceID = traceID
@@ -1597,7 +1601,7 @@ func runPreMergeRebasePhase(
 
 		// Re-run verify since the branch content has changed (either by
 		// automatic rebase or by the merge coordinator's conflict resolution).
-		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID); verifyErr != nil {
+		if verifyErr := runVerifyPhase(ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID, integration); verifyErr != nil {
 			return false, fmt.Errorf("verify after rebase attempt %d: %w", attempt+1, verifyErr)
 		}
 	}

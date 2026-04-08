@@ -503,7 +503,7 @@ func (w *Watch) pollInterval() (time.Duration, error) {
 
 var retryFn = func(ctx context.Context, issue github.Issue, prNum int, sessionID string, feedback string, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) (*agent.Result, error) {
 	// watch-initiated retries always resume the prior session (no handoff context).
-	return agent.Retry(ctx, issue, prNum, sessionID, feedback, "", cfg, prompts, authEnv, logger)
+	return agent.Retry(ctx, issue, prNum, sessionID, feedback, "", cfg.DockerCompose != nil, cfg, prompts, authEnv, logger)
 }
 
 var findSessionIDFn = func(repo string, prNum int) (string, error) {

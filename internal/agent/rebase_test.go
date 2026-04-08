@@ -59,7 +59,7 @@ func TestRunPreMergeRebasePhase_Disabled(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -90,7 +90,7 @@ func TestRunPreMergeRebasePhase_Mergeable(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -123,7 +123,7 @@ func TestRunPreMergeRebasePhase_Unknown(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -148,7 +148,7 @@ func TestRunPreMergeRebasePhase_CheckMergeableError(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -187,7 +187,7 @@ func TestRunPreMergeRebasePhase_ConflictingAutoRebaseSuccess(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -234,7 +234,7 @@ func TestRunPreMergeRebasePhase_ConflictingUpdateBranchFails_MergeCoordinatorFix
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -274,7 +274,7 @@ func TestRunPreMergeRebasePhase_ExhaustsAttempts_NeedsHumanReview(t *testing.T) 
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -316,7 +316,7 @@ func TestRunPreMergeRebasePhase_MultipleAttempts(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -360,7 +360,7 @@ func TestRunPreMergeRebasePhase_MergeCoordinatorError(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("expected no hard error on merge coordinator failure, got: %v", err)
@@ -397,7 +397,7 @@ func TestRunPreMergeRebasePhase_MergeCoordinatorNonZeroExit(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("expected no hard error on non-zero exit, got: %v", err)
@@ -441,7 +441,7 @@ func TestRunPreMergeRebasePhase_AutoRebaseSuccess_NoCoordinator(t *testing.T) {
 	fc := 0
 	needsHR, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -486,7 +486,7 @@ func TestRunPreMergeRebasePhase_SessionIDUnchanged(t *testing.T) {
 	fc := 0
 	_, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -528,7 +528,7 @@ func TestRunPreMergeRebasePhase_FixCyclesUnchanged(t *testing.T) {
 	sid := "sess"
 	_, err := runPreMergeRebasePhase(
 		context.Background(), testIssue(), 42, "42-test", "abc123",
-		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id",
+		cfg, testPrompts(t), nil, testLogger(t), nil, nil, &sid, &fc, "test-trace-id", false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -573,7 +573,7 @@ func TestProcessIssue_PreMergeRebase_LabelsNeedsHumanReview(t *testing.T) {
 	cfg := loopConfig()
 	cfg.MaxRebaseAttempts = 1
 
-	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil)
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil, false)
 
 	if outcome.Status != "needs-human-review" {
 		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "needs-human-review", outcome.Err)

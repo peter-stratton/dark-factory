@@ -11,9 +11,9 @@ import (
 
 // GenerateSpec runs the spec generator agent to create a scenario spec for
 // the given issue. It follows the same pattern as Implement and Review.
-func GenerateSpec(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+func GenerateSpec(ctx context.Context, issue github.Issue, integration bool, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
-	data := newPromptData(issue, cfg, slug)
+	data := newPromptData(issue, cfg, slug, integration)
 	// spec_generator uses narrower ScenarioDir wording ("existing files") to allow
 	// creating new files inside ScenarioDir. Exclude the broad ScenarioDir bullet from
 	// SharedRules to avoid contradicting that agent-specific rule.
@@ -24,7 +24,7 @@ func GenerateSpec(ctx context.Context, issue github.Issue, cfg *config.Config, p
 		return nil, fmt.Errorf("rendering spec_generator prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "spec_generator")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "spec_generator", integration)
 	if err != nil {
 		return nil, err
 	}
