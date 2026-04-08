@@ -412,7 +412,10 @@ func processUnblockedLoop(
 
 		reporter.IssueStarted(issue.Number, issue.Title)
 		issueLogger, issueLogCloser := perIssueLogger(writer, issue.Number, logger)
-		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration)
+		// Daemon re-resolve runs serially, so the merge phase stays inline
+		// (deferMerge=false). Only the wave dispatcher needs the
+		// post-wave merge serialization.
+		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration, false)
 		if err := issueLogCloser.Close(); err != nil {
 			logger.Warn("failed to close per-issue logger", "issue", issue.Number, "error", err)
 		}
@@ -603,7 +606,11 @@ func runOneIssue(ctx context.Context, issue github.Issue, cfg *config.Config,
 		}
 	}()
 
-	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration)
+	// Wave path: defer the merge phase. ProcessIssueWithMode stops at the
+	// approval gate and returns StatusApprovedReadyForMerge with a populated
+	// MergeArgs; the wave loop calls agent.MergeApprovedPR serially after
+	// wg.Wait() so all gh-pr-merge calls happen one at a time.
+	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration, true)
 
 	if outcome.UsageLimited {
 		return waveResult{
@@ -935,14 +942,43 @@ waveLoop:
 
 		// Process results in ascending issue-number order: update stats,
 		// report completions, and spawn punchlist enrichment goroutines.
-		for _, res := range collected {
+		// Any approved-and-ready-for-merge results are merged here, one at
+		// a time on the orchestrator goroutine, so concurrent gh-pr-merge
+		// calls against the same base branch can't fight each other for
+		// branch-protection "up to date" requirements.
+		for i := range collected {
+			res := &collected[i]
 			issue := res.Issue
-			outcome := res.Outcome
 
 			// Rate-limited results are handled in a post-loop batch step.
 			if res.UsageLimited {
 				continue
 			}
+
+			// Concurrent wave path: ProcessIssueWithMode stopped at the
+			// approval gate. Run the merge here, serially, then rewrite
+			// the wave result with the terminal status before any
+			// status-dependent logic below runs. The reporter sees only
+			// the terminal status, not the transient one.
+			if res.Outcome.Status == agent.StatusApprovedReadyForMerge && res.Outcome.MergeArgs != nil {
+				reporter.IssueStageChanged(issue.Number, "merge")
+				mergeStatus, _, mergeRetries, mergeErr := agent.MergeApprovedPR(
+					ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, runMode.Integration, *res.Outcome.MergeArgs,
+				)
+				res.Outcome.Status = mergeStatus
+				res.Outcome.Retries = mergeRetries
+				res.Outcome.Err = mergeErr
+				res.Outcome.MergeArgs = nil
+
+				// Re-fetch per-issue cost in case MergeApprovedPR wrote
+				// new step result files (e.g. merge-coordinator, verify
+				// retry under the rebase phase).
+				if writer != nil {
+					res.IssueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
+				}
+			}
+
+			outcome := res.Outcome
 
 			switch outcome.Status {
 			case agent.StatusImplemented:
@@ -1213,7 +1249,7 @@ var buildImageFn = sandbox.BuildImage
 
 // processIssueFn is the function called to process each issue.
 // Replaceable for testing.
-var processIssueFn = agent.ProcessIssue
+var processIssueFn = agent.ProcessIssueWithMode
 
 // fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
 // Replaceable for testing.

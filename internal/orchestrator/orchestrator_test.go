@@ -470,7 +470,7 @@ func TestCategorizeIssues(t *testing.T) {
 // setupProcessMocks configures all the mocks needed to test processIssues.
 // It returns a cleanup function. closedNumbersFn is called each time
 // FetchClosedIssueNumbers is invoked (to simulate issues closing over time).
-func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome) {
+func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome) {
 	t.Helper()
 
 	// Stub buildImageFn so tests don't require a real Docker daemon.
@@ -536,7 +536,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	closedNumbers := []int{} // initially nothing closed
 	setupProcessMocks(t, func() []int {
 		return closedNumbers
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 		callCount++
 		processedNumbers = append(processedNumbers, issue.Number)
 		if issue.Number == 1 {
@@ -593,7 +593,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	var processedNumbers []int
 	setupProcessMocks(t, func() []int {
 		return nil
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 		processedNumbers = append(processedNumbers, issue.Number)
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
@@ -634,7 +634,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 
 	setupProcessMocks(t, func() []int {
 		return nil
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 		if issue.Number == 10 {
 			return agent.IssueOutcome{IssueNumber: 10, Status: "implemented", PRNumber: 100}
 		}
@@ -756,7 +756,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome {
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: 5, Status: "implemented", PRNumber: 77}
 		})
 
@@ -1134,7 +1134,7 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome {
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1223,7 +1223,7 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome {
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 			if issue.Number == 1 {
 				return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
 			}
@@ -1339,7 +1339,7 @@ func TestRollup_NoneDoesNothing(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1369,7 +1369,7 @@ func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1405,7 +1405,7 @@ func TestRollup_AutoCreateAndMerges(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1438,7 +1438,7 @@ func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1465,7 +1465,7 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1492,7 +1492,7 @@ func TestRollup_SkipWhenBaseBranchEqualsCustomDefault(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1520,7 +1520,7 @@ func TestRollup_UsesCustomDefaultBranch(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1551,7 +1551,7 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test failure")}
 		})
 
@@ -1596,7 +1596,7 @@ func TestReporter_IssueCompleted(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			// Use PRNumber:0 to avoid triggering the punchlist goroutine.
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test error")}
 		})
@@ -1641,7 +1641,7 @@ func TestReporter_WaveStarted(t *testing.T) {
 			return []int{1}
 		}
 		return nil
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		callCount++
 		// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
@@ -1675,7 +1675,7 @@ func TestReporter_RunFinished(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			if issue.Number == 1 {
 				// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
 				return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 0}
@@ -1737,7 +1737,7 @@ func TestReporter_LoggerPreserved(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
 		})
@@ -1780,7 +1780,7 @@ func TestReporter_AllBlockedCalled(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 		})
 
@@ -1968,7 +1968,7 @@ func TestReporter_IssueCompleted_WithCost(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test error")}
 		})
 
@@ -2007,7 +2007,7 @@ func TestReporter_IssueCompleted_ZeroCostWhenNoWriter(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 		})
 
@@ -2139,7 +2139,7 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 
 // setupReResolveAndProcessMocks is like setupProcessMocks and preps the lock seam.
 // It returns closedNumbers as a mutable slice pointer for tests to update.
-func setupReResolveAndProcessMocks(t *testing.T, closedNumbers *[]int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool) agent.IssueOutcome) {
+func setupReResolveAndProcessMocks(t *testing.T, closedNumbers *[]int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome) {
 	t.Helper()
 	setupProcessMocks(t, func() []int { return *closedNumbers }, processFn)
 }
@@ -2154,7 +2154,7 @@ func TestReResolveAndProcess_UnblocksAfterMerge(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{1} // #1 already merged externally
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 200 + issue.Number}
 	})
@@ -2192,7 +2192,7 @@ func TestReResolveAndProcess_MultipleUnblocked(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{1, 2}
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "ready-to-merge", PRNumber: 300 + issue.Number}
 	})
@@ -2236,7 +2236,7 @@ func TestReResolveAndProcess_NoNewUnblocked(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{} // #99 still open
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented"}
 	})
@@ -2269,7 +2269,7 @@ func TestReResolveAndProcess_SeenSkipsAlreadyProcessed(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{}
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "ready-to-merge"}
 	})
@@ -2300,7 +2300,7 @@ func TestProcessIssues_ComposeStartsSuccessfully(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
 	var composeCalls [][]string
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2357,7 +2357,7 @@ func TestProcessIssues_ComposeStartupFailure(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
 	var agentCalled bool
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		agentCalled = true
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
@@ -2399,7 +2399,7 @@ func TestProcessIssues_ComposeSkippedWhenNotConfigured(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
 	var agentCalled bool
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		agentCalled = true
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
@@ -2437,7 +2437,7 @@ func TestProcessIssues_ComposeSkippedWhenNotConfigured(t *testing.T) {
 func TestProcessIssues_ComposeProjectNamePassed(t *testing.T) {
 	allIssues := []github.Issue{{Number: 42, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 200}
 	})
 
@@ -2511,7 +2511,7 @@ func hasComposeDown(calls [][]string) bool {
 func TestProcessIssues_ComposeDownCalledAfterNormalRun(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2547,7 +2547,7 @@ func TestProcessIssues_ComposeDownCalledAfterNormalRun(t *testing.T) {
 func TestProcessIssues_ComposeDownCalledAfterRunFailure(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 	})
 
@@ -2582,7 +2582,7 @@ func TestProcessIssues_ComposeDownCalledAfterRunFailure(t *testing.T) {
 func TestProcessIssues_ComposeDownCalledAfterContextCancellation(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2621,7 +2621,7 @@ func TestProcessIssues_ComposeDownCalledAfterContextCancellation(t *testing.T) {
 func TestProcessIssues_ComposeDownFailureLogsWarning(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2991,7 +2991,7 @@ func TestProcessIssues_HoldAndResume(t *testing.T) {
 
 	var callCount int32
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			n := atomic.AddInt32(&callCount, 1)
 			if n == 1 {
 				return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
@@ -3030,7 +3030,7 @@ func TestProcessIssues_CancelDuringWave(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			cancel()
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("cancelled")}
 		})
@@ -3057,7 +3057,7 @@ func TestProcessIssues_NoHoldOnNormalFailure(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("something broke")}
 		})
 
@@ -3090,7 +3090,7 @@ func TestProcessIssues_UsageLimitedFarFuture(t *testing.T) {
 	farFuture := time.Now().Add(7 * time.Hour)
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: farFuture}
 		})
 
@@ -3120,7 +3120,7 @@ func TestWaveDispatch_SerialMode(t *testing.T) {
 	var current, peak int
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			mu.Lock()
 			current++
 			if current > peak {
@@ -3168,7 +3168,7 @@ func TestWaveDispatch_ConcurrentExecution(t *testing.T) {
 	var current, peak int
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			mu.Lock()
 			current++
 			if current > peak {
@@ -3214,7 +3214,7 @@ func TestWaveDispatch_WorkerCapRespected(t *testing.T) {
 	var current, peak int
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			mu.Lock()
 			current++
 			if current > peak {
@@ -3260,7 +3260,7 @@ func TestWaveDispatch_ContextCancellation(t *testing.T) {
 	var once sync.Once
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			// Cancel the context once any worker starts.
 			once.Do(func() { cancel() })
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
@@ -3296,7 +3296,7 @@ func TestWaveDispatch_ResultCollection(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			switch issue.Number {
 			case 1:
 				return agent.IssueOutcome{IssueNumber: 1, Status: agent.StatusImplemented, PRNumber: 101}
@@ -3357,7 +3357,7 @@ func TestPostWave_AllSucceed(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		mu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
 		mu.Unlock()
@@ -3404,7 +3404,7 @@ func TestPostWave_MixedResults(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		if issue.Number == 2 {
 			return agent.IssueOutcome{
 				IssueNumber: 2,
@@ -3447,7 +3447,7 @@ func TestPostWave_AllFail(t *testing.T) {
 
 	setupProcessMocks(t, func() []int {
 		return nil
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
 			Status:      agent.StatusFailed,
@@ -3491,7 +3491,7 @@ func TestPostWave_MergeOrder(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		mu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
 		mu.Unlock()
@@ -3537,7 +3537,7 @@ func TestPostWave_BlockedByFailure(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		if issue.Number == 1 {
 			return agent.IssueOutcome{
 				IssueNumber: 1,
@@ -3587,7 +3587,7 @@ func TestPostWave_RebaseBetweenMerges(t *testing.T) {
 		closedMu.Lock()
 		defer closedMu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		closedMu.Lock()
 		closedNumbers = append(closedNumbers, issue.Number)
 		closedMu.Unlock()
@@ -3647,7 +3647,7 @@ func TestWaveLoop_SingleRateLimit(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		mu.Lock()
 		callCounts[issue.Number]++
 		call := callCounts[issue.Number]
@@ -3716,7 +3716,7 @@ func TestWaveLoop_AllRateLimited(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		mu.Lock()
 		callCounts[issue.Number]++
 		call := callCounts[issue.Number]
@@ -3784,7 +3784,7 @@ func TestWaveLoop_MixedRateLimitAndFailure(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]int(nil), closedNumbers...)
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		mu.Lock()
 		callCounts[issue.Number]++
 		call := callCounts[issue.Number]
@@ -3852,7 +3852,7 @@ func TestWaveLoop_MaxHoldExceeded(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{
 				IssueNumber:  issue.Number,
 				UsageLimited: true,
@@ -3891,7 +3891,7 @@ func TestWaveLoop_ContextCancelledDuringHold(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{
 				IssueNumber:  issue.Number,
 				UsageLimited: true,
@@ -3940,7 +3940,7 @@ func TestRunMode_ParallelNoFlags(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 		})
 
@@ -3982,7 +3982,7 @@ func TestRunMode_IntegrationFlag(t *testing.T) {
 
 	var agentIntegration bool
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, integration bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 			agentIntegration = integration
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 		})
@@ -4019,7 +4019,7 @@ func TestRunMode_ExplicitWorkers(t *testing.T) {
 	var peak, current int
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			mu.Lock()
 			current++
 			if current > peak {
@@ -4058,7 +4058,7 @@ func TestRunMode_ConfigNotMutated(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "a"}}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 		})
 

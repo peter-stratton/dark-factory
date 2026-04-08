@@ -1,3 +1,33 @@
+// Package agent runs the per-issue lifecycle: implement → review → merge.
+//
+// # Host-isolation invariant
+//
+// Code reachable from ProcessIssueWithMode (and therefore ProcessIssue and
+// MergeApprovedPR) must not mutate the host repository's working tree, index,
+// or HEAD. Every git operation in this package is one of:
+//
+//   - A read-only local query (e.g. `git rev-parse HEAD` to capture baseSHA
+//     for drift detection).
+//   - A remote operation against GitHub via `gh` (e.g. `gh pr merge`,
+//     `gh pr update-branch`, `gh pr comment`).
+//   - An operation that runs inside a sandbox container, against that
+//     container's own clone of the repo at /workspace.
+//
+// This invariant is what makes bounded-concurrency wave dispatch
+// (`internal/orchestrator`, Phase 14) safe without an explicit host-side
+// mutex around per-issue work. Multiple ProcessIssueWithMode goroutines run
+// in parallel and never touch each other's state because they don't touch
+// the host tree at all. The orchestrator still serializes the actual merge
+// step (MergeApprovedPR) post-wave, but only to avoid GitHub-side
+// branch-protection contention, not to protect host state.
+//
+// If you add a `git checkout`, `git reset`, `git pull`, `git rebase`,
+// `git merge`, `git commit`, or any other host-mutating shell call to a
+// function reachable from ProcessIssueWithMode, the wave dispatcher will
+// silently corrupt local state when workers > 1. The regression test
+// TestProcessIssue_HostIsolation in loop_test.go locks this in by recording
+// every GuardRunner command and asserting that none of them mutate the
+// host. Read it before relaxing this rule.
 package agent
 
 import (
@@ -28,6 +58,16 @@ const (
 	StatusReadyToMerge     OutcomeStatus = "ready-to-merge"
 	StatusNeedsHumanReview OutcomeStatus = "needs-human-review"
 	StatusFailed           OutcomeStatus = "failed"
+	// StatusApprovedReadyForMerge is a transient status used only when
+	// ProcessIssueWithMode is called with deferMerge=true. It signals that
+	// the reviewer approved the PR and the merge gate (auto_merge.feature)
+	// said "merge it", so the orchestrator can perform the actual merge
+	// serially after the wave's parallel agents have all finished. The
+	// orchestrator must call MergeApprovedPR for any outcome carrying this
+	// status; the status is rewritten in place to its terminal value
+	// (StatusImplemented / StatusNeedsHumanReview / StatusFailed) before
+	// being reported to the user.
+	StatusApprovedReadyForMerge OutcomeStatus = "approved-ready-for-merge"
 )
 
 // generateTraceID returns a new UUID string for correlating all artifacts
@@ -45,13 +85,62 @@ type IssueOutcome struct {
 	CloneSHA     string    // HEAD SHA captured inside the container after clone
 	UsageLimited bool      // true when the implementer hit a Claude usage limit
 	ResetsAt     time.Time // when the usage limit resets; zero if unknown
+	// MergeArgs is non-nil only when Status == StatusApprovedReadyForMerge.
+	// The orchestrator passes it to MergeApprovedPR to finish the merge
+	// serially after the wave's parallel agents have all returned.
+	MergeArgs *MergeApprovedPRArgs
+}
+
+// MergeApprovedPRArgs bundles the per-issue state captured by ProcessIssue at
+// the moment the reviewer approved the PR and the merge gate said to proceed.
+// It exists so MergeApprovedPR can be called either inline (deferMerge=false,
+// the historical path) or by the orchestrator post-wave (deferMerge=true) with
+// no closure dependencies — every field is a value, safe to ferry across a
+// goroutine boundary.
+type MergeApprovedPRArgs struct {
+	PRNumber              int
+	Branch                string
+	BaseSHA               string
+	SessionID             string
+	FixCycles             int
+	TraceID               string
+	Attempt               int
+	MaxAttempts           int
+	CurrentLifecycleLabel string
+	HasSpec               bool
 }
 
 // ProcessIssue runs the full per-issue lifecycle:
 // implement → find PR → guard rails → review/retry loop → merge or label.
 // hook is optional; if non-nil, it is called after each agent step to record
 // run data. Hook errors are logged as warnings and do not abort processing.
+//
+// This is the historical entry point, equivalent to
+// ProcessIssueWithMode(..., deferMerge=false). It performs the entire
+// lifecycle including the post-approval merge phase inline. Use it from
+// serial code paths (the daemon re-resolve loop, the `godark resolve`
+// command, every existing test). Concurrent callers in the orchestrator's
+// wave dispatcher use ProcessIssueWithMode with deferMerge=true so the
+// merge phase can be hoisted out and run serially after the wave.
 func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook, reporter progress.ProgressReporter, integration bool) IssueOutcome {
+	return ProcessIssueWithMode(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, integration, false)
+}
+
+// ProcessIssueWithMode is the deferMerge-aware variant of ProcessIssue. When
+// deferMerge is false it behaves identically to ProcessIssue. When true it
+// stops at the moment the reviewer approves the PR and the merge gate
+// (cfg.AutoMerge.Feature) authorizes the merge, and returns
+// IssueOutcome{Status: StatusApprovedReadyForMerge, MergeArgs: ...}. The
+// caller (always the orchestrator's wave dispatcher) is then responsible
+// for calling MergeApprovedPR with outcome.MergeArgs serially, after every
+// goroutine in the wave has returned, so the actual `gh pr merge` calls and
+// their pre-merge rebase contention happen one at a time.
+//
+// See the host-isolation invariant comment at the top of this file: every
+// function reachable from this entry point must avoid mutating the host
+// working tree. The orchestrator can rely on that invariant to run multiple
+// ProcessIssueWithMode goroutines in parallel without an explicit lock.
+func ProcessIssueWithMode(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, hook RunDataHook, reporter progress.ProgressReporter, integration bool, deferMerge bool) IssueOutcome {
 	outcome := IssueOutcome{IssueNumber: issue.Number}
 	traceID := generateTraceID()
 	outcome.TraceID = traceID
@@ -315,9 +404,13 @@ func ProcessIssue(ctx context.Context, issue github.Issue, cfg *config.Config, p
 	if reporter != nil {
 		reporter.IssueStageChanged(issue.Number, "review")
 	}
+	var mergeArgs *MergeApprovedPRArgs
 	outcome.Status, _, outcome.Retries, outcome.Err = runFunctionalReviewCycle(
-		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter, traceID, integration,
+		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, &sessionID, &fixCycles, hasSpec, reporter, traceID, integration, deferMerge, &mergeArgs,
 	)
+	if outcome.Status == StatusApprovedReadyForMerge {
+		outcome.MergeArgs = mergeArgs
+	}
 	return outcome
 }
 
@@ -726,6 +819,8 @@ func runFunctionalReviewCycle(
 	reporter progress.ProgressReporter,
 	traceID string,
 	integration bool,
+	deferMerge bool,
+	mergeArgsOut **MergeApprovedPRArgs,
 ) (status OutcomeStatus, prMerged bool, retries int, err error) {
 	if hook != nil {
 		if err := hook.WriteIssueStatus(issue.Number, rundata.IssueStatus{Status: "in_review"}); err != nil {
@@ -878,138 +973,32 @@ func runFunctionalReviewCycle(
 				return StatusReadyToMerge, false, attempt, nil
 			}
 
-			// Step 5.45: Pre-merge rebase check. Verifies the PR is still
-			// mergeable after approval; if not, attempts automatic rebase or
-			// triggers a conflict-fix cycle.
-			if needsHR, rebaseErr := runPreMergeRebasePhase(
-				ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, sessionID, fixCycles, traceID, integration,
-			); rebaseErr != nil {
-				return StatusFailed, false, 0, rebaseErr
-			} else if needsHR {
-				if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
-					logger.Warn("failed to label PR", "error", err)
+			// Steps 5.45 / 5.5 / 5.6 — pre-merge rebase, CI gate, merge,
+			// post-merge cleanup. Hoisted into MergeApprovedPR so the
+			// orchestrator can run them serially after a concurrent wave's
+			// agents have all finished. In deferMerge mode we package the
+			// state needed and return; in serial (legacy) mode we call
+			// MergeApprovedPR inline so behavior is bit-identical for the
+			// daemon re-resolve path and all existing tests.
+			margs := MergeApprovedPRArgs{
+				PRNumber:              prNum,
+				Branch:                branch,
+				BaseSHA:               baseSHA,
+				SessionID:             *sessionID,
+				FixCycles:             *fixCycles,
+				TraceID:               traceID,
+				Attempt:               attempt,
+				MaxAttempts:           maxAttempts,
+				CurrentLifecycleLabel: currentLifecycleLabel,
+				HasSpec:               hasSpec,
+			}
+			if deferMerge {
+				if mergeArgsOut != nil {
+					*mergeArgsOut = &margs
 				}
-				applyLifecycleLabel(label.AwaitingHumanReview)
-				comment := fmt.Sprintf("PR has unresolvable conflicts after %d rebase attempt(s). Labeling for human review.", cfg.MaxRebaseAttempts)
-				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
-					logger.Warn("failed to comment on PR", "error", err)
-				}
-				return StatusNeedsHumanReview, false, attempt, nil
+				return StatusApprovedReadyForMerge, false, attempt, nil
 			}
-
-			// Step 5.5: Wait for CI checks if configured.
-			if cfg.WaitForChecks != nil {
-				ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
-				ciGrace := ParseGraceOrDefault(cfg.WaitForChecks.StartupGrace)
-				ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, ciGrace, logger)
-				if err != nil {
-					return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
-				}
-				for ciAttempt := 0; len(ciFailures) > 0; ciAttempt++ {
-					if ctx.Err() != nil {
-						return StatusFailed, false, 0, ctx.Err()
-					}
-					if ciAttempt >= cfg.Verify.MaxFixAttempts || prompts.VerifyFix == "" {
-						var names []string
-						for _, f := range ciFailures {
-							names = append(names, f.Name)
-						}
-						if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
-							logger.Warn("failed to label PR", "error", err)
-						}
-						applyLifecycleLabel(label.AwaitingHumanReview)
-						comment := fmt.Sprintf("CI checks failed after %d fix attempt(s): %s. Labeling for human review.",
-							ciAttempt, strings.Join(names, ", "))
-						if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
-							logger.Warn("failed to comment on PR", "error", err)
-						}
-						return StatusNeedsHumanReview, false, 0, fmt.Errorf("CI checks failed: %s", strings.Join(names, ", "))
-					}
-
-					logger.Info("CI check failed, triggering fix cycle",
-						"issue_number", issue.Number,
-						"attempt", ciAttempt+1,
-						"max_attempts", cfg.Verify.MaxFixAttempts,
-					)
-
-					ciErrors := formatCheckFailures(ciFailures)
-					fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, *sessionID, integration, cfg, prompts, authEnv, logger)
-					if err != nil {
-						return StatusFailed, false, 0, fmt.Errorf("CI fix agent: %w", err)
-					}
-					if handleJudgeIntervention(issue.Number, "ci_fix", fixResult, hook, reporter, logger) {
-						return StatusFailed, false, 0, fmt.Errorf("CI fix agent killed by judge: %s", fixResult.JudgeIntervention.Rule)
-					}
-					if fixResult.TimedOut {
-						return StatusFailed, false, 0, fmt.Errorf("CI fix agent timed out")
-					}
-					*sessionID = fixResult.SessionID
-
-					if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
-						return StatusFailed, false, 0, driftErr
-					}
-
-					ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, ciGrace, logger)
-					if err != nil {
-						return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
-					}
-				}
-			}
-			// Capture pre-merge spec content for delta computation.
-			specBefore, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issue.Number)
-			if err != nil {
-				logger.Warn("failed to read pre-merge scenario spec", "error", err)
-			}
-
-			// Merge the PR. Retry with exponential backoff because GitHub
-			// may need a moment to recalculate mergeable status after a
-			// rebase or merge coordinator push.
-			if err := mergeWithRetry(cfg.Repo, prNum, logger); err != nil {
-				return StatusFailed, false, 0, err
-			}
-
-			// Capture post-merge spec content and compute delta.
-			specAfter, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issue.Number)
-			if err != nil {
-				logger.Warn("failed to read post-merge scenario spec", "error", err)
-			}
-			delta := specdelta.Diff(specBefore, specAfter)
-			logger.Info("spec delta computed", "empty", specdelta.IsEmpty(delta), "added", len(delta.AddedCases), "removed", len(delta.RemovedCases), "changed", len(delta.ChangedCases))
-			if specdelta.IsEmpty(delta) && (specBefore != "" || specAfter != "") {
-				logger.Warn("spec delta is empty despite spec file existing — local checkout may not reflect merged changes")
-			}
-			if !specdelta.IsEmpty(delta) {
-				comment := "## Spec Delta\n\n" + specdelta.Format(delta)
-				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
-					logger.Warn("failed to comment spec delta on PR", "error", err)
-				}
-			}
-			if hook != nil {
-				deltaData := rundata.SpecDeltaData{
-					Before:       specBefore,
-					After:        specAfter,
-					AddedCases:   delta.AddedCases,
-					RemovedCases: delta.RemovedCases,
-					ChangedCases: len(delta.ChangedCases),
-					SetupChanged: delta.SetupChanged,
-				}
-				if err := hook.WriteSpecDelta(issue.Number, deltaData); err != nil {
-					logger.Warn("failed to write spec delta", "error", err)
-				}
-			}
-
-			// Explicitly close the issue after merge. GitHub's "Closes #N"
-			// keyword only auto-closes on merge to the default branch, so
-			// when the base branch differs we must close it ourselves.
-			if err := github.CloseIssue(cfg.Repo, issue.Number); err != nil {
-				logger.Warn("failed to close issue after merge", "issue", issue.Number, "error", err)
-			}
-			// Remove all lifecycle labels after merge (best-effort). This cleans up
-			// labels applied in a previous run or manually, not just the current run.
-			for _, lbl := range cfg.Labels().All() {
-				_ = github.RemoveIssueLabel(cfg.Repo, prNum, lbl)
-			}
-			return StatusImplemented, true, attempt, nil
+			return MergeApprovedPR(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, integration, margs)
 
 		case "CHANGES_REQUESTED":
 			retriesLeft := maxAttempts - attempt - 1
@@ -1091,6 +1080,200 @@ func runFunctionalReviewCycle(
 		logger.Warn("failed to comment on PR", "error", err)
 	}
 	return StatusNeedsHumanReview, false, maxAttempts - 1, nil
+}
+
+// MergeApprovedPR runs the post-approval phase for a single PR: pre-merge
+// rebase, optional CI check gate with fix-cycle retries, the actual squash
+// merge, post-merge spec-delta capture, issue close, and lifecycle-label
+// cleanup.
+//
+// It is invoked in two situations:
+//
+//  1. Inline from runFunctionalReviewCycle when deferMerge=false (the
+//     historical serial path used by `godark resolve`, the daemon
+//     re-resolve loop, and every existing test).
+//  2. Serially by the orchestrator after a concurrent wave's parallel
+//     ProcessIssueWithMode goroutines have all returned. In that mode,
+//     ProcessIssue stops at the cut point and returns
+//     StatusApprovedReadyForMerge plus a populated MergeApprovedPRArgs
+//     so the orchestrator can ferry the per-issue state across the
+//     goroutine boundary and call this function from a single thread.
+//
+// All inputs are values (not closures), so the function makes no
+// assumptions about which goroutine it runs on. It must remain free of
+// host-working-tree mutations: every git operation here is either a
+// remote `gh` call against GitHub or runs inside a sandbox container.
+// See the host-isolation invariant at the top of this file.
+func MergeApprovedPR(
+	ctx context.Context,
+	issue github.Issue,
+	cfg *config.Config,
+	prompts *Prompts,
+	authEnv map[string]string,
+	logger *slog.Logger,
+	hook RunDataHook,
+	reporter progress.ProgressReporter,
+	integration bool,
+	args MergeApprovedPRArgs,
+) (status OutcomeStatus, prMerged bool, retries int, err error) {
+	prNum := args.PRNumber
+	branch := args.Branch
+	baseSHA := args.BaseSHA
+	traceID := args.TraceID
+	attempt := args.Attempt
+	sessionID := args.SessionID
+	fixCycles := args.FixCycles
+
+	// Re-construct the lifecycle-label closure rooted at whatever state
+	// ProcessIssue left it in. The orchestrator-driven path doesn't share
+	// memory with ProcessIssue, so we have to thread the current label
+	// through args and rebuild the closure here.
+	currentLifecycleLabel := args.CurrentLifecycleLabel
+	applyLifecycleLabel := func(lbl string) {
+		if !label.Transition(currentLifecycleLabel, lbl) {
+			logger.Warn("invalid lifecycle label transition",
+				"from", currentLifecycleLabel, "to", lbl, "pr_number", prNum)
+		}
+		if err := github.AddIssueLabel(cfg.Repo, prNum, lbl); err != nil {
+			logger.Warn("failed to apply lifecycle label", "label", lbl, "pr_number", prNum, "error", err)
+			return
+		}
+		currentLifecycleLabel = lbl
+	}
+
+	// Step 5.45: Pre-merge rebase check. Verifies the PR is still
+	// mergeable after approval; if not, attempts automatic rebase or
+	// triggers a conflict-fix cycle.
+	if needsHR, rebaseErr := runPreMergeRebasePhase(
+		ctx, issue, prNum, branch, baseSHA, cfg, prompts, authEnv, logger, hook, reporter, &sessionID, &fixCycles, traceID, integration,
+	); rebaseErr != nil {
+		return StatusFailed, false, 0, rebaseErr
+	} else if needsHR {
+		if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+			logger.Warn("failed to label PR", "error", err)
+		}
+		applyLifecycleLabel(label.AwaitingHumanReview)
+		comment := fmt.Sprintf("PR has unresolvable conflicts after %d rebase attempt(s). Labeling for human review.", cfg.MaxRebaseAttempts)
+		if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+			logger.Warn("failed to comment on PR", "error", err)
+		}
+		return StatusNeedsHumanReview, false, attempt, nil
+	}
+
+	// Step 5.5: Wait for CI checks if configured.
+	if cfg.WaitForChecks != nil {
+		ciTimeout, _ := time.ParseDuration(cfg.WaitForChecks.Timeout) // already validated by config.Load
+		ciGrace := ParseGraceOrDefault(cfg.WaitForChecks.StartupGrace)
+		ciFailures, err := WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, ciGrace, logger)
+		if err != nil {
+			return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
+		}
+		for ciAttempt := 0; len(ciFailures) > 0; ciAttempt++ {
+			if ctx.Err() != nil {
+				return StatusFailed, false, 0, ctx.Err()
+			}
+			if ciAttempt >= cfg.Verify.MaxFixAttempts || prompts.VerifyFix == "" {
+				var names []string
+				for _, f := range ciFailures {
+					names = append(names, f.Name)
+				}
+				if err := LabelPR(cfg.Repo, prNum, "needs-human-review"); err != nil {
+					logger.Warn("failed to label PR", "error", err)
+				}
+				applyLifecycleLabel(label.AwaitingHumanReview)
+				comment := fmt.Sprintf("CI checks failed after %d fix attempt(s): %s. Labeling for human review.",
+					ciAttempt, strings.Join(names, ", "))
+				if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+					logger.Warn("failed to comment on PR", "error", err)
+				}
+				return StatusNeedsHumanReview, false, 0, fmt.Errorf("CI checks failed: %s", strings.Join(names, ", "))
+			}
+
+			logger.Info("CI check failed, triggering fix cycle",
+				"issue_number", issue.Number,
+				"attempt", ciAttempt+1,
+				"max_attempts", cfg.Verify.MaxFixAttempts,
+			)
+
+			ciErrors := formatCheckFailures(ciFailures)
+			fixResult, err := VerifyFix(ctx, issue, prNum, ciErrors, sessionID, integration, cfg, prompts, authEnv, logger)
+			if err != nil {
+				return StatusFailed, false, 0, fmt.Errorf("CI fix agent: %w", err)
+			}
+			if handleJudgeIntervention(issue.Number, "ci_fix", fixResult, hook, reporter, logger) {
+				return StatusFailed, false, 0, fmt.Errorf("CI fix agent killed by judge: %s", fixResult.JudgeIntervention.Rule)
+			}
+			if fixResult.TimedOut {
+				return StatusFailed, false, 0, fmt.Errorf("CI fix agent timed out")
+			}
+			sessionID = fixResult.SessionID
+
+			if driftErr := checkDriftAndClose(baseSHA, cfg, prNum, logger); driftErr != nil {
+				return StatusFailed, false, 0, driftErr
+			}
+
+			ciFailures, err = WaitForChecks(ctx, cfg.Repo, prNum, cfg.WaitForChecks.Required, ciTimeout, ciGrace, logger)
+			if err != nil {
+				return StatusFailed, false, 0, fmt.Errorf("waiting for CI checks: %w", err)
+			}
+		}
+	}
+
+	// Capture pre-merge spec content for delta computation.
+	specBefore, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issue.Number)
+	if err != nil {
+		logger.Warn("failed to read pre-merge scenario spec", "error", err)
+	}
+
+	// Merge the PR. Retry with exponential backoff because GitHub
+	// may need a moment to recalculate mergeable status after a
+	// rebase or merge coordinator push.
+	if err := mergeWithRetry(cfg.Repo, prNum, logger); err != nil {
+		return StatusFailed, false, 0, err
+	}
+
+	// Capture post-merge spec content and compute delta.
+	specAfter, err := punchlist.ReadScenarioSpec(cfg.ScenarioDir, issue.Number)
+	if err != nil {
+		logger.Warn("failed to read post-merge scenario spec", "error", err)
+	}
+	delta := specdelta.Diff(specBefore, specAfter)
+	logger.Info("spec delta computed", "empty", specdelta.IsEmpty(delta), "added", len(delta.AddedCases), "removed", len(delta.RemovedCases), "changed", len(delta.ChangedCases))
+	if specdelta.IsEmpty(delta) && (specBefore != "" || specAfter != "") {
+		logger.Warn("spec delta is empty despite spec file existing — local checkout may not reflect merged changes")
+	}
+	if !specdelta.IsEmpty(delta) {
+		comment := "## Spec Delta\n\n" + specdelta.Format(delta)
+		if _, err := GuardRunner("gh", "pr", "comment", fmt.Sprintf("%d", prNum), "--repo", cfg.Repo, "--body", comment); err != nil {
+			logger.Warn("failed to comment spec delta on PR", "error", err)
+		}
+	}
+	if hook != nil {
+		deltaData := rundata.SpecDeltaData{
+			Before:       specBefore,
+			After:        specAfter,
+			AddedCases:   delta.AddedCases,
+			RemovedCases: delta.RemovedCases,
+			ChangedCases: len(delta.ChangedCases),
+			SetupChanged: delta.SetupChanged,
+		}
+		if err := hook.WriteSpecDelta(issue.Number, deltaData); err != nil {
+			logger.Warn("failed to write spec delta", "error", err)
+		}
+	}
+
+	// Explicitly close the issue after merge. GitHub's "Closes #N"
+	// keyword only auto-closes on merge to the default branch, so
+	// when the base branch differs we must close it ourselves.
+	if err := github.CloseIssue(cfg.Repo, issue.Number); err != nil {
+		logger.Warn("failed to close issue after merge", "issue", issue.Number, "error", err)
+	}
+	// Remove all lifecycle labels after merge (best-effort). This cleans up
+	// labels applied in a previous run or manually, not just the current run.
+	for _, lbl := range cfg.Labels().All() {
+		_ = github.RemoveIssueLabel(cfg.Repo, prNum, lbl)
+	}
+	return StatusImplemented, true, attempt, nil
 }
 
 // topologicalSortModules returns module names sorted in dependency order
