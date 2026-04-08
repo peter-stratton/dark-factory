@@ -200,6 +200,35 @@ max_retries: 2
 	}
 }
 
+func TestFlagOverridePreservesDockerCompose(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  project_name: myproject
+concurrency:
+  max_workers: 4
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DockerCompose == nil {
+		t.Fatal("DockerCompose is nil after Load, want non-nil")
+	}
+	if cfg.DockerCompose.File != "docker-compose.test.yml" {
+		t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+	}
+	if cfg.DockerCompose.ProjectName != "myproject" {
+		t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "myproject")
+	}
+	if cfg.Concurrency.MaxWorkers != 4 {
+		t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
+	}
+}
+
 func TestConfigUnmarshalsReviewSection(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `
@@ -2799,64 +2828,54 @@ func TestConfigConcurrencyRejectsInvalid(t *testing.T) {
 	}
 }
 
-func TestApplyFlagsWithCompose(t *testing.T) {
-	compose := &DockerCompose{File: "docker-compose.test.yml"}
-
-	t.Run("concurrent skips compose", func(t *testing.T) {
+func TestApplyFlagsDoesNotMutateDockerCompose(t *testing.T) {
+	t.Run("empty flags preserve DockerCompose", func(t *testing.T) {
 		cfg := &Config{
-			Concurrency:   Concurrency{MaxWorkers: 3},
+			Concurrency:   Concurrency{MaxWorkers: 4},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml", ProjectName: "myproject"},
+		}
+		applyFlags(cfg, CLIFlags{})
+		if cfg.DockerCompose == nil {
+			t.Fatal("DockerCompose is nil after applyFlags, want non-nil")
+		}
+		if cfg.DockerCompose.File != "docker-compose.test.yml" {
+			t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+		}
+		if cfg.DockerCompose.ProjectName != "myproject" {
+			t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "myproject")
+		}
+	})
+
+	t.Run("empty flags preserve Concurrency", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 4},
 			DockerCompose: &DockerCompose{File: "docker-compose.test.yml"},
 		}
 		applyFlags(cfg, CLIFlags{})
-		if cfg.DockerCompose != nil {
-			t.Error("expected DockerCompose to be nil when max_workers > 1 and WithCompose not set")
+		if cfg.Concurrency.MaxWorkers != 4 {
+			t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
 		}
 	})
 
-	t.Run("with-compose forces serial", func(t *testing.T) {
-		cfg := &Config{
-			Concurrency:   Concurrency{MaxWorkers: 3},
-			DockerCompose: &DockerCompose{File: compose.File},
-		}
-		applyFlags(cfg, CLIFlags{WithCompose: boolPtr(true)})
-		if cfg.Concurrency.MaxWorkers != 1 {
-			t.Errorf("expected MaxWorkers=1, got %d", cfg.Concurrency.MaxWorkers)
-		}
-		if cfg.DockerCompose == nil {
-			t.Error("expected DockerCompose to be preserved when --with-compose is set")
-		}
-	})
-
-	t.Run("no compose config warning", func(t *testing.T) {
-		cfg := &Config{
-			Concurrency: Concurrency{MaxWorkers: 1},
-		}
-		applyFlags(cfg, CLIFlags{WithCompose: boolPtr(true)})
-		if cfg.Concurrency.MaxWorkers != 1 {
-			t.Errorf("expected MaxWorkers=1, got %d", cfg.Concurrency.MaxWorkers)
-		}
-		// Warning is logged but no error — function should not panic.
-	})
-
-	t.Run("default serial preserves compose", func(t *testing.T) {
-		cfg := &Config{
-			Concurrency:   Concurrency{MaxWorkers: 1},
-			DockerCompose: &DockerCompose{File: compose.File},
-		}
-		applyFlags(cfg, CLIFlags{})
-		if cfg.DockerCompose == nil {
-			t.Error("expected DockerCompose to be preserved when max_workers=1")
-		}
-	})
-
-	t.Run("integration preserves compose when max_workers > 1", func(t *testing.T) {
+	t.Run("all flags set preserve DockerCompose and Concurrency", func(t *testing.T) {
 		cfg := &Config{
 			Concurrency:   Concurrency{MaxWorkers: 4},
-			DockerCompose: &DockerCompose{File: compose.File},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml"},
 		}
-		applyFlags(cfg, CLIFlags{Integration: boolPtr(true)})
+		applyFlags(cfg, CLIFlags{
+			Repo:       strPtr("other/repo"),
+			MaxRetries: intPtr(10),
+			NoJudge:    boolPtr(true),
+			Model:      strPtr("opus"),
+		})
 		if cfg.DockerCompose == nil {
-			t.Error("expected DockerCompose to be preserved when --integration is set")
+			t.Fatal("DockerCompose is nil after applyFlags with all flags set, want non-nil")
+		}
+		if cfg.DockerCompose.File != "docker-compose.test.yml" {
+			t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+		}
+		if cfg.Concurrency.MaxWorkers != 4 {
+			t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
 		}
 	})
 }
