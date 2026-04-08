@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,8 +38,12 @@ func (f *fakeNotifier) Send(_ context.Context, event notify.Event) error {
 	return nil
 }
 
-// fakeReporter records all reporter calls for test assertions.
+// fakeReporter records all reporter calls for test assertions. A mutex
+// guards every recorded field because punchlist enrichment, issue processing,
+// and the wave dispatcher all call reporter methods from multiple goroutines
+// under bounded concurrency — without this, -race fails on legitimate waves.
 type fakeReporter struct {
+	mu              sync.Mutex
 	issueCompleted  []fakeIssueCompleted
 	waveStarted     []fakeWaveStarted
 	runFinished     []fakeRunFinished
@@ -84,31 +90,63 @@ type fakeRollupCreated struct {
 }
 
 func (r *fakeReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSummary) {}
-func (r *fakeReporter) IssueStarted(_ int, _ string)              {}
-func (r *fakeReporter) IssueStageChanged(_ int, _ string)         {}
+func (r *fakeReporter) IssueStarted(_ int, _ string)                                  {}
+func (r *fakeReporter) IssueStageChanged(_ int, _ string)                             {}
 func (r *fakeReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64, traceID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.issueCompleted = append(r.issueCompleted, fakeIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg, costUSD, traceID})
 }
 func (r *fakeReporter) WaveStarted(wave, count int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.waveStarted = append(r.waveStarted, fakeWaveStarted{wave, count})
 }
 func (r *fakeReporter) AllBlocked(total, blocked int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.allBlocked = append(r.allBlocked, fakeAllBlocked{total, blocked})
 }
 func (r *fakeReporter) RollupCreated(prNumber int, prURL string, merged bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.rollupCreated = append(r.rollupCreated, fakeRollupCreated{prNumber, prURL, merged})
 }
 func (r *fakeReporter) RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.runFinished = append(r.runFinished, fakeRunFinished{implemented, readyToMerge, needsHumanReview, failed, blocked})
 }
 func (r *fakeReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
 func (r *fakeReporter) PunchlistText(text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.punchlistTexts = append(r.punchlistTexts, text)
 }
 func (r *fakeReporter) RateLimited(resetsAt time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.rateLimitedAt = append(r.rateLimitedAt, resetsAt)
 }
-func (r *fakeReporter) RateLimitCleared() { r.rateLimitClears++ }
+func (r *fakeReporter) RateLimitCleared() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rateLimitClears++
+}
+
+// cancelOnRateLimitReporter cancels a context as soon as RateLimited is
+// reported, providing a race-free way for tests to interrupt a rate-limit
+// hold after verifying the hold was entered.
+type cancelOnRateLimitReporter struct {
+	*fakeReporter
+	cancel context.CancelFunc
+}
+
+func (r *cancelOnRateLimitReporter) RateLimited(resetsAt time.Time) {
+	r.fakeReporter.RateLimited(resetsAt)
+	r.cancel()
+}
+func (r *fakeReporter) WorkersActive(_, _ int) {}
 
 // ghIssue mirrors the JSON shape for test fixtures.
 type ghIssue struct {
@@ -204,7 +242,7 @@ func TestDryRun_ListsIssuesInOrder(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -230,7 +268,7 @@ func TestDryRun_BlockedIssuesShownSeparately(t *testing.T) {
 	setupFakeGH(t, openIssues, nil) // #99 not closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -256,7 +294,7 @@ func TestDryRun_SummaryCounts(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -280,7 +318,7 @@ func TestDryRun_LogFileCreated(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		if err := Run(context.Background(), testConfig(), logger, progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", ""); err != nil {
+		if err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, logger, progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", ""); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
@@ -295,7 +333,7 @@ func TestEmptyMilestone(t *testing.T) {
 	setupFakeGH(t, []ghIssue{}, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -328,7 +366,7 @@ func TestAllBlocked(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -349,7 +387,7 @@ func TestDryRun_ClosedDepsUnblock(t *testing.T) {
 	setupFakeGH(t, openIssues, []int{3}) // #3 is closed
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -395,7 +433,7 @@ func TestDryRun_PriorityDisplayed(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -432,7 +470,7 @@ func TestCategorizeIssues(t *testing.T) {
 // setupProcessMocks configures all the mocks needed to test processIssues.
 // It returns a cleanup function. closedNumbersFn is called each time
 // FetchClosedIssueNumbers is invoked (to simulate issues closing over time).
-func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome) {
+func setupProcessMocks(t *testing.T, closedNumbersFn func() []int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome) {
 	t.Helper()
 
 	// Stub buildImageFn so tests don't require a real Docker daemon.
@@ -498,7 +536,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	closedNumbers := []int{} // initially nothing closed
 	setupProcessMocks(t, func() []int {
 		return closedNumbers
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 		callCount++
 		processedNumbers = append(processedNumbers, issue.Number)
 		if issue.Number == 1 {
@@ -522,7 +560,7 @@ func TestProcessIssues_MultiWaveReResolution(t *testing.T) {
 	cfg := testConfig()
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -555,7 +593,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	var processedNumbers []int
 	setupProcessMocks(t, func() []int {
 		return nil
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 		processedNumbers = append(processedNumbers, issue.Number)
 		return agent.IssueOutcome{
 			IssueNumber: issue.Number,
@@ -568,7 +606,7 @@ func TestProcessIssues_AllFailNoInfiniteLoop(t *testing.T) {
 	cfg := testConfig()
 
 	output := captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "", nil)
+		err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -596,7 +634,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 
 	setupProcessMocks(t, func() []int {
 		return nil
-	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome {
+	}, func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 		if issue.Number == 10 {
 			return agent.IssueOutcome{IssueNumber: 10, Status: "implemented", PRNumber: 100}
 		}
@@ -616,7 +654,7 @@ func TestProcessIssues_FinalizeRunCalled(t *testing.T) {
 	cfg := testConfig()
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -718,7 +756,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome {
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: 5, Status: "implemented", PRNumber: 77}
 		})
 
@@ -740,7 +778,7 @@ func TestProcessIssues_WritesDialogue(t *testing.T) {
 	cfg := testConfig()
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), writer, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -882,7 +920,7 @@ func TestRun_DirtyTreeBlocksRun(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -908,7 +946,7 @@ func TestRun_DirtyTreeErrorListsFiles(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", false, false, "", "")
 		if err == nil {
 			t.Fatal("expected error for dirty working tree")
 		}
@@ -935,7 +973,7 @@ func TestRun_DryRunSkipsDirtyCheck(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("dry-run should not fail on dirty tree: %v", err)
 		}
@@ -1096,7 +1134,7 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome {
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1118,7 +1156,7 @@ func TestProcessIssues_LifecycleLabelsEnsured(t *testing.T) {
 	cfg := testConfig()
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1185,7 +1223,7 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome {
+		func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
 			if issue.Number == 1 {
 				return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 10}
 			}
@@ -1197,7 +1235,7 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 	cfg := testConfig()
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
+		if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", []notify.Notifier{fn}); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1221,7 +1259,6 @@ func TestProcessIssues_RunCompleteNotificationFired(t *testing.T) {
 		t.Errorf("run_complete message %q missing 'failed'", msg)
 	}
 }
-
 
 // filteringNotifier only accepts events whose Type is in the allowed set,
 // forwarding to the inner fakeNotifier. This simulates notify.filteredNotifier
@@ -1302,7 +1339,7 @@ func TestRollup_NoneDoesNothing(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1314,7 +1351,7 @@ func TestRollup_NoneDoesNothing(t *testing.T) {
 	cfg.AutoMerge.Rollup = "none"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1332,7 +1369,7 @@ func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1344,7 +1381,7 @@ func TestRollup_ManualCreatesPRButDoesNotMerge(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 
 	output := captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1368,7 +1405,7 @@ func TestRollup_AutoCreateAndMerges(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1380,7 +1417,7 @@ func TestRollup_AutoCreateAndMerges(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	output := captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1401,7 +1438,7 @@ func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1413,7 +1450,7 @@ func TestRollup_SkipWhenBaseBranchEmpty(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1428,7 +1465,7 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1440,7 +1477,7 @@ func TestRollup_SkipWhenBaseBranchEqualsDefault(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1455,7 +1492,7 @@ func TestRollup_SkipWhenBaseBranchEqualsCustomDefault(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1468,7 +1505,7 @@ func TestRollup_SkipWhenBaseBranchEqualsCustomDefault(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1483,7 +1520,7 @@ func TestRollup_UsesCustomDefaultBranch(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 10}
 		})
 
@@ -1496,7 +1533,7 @@ func TestRollup_UsesCustomDefaultBranch(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1514,7 +1551,7 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 		{Number: 1, Title: "feature"},
 	}
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test failure")}
 		})
 
@@ -1526,7 +1563,7 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 
 	captureStdout(t, func() {
-		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
 	})
@@ -1535,7 +1572,6 @@ func TestRollup_SkipWhenZeroImplemented(t *testing.T) {
 		t.Errorf("rollup should be skipped when no issues implemented, got creates: %v", *created)
 	}
 }
-
 
 func TestBuildRollupBody_ListsIssues(t *testing.T) {
 	issues := []github.Issue{
@@ -1560,7 +1596,7 @@ func TestReporter_IssueCompleted(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			// Use PRNumber:0 to avoid triggering the punchlist goroutine.
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test error")}
 		})
@@ -1569,7 +1605,7 @@ func TestReporter_IssueCompleted(t *testing.T) {
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1605,7 +1641,7 @@ func TestReporter_WaveStarted(t *testing.T) {
 			return []int{1}
 		}
 		return nil
-	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		callCount++
 		// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
@@ -1615,7 +1651,7 @@ func TestReporter_WaveStarted(t *testing.T) {
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1639,7 +1675,7 @@ func TestReporter_RunFinished(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			if issue.Number == 1 {
 				// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
 				return agent.IssueOutcome{IssueNumber: 1, Status: "implemented", PRNumber: 0}
@@ -1651,7 +1687,7 @@ func TestReporter_RunFinished(t *testing.T) {
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1678,7 +1714,7 @@ func TestReporter_DryRunDoesNotCallReporter(t *testing.T) {
 	reporter := &fakeReporter{}
 	cfg := testConfig()
 
-	if err := Run(context.Background(), cfg, testLogger(t), reporter, logging.NewLogger, "Phase 1", true, false, "", ""); err != nil {
+	if err := Run(context.Background(), cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, logging.NewLogger, "Phase 1", true, false, "", ""); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -1701,7 +1737,7 @@ func TestReporter_LoggerPreserved(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			// PRNumber:0 avoids triggering the punchlist enrichment goroutine in tests.
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
 		})
@@ -1714,7 +1750,7 @@ func TestReporter_LoggerPreserved(t *testing.T) {
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, logger, reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, logger, reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1744,7 +1780,7 @@ func TestReporter_AllBlockedCalled(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 		})
 
@@ -1752,7 +1788,7 @@ func TestReporter_AllBlockedCalled(t *testing.T) {
 	closedSet := map[int]bool{} // #99 not closed
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1769,7 +1805,7 @@ func TestReporter_AllBlockedCalled(t *testing.T) {
 
 // setupRollupVerifyMock replaces runRollupVerifyFn with fn and restores it
 // at the end of the test.
-func setupRollupVerifyMock(t *testing.T, fn func(ctx context.Context, prNum int, branch string, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, writeResult func(rundata.VerifyStepResult) error) (bool, error)) {
+func setupRollupVerifyMock(t *testing.T, fn func(ctx context.Context, prNum int, branch string, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, writeResult func(rundata.VerifyStepResult) error, integration bool) (bool, error)) {
 	t.Helper()
 	orig := runRollupVerifyFn
 	t.Cleanup(func() { runRollupVerifyFn = orig })
@@ -1802,7 +1838,7 @@ func TestRollupVerify_PassesOnFirstAttempt(t *testing.T) {
 	merged := setupHandleRollupPRMocks(t)
 
 	var verifyCalls int
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		verifyCalls++
 		return true, nil
 	})
@@ -1811,7 +1847,7 @@ func TestRollupVerify_PassesOnFirstAttempt(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 	reporter := &fakeReporter{}
 
-	prNum, prURL, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, prURL, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
@@ -1835,7 +1871,7 @@ func TestRollupVerify_PassesOnFirstAttempt(t *testing.T) {
 func TestRollupVerify_ExhaustsRetries_LeavesPROpen(t *testing.T) {
 	merged := setupHandleRollupPRMocks(t)
 
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		return false, nil // exhausted retries — verify never passes
 	})
 
@@ -1843,7 +1879,7 @@ func TestRollupVerify_ExhaustsRetries_LeavesPROpen(t *testing.T) {
 	cfg.AutoMerge.Rollup = "auto"
 	reporter := &fakeReporter{}
 
-	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
@@ -1866,7 +1902,7 @@ func TestRollupVerify_WriteResultCalledWhenWriterPresent(t *testing.T) {
 	setupHandleRollupPRMocks(t)
 
 	var capturedWriteResult func(rundata.VerifyStepResult) error
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, writeResult func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, writeResult func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		capturedWriteResult = writeResult
 		if writeResult != nil {
 			_ = writeResult(rundata.VerifyStepResult{Attempt: 0, AllPassed: true})
@@ -1884,7 +1920,7 @@ func TestRollupVerify_WriteResultCalledWhenWriterPresent(t *testing.T) {
 		t.Fatalf("NewWithBase: %v", err)
 	}
 
-	if _, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, writer, &agent.Prompts{}, nil); err != nil {
+	if _, _, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, writer, &agent.Prompts{}, nil); err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 
@@ -1903,7 +1939,7 @@ func TestRollupVerify_WriteResultCalledWhenWriterPresent(t *testing.T) {
 func TestRollupVerify_ManualMode_VerifyFailsLeavesOpen(t *testing.T) {
 	merged := setupHandleRollupPRMocks(t)
 
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		return false, nil
 	})
 
@@ -1911,7 +1947,7 @@ func TestRollupVerify_ManualMode_VerifyFailsLeavesOpen(t *testing.T) {
 	cfg.AutoMerge.Rollup = "manual"
 	reporter := &fakeReporter{}
 
-	if _, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil); err != nil {
+	if _, _, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil); err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
 
@@ -1932,7 +1968,7 @@ func TestReporter_IssueCompleted_WithCost(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("test error")}
 		})
 
@@ -1950,7 +1986,7 @@ func TestReporter_IssueCompleted_WithCost(t *testing.T) {
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, writer, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, writer, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -1971,7 +2007,7 @@ func TestReporter_IssueCompleted_ZeroCostWhenNoWriter(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 		})
 
@@ -1980,7 +2016,7 @@ func TestReporter_IssueCompleted_ZeroCostWhenNoWriter(t *testing.T) {
 	cfg := testConfig()
 
 	// Pass nil writer — cost must degrade gracefully to 0.0.
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -2051,7 +2087,7 @@ func TestDryRun_NoDarkIssuesExcluded(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -2086,7 +2122,7 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 	setupFakeGH(t, openIssues, nil)
 
 	output := captureStdout(t, func() {
-		err := Run(context.Background(), testConfig(), testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
+		err := Run(context.Background(), testConfig(), config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), logging.NewLogger, "Phase 1", true, false, "", "")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
@@ -2103,7 +2139,7 @@ func TestDryRun_NoDarkIssueDoesNotBlockOthers(t *testing.T) {
 
 // setupReResolveAndProcessMocks is like setupProcessMocks and preps the lock seam.
 // It returns closedNumbers as a mutable slice pointer for tests to update.
-func setupReResolveAndProcessMocks(t *testing.T, closedNumbers *[]int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter) agent.IssueOutcome) {
+func setupReResolveAndProcessMocks(t *testing.T, closedNumbers *[]int, processFn func(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome) {
 	t.Helper()
 	setupProcessMocks(t, func() []int { return *closedNumbers }, processFn)
 }
@@ -2118,7 +2154,7 @@ func TestReResolveAndProcess_UnblocksAfterMerge(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{1} // #1 already merged externally
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 200 + issue.Number}
 	})
@@ -2128,7 +2164,7 @@ func TestReResolveAndProcess_UnblocksAfterMerge(t *testing.T) {
 	seen := map[int]bool{1: true} // issue 1 was processed in the prior run
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, config.RunMode{Workers: 1}, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}
@@ -2156,7 +2192,7 @@ func TestReResolveAndProcess_MultipleUnblocked(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{1, 2}
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "ready-to-merge", PRNumber: 300 + issue.Number}
 	})
@@ -2166,7 +2202,7 @@ func TestReResolveAndProcess_MultipleUnblocked(t *testing.T) {
 	seen := map[int]bool{1: true, 2: true}
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, config.RunMode{Workers: 1}, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}
@@ -2200,7 +2236,7 @@ func TestReResolveAndProcess_NoNewUnblocked(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{} // #99 still open
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented"}
 	})
@@ -2210,7 +2246,7 @@ func TestReResolveAndProcess_NoNewUnblocked(t *testing.T) {
 	seen := map[int]bool{}
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, config.RunMode{Workers: 1}, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}
@@ -2233,7 +2269,7 @@ func TestReResolveAndProcess_SeenSkipsAlreadyProcessed(t *testing.T) {
 
 	var processed []int
 	closedNums := []int{}
-	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupReResolveAndProcessMocks(t, &closedNums, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		processed = append(processed, issue.Number)
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "ready-to-merge"}
 	})
@@ -2243,7 +2279,7 @@ func TestReResolveAndProcess_SeenSkipsAlreadyProcessed(t *testing.T) {
 	seen := map[int]bool{1: true} // issue 1 already processed
 
 	captureStdout(t, func() {
-		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
+		got, err := ReResolveAndProcess(context.Background(), allIssues, nil, seen, cfg, config.RunMode{Workers: 1}, "test-milestone", testLogger(t), progress.NewTextReporter(os.Stdout), nil, "")
 		if err != nil {
 			t.Fatalf("ReResolveAndProcess() error = %v", err)
 		}
@@ -2264,7 +2300,7 @@ func TestProcessIssues_ComposeStartsSuccessfully(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
 	var composeCalls [][]string
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2282,7 +2318,7 @@ func TestProcessIssues_ComposeStartsSuccessfully(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1, Integration: true}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -2321,7 +2357,7 @@ func TestProcessIssues_ComposeStartupFailure(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
 	var agentCalled bool
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		agentCalled = true
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
@@ -2342,7 +2378,7 @@ func TestProcessIssues_ComposeStartupFailure(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1, Integration: true}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err == nil {
 			t.Fatal("expected processIssues to return an error when compose startup fails")
 		}
@@ -2363,7 +2399,7 @@ func TestProcessIssues_ComposeSkippedWhenNotConfigured(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
 	var agentCalled bool
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		agentCalled = true
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
@@ -2382,7 +2418,7 @@ func TestProcessIssues_ComposeSkippedWhenNotConfigured(t *testing.T) {
 	// cfg.DockerCompose is nil — compose not configured.
 
 	captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -2401,7 +2437,7 @@ func TestProcessIssues_ComposeSkippedWhenNotConfigured(t *testing.T) {
 func TestProcessIssues_ComposeProjectNamePassed(t *testing.T) {
 	allIssues := []github.Issue{{Number: 42, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 200}
 	})
 
@@ -2422,7 +2458,7 @@ func TestProcessIssues_ComposeProjectNamePassed(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1, Integration: true}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -2475,7 +2511,7 @@ func hasComposeDown(calls [][]string) bool {
 func TestProcessIssues_ComposeDownCalledAfterNormalRun(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2494,7 +2530,7 @@ func TestProcessIssues_ComposeDownCalledAfterNormalRun(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1, Integration: true}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 		if err != nil {
 			t.Fatalf("processIssues() error = %v", err)
 		}
@@ -2511,7 +2547,7 @@ func TestProcessIssues_ComposeDownCalledAfterNormalRun(t *testing.T) {
 func TestProcessIssues_ComposeDownCalledAfterRunFailure(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
 	})
 
@@ -2532,7 +2568,7 @@ func TestProcessIssues_ComposeDownCalledAfterRunFailure(t *testing.T) {
 	captureStdout(t, func() {
 		// The run may return nil even on agent failures (failing is a valid
 		// outcome, not a processIssues error).
-		_ = processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		_ = processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1, Integration: true}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 	})
 
 	if !hasComposeDown(composeCalls) {
@@ -2546,7 +2582,7 @@ func TestProcessIssues_ComposeDownCalledAfterRunFailure(t *testing.T) {
 func TestProcessIssues_ComposeDownCalledAfterContextCancellation(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2571,7 +2607,7 @@ func TestProcessIssues_ComposeDownCalledAfterContextCancellation(t *testing.T) {
 	cancel()
 
 	captureStdout(t, func() {
-		_ = processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		_ = processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1, Integration: true}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 	})
 
 	if !hasComposeDown(composeCalls) {
@@ -2585,7 +2621,7 @@ func TestProcessIssues_ComposeDownCalledAfterContextCancellation(t *testing.T) {
 func TestProcessIssues_ComposeDownFailureLogsWarning(t *testing.T) {
 	allIssues := []github.Issue{{Number: 1, Title: "task"}}
 
-	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+	setupProcessMocks(t, func() []int { return nil }, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 		return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 101}
 	})
 
@@ -2613,7 +2649,7 @@ func TestProcessIssues_ComposeDownFailureLogsWarning(t *testing.T) {
 
 	var runErr error
 	captureStdout(t, func() {
-		runErr = processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, logger, progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
+		runErr = processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1, Integration: true}, logger, progress.NewTextReporter(os.Stdout), nil, false, "", "test-milestone", nil)
 	})
 
 	// The run must still succeed despite the compose down failure.
@@ -2739,7 +2775,7 @@ func TestRefreshAndCategorize_MergedPRUnblocksDependent(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // setupMergeCoordinatorMock stubs mergeCoordinateFn and restores it at cleanup.
-func setupMergeCoordinatorMock(t *testing.T, fn func(ctx context.Context, issue github.Issue, prNum int, conflictInfo string, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) (*agent.Result, error)) {
+func setupMergeCoordinatorMock(t *testing.T, fn func(ctx context.Context, issue github.Issue, prNum int, conflictInfo string, integration bool, cfg *config.Config, prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger) (*agent.Result, error)) {
 	t.Helper()
 	orig := mergeCoordinateFn
 	t.Cleanup(func() { mergeCoordinateFn = orig })
@@ -2758,7 +2794,7 @@ func TestHandleRollupPR_CleanMerge(t *testing.T) {
 	merged := setupHandleRollupPRMocks(t)
 
 	var mcCalls int
-	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ bool, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
 		mcCalls++
 		return &agent.Result{}, nil
 	})
@@ -2767,7 +2803,7 @@ func TestHandleRollupPR_CleanMerge(t *testing.T) {
 	})
 
 	var verifyCalls int
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		verifyCalls++
 		return true, nil
 	})
@@ -2777,7 +2813,7 @@ func TestHandleRollupPR_CleanMerge(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, prURL, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, prURL, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
@@ -2802,7 +2838,7 @@ func TestHandleRollupPR_ConflictResolved(t *testing.T) {
 	merged := setupHandleRollupPRMocks(t)
 
 	var mcCalls int
-	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ bool, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
 		mcCalls++
 		return &agent.Result{}, nil
 	})
@@ -2817,7 +2853,7 @@ func TestHandleRollupPR_ConflictResolved(t *testing.T) {
 	})
 
 	var verifyCalls int
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		verifyCalls++
 		return true, nil
 	})
@@ -2827,7 +2863,7 @@ func TestHandleRollupPR_ConflictResolved(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
@@ -2851,7 +2887,7 @@ func TestHandleRollupPR_ConflictUnresolvable(t *testing.T) {
 	merged := setupHandleRollupPRMocks(t)
 
 	var mcCalls int
-	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ bool, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
 		mcCalls++
 		return &agent.Result{}, nil
 	})
@@ -2861,7 +2897,7 @@ func TestHandleRollupPR_ConflictUnresolvable(t *testing.T) {
 	})
 
 	var verifyCalls int
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		verifyCalls++
 		return true, nil
 	})
@@ -2871,7 +2907,7 @@ func TestHandleRollupPR_ConflictUnresolvable(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
@@ -2895,7 +2931,7 @@ func TestHandleRollupPR_ConflictUnresolvable(t *testing.T) {
 func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 	merged := setupHandleRollupPRMocks(t)
 
-	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
+	setupMergeCoordinatorMock(t, func(_ context.Context, _ github.Issue, _ int, _ string, _ bool, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger) (*agent.Result, error) {
 		return &agent.Result{}, nil
 	})
 
@@ -2909,7 +2945,7 @@ func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 	})
 
 	var verifyCalls int
-	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error) (bool, error) {
+	setupRollupVerifyMock(t, func(_ context.Context, _ int, _ string, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ func(rundata.VerifyStepResult) error, _ bool) (bool, error) {
 		verifyCalls++
 		return false, nil // verify fails after conflict resolution
 	})
@@ -2919,7 +2955,7 @@ func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 	cfg.MaxRebaseAttempts = 2
 	reporter := &fakeReporter{}
 
-	prNum, _, err := HandleRollupPR(context.Background(), cfg, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
+	prNum, _, err := HandleRollupPR(context.Background(), cfg, config.RunMode{Workers: 1}, nil, "main", testLogger(t), reporter, nil, &agent.Prompts{}, nil)
 	if err != nil {
 		t.Fatalf("HandleRollupPR() error = %v", err)
 	}
@@ -2941,47 +2977,41 @@ func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 }
 
 // TestProcessIssues_HoldAndResume verifies that when an issue returns
-// UsageLimited=true with a near-future resetsAt, the orchestrator:
+// UsageLimited=true with a near-past resetsAt (so the hold sleeps ~0s),
+// the orchestrator:
 //  1. calls reporter.RateLimited / reporter.RateLimitCleared
 //  2. retries the issue (it is not counted as seen)
-//  3. the second attempt succeeds
+//  3. the second attempt succeeds and is reported as implemented
 func TestProcessIssues_HoldAndResume(t *testing.T) {
 	allIssues := []github.Issue{
 		{Number: 10, Title: "rate limited issue"},
 	}
 
-	callCount := 0
-	resetsAt := time.Now().Add(50 * time.Millisecond) // tiny hold so test is fast
+	resetsAt := time.Now().Add(-1 * time.Minute)
 
+	var callCount int32
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
-			callCount++
-			if callCount == 1 {
-				// First call: signal usage limit.
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			n := atomic.AddInt32(&callCount, 1)
+			if n == 1 {
 				return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
 			}
-			// Second call: succeed.
-			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "implemented", PRNumber: 0}
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: agent.StatusImplemented, PRNumber: 100}
 		})
 
 	reporter := &fakeReporter{}
-	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	if callCount != 2 {
-		t.Errorf("expected 2 processIssueFn calls (1 rate-limited + 1 retry), got %d", callCount)
-	}
 	if len(reporter.rateLimitedAt) != 1 {
 		t.Errorf("expected 1 RateLimited call, got %d", len(reporter.rateLimitedAt))
 	}
 	if reporter.rateLimitClears != 1 {
 		t.Errorf("expected 1 RateLimitCleared call, got %d", reporter.rateLimitClears)
 	}
-	// The issue should ultimately complete as implemented, not failed.
 	if len(reporter.issueCompleted) != 1 {
 		t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
 	}
@@ -2990,35 +3020,32 @@ func TestProcessIssues_HoldAndResume(t *testing.T) {
 	}
 }
 
-// TestProcessIssues_CancelDuringHold verifies that context cancellation during
-// the hold returns promptly without retrying.
-func TestProcessIssues_CancelDuringHold(t *testing.T) {
+// TestProcessIssues_CancelDuringWave verifies that context cancellation during
+// a wave stops dispatch promptly.
+func TestProcessIssues_CancelDuringWave(t *testing.T) {
 	allIssues := []github.Issue{
-		{Number: 11, Title: "cancel during hold"},
+		{Number: 11, Title: "cancel during wave"},
 	}
-
-	resetsAt := time.Now().Add(10 * time.Second) // long hold — context will cancel first
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
-			// Cancel the context so the hold select fires ctx.Done.
+		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			cancel()
-			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("cancelled")}
 		})
 
 	reporter := &fakeReporter{}
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(ctx, allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(ctx, allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	// Should not have called RateLimitCleared because context was cancelled.
-	if reporter.rateLimitClears != 0 {
-		t.Errorf("expected 0 RateLimitCleared calls on cancel, got %d", reporter.rateLimitClears)
+	// Should complete without hanging.
+	if len(reporter.issueCompleted) != 1 {
+		t.Errorf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
 	}
 }
 
@@ -3030,7 +3057,7 @@ func TestProcessIssues_NoHoldOnNormalFailure(t *testing.T) {
 	}
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed", Err: fmt.Errorf("something broke")}
 		})
 
@@ -3038,7 +3065,7 @@ func TestProcessIssues_NoHoldOnNormalFailure(t *testing.T) {
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
@@ -3053,19 +3080,17 @@ func TestProcessIssues_NoHoldOnNormalFailure(t *testing.T) {
 	}
 }
 
-// TestProcessIssues_MaxHoldExceeded verifies that a usage-limited outcome with
-// an unknown or excessively far resetsAt is treated as a failure rather than
-// entering an indefinitely long hold.
-func TestProcessIssues_MaxHoldExceeded(t *testing.T) {
+// TestProcessIssues_UsageLimitedFarFuture verifies that a usage-limited outcome
+// with a far-future resetsAt is treated as a failure.
+func TestProcessIssues_UsageLimitedFarFuture(t *testing.T) {
 	allIssues := []github.Issue{
 		{Number: 13, Title: "max hold exceeded"},
 	}
 
-	// resetsAt more than 6 hours away.
 	farFuture := time.Now().Add(7 * time.Hour)
 
 	setupProcessMocks(t, func() []int { return nil },
-		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
 			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: farFuture}
 		})
 
@@ -3073,15 +3098,988 @@ func TestProcessIssues_MaxHoldExceeded(t *testing.T) {
 	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	// Should be counted as failed, not retried.
-	if len(reporter.rateLimitedAt) != 0 {
-		t.Errorf("expected 0 RateLimited calls when max hold exceeded, got %d", len(reporter.rateLimitedAt))
-	}
 	if len(reporter.issueCompleted) != 1 || reporter.issueCompleted[0].status != "failed" {
-		t.Errorf("expected 1 failed completion for max-hold-exceeded, got %v", reporter.issueCompleted)
+		t.Errorf("expected 1 failed completion for usage-limited, got %v", reporter.issueCompleted)
+	}
+}
+
+// TestWaveDispatch_SerialMode verifies that max_workers=1 processes issues
+// one at a time, producing results identical to the old serial loop.
+func TestWaveDispatch_SerialMode(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+		{Number: 3, Title: "third"},
+	}
+
+	var mu sync.Mutex
+	var current, peak int
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			mu.Lock()
+			current++
+			if current > peak {
+				peak = current
+			}
+			mu.Unlock()
+
+			time.Sleep(10 * time.Millisecond)
+
+			mu.Lock()
+			current--
+			mu.Unlock()
+
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 1
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	mu.Lock()
+	p := peak
+	mu.Unlock()
+
+	if p != 1 {
+		t.Errorf("peak concurrency = %d, want 1 for serial mode", p)
+	}
+}
+
+// TestWaveDispatch_ConcurrentExecution verifies that multiple workers run
+// simultaneously when max_workers > 1.
+func TestWaveDispatch_ConcurrentExecution(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "a"},
+		{Number: 2, Title: "b"},
+		{Number: 3, Title: "c"},
+	}
+
+	var mu sync.Mutex
+	var current, peak int
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			mu.Lock()
+			current++
+			if current > peak {
+				peak = current
+			}
+			mu.Unlock()
+
+			time.Sleep(50 * time.Millisecond)
+
+			mu.Lock()
+			current--
+			mu.Unlock()
+
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 3
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 3}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	mu.Lock()
+	p := peak
+	mu.Unlock()
+
+	if p < 2 {
+		t.Errorf("peak concurrency = %d, want >= 2 for concurrent mode", p)
+	}
+}
+
+// TestWaveDispatch_WorkerCapRespected verifies that at most max_workers
+// goroutines run simultaneously even when the batch is larger.
+func TestWaveDispatch_WorkerCapRespected(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1}, {Number: 2}, {Number: 3}, {Number: 4}, {Number: 5},
+	}
+
+	var mu sync.Mutex
+	var current, peak int
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			mu.Lock()
+			current++
+			if current > peak {
+				peak = current
+			}
+			mu.Unlock()
+
+			time.Sleep(20 * time.Millisecond)
+
+			mu.Lock()
+			current--
+			mu.Unlock()
+
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 2
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 2}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	mu.Lock()
+	p := peak
+	mu.Unlock()
+
+	if p > 2 {
+		t.Errorf("peak concurrency = %d, want <= 2", p)
+	}
+}
+
+// TestWaveDispatch_ContextCancellation verifies that cancelling the context
+// mid-wave causes all workers to exit and results to be collected without hanging.
+func TestWaveDispatch_ContextCancellation(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1}, {Number: 2}, {Number: 3},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var once sync.Once
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(innerCtx context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			// Cancel the context once any worker starts.
+			once.Do(func() { cancel() })
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 3
+
+	done := make(chan struct{})
+	go func() {
+		captureStdout(t, func() {
+			// best-effort: ignore error since context is cancelled
+			_ = processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 3}, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil)
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Completed without hanging.
+	case <-time.After(10 * time.Second):
+		t.Fatal("processIssues did not return after context cancellation")
+	}
+}
+
+// TestWaveDispatch_ResultCollection verifies that all worker results are
+// collected with correct issue numbers and statuses.
+func TestWaveDispatch_ResultCollection(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "impl"},
+		{Number: 2, Title: "fail"},
+		{Number: 3, Title: "review"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			switch issue.Number {
+			case 1:
+				return agent.IssueOutcome{IssueNumber: 1, Status: agent.StatusImplemented, PRNumber: 101}
+			case 2:
+				return agent.IssueOutcome{IssueNumber: 2, Status: "failed", Err: fmt.Errorf("broken")}
+			case 3:
+				return agent.IssueOutcome{IssueNumber: 3, Status: agent.StatusNeedsHumanReview, PRNumber: 103}
+			default:
+				return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+			}
+		})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 3
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 3}, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if len(reporter.issueCompleted) != 3 {
+		t.Fatalf("expected 3 IssueCompleted calls, got %d", len(reporter.issueCompleted))
+	}
+
+	// Collect statuses by issue number (order is non-deterministic).
+	statuses := make(map[int]string)
+	for _, ic := range reporter.issueCompleted {
+		statuses[ic.issueNumber] = ic.status
+	}
+
+	if statuses[1] != "implemented" {
+		t.Errorf("issue 1: got status %q, want implemented", statuses[1])
+	}
+	if statuses[2] != "failed" {
+		t.Errorf("issue 2: got status %q, want failed", statuses[2])
+	}
+	if statuses[3] != "needs-human-review" {
+		t.Errorf("issue 3: got status %q, want needs-human-review", statuses[3])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Post-wave merge serializer tests (#751)
+// ---------------------------------------------------------------------------
+
+func TestPostWave_AllSucceed(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+		{Number: 3, Title: "third"},
+	}
+
+	var mu sync.Mutex
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	if len(reporter.runFinished) == 0 {
+		t.Fatal("RunFinished not called")
+	}
+	rf := reporter.runFinished[0]
+	if rf.implemented != 3 {
+		t.Errorf("implemented = %d, want 3", rf.implemented)
+	}
+
+	// All 3 should be reported as implemented.
+	for _, ic := range reporter.issueCompleted {
+		if ic.status != "implemented" {
+			t.Errorf("issue %d: got status %q, want implemented", ic.issueNumber, ic.status)
+		}
+	}
+}
+
+func TestPostWave_MixedResults(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "succeeds"},
+		{Number: 2, Title: "fails"},
+		{Number: 3, Title: "succeeds"},
+	}
+
+	var mu sync.Mutex
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		if issue.Number == 2 {
+			return agent.IssueOutcome{
+				IssueNumber: 2,
+				Status:      agent.StatusFailed,
+				Err:         fmt.Errorf("test failure"),
+			}
+		}
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 2 {
+		t.Errorf("implemented = %d, want 2", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+}
+
+func TestPostWave_AllFail(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "fails"},
+		{Number: 2, Title: "fails"},
+		{Number: 3, Title: "fails"},
+	}
+
+	setupProcessMocks(t, func() []int {
+		return nil
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusFailed,
+			Err:         fmt.Errorf("boom"),
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 0 {
+		t.Errorf("implemented = %d, want 0", rf.implemented)
+	}
+	if rf.failed != 3 {
+		t.Errorf("failed = %d, want 3", rf.failed)
+	}
+
+	// No second wave should have been triggered.
+	if len(reporter.waveStarted) > 0 {
+		t.Errorf("expected no wave 2, got %d wave-started events", len(reporter.waveStarted))
+	}
+}
+
+func TestPostWave_MergeOrder(t *testing.T) {
+	// Issues complete from workers in arbitrary order, but reporter
+	// should see completions in ascending issue-number order.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+		{Number: 3, Title: "third"},
+	}
+
+	var mu sync.Mutex
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Verify reporter received completions in issue-number order.
+	if len(reporter.issueCompleted) < 3 {
+		t.Fatalf("expected at least 3 completions, got %d", len(reporter.issueCompleted))
+	}
+	// The first 3 completions (wave 1) should be in ascending order.
+	for i := 0; i < 3; i++ {
+		if reporter.issueCompleted[i].issueNumber != i+1 {
+			t.Errorf("completion[%d]: got issue %d, want %d",
+				i, reporter.issueCompleted[i].issueNumber, i+1)
+		}
+	}
+}
+
+func TestPostWave_BlockedByFailure(t *testing.T) {
+	// A(#1) fails, B(#2) depends on A, C(#3) is independent and succeeds.
+	// After wave 1: B should remain blocked.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "will fail"},
+		{Number: 2, Title: "depends on 1", Body: "**Blocked by**: #1"},
+		{Number: 3, Title: "independent"},
+	}
+
+	var mu sync.Mutex
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		if issue.Number == 1 {
+			return agent.IssueOutcome{
+				IssueNumber: 1,
+				Status:      agent.StatusFailed,
+				Err:         fmt.Errorf("test failure"),
+			}
+		}
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 1 {
+		t.Errorf("implemented = %d, want 1", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+	if rf.blocked != 1 {
+		t.Errorf("blocked = %d, want 1", rf.blocked)
+	}
+}
+
+func TestPostWave_RebaseBetweenMerges(t *testing.T) {
+	// Verify PullAfterMerge is called once after all merges in the wave.
+	allIssues := []github.Issue{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+	}
+
+	var closedMu sync.Mutex
+	closedNumbers := []int{}
+	setupProcessMocks(t, func() []int {
+		closedMu.Lock()
+		defer closedMu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		closedMu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		closedMu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	// Track PullAfterMerge calls via CommandRunner.
+	var pullCalls [][]string
+	var pullMu sync.Mutex
+	origCmdRunner := CommandRunner
+	t.Cleanup(func() { CommandRunner = origCmdRunner })
+	CommandRunner = func(name string, args ...string) ([]byte, error) {
+		pullMu.Lock()
+		pullCalls = append(pullCalls, append([]string{name}, args...))
+		pullMu.Unlock()
+		return []byte("ok"), nil
+	}
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	// Should have exactly 1 pull call (single pull after all merges in the wave).
+	pullCount := 0
+	for _, call := range pullCalls {
+		if len(call) >= 3 && call[0] == "git" && call[1] == "pull" {
+			pullCount++
+		}
+	}
+	if pullCount != 1 {
+		t.Errorf("expected 1 PullAfterMerge call, got %d (calls: %v)", pullCount, pullCalls)
+	}
+}
+
+// TestWaveLoop_SingleRateLimit verifies that when one issue in a wave hits
+// a rate limit while others succeed, the successes merge and the rate-limited
+// issue is retried in the next wave.
+func TestWaveLoop_SingleRateLimit(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "ok-1"},
+		{Number: 2, Title: "ok-2"},
+		{Number: 3, Title: "rate-limited"},
+	}
+
+	var mu sync.Mutex
+	callCounts := map[int]int{}
+	closedNumbers := []int{}
+
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		mu.Lock()
+		callCounts[issue.Number]++
+		call := callCounts[issue.Number]
+		mu.Unlock()
+
+		if issue.Number == 3 && call == 1 {
+			return agent.IssueOutcome{
+				IssueNumber:  3,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(-1 * time.Minute),
+			}
+		}
+
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 3 {
+		t.Errorf("implemented = %d, want 3", rf.implemented)
+	}
+	if rf.failed != 0 {
+		t.Errorf("failed = %d, want 0", rf.failed)
+	}
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 1 {
+		t.Errorf("rateLimitClears = %d, want 1", reporter.rateLimitClears)
+	}
+
+	mu.Lock()
+	if callCounts[3] != 2 {
+		t.Errorf("issue 3 call count = %d, want 2 (initial + retry)", callCounts[3])
+	}
+	mu.Unlock()
+}
+
+// TestWaveLoop_AllRateLimited verifies that when all issues in a wave hit
+// rate limits, none merge, and all are retried after the hold.
+func TestWaveLoop_AllRateLimited(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "a"},
+		{Number: 2, Title: "b"},
+		{Number: 3, Title: "c"},
+	}
+
+	var mu sync.Mutex
+	callCounts := map[int]int{}
+	closedNumbers := []int{}
+
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		mu.Lock()
+		callCounts[issue.Number]++
+		call := callCounts[issue.Number]
+		mu.Unlock()
+
+		if call == 1 {
+			return agent.IssueOutcome{
+				IssueNumber:  issue.Number,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(-1 * time.Minute),
+			}
+		}
+
+		mu.Lock()
+		closedNumbers = append(closedNumbers, issue.Number)
+		mu.Unlock()
+		return agent.IssueOutcome{
+			IssueNumber: issue.Number,
+			Status:      agent.StatusImplemented,
+			PRNumber:    100 + issue.Number,
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 3 {
+		t.Errorf("implemented = %d, want 3", rf.implemented)
+	}
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 1 {
+		t.Errorf("rateLimitClears = %d, want 1", reporter.rateLimitClears)
+	}
+
+	mu.Lock()
+	for n := 1; n <= 3; n++ {
+		if callCounts[n] != 2 {
+			t.Errorf("issue %d call count = %d, want 2", n, callCounts[n])
+		}
+	}
+	mu.Unlock()
+}
+
+// TestWaveLoop_MixedRateLimitAndFailure verifies correct handling when a wave
+// contains a mix of rate-limited, failed, and succeeded issues.
+func TestWaveLoop_MixedRateLimitAndFailure(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "rate-limited"},
+		{Number: 2, Title: "fails"},
+		{Number: 3, Title: "succeeds"},
+	}
+
+	var mu sync.Mutex
+	callCounts := map[int]int{}
+	closedNumbers := []int{}
+
+	setupProcessMocks(t, func() []int {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]int(nil), closedNumbers...)
+	}, func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+		mu.Lock()
+		callCounts[issue.Number]++
+		call := callCounts[issue.Number]
+		mu.Unlock()
+
+		switch issue.Number {
+		case 1:
+			if call == 1 {
+				return agent.IssueOutcome{
+					IssueNumber:  1,
+					UsageLimited: true,
+					ResetsAt:     time.Now().Add(-1 * time.Minute),
+				}
+			}
+			mu.Lock()
+			closedNumbers = append(closedNumbers, issue.Number)
+			mu.Unlock()
+			return agent.IssueOutcome{
+				IssueNumber: 1,
+				Status:      agent.StatusImplemented,
+				PRNumber:    101,
+			}
+		case 2:
+			return agent.IssueOutcome{
+				IssueNumber: 2,
+				Status:      agent.StatusFailed,
+				Err:         fmt.Errorf("test failure"),
+			}
+		default:
+			mu.Lock()
+			closedNumbers = append(closedNumbers, issue.Number)
+			mu.Unlock()
+			return agent.IssueOutcome{
+				IssueNumber: 3,
+				Status:      agent.StatusImplemented,
+				PRNumber:    103,
+			}
+		}
+	})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 2 {
+		t.Errorf("implemented = %d, want 2", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+}
+
+// TestWaveLoop_MaxHoldExceeded verifies that a rate-limited issue whose reset
+// time exceeds maxHold is failed immediately without sleeping.
+func TestWaveLoop_MaxHoldExceeded(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "far-future-reset"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			return agent.IssueOutcome{
+				IssueNumber:  issue.Number,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(7 * time.Hour),
+			}
+		})
+
+	reporter := &fakeReporter{}
+	cfg := testConfig()
+	err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v", err)
+	}
+
+	rf := reporter.runFinished[0]
+	if rf.implemented != 0 {
+		t.Errorf("implemented = %d, want 0", rf.implemented)
+	}
+	if rf.failed != 1 {
+		t.Errorf("failed = %d, want 1", rf.failed)
+	}
+	// No hold should have been entered.
+	if len(reporter.rateLimitedAt) != 0 {
+		t.Errorf("rateLimitedAt calls = %d, want 0 (no hold for max exceeded)", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 0 {
+		t.Errorf("rateLimitClears = %d, want 0", reporter.rateLimitClears)
+	}
+}
+
+// TestWaveLoop_ContextCancelledDuringHold verifies that cancelling the context
+// during a rate-limit hold exits cleanly without error.
+func TestWaveLoop_ContextCancelledDuringHold(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "rate-limited"},
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			return agent.IssueOutcome{
+				IssueNumber:  issue.Number,
+				UsageLimited: true,
+				ResetsAt:     time.Now().Add(1 * time.Minute),
+			}
+		})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Cancel the context synchronously from within RateLimited, so the hold
+	// is guaranteed to have been entered (and reported) before cancellation.
+	reporter := &cancelOnRateLimitReporter{fakeReporter: &fakeReporter{}, cancel: cancel}
+	cfg := testConfig()
+	err := processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, config.RunMode{Workers: 1}, testLogger(t), reporter, nil, false, "", "m", nil)
+	if err != nil {
+		t.Fatalf("processIssues() error = %v, want nil", err)
+	}
+
+	// RateLimited should have been called, but not RateLimitCleared.
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("rateLimitedAt calls = %d, want 1", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 0 {
+		t.Errorf("rateLimitClears = %d, want 0 (context cancelled before clear)", reporter.rateLimitClears)
+	}
+}
+
+// TestRunMode_ParallelNoFlags verifies that when no flags are set and
+// cfg.Concurrency.MaxWorkers=4, the semaphore cap is 4 and compose is not
+// started even if cfg.DockerCompose is configured.
+func TestRunMode_ParallelNoFlags(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "a"},
+		{Number: 2, Title: "b"},
+	}
+
+	var composeStarted bool
+	origSandboxRunner := sandbox.CommandRunner
+	t.Cleanup(func() { sandbox.CommandRunner = origSandboxRunner })
+	sandbox.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if name == "docker" && len(args) > 0 && args[0] == "compose" {
+			composeStarted = true
+		}
+		return []byte("ok"), nil
+	}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 4
+	cfg.DockerCompose = &config.DockerCompose{File: "docker-compose.test.yml"}
+	runMode := config.RunMode{Workers: 4}
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, runMode, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if composeStarted {
+		t.Error("compose should not start when runMode.Integration is false")
+	}
+}
+
+// TestRunMode_IntegrationFlag verifies that --integration activates compose
+// and forces single-worker execution.
+func TestRunMode_IntegrationFlag(t *testing.T) {
+	allIssues := []github.Issue{{Number: 1, Title: "a"}}
+
+	var composeUpCalled bool
+	origSandboxRunner := sandbox.CommandRunner
+	t.Cleanup(func() { sandbox.CommandRunner = origSandboxRunner })
+	sandbox.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		if name == "docker" && len(args) > 0 && args[0] == "compose" {
+			for _, a := range args {
+				if a == "up" {
+					composeUpCalled = true
+					break
+				}
+			}
+		}
+		return []byte("ok"), nil
+	}
+
+	var agentIntegration bool
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, integration bool, _ bool) agent.IssueOutcome {
+			agentIntegration = integration
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.DockerCompose = &config.DockerCompose{File: "docker-compose.test.yml"}
+	runMode := config.RunMode{Workers: 1, Integration: true}
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, runMode, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if !composeUpCalled {
+		t.Error("compose up should be called when runMode.Integration is true")
+	}
+	if !agentIntegration {
+		t.Error("agent should receive integration=true from runMode")
+	}
+}
+
+// TestRunMode_ExplicitWorkers verifies that runMode.Workers controls the
+// semaphore cap independently of cfg.Concurrency.MaxWorkers.
+func TestRunMode_ExplicitWorkers(t *testing.T) {
+	allIssues := []github.Issue{
+		{Number: 1, Title: "a"},
+		{Number: 2, Title: "b"},
+		{Number: 3, Title: "c"},
+		{Number: 4, Title: "d"},
+	}
+
+	var mu sync.Mutex
+	var peak, current int
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			mu.Lock()
+			current++
+			if current > peak {
+				peak = current
+			}
+			mu.Unlock()
+			time.Sleep(30 * time.Millisecond)
+			mu.Lock()
+			current--
+			mu.Unlock()
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 4
+	runMode := config.RunMode{Workers: 2}
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, runMode, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	mu.Lock()
+	p := peak
+	mu.Unlock()
+
+	if p > 2 {
+		t.Errorf("peak concurrency = %d, want <= 2 (runMode.Workers=2)", p)
+	}
+}
+
+// TestRunMode_ConfigNotMutated verifies that cfg is not modified after a run
+// that uses runMode to override workers and compose behavior.
+func TestRunMode_ConfigNotMutated(t *testing.T) {
+	allIssues := []github.Issue{{Number: 1, Title: "a"}}
+
+	setupProcessMocks(t, func() []int { return nil },
+		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter, _ bool, _ bool) agent.IssueOutcome {
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: "failed"}
+		})
+
+	cfg := testConfig()
+	cfg.Concurrency.MaxWorkers = 4
+	cfg.DockerCompose = &config.DockerCompose{File: "docker-compose.test.yml"}
+	runMode := config.RunMode{Workers: 2}
+
+	origMaxWorkers := cfg.Concurrency.MaxWorkers
+	origCompose := cfg.DockerCompose
+
+	captureStdout(t, func() {
+		if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, runMode, testLogger(t), progress.NewTextReporter(os.Stdout), nil, false, "", "m1", nil); err != nil {
+			t.Fatalf("processIssues() error = %v", err)
+		}
+	})
+
+	if cfg.Concurrency.MaxWorkers != origMaxWorkers {
+		t.Errorf("cfg.Concurrency.MaxWorkers mutated: got %d, want %d", cfg.Concurrency.MaxWorkers, origMaxWorkers)
+	}
+	if cfg.DockerCompose != origCompose {
+		t.Error("cfg.DockerCompose was mutated")
 	}
 }

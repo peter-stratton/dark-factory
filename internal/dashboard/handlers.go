@@ -55,14 +55,23 @@ type RunView struct {
 
 // RunDetailData is the data passed to the run-detail template.
 type RunDetailData struct {
-	Owner          string
-	Repo           string
-	Timestamp      string
-	Meta           rundata.RunMeta
-	Issues         []IssueRowView
-	AwaitingReview []IssueRowView // issues with ready-to-merge status
-	RunURL         string         // canonical URL for this run detail page
-	HoldResetsAt   *time.Time     // non-nil when the run is paused by a Claude usage limit
+	Owner             string
+	Repo              string
+	Timestamp         string
+	Meta              rundata.RunMeta
+	Issues            []IssueRowView
+	AwaitingReview    []IssueRowView // issues with ready-to-merge status
+	RunURL            string         // canonical URL for this run detail page
+	HoldResetsAt      *time.Time     // non-nil when the run is paused by a Claude usage limit
+	Waves             []WaveView     // non-nil when concurrent waves exist
+	ConcurrencySaved  string         // e.g. "4m0s"; empty for serial runs
+}
+
+// WaveView is the view model for one wave in the run detail.
+type WaveView struct {
+	Wave     int
+	Issues   []IssueRowView
+	Duration string // formatted wave wall-clock duration
 }
 
 // IssueRowView is the view model for one issue row in the run detail table.
@@ -382,6 +391,26 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		if row.AwaitingHuman {
 			data.AwaitingReview = append(data.AwaitingReview, row)
 		}
+	}
+
+	if len(detail.Waves) > 1 {
+		rowByIssue := make(map[int]IssueRowView, len(data.Issues))
+		for _, row := range data.Issues {
+			rowByIssue[row.IssueNumber] = row
+		}
+		for _, w := range detail.Waves {
+			wv := WaveView{
+				Wave:     w.Wave,
+				Duration: formatDuration(w.FinishedAt.Sub(w.StartedAt).Seconds()),
+			}
+			for _, n := range w.IssueNumbers {
+				if row, ok := rowByIssue[n]; ok {
+					wv.Issues = append(wv.Issues, row)
+				}
+			}
+			data.Waves = append(data.Waves, wv)
+		}
+		data.ConcurrencySaved = computeConcurrencySaved(detail)
 	}
 
 	var buf bytes.Buffer
@@ -780,6 +809,44 @@ func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
 		CheckSummaries: checkSummaries,
 		TraceID:        vr.TraceID,
 	}
+}
+
+// computeConcurrencySaved calculates wall-clock time saved by running issues
+// concurrently. Returns a formatted duration string, or empty if no savings.
+//
+// Idle gaps between waves (most commonly rate-limit holds, but also post-wave
+// housekeeping) are subtracted from wall-clock time so they don't count
+// against concurrency savings — a run that parallelized four issues and then
+// slept 30 minutes on a rate limit should still show the parallelism win.
+func computeConcurrencySaved(detail *rundata.RunDetail) string {
+	if detail.FinishedAt == nil {
+		return ""
+	}
+	wallSecs := detail.FinishedAt.Sub(detail.StartedAt).Seconds()
+	for i := 1; i < len(detail.Waves); i++ {
+		gap := detail.Waves[i].StartedAt.Sub(detail.Waves[i-1].FinishedAt).Seconds()
+		if gap > 0 {
+			wallSecs -= gap
+		}
+	}
+	var serialSecs float64
+	for _, issue := range detail.Issues {
+		serialSecs += issue.Recon.DurationSeconds +
+			issue.SpecGenerator.DurationSeconds +
+			issue.Planner.DurationSeconds +
+			issue.Implement.DurationSeconds +
+			issue.QualityReview.DurationSeconds +
+			issue.FunctionalReview.DurationSeconds +
+			issue.MergeCoordinator.DurationSeconds
+		for _, retry := range issue.Retries {
+			serialSecs += retry.Retry.DurationSeconds + retry.QualityReview.DurationSeconds + retry.FunctionalReview.DurationSeconds
+		}
+	}
+	saved := serialSecs - wallSecs
+	if saved <= 0 {
+		return ""
+	}
+	return formatDuration(saved)
 }
 
 // formatCost formats a USD cost as a human-readable string.

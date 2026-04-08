@@ -12,9 +12,9 @@ import (
 // MergeCoordinate runs the merge coordinator agent to resolve merge conflicts
 // for a pull request. It injects conflict details into the prompt and delegates
 // to the standard Run() pipeline.
-func MergeCoordinate(ctx context.Context, issue github.Issue, prNum int, conflictInfo string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+func MergeCoordinate(ctx context.Context, issue github.Issue, prNum int, conflictInfo string, integration bool, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
-	data := newPromptData(issue, cfg, slug)
+	data := newPromptData(issue, cfg, slug, integration)
 	data.PRNumber = prNum
 	data.ConflictInfo = conflictInfo
 
@@ -23,7 +23,7 @@ func MergeCoordinate(ctx context.Context, issue github.Issue, prNum int, conflic
 		return nil, fmt.Errorf("rendering merge coordinator prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "merge_coordinator")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "merge_coordinator", integration)
 	if err != nil {
 		return nil, err
 	}

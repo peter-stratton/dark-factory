@@ -20,7 +20,7 @@ func TestGenerateSpec_RendersPromptAndCallsRun(t *testing.T) {
 		SpecGenerator: "Generate spec for #{{.IssueNumber}} {{.IssueTitle}} repo={{.Repo}} slug={{.Slug}}",
 	}
 
-	result, err := GenerateSpec(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
+	result, err := GenerateSpec(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("GenerateSpec() error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestGenerateSpec_SetsSpecGeneratorRole(t *testing.T) {
 		SpecGenerator: "Generate spec for #{{.IssueNumber}}",
 	}
 
-	_, err := GenerateSpec(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
+	_, err := GenerateSpec(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("GenerateSpec() error = %v", err)
 	}
@@ -68,7 +68,7 @@ func TestGenerateSpec_InvalidTimeout(t *testing.T) {
 		SpecGenerator: "test {{.IssueNumber}}",
 	}
 
-	_, err := GenerateSpec(context.Background(), testIssue(), cfg, prompts, nil, testLogger(t))
+	_, err := GenerateSpec(context.Background(), testIssue(), false, cfg, prompts, nil, testLogger(t))
 	if err == nil {
 		t.Fatal("expected error for invalid timeout")
 	}

@@ -17,9 +17,9 @@ import (
 // It renders the implementer prompt and invokes Run.
 // reconBrief, if non-empty, is injected into the prompt as recon agent context.
 // plannerBrief, if non-empty, is injected into the prompt as a structured plan.
-func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, reconBrief string, plannerBrief string) (*Result, error) {
+func Implement(ctx context.Context, issue github.Issue, integration bool, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, reconBrief string, plannerBrief string) (*Result, error) {
 	slug := Slugify(issue.Title)
-	data := newPromptData(issue, cfg, slug)
+	data := newPromptData(issue, cfg, slug, integration)
 	data.ReconBrief = reconBrief
 	data.PlannerBrief = plannerBrief
 
@@ -35,7 +35,7 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 		return nil, fmt.Errorf("rendering implementer prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer", integration)
 	if err != nil {
 		return nil, err
 	}
@@ -60,9 +60,9 @@ func Implement(ctx context.Context, issue github.Issue, cfg *config.Config, prom
 // is NOT set even when prevSessionID is provided, so the agent starts fresh.
 // The handoff context is rendered into the prompt so the new agent understands
 // what was tried and what failed without inheriting a degraded context window.
-func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID string, reviewFeedback string, handoffContext string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID string, reviewFeedback string, handoffContext string, integration bool, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
-	data := newPromptData(issue, cfg, slug)
+	data := newPromptData(issue, cfg, slug, integration)
 	data.PRNumber = prNumber
 	data.ReviewFeedback = reviewFeedback
 	data.HandoffContext = handoffContext
@@ -72,7 +72,7 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID 
 		return nil, fmt.Errorf("rendering implementer_retry prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer_retry")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer_retry", integration)
 	if err != nil {
 		return nil, err
 	}
@@ -89,9 +89,9 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID 
 // verify_fix prompt with the provided verifyErrors string and invokes Run
 // with role "implementer_retry". prevSessionID, if non-empty, is forwarded
 // as GODARK_SESSION_ID so the agent can resume its previous session context.
-func VerifyFix(ctx context.Context, issue github.Issue, prNumber int, verifyErrors string, prevSessionID string, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
+func VerifyFix(ctx context.Context, issue github.Issue, prNumber int, verifyErrors string, prevSessionID string, integration bool, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger) (*Result, error) {
 	slug := Slugify(issue.Title)
-	data := newPromptData(issue, cfg, slug)
+	data := newPromptData(issue, cfg, slug, integration)
 	data.PRNumber = prNumber
 	data.VerifyErrors = verifyErrors
 
@@ -100,7 +100,7 @@ func VerifyFix(ctx context.Context, issue github.Issue, prNumber int, verifyErro
 		return nil, fmt.Errorf("rendering verify_fix prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer_retry")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "implementer_retry", integration)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func BranchName(issueNumber int, slug string) string {
 	return fmt.Sprintf("%d-%s", issueNumber, slug)
 }
 
-func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptData {
+func newPromptData(issue github.Issue, cfg *config.Config, slug string, integration bool) PromptData {
 	protectedPaths := strings.Join(cfg.ProtectedPaths, ", ")
 	return PromptData{
 		IssueNumber:            issue.Number,
@@ -138,10 +138,19 @@ func newPromptData(issue github.Issue, cfg *config.Config, slug string) PromptDa
 		ArchitectureJSON:       readFileOrEmpty(cfg.ArchitectureJSON),
 		ConventionsDocContent:  readFileOrEmpty(cfg.ConventionsDoc),
 		ModuleContext:          buildModuleContext(cfg.Modules),
-		ComposeServices:        buildComposeServices(cfg.DockerCompose, cfg.HostServices),
+		ComposeServices:        composeServicesForIntegration(integration, cfg),
 		BaseBranch:             cfg.BaseBranch,
 		SharedRules:            buildSharedRules(protectedPaths, cfg.ScenarioDir),
 	}
+}
+
+// composeServicesForIntegration returns the compose services string when
+// integration is true, or empty string when false.
+func composeServicesForIntegration(integration bool, cfg *config.Config) string {
+	if !integration {
+		return ""
+	}
+	return buildComposeServices(cfg.DockerCompose, cfg.HostServices)
 }
 
 // buildSharedRules assembles the universally shared subset of CRITICAL RULES
@@ -243,7 +252,7 @@ func readFileOrEmpty(path string) string {
 // newRunOpts builds a RunOpts from a rendered prompt, config, and role. This
 // consolidates the repeated timeout-parsing + opts-construction that every
 // agent function needs.
-func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, role string) (RunOpts, error) {
+func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, role string, integration bool) (RunOpts, error) {
 	timeout, err := parseTimeout(cfg.AgentTimeout)
 	if err != nil {
 		return RunOpts{}, fmt.Errorf("parsing agent_timeout: %w", err)
@@ -274,7 +283,7 @@ func newRunOpts(rendered string, cfg *config.Config, authEnv map[string]string, 
 		WorkDir:           "/workspace",
 		Timeout:           timeout,
 		Model:             model,
-		MountDockerSocket: cfg.DockerCompose != nil,
+		MountDockerSocket: integration,
 		JudgeConfig:       &jc,
 	}, nil
 }

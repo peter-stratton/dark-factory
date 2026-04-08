@@ -570,7 +570,7 @@ func TestSandboxCommandRunner_CheckFailsWhenExitNonZero(t *testing.T) {
 // immediately when no verify commands are configured.
 func TestRunRollupVerify_NoChecks(t *testing.T) {
 	cfg := &config.Config{} // no build/lint/test commands
-	passed, err := RunRollupVerify(context.Background(), 999, "feature-branch", cfg, &Prompts{}, nil, slog.Default(), nil)
+	passed, err := RunRollupVerify(context.Background(), 999, "feature-branch", cfg, &Prompts{}, nil, slog.Default(), nil, false)
 	if err != nil {
 		t.Fatalf("RunRollupVerify() error = %v", err)
 	}
@@ -599,7 +599,7 @@ func TestRunRollupVerify_AllPass(t *testing.T) {
 		return nil
 	}
 
-	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult)
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult, false)
 	if err != nil {
 		t.Fatalf("RunRollupVerify() error = %v", err)
 	}
@@ -631,7 +631,7 @@ func TestRunRollupVerify_FailNoFixConfigured(t *testing.T) {
 		Docker:       config.Docker{Image: "test:latest"},
 	}
 
-	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{VerifyFix: ""}, nil, slog.Default(), nil)
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{VerifyFix: ""}, nil, slog.Default(), nil, false)
 	if err != nil {
 		t.Fatalf("RunRollupVerify() error = %v", err)
 	}
@@ -660,7 +660,7 @@ func TestRunRollupVerify_WriteResultCalledOnFailure(t *testing.T) {
 		return nil
 	}
 
-	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult)
+	passed, err := RunRollupVerify(context.Background(), 999, "main", cfg, &Prompts{}, nil, slog.Default(), writeResult, false)
 	if err != nil {
 		t.Fatalf("RunRollupVerify() error = %v", err)
 	}
@@ -696,7 +696,7 @@ func TestRunRollupVerify_FailsThenFixed(t *testing.T) {
 
 	origFixFn := verifyFixFn
 	t.Cleanup(func() { verifyFixFn = origFixFn })
-	verifyFixFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ *config.Config, _ *Prompts, _ map[string]string, _ *slog.Logger) (*Result, error) {
+	verifyFixFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ bool, _ *config.Config, _ *Prompts, _ map[string]string, _ *slog.Logger) (*Result, error) {
 		return &Result{TimedOut: false, SessionID: "sess1"}, nil
 	}
 
@@ -712,7 +712,7 @@ func TestRunRollupVerify_FailsThenFixed(t *testing.T) {
 		return nil
 	}
 
-	passed, err := RunRollupVerify(context.Background(), 999, "rollup-branch", cfg, &Prompts{VerifyFix: "fix prompt"}, nil, slog.Default(), writeResult)
+	passed, err := RunRollupVerify(context.Background(), 999, "rollup-branch", cfg, &Prompts{VerifyFix: "fix prompt"}, nil, slog.Default(), writeResult, false)
 	if err != nil {
 		t.Fatalf("RunRollupVerify() error = %v", err)
 	}
@@ -750,7 +750,7 @@ func TestRunRollupVerify_ExhaustsRetries(t *testing.T) {
 
 	origFixFn := verifyFixFn
 	t.Cleanup(func() { verifyFixFn = origFixFn })
-	verifyFixFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ *config.Config, _ *Prompts, _ map[string]string, _ *slog.Logger) (*Result, error) {
+	verifyFixFn = func(_ context.Context, _ github.Issue, _ int, _ string, _ string, _ bool, _ *config.Config, _ *Prompts, _ map[string]string, _ *slog.Logger) (*Result, error) {
 		return &Result{TimedOut: false}, nil
 	}
 
@@ -767,7 +767,7 @@ func TestRunRollupVerify_ExhaustsRetries(t *testing.T) {
 		return nil
 	}
 
-	passed, err := RunRollupVerify(context.Background(), 999, "rollup-branch", cfg, &Prompts{VerifyFix: "fix prompt"}, nil, slog.Default(), writeResult)
+	passed, err := RunRollupVerify(context.Background(), 999, "rollup-branch", cfg, &Prompts{VerifyFix: "fix prompt"}, nil, slog.Default(), writeResult, false)
 	if err != nil {
 		t.Fatalf("RunRollupVerify() error = %v", err)
 	}

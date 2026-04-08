@@ -1,6 +1,6 @@
-# Scenario: --with-compose flag and concurrent mode logic
+# Scenario: integration flag and config immutability
 
-Relates to: Issue #748
+Relates to: Issue #771
 
 ## Setup
 - A `godark.yaml` with `concurrency.max_workers` and optionally `docker_compose` configured
@@ -8,22 +8,23 @@ Relates to: Issue #748
 
 ## Cases
 
-### Concurrent mode skips compose
-- GIVEN a config with `max_workers: 3` and a `docker_compose` block
-- WHEN flags are applied without `--with-compose`
-- THEN `cfg.DockerCompose` is nil
+### No flags with parallel config preserves compose verbatim
+- GIVEN a config with `max_workers: 4` and a `docker_compose` block
+- WHEN `applyFlags` is called with empty `CLIFlags`
+- THEN `cfg.DockerCompose` is preserved verbatim (not nilled or mutated)
+- AND `cfg.Concurrency.MaxWorkers` remains 4
 
-### With-compose forces serial
-- GIVEN a config with `max_workers: 3` and a `docker_compose` block
-- WHEN `--with-compose` flag is set
-- THEN `cfg.Concurrency.MaxWorkers` equals 1 and `cfg.DockerCompose` is preserved
+### --integration starts compose with serial
+- GIVEN a config with `max_workers: 4` and a `docker_compose` block
+- WHEN `--integration` flag is set
+- THEN compose is started and `Workers=1`
 
-### No compose config warns
-- GIVEN a config with no `docker_compose` block
-- WHEN `--with-compose` flag is set
-- THEN a warning is logged (not an error)
+### --integration --workers 2 is a validation error
+- GIVEN a config with `max_workers: 4` and a `docker_compose` block
+- WHEN `--integration --workers 2` flags are set
+- THEN a validation error is returned before any side effect
 
-### Default serial preserves compose
-- GIVEN a config with `max_workers: 1` and a `docker_compose` block
-- WHEN flags are applied without `--with-compose`
-- THEN `cfg.DockerCompose` is preserved (not nilled)
+### --with-compose is rejected as unknown flag
+- WHEN `godark run --with-compose` is invoked
+- THEN exit code is non-zero
+- AND stderr contains `unknown flag`

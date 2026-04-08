@@ -2,10 +2,13 @@ package rundata
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1528,5 +1531,177 @@ func TestClearRateLimitRemovesFromRunJSON(t *testing.T) {
 
 	if meta.RateLimitResetsAt != nil {
 		t.Errorf("RateLimitResetsAt = %v, want nil after ClearRateLimit", meta.RateLimitResetsAt)
+	}
+}
+
+func TestConcurrentSetClearRateLimit(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if n%2 == 0 {
+				if err := w.ClearRateLimit(); err != nil {
+					t.Errorf("ClearRateLimit goroutine %d: %v", n, err)
+				}
+			} else {
+				resetsAt := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+				if err := w.SetRateLimit(resetsAt); err != nil {
+					t.Errorf("SetRateLimit goroutine %d: %v", n, err)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("run.json is not valid JSON after concurrent writes: %v", err)
+	}
+}
+
+// TestConcurrentRunMetaMutations hammers every writer method that mutates
+// run.json concurrently. It verifies that the writer mutex serializes the
+// read-modify-write cycles so run.json remains valid JSON and no goroutine
+// sees a partial update. Run with -race to catch ordering bugs.
+func TestConcurrentRunMetaMutations(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1, 2, 3}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	const goroutines = 20
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			switch n % 5 {
+			case 0:
+				if err := w.WriteIssueDeps([]IssueDep{{IssueNumber: n, DependsOn: []int{1}}}); err != nil {
+					t.Errorf("WriteIssueDeps goroutine %d: %v", n, err)
+				}
+			case 1:
+				if err := w.WriteIssueTitles(map[string]string{"1": fmt.Sprintf("t%d", n)}); err != nil {
+					t.Errorf("WriteIssueTitles goroutine %d: %v", n, err)
+				}
+			case 2:
+				resetsAt := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+				if err := w.SetRateLimit(resetsAt); err != nil {
+					t.Errorf("SetRateLimit goroutine %d: %v", n, err)
+				}
+			case 3:
+				if err := w.ClearRateLimit(); err != nil {
+					t.Errorf("ClearRateLimit goroutine %d: %v", n, err)
+				}
+			case 4:
+				summary := RunSummary{Total: n, Implemented: n}
+				if err := w.FinalizeRun(summary); err != nil {
+					t.Errorf("FinalizeRun goroutine %d: %v", n, err)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("run.json is not valid JSON after concurrent writes: %v\nraw: %s", err, data)
+	}
+}
+
+func TestConcurrentPerIssueWrites(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1, 2}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if err := w.WriteImplementResult(1, StepResult{Output: "issue1"}); err != nil {
+			t.Errorf("WriteImplementResult(1): %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if err := w.WriteImplementResult(2, StepResult{Output: "issue2"}); err != nil {
+			t.Errorf("WriteImplementResult(2): %v", err)
+		}
+	}()
+	wg.Wait()
+
+	for issueNum, want := range map[int]string{1: "issue1", 2: "issue2"} {
+		path := filepath.Join(w.Dir(), "issues", strconv.Itoa(issueNum), "implement.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading implement.json for issue %d: %v", issueNum, err)
+		}
+		if !strings.Contains(string(data), want) {
+			t.Errorf("issue %d implement.json does not contain %q; got %s", issueNum, want, data)
+		}
+	}
+}
+
+func TestWriteWaveResult(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "m1", []int{1, 2, 3}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase() error: %v", err)
+	}
+
+	t1 := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 4, 7, 10, 5, 0, 0, time.UTC)
+	t3 := time.Date(2026, 4, 7, 10, 5, 0, 0, time.UTC)
+	t4 := time.Date(2026, 4, 7, 10, 8, 0, 0, time.UTC)
+
+	wave1 := WaveResult{Wave: 1, IssueNumbers: []int{1, 2}, StartedAt: t1, FinishedAt: t2}
+	wave2 := WaveResult{Wave: 2, IssueNumbers: []int{3}, StartedAt: t3, FinishedAt: t4}
+
+	if err := w.WriteWaveResult(wave1); err != nil {
+		t.Fatalf("WriteWaveResult(1) error: %v", err)
+	}
+	if err := w.WriteWaveResult(wave2); err != nil {
+		t.Fatalf("WriteWaveResult(2) error: %v", err)
+	}
+
+	for _, waveNum := range []int{1, 2} {
+		path := filepath.Join(w.Dir(), "waves", strconv.Itoa(waveNum)+".json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading waves/%d.json: %v", waveNum, err)
+		}
+		var got WaveResult
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("unmarshaling waves/%d.json: %v", waveNum, err)
+		}
+		if got.Wave != waveNum {
+			t.Errorf("wave %d: got Wave=%d", waveNum, got.Wave)
+		}
+	}
+
+	// Verify issue numbers round-trip correctly.
+	data, _ := os.ReadFile(filepath.Join(w.Dir(), "waves", "1.json"))
+	var got WaveResult
+	_ = json.Unmarshal(data, &got)
+	if len(got.IssueNumbers) != 2 || got.IssueNumbers[0] != 1 || got.IssueNumbers[1] != 2 {
+		t.Errorf("wave 1 issue numbers: got %v, want [1 2]", got.IssueNumbers)
 	}
 }

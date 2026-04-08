@@ -18,7 +18,7 @@ func TestPlan_RendersPromptAndCallsRun(t *testing.T) {
 	})
 
 	prompts := &Prompts{Planner: "Plan issue #{{.IssueNumber}}: {{.IssueTitle}}\nRecon: {{.ReconBrief}}"}
-	result, err := Plan(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "recon context here")
+	result, err := Plan(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t), "recon context here")
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
@@ -49,7 +49,7 @@ func TestPlan_SetsPlannerRole(t *testing.T) {
 	})
 
 	prompts := &Prompts{Planner: "planner prompt"}
-	_, err := Plan(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "")
+	_, err := Plan(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
@@ -65,7 +65,7 @@ func TestPlan_EmptyReconBrief(t *testing.T) {
 	})
 
 	prompts := &Prompts{Planner: "Plan issue #{{.IssueNumber}}: {{.IssueTitle}}\nRecon: {{.ReconBrief}}"}
-	result, err := Plan(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "")
+	result, err := Plan(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t), "")
 	if err != nil {
 		t.Fatalf("Plan() with empty recon brief error = %v", err)
 	}

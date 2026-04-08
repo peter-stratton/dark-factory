@@ -94,5 +94,12 @@ type RateLimitedMsg struct {
 // orchestrator resumes processing.
 type RateLimitClearedMsg struct{}
 
+// WorkersActiveMsg is sent with the current worker utilization so the TUI can
+// display how many workers are actively processing issues.
+type WorkersActiveMsg struct {
+	Active int
+	Total  int
+}
+
 // CountdownTickMsg is sent every second while rate-limited to drive the TUI countdown.
 type CountdownTickMsg struct{}

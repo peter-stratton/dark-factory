@@ -1,15 +1,19 @@
 package orchestrator
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent"
@@ -21,12 +25,23 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/github"
 	"github.com/peter-stratton/dark-factory/internal/label"
 	"github.com/peter-stratton/dark-factory/internal/lock"
+	"github.com/peter-stratton/dark-factory/internal/logging"
 	"github.com/peter-stratton/dark-factory/internal/notify"
 	"github.com/peter-stratton/dark-factory/internal/progress"
 	"github.com/peter-stratton/dark-factory/internal/punchlist"
 	"github.com/peter-stratton/dark-factory/internal/rundata"
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
 	"github.com/peter-stratton/dark-factory/internal/stats"
+)
+
+const (
+	// holdBuffer is the extra time to wait after a rate-limit resets before
+	// retrying, giving the upstream quota a moment to replenish.
+	holdBuffer = 30 * time.Second
+
+	// maxHold is the longest the orchestrator will sleep waiting for a
+	// rate-limit reset. If a reset time exceeds this, the issue is failed.
+	maxHold = 6 * time.Hour
 )
 
 // Run is the main entry point for the orchestration loop.
@@ -42,7 +57,7 @@ import (
 // logFactory is called to create the run-directory logger once the RunDataWriter
 // has established its directory. Pass logging.NewLogger for text/pipe mode and
 // logging.NewLoggerFileOnly for TUI mode (where the TUI owns stdout).
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, dryRun bool, force bool, punchlistPath string, version string) error {
+func Run(ctx context.Context, cfg *config.Config, runMode config.RunMode, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, dryRun bool, force bool, punchlistPath string, version string) error {
 	// Preflight: fail fast if working tree is dirty (skip in dry-run mode).
 	if !dryRun {
 		if err := CheckWorkingTree(); err != nil {
@@ -145,7 +160,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, noDarkNums, cfg, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
+	return processIssues(ctx, issues, closedSet, noDarkNums, cfg, runMode, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
 }
 
 // filterNoDarkIssues removes any issue labeled with label.NoDark from the
@@ -246,6 +261,7 @@ func ReResolveAndProcess(
 	noDarkNums []int,
 	seen map[int]bool,
 	cfg *config.Config,
+	runMode config.RunMode,
 	milestone string,
 	logger *slog.Logger,
 	reporter progress.ProgressReporter,
@@ -272,7 +288,7 @@ func ReResolveAndProcess(
 
 	logger.Info("re-resolution: newly unblocked issues found", "count", len(unblocked))
 
-	authEnv, prompts, err := prepareResolveEnv(ctx, cfg, logger)
+	authEnv, prompts, err := prepareResolveEnv(ctx, cfg, runMode, logger)
 	if err != nil {
 		return false, err
 	}
@@ -311,7 +327,7 @@ func ReResolveAndProcess(
 		}
 	}()
 
-	attempted, implemented, failed, abortReason := processUnblockedLoop(ctx, unblocked, cfg, prompts, authEnv, logger, hook, reporter, writer, seen)
+	attempted, implemented, failed, abortReason := processUnblockedLoop(ctx, unblocked, cfg, runMode, prompts, authEnv, logger, hook, reporter, writer, seen)
 	finalizeResolveRun(ctx, statsDB, cfg, writer, implemented, failed, abortReason, notifiers, logger)
 
 	return attempted > 0, nil
@@ -339,7 +355,7 @@ func refreshHostGHToken(logger *slog.Logger) {
 // prepareResolveEnv sets up auth, prompts, lifecycle labels, and (when
 // sandbox mode is active) builds the Docker image. cfg.Docker.Image is
 // updated in place when a new image is built.
-func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Logger) (map[string]string, *agent.Prompts, error) {
+func prepareResolveEnv(ctx context.Context, cfg *config.Config, runMode config.RunMode, logger *slog.Logger) (map[string]string, *agent.Prompts, error) {
 	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collecting auth: %w", err)
@@ -356,7 +372,11 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Log
 		}
 	}
 
-	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+	composeForRun := cfg.DockerCompose
+	if !runMode.Integration {
+		composeForRun = nil
+	}
+	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, composeForRun)
 	tag, err := buildImageFn(ctx, dc, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building Docker image: %w", err)
@@ -374,6 +394,7 @@ func processUnblockedLoop(
 	ctx context.Context,
 	unblocked []github.Issue,
 	cfg *config.Config,
+	runMode config.RunMode,
 	prompts *agent.Prompts,
 	authEnv map[string]string,
 	logger *slog.Logger,
@@ -390,7 +411,14 @@ func processUnblockedLoop(
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
-		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+		issueLogger, issueLogCloser := perIssueLogger(writer, issue.Number, logger)
+		// Daemon re-resolve runs serially, so the merge phase stays inline
+		// (deferMerge=false). Only the wave dispatcher needs the
+		// post-wave merge serialization.
+		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration, false)
+		if err := issueLogCloser.Close(); err != nil {
+			logger.Warn("failed to close per-issue logger", "issue", issue.Number, "error", err)
+		}
 		attempted++
 
 		writeResolveDialogue(writer, issue, outcome, cfg, logger)
@@ -526,6 +554,107 @@ type blockedIssue struct {
 	BlockedBy []int
 }
 
+// waveResult captures the outcome of processing a single issue in a wave,
+// without accessing shared mutable state.
+type waveResult struct {
+	IssueNumber  int
+	Issue        github.Issue
+	Outcome      agent.IssueOutcome
+	IssueCost    float64
+	Merged       bool
+	UsageLimited bool
+	ResetsAt     time.Time
+}
+
+// perIssueLogger returns a file-backed logger rooted at the issue's run-data
+// directory, falling back to the run-level logger if writer is nil or the
+// per-issue logger fails to initialize. The returned io.Closer must be closed
+// by the caller (may be a no-op closer when falling back to the run logger).
+func perIssueLogger(writer *rundata.Writer, issueNum int, logger *slog.Logger) (*slog.Logger, io.Closer) {
+	if writer == nil {
+		return logger, nopCloser{}
+	}
+	il, closer, err := logging.NewFileLogger(writer.IssueDir(issueNum))
+	if err != nil {
+		logger.Warn("failed to create per-issue logger", "issue", issueNum, "error", err)
+		return logger, nopCloser{}
+	}
+	return il, closer
+}
+
+// nopCloser satisfies io.Closer with a no-op Close. Used when perIssueLogger
+// falls back to the run-level logger (no file was opened).
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
+
+// runOneIssue processes a single issue within a wave: sets up per-issue
+// logging, calls processIssueFn, writes dialogue, and computes cost. It
+// returns early with UsageLimited set when the agent hits a Claude usage
+// limit. Shared mutable state (runStats, seen, implementedIssues, punchlist)
+// is left to the caller.
+func runOneIssue(ctx context.Context, issue github.Issue, cfg *config.Config,
+	runMode config.RunMode, prompts *agent.Prompts, authEnv map[string]string,
+	logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter,
+	writer *rundata.Writer) waveResult {
+
+	// Create a per-issue file logger when a run-data writer is available.
+	issueLogger, issueLogCloser := perIssueLogger(writer, issue.Number, logger)
+	defer func() {
+		if err := issueLogCloser.Close(); err != nil {
+			logger.Warn("failed to close per-issue logger", "issue", issue.Number, "error", err)
+		}
+	}()
+
+	// Wave path: defer the merge phase. ProcessIssueWithMode stops at the
+	// approval gate and returns StatusApprovedReadyForMerge with a populated
+	// MergeArgs; the wave loop calls agent.MergeApprovedPR serially after
+	// wg.Wait() so all gh-pr-merge calls happen one at a time.
+	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration, true)
+
+	if outcome.UsageLimited {
+		return waveResult{
+			IssueNumber:  issue.Number,
+			Issue:        issue,
+			Outcome:      outcome,
+			UsageLimited: true,
+			ResetsAt:     outcome.ResetsAt,
+		}
+	}
+
+	// Write dialogue after processing if we have a PR and a writer.
+	if writer != nil && outcome.PRNumber > 0 {
+		bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
+		if fetchErr != nil {
+			logger.Warn("failed to fetch PR comment bodies for dialogue",
+				"issue_number", issue.Number, "error", fetchErr)
+		} else {
+			entries := BuildDialogueEntries(bodies)
+			if len(entries) > 0 {
+				if err := writer.WriteDialogue(issue.Number, entries); err != nil {
+					logger.Warn("failed to write dialogue",
+						"issue_number", issue.Number, "error", err)
+				}
+			}
+		}
+	}
+
+	// Compute per-issue cost from recorded step result files. Gracefully
+	// degrades to 0.0 when the writer is nil or step files have no cost data.
+	var issueCost float64
+	if writer != nil {
+		issueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
+	}
+
+	return waveResult{
+		IssueNumber: issue.Number,
+		Issue:       issue,
+		Outcome:     outcome,
+		IssueCost:   issueCost,
+		Merged:      outcome.Status == agent.StatusImplemented,
+	}
+}
+
 // openDependencies returns the subset of dep numbers that are not in closedSet.
 func openDependencies(depNumbers []int, closedSet map[int]bool) []int {
 	var open []int
@@ -574,7 +703,7 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // function was called. They are re-injected into every rebuilt closedSet so
 // that issues depending on a nodark issue are never re-classified as blocked
 // on waves 2+.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, noDarkNums []int, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, noDarkNums []int, cfg *config.Config, runMode config.RunMode, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
 	// Open stats DB early; nil on failure (errors logged, never fatal).
 	statsDB := OpenStatsDB(logger)
 	if statsDB != nil {
@@ -630,7 +759,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 	// Compute DockerConfig for image build and compose startup.
-	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+	composeForRun := cfg.DockerCompose
+	if !runMode.Integration {
+		composeForRun = nil
+	}
+	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, composeForRun)
 
 	tag, err := buildImageFn(ctx, dc, logger)
 	if err != nil {
@@ -645,8 +778,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 	}
 
-	// Start compose services if configured, before any agent execution.
-	if cfg.DockerCompose != nil {
+	// Start compose services if integration mode is active, before any agent execution.
+	if runMode.Integration {
 		cleanupEnvFile, err := sandbox.ComposeUp(ctx, dc, cfg.RequiredEnv, logger)
 		if err != nil {
 			return fmt.Errorf("starting compose services: %w", err)
@@ -700,11 +833,10 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	// Track which issues have been seen (processed or failed) to avoid reprocessing.
 	seen := make(map[int]bool)
 	wave := 0
-	rateLimitHold := false
-
+waveLoop:
 	for {
 		wave++
-		rateLimitHold = false
+		waveStart := time.Now()
 
 		// Filter out already-seen issues from the current processable batch.
 		var batch []github.Issue
@@ -746,102 +878,128 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 		allLockedNums = append(allLockedNums, batchNums...)
 
-		// Process each issue in the batch.
+		// Process each issue in the batch concurrently.
 		merged := false
 		var justMergedNums []int
+
+		// Mark all issues as seen before dispatch to prevent reprocessing
+		// in concurrent waves.
 		for _, issue := range batch {
-			if ctx.Err() != nil {
-				logger.Warn("context cancelled, stopping", "error", ctx.Err())
-				goto done
-			}
-
 			seen[issue.Number] = true
+		}
+
+		// Fan out workers, capped by runMode.Workers.
+		maxWorkers := runMode.Workers
+		if maxWorkers < 1 {
+			maxWorkers = 1
+		}
+		results := make(chan waveResult, len(batch))
+		sem := make(chan struct{}, maxWorkers)
+		var wg sync.WaitGroup
+		var activeWorkers atomic.Int32
+	dispatch:
+		for _, issue := range batch {
+			// Use select on semaphore send so context cancellation is not
+			// blocked waiting for a worker slot.
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				break dispatch
+			}
 			reporter.IssueStarted(issue.Number, issue.Title)
-			outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter)
+			wg.Add(1)
+			go func(iss github.Issue) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				reporter.WorkersActive(int(activeWorkers.Add(1)), maxWorkers)
+				defer func() {
+					reporter.WorkersActive(int(activeWorkers.Add(-1)), maxWorkers)
+				}()
+				results <- runOneIssue(ctx, iss, cfg, runMode, prompts, authEnv, logger, hook, reporter, writer)
+			}(issue)
+		}
+		wg.Wait()
+		close(results)
 
-			// Handle Claude usage limit: hold until reset, then retry the issue.
-			if outcome.UsageLimited {
-				resetsAt := outcome.ResetsAt
-				const holdBuffer = 30 * time.Second
-				const maxHold = 6 * time.Hour
-				if resetsAt.IsZero() || time.Until(resetsAt) > maxHold {
-					logger.Warn("usage limit reset time too far or unknown — failing issue",
-						"issue_number", issue.Number, "resetsAt", resetsAt)
-					runStats.failed++
-					reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, "usage limit: reset time exceeds max hold", 0, outcome.TraceID)
-					continue
-				}
-				sleepUntil := resetsAt.Add(holdBuffer)
-				logger.Info("usage limit hit — entering hold",
-					"issue_number", issue.Number, "resetsAt", resetsAt, "sleep_until", sleepUntil)
-				reporter.IssueStageChanged(issue.Number, "rate-limited")
-				reporter.RateLimited(resetsAt)
-				// Undo seen so we retry this issue.
-				delete(seen, issue.Number)
-				rateLimitHold = true
-				timer := time.NewTimer(time.Until(sleepUntil))
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					logger.Warn("context cancelled during rate-limit hold")
-					goto done
-				case <-timer.C:
-				}
-				reporter.RateLimitCleared()
-				logger.Info("usage limit hold complete — resuming", "issue_number", issue.Number)
-				// Refresh GitHub App token — it may have expired during the hold.
-				refreshHostGHToken(logger)
-				if newToken, err := ghapp.RefreshToken(); err == nil && newToken != "" {
-					authEnv["GH_TOKEN"] = newToken
-				}
-				// Break out of batch loop so the issue is retried in the next iteration.
-				break
+		// Drain results into a slice and sort by issue number for
+		// deterministic merge order and reproducible log output.
+		var collected []waveResult
+		for res := range results {
+			collected = append(collected, res)
+		}
+		slices.SortFunc(collected, func(a, b waveResult) int {
+			return cmp.Compare(a.IssueNumber, b.IssueNumber)
+		})
+
+		// Snapshot authEnv before spawning punchlist enrichment goroutines.
+		// The post-wave rate-limit handler below may mutate authEnv (token
+		// refresh), and enrichment goroutines can outlive this wave via plWg,
+		// so they must read from an immutable copy to stay race-free.
+		authEnvSnap := make(map[string]string, len(authEnv))
+		for k, v := range authEnv {
+			authEnvSnap[k] = v
+		}
+
+		// Process results in ascending issue-number order: update stats,
+		// report completions, and spawn punchlist enrichment goroutines.
+		// Any approved-and-ready-for-merge results are merged here, one at
+		// a time on the orchestrator goroutine, so concurrent gh-pr-merge
+		// calls against the same base branch can't fight each other for
+		// branch-protection "up to date" requirements.
+		for i := range collected {
+			res := &collected[i]
+			issue := res.Issue
+
+			// Rate-limited results are handled in a post-loop batch step.
+			if res.UsageLimited {
+				continue
 			}
 
-			// Write dialogue after processing if we have a PR and a writer.
-			if writer != nil && outcome.PRNumber > 0 {
-				bodies, fetchErr := fetchPRCommentBodiesFn(cfg.Repo, outcome.PRNumber)
-				if fetchErr != nil {
-					logger.Warn("failed to fetch PR comment bodies for dialogue",
-						"issue_number", issue.Number, "error", fetchErr)
-				} else {
-					entries := BuildDialogueEntries(bodies)
-					if len(entries) > 0 {
-						if err := writer.WriteDialogue(issue.Number, entries); err != nil {
-							logger.Warn("failed to write dialogue",
-								"issue_number", issue.Number, "error", err)
-						}
-					}
+			// Concurrent wave path: ProcessIssueWithMode stopped at the
+			// approval gate. Run the merge here, serially, then rewrite
+			// the wave result with the terminal status before any
+			// status-dependent logic below runs. The reporter sees only
+			// the terminal status, not the transient one.
+			if res.Outcome.Status == agent.StatusApprovedReadyForMerge && res.Outcome.MergeArgs != nil {
+				reporter.IssueStageChanged(issue.Number, "merge")
+				mergeStatus, _, mergeRetries, mergeErr := agent.MergeApprovedPR(
+					ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, runMode.Integration, *res.Outcome.MergeArgs,
+				)
+				res.Outcome.Status = mergeStatus
+				res.Outcome.Retries = mergeRetries
+				res.Outcome.Err = mergeErr
+				res.Outcome.MergeArgs = nil
+
+				// Re-fetch per-issue cost in case MergeApprovedPR wrote
+				// new step result files (e.g. merge-coordinator, verify
+				// retry under the rebase phase).
+				if writer != nil {
+					res.IssueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
 				}
 			}
 
-			// Compute per-issue cost from recorded step result files. Gracefully
-			// degrades to 0.0 when the writer is nil or step files have no cost data.
-			var issueCost float64
-			if writer != nil {
-				issueCost = rundata.IssueCostUSD(writer.IssueDir(issue.Number))
-			}
+			outcome := res.Outcome
 
 			switch outcome.Status {
 			case agent.StatusImplemented:
 				runStats.implemented++
 				implementedIssues = append(implementedIssues, issue)
-				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "implemented", outcome.PRNumber, outcome.Retries, "", res.IssueCost, outcome.TraceID)
 				merged = true
 				justMergedNums = append(justMergedNums, issue.Number)
 			case agent.StatusReadyToMerge:
 				runStats.readyToMerge++
-				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "ready-to-merge", outcome.PRNumber, outcome.Retries, "", res.IssueCost, outcome.TraceID)
 			case agent.StatusNeedsHumanReview:
 				runStats.needsHumanReview++
-				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "needs-human-review", outcome.PRNumber, 0, "", res.IssueCost, outcome.TraceID)
 			default:
 				runStats.failed++
 				errMsg := ""
 				if outcome.Err != nil {
 					errMsg = outcome.Err.Error()
 				}
-				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, issueCost, outcome.TraceID)
+				reporter.IssueCompleted(issue.Number, issue.Title, "failed", 0, 0, errMsg, res.IssueCost, outcome.TraceID)
 			}
 
 			logger.Info("issue outcome",
@@ -853,17 +1011,14 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			)
 
 			if outcome.PRNumber > 0 {
-				// Enrich punchlist in the background so it's available as
-				// soon as possible without blocking the next issue.
 				plWg.Add(1)
 				go func(iss github.Issue, oc agent.IssueOutcome) {
 					defer plWg.Done()
-					entry := buildPunchlistEntry(ctx, iss, oc, cfg, prompts, authEnv, logger)
+					entry := buildPunchlistEntry(ctx, iss, oc, cfg, prompts, authEnvSnap, logger)
 					plMu.Lock()
 					plEntries = append(plEntries, entry)
 					plMu.Unlock()
 
-					// Write run data immediately.
 					if writer != nil {
 						status := punchlistEnrichmentStatus(prompts, entry.AcceptanceTests)
 						plData := rundata.PunchlistData{
@@ -879,7 +1034,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 						}
 					}
 
-					// Print this entry's punchlist to stdout immediately.
 					text := punchlist.Generate([]punchlist.Entry{entry})
 					if text != "" {
 						reporter.PunchlistText(text)
@@ -888,17 +1042,116 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 						"issue_number", iss.Number,
 						"count", len(entry.AcceptanceTests),
 					)
-				}(issue, outcome)
+				}(res.Issue, res.Outcome)
+			}
+		}
+
+		// Write wave metadata for dashboard grouping.
+		if writer != nil {
+			waveResult := rundata.WaveResult{
+				Wave:         wave,
+				IssueNumbers: batchNums,
+				StartedAt:    waveStart,
+				FinishedAt:   time.Now(),
+			}
+			if err := writer.WriteWaveResult(waveResult); err != nil {
+				logger.Warn("failed to write wave result", "wave", wave, "error", err)
+			}
+		}
+
+		// --- Post-wave rate-limit handling (#752) ---
+		var rateLimitHold bool
+		var rateLimitedResults []waveResult
+		for _, res := range collected {
+			if res.UsageLimited {
+				rateLimitedResults = append(rateLimitedResults, res)
+			}
+		}
+
+		if len(rateLimitedResults) > 0 {
+			// Partition: fail issues whose reset time exceeds maxHold or is
+			// unknown; mark the rest for retry.
+			var retryable []waveResult
+			for _, res := range rateLimitedResults {
+				if res.ResetsAt.IsZero() || time.Until(res.ResetsAt) > maxHold {
+					runStats.failed++
+					reporter.IssueCompleted(res.Issue.Number, res.Issue.Title, "failed", 0, 0,
+						"usage limit: reset time exceeds max hold", 0, res.Outcome.TraceID)
+					logger.Warn("usage-limited issue failed (reset exceeds max hold)",
+						"issue_number", res.Issue.Number, "resets_at", res.ResetsAt)
+				} else {
+					retryable = append(retryable, res)
+				}
 			}
 
-			// After a merge, break out of the inner loop to re-resolve.
-			if outcome.Status == "implemented" {
-				break
+			if len(retryable) > 0 {
+				// Find the latest ResetsAt among retryable issues.
+				var latestResetsAt time.Time
+				for _, res := range retryable {
+					if res.ResetsAt.After(latestResetsAt) {
+						latestResetsAt = res.ResetsAt
+					}
+				}
+
+				// Remove retryable issues from seen so they re-enter the next wave.
+				for _, res := range retryable {
+					delete(seen, res.Issue.Number)
+				}
+
+				sleepUntil := latestResetsAt.Add(holdBuffer)
+				logger.Info("usage limit hit — entering hold",
+					"rate_limited_count", len(retryable),
+					"resets_at", latestResetsAt,
+					"sleep_until", sleepUntil,
+				)
+				reporter.RateLimited(latestResetsAt)
+				if writer != nil {
+					if err := writer.SetRateLimit(latestResetsAt); err != nil {
+						logger.Warn("failed to set rate limit in run data", "error", err)
+					}
+				}
+
+				// Sleep until the reset time plus buffer. A negative or zero
+				// duration causes the timer to fire immediately, which is fine
+				// when the reset is already in the past.
+				timer := time.NewTimer(time.Until(sleepUntil))
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					logger.Warn("context cancelled during rate-limit hold")
+					// Break out of the wave loop so finalization still runs
+					// (RunFinished, rollup, FinalizeRun, notifications, and
+					// the plWg.Wait() for in-flight punchlist enrichments).
+					runStats.abortReason = "context cancelled during rate-limit hold"
+					break waveLoop
+				case <-timer.C:
+				}
+
+				reporter.RateLimitCleared()
+				if writer != nil {
+					if err := writer.ClearRateLimit(); err != nil {
+						logger.Warn("failed to clear rate limit in run data", "error", err)
+					}
+				}
+				refreshHostGHToken(logger)
+				if newToken, err := ghapp.RefreshToken(); err == nil && newToken != "" {
+					authEnv["GH_TOKEN"] = newToken
+				}
+
+				rateLimitHold = true
+			}
+		}
+
+		// Pull the base branch once after all merges in this wave so the
+		// local checkout is current before re-resolution.
+		if len(justMergedNums) > 0 {
+			if err := PullAfterMerge(cfg.BaseBranch, logger); err != nil {
+				logger.Warn("post-wave pull failed", "error", err)
 			}
 		}
 
 		if !merged && !rateLimitHold {
-			// No merges in this wave and no rate-limit retry needed — no point re-resolving.
+			// No merges and no rate-limit retries — no point re-resolving.
 			break
 		}
 
@@ -913,7 +1166,6 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 	}
 
-done:
 	runStats.blocked = len(blocked)
 	reporter.RunFinished(runStats.implemented, runStats.readyToMerge, runStats.needsHumanReview, runStats.failed, runStats.blocked)
 
@@ -927,7 +1179,7 @@ done:
 		cfg.AutoMerge.Rollup != config.RollupNone &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
 		runStats.implemented > 0 {
-		prNum, prURL, err := HandleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
+		prNum, prURL, err := HandleRollupPR(ctx, cfg, runMode, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
 		if err != nil {
 			logger.Warn("rollup PR handling failed", "error", err)
 			fmt.Printf("Rollup PR warning: %v\n", err)
@@ -997,7 +1249,7 @@ var buildImageFn = sandbox.BuildImage
 
 // processIssueFn is the function called to process each issue.
 // Replaceable for testing.
-var processIssueFn = agent.ProcessIssue
+var processIssueFn = agent.ProcessIssueWithMode
 
 // fetchPRCommentBodiesFn fetches PR comment bodies for dialogue extraction.
 // Replaceable for testing.
@@ -1070,7 +1322,7 @@ var mergeCoordinateFn = agent.MergeCoordinate
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
 // least one issue was implemented into the base branch during the run.
 // Returns the PR number, URL, and any error.
-func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
+func HandleRollupPR(ctx context.Context, cfg *config.Config, runMode config.RunMode, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
 	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
@@ -1089,7 +1341,7 @@ func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 
 	// Conflict resolution loop: check mergeable status and invoke the merge
 	// coordinator if the rollup PR has conflicts. Bounded by MaxRebaseAttempts.
-	verifyPassedInLoop, earlyPR, err := resolveRollupConflicts(ctx, cfg, prNum, prURL, title, body, defaultBranch, logger, reporter, writer, prompts, authEnv)
+	verifyPassedInLoop, earlyPR, err := resolveRollupConflicts(ctx, cfg, runMode, prNum, prURL, title, body, defaultBranch, logger, reporter, writer, prompts, authEnv)
 	if err != nil {
 		return 0, "", err
 	}
@@ -1104,7 +1356,7 @@ func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 		if writer != nil {
 			writeResult = writer.WriteRollupVerifyResult
 		}
-		verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult)
+		verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult, runMode.Integration)
 		if err != nil {
 			return 0, "", fmt.Errorf("rollup verify: %w", err)
 		}
@@ -1126,7 +1378,7 @@ func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 // resolveRollupConflicts runs the conflict resolution loop for a rollup PR.
 // It returns whether verify passed during resolution, whether the caller should
 // return early (PR left open), and any error.
-func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, prURL, title, body, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (verifyPassed bool, earlyReturn bool, err error) {
+func resolveRollupConflicts(ctx context.Context, cfg *config.Config, runMode config.RunMode, prNum int, prURL, title, body, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (verifyPassed bool, earlyReturn bool, err error) {
 	if cfg.MaxRebaseAttempts <= 0 || mergeCoordinateFn == nil {
 		return false, false, nil
 	}
@@ -1154,7 +1406,7 @@ func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, 
 			prNum, cfg.BaseBranch, defaultBranch,
 		)
 
-		result, mcErr := mergeCoordinateFn(ctx, syntheticIssue, prNum, conflictInfo, cfg, prompts, authEnv, logger)
+		result, mcErr := mergeCoordinateFn(ctx, syntheticIssue, prNum, conflictInfo, runMode.Integration, cfg, prompts, authEnv, logger)
 		if mcErr != nil {
 			return false, false, fmt.Errorf("rollup merge coordinator: %w", mcErr)
 		}
@@ -1183,7 +1435,7 @@ func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, 
 		if writer != nil {
 			writeVerify = writer.WriteRollupVerifyResult
 		}
-		passed, vErr := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeVerify)
+		passed, vErr := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeVerify, runMode.Integration)
 		if vErr != nil {
 			return false, false, fmt.Errorf("rollup verify after conflict resolution: %w", vErr)
 		}

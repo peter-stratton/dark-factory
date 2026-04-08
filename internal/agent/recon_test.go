@@ -17,7 +17,7 @@ func TestRecon_RendersPromptAndCallsRun(t *testing.T) {
 	})
 
 	prompts := &Prompts{Recon: "Recon issue #{{.IssueNumber}}: {{.IssueTitle}}"}
-	result, err := Recon(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
+	result, err := Recon(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Recon() error = %v", err)
 	}
@@ -45,7 +45,7 @@ func TestRecon_SetsReconRole(t *testing.T) {
 	})
 
 	prompts := &Prompts{Recon: "recon prompt"}
-	_, err := Recon(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t))
+	_, err := Recon(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Recon() error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestRecon_InvalidTimeout(t *testing.T) {
 	cfg.AgentTimeout = "invalid"
 
 	prompts := &Prompts{Recon: "recon prompt"}
-	_, err := Recon(context.Background(), testIssue(), cfg, prompts, nil, testLogger(t))
+	_, err := Recon(context.Background(), testIssue(), false, cfg, prompts, nil, testLogger(t))
 	if err == nil {
 		t.Fatal("expected error for invalid timeout")
 	}
@@ -80,7 +80,7 @@ func TestImplement_ReconBriefPassedToPrompt(t *testing.T) {
 		Implementer: "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
 	}
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), brief, "")
+	_, err := Implement(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t), brief, "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -102,7 +102,7 @@ func TestImplement_EmptyReconBriefDoesNotAffectPrompt(t *testing.T) {
 		Implementer: "Implement #{{.IssueNumber}}{{if .ReconBrief}} brief={{.ReconBrief}}{{end}}",
 	}
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}

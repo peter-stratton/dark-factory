@@ -55,8 +55,10 @@ type Model struct {
 	merged    int
 	inReview  int
 	queued    int
-	failed    int
-	totalCost float64
+	failed        int
+	totalCost     float64
+	activeWorkers int
+	totalWorkers  int
 
 	// Issue table state.
 	issues         []issueRow
@@ -132,9 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleIssueStarted(msg)
 
 	case IssueStageChangedMsg:
-		if idx, ok := m.issueIndex[msg.Number]; ok {
-			m.issues[idx].stage = msg.Stage
-		}
+		m.handleIssueStageChanged(msg)
 
 	case JudgeInterventionMsg:
 		m.handleJudgeIntervention(msg)
@@ -144,6 +144,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case RunStartedMsg:
 		m.handleRunStarted(msg)
+
+	case WorkersActiveMsg:
+		m.activeWorkers = msg.Active
+		m.totalWorkers = msg.Total
 
 	case WaveStartedMsg:
 		// Wave metadata is informational; no per-row state changes here.
@@ -284,6 +288,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// handleIssueStageChanged updates the stage for an in-progress issue.
+func (m *Model) handleIssueStageChanged(msg IssueStageChangedMsg) {
+	if idx, ok := m.issueIndex[msg.Number]; ok {
+		m.issues[idx].stage = msg.Stage
+	}
 }
 
 // handleIssueStarted adds a new issue row or skips if already pre-populated.

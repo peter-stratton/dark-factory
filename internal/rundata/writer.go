@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -106,6 +107,7 @@ type Outcome struct {
 
 // Writer manages a per-run directory and writes JSON files for each agent loop step.
 type Writer struct {
+	mu        sync.Mutex
 	dir       string
 	repo      string
 	milestone string
@@ -316,6 +318,9 @@ func (w *Writer) WriteIssueStatus(issueNum int, status IssueStatus) error {
 // WriteIssueDeps updates run.json with the dependency graph for all issues.
 // It reads the current run.json, sets IssueDeps, and writes it back.
 func (w *Writer) WriteIssueDeps(deps []IssueDep) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	path := filepath.Join(w.dir, "run.json")
 
 	data, err := os.ReadFile(path)
@@ -338,6 +343,9 @@ func (w *Writer) WriteIssueDeps(deps []IssueDep) error {
 // WriteIssueTitles updates run.json with the title map for all issues.
 // It reads the current run.json, sets IssueTitles, and writes it back.
 func (w *Writer) WriteIssueTitles(titles map[string]string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	path := filepath.Join(w.dir, "run.json")
 
 	data, err := os.ReadFile(path)
@@ -467,6 +475,9 @@ type JudgeIntervention struct {
 // Path: issues/<issueNum>/judge-interventions.json
 // If the file already exists it is read, the new entry appended, and the
 // whole array written back; if absent a new single-element array is created.
+//
+// No mutex needed: each issue number maps to a unique file path, so concurrent
+// workers for different issues do not contend.
 func (w *Writer) WriteJudgeIntervention(issueNum int, intervention JudgeIntervention) error {
 	path := filepath.Join(w.issueDir(issueNum), "judge-interventions.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -536,6 +547,9 @@ func (w *Writer) WriteSpecDelta(issueNum int, delta SpecDeltaData) error {
 // SetRateLimit updates run.json with the time at which the current usage-limit
 // hold period will end. Call ClearRateLimit when the hold ends.
 func (w *Writer) SetRateLimit(resetsAt time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	path := filepath.Join(w.dir, "run.json")
 
 	data, err := os.ReadFile(path)
@@ -558,6 +572,9 @@ func (w *Writer) SetRateLimit(resetsAt time.Time) error {
 // ClearRateLimit removes the rate limit reset time from run.json, signalling
 // that the hold period has ended and processing has resumed.
 func (w *Writer) ClearRateLimit() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	path := filepath.Join(w.dir, "run.json")
 
 	data, err := os.ReadFile(path)
@@ -579,6 +596,9 @@ func (w *Writer) ClearRateLimit() error {
 
 // FinalizeRun updates run.json with the finished_at timestamp and summary.
 func (w *Writer) FinalizeRun(summary RunSummary) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	path := filepath.Join(w.dir, "run.json")
 
 	data, err := os.ReadFile(path)
@@ -620,6 +640,20 @@ func validateRepo(repo string) (owner, name string, err error) {
 		}
 	}
 	return parts[0], parts[1], nil
+}
+
+// WaveResult holds metadata for one concurrent wave of issues.
+type WaveResult struct {
+	Wave         int       `json:"wave"`
+	IssueNumbers []int     `json:"issue_numbers"`
+	StartedAt    time.Time `json:"started_at"`
+	FinishedAt   time.Time `json:"finished_at"`
+}
+
+// WriteWaveResult writes wave metadata to waves/<N>.json.
+func (w *Writer) WriteWaveResult(wave WaveResult) error {
+	path := filepath.Join(w.dir, "waves", strconv.Itoa(wave.Wave)+".json")
+	return writeJSONMkdirs(path, wave)
 }
 
 // writeJSON marshals v and writes it to path, truncating any existing file.

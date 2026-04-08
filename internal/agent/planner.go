@@ -13,9 +13,9 @@ import (
 // an issue. It reads the issue, recon brief, architecture doc, and conventions
 // doc, then outputs an approach, key decisions, task breakdown, and risk flags.
 // The planner has read-only permissions and does not modify code.
-func Plan(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, reconBrief string) (*Result, error) {
+func Plan(ctx context.Context, issue github.Issue, integration bool, cfg *config.Config, prompts *Prompts, authEnv map[string]string, logger *slog.Logger, reconBrief string) (*Result, error) {
 	slug := Slugify(issue.Title)
-	data := newPromptData(issue, cfg, slug)
+	data := newPromptData(issue, cfg, slug, integration)
 	data.ReconBrief = reconBrief
 
 	rendered, err := RenderPrompt(prompts.Planner, data)
@@ -23,7 +23,7 @@ func Plan(ctx context.Context, issue github.Issue, cfg *config.Config, prompts *
 		return nil, fmt.Errorf("rendering planner prompt: %w", err)
 	}
 
-	opts, err := newRunOpts(rendered, cfg, authEnv, "planner")
+	opts, err := newRunOpts(rendered, cfg, authEnv, "planner", integration)
 	if err != nil {
 		return nil, err
 	}

@@ -58,8 +58,24 @@ prompts:
 # Default branch of the repository (auto-detected from GitHub if omitted)
 # default_branch: main
 
+# Bounded concurrency (optional, Phase 14)
+# Controls how many issues in a wave run in parallel. Default is 1
+# (serial behavior, identical to pre-Phase-14 godark). Set higher to
+# fan out independent issues across workers; dependent issues still
+# respect topological ordering via wave-barrier dispatch.
+#
+# Mutually exclusive with --integration on the CLI: an integration run
+# (which brings up docker_compose services) requires max_workers=1
+# because compose services are shared, host-side state. Pass
+# --workers N on the CLI to override this value per-run.
+# concurrency:
+#   max_workers: 1   # default; raise to fan out independent issues
+
 # Docker Compose integration (optional)
-# When set, godark manages compose services alongside the sandbox.
+# When set, godark can bring up compose services alongside the sandbox
+# for runs invoked with --integration. Concurrent runs (max_workers > 1)
+# skip compose because the services are shared host state and can't be
+# safely partitioned across parallel workers.
 # docker_compose:
 #   file: docker-compose.test.yml     # path to compose file (required)
 #   project_name: ""                  # optional prefix (auto-generated if empty)

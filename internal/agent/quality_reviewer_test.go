@@ -16,7 +16,7 @@ func TestQualityReview_ReturnsVerdict(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
+	result, err := QualityReview(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -31,7 +31,7 @@ func TestQualityReview_ChangesRequested(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
+	result, err := QualityReview(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -47,7 +47,7 @@ func TestQualityReview_SetsQualityReviewerRole(t *testing.T) {
 		return &sandbox.RunResult{Stdout: "AGENT_RESULT=APPROVED\n"}, nil
 	})
 
-	_, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
+	_, err := QualityReview(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -63,7 +63,7 @@ func TestQualityReview_StructuredVerdict(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := QualityReview(context.Background(), testIssue(), 10, testConfig(), testPrompts(t), nil, testLogger(t), 0)
+	result, err := QualityReview(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestQualityReview_Cycle0NoDirectiveInPrompt(t *testing.T) {
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3
-	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 0)
+	_, err := QualityReview(context.Background(), testIssue(), 10, false, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -166,7 +166,7 @@ func TestQualityReview_Cycle1NarrowsScope(t *testing.T) {
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3
-	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 1)
+	_, err := QualityReview(context.Background(), testIssue(), 10, false, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 1)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -185,7 +185,7 @@ func TestQualityReview_FinalCycleSecurityOnly(t *testing.T) {
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3, final cycle=2
-	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 2)
+	_, err := QualityReview(context.Background(), testIssue(), 10, false, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 2)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -207,7 +207,7 @@ func TestQualityReview_SingleAttemptNoDirective(t *testing.T) {
 	})
 
 	cfg := qualityConfigWithDecay(0) // maxAttempts=1
-	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 0)
+	_, err := QualityReview(context.Background(), testIssue(), 10, false, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 0)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -228,7 +228,7 @@ func TestQualityReview_DecayDisabledNoDirective(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxRetries = 2
 	cfg.QualityStrictnessDecay = false
-	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 2)
+	_, err := QualityReview(context.Background(), testIssue(), 10, false, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 2)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}
@@ -247,7 +247,7 @@ func TestQualityReview_DirectiveAppendedNotReplaced(t *testing.T) {
 	})
 
 	cfg := qualityConfigWithDecay(2) // maxAttempts=3
-	_, err := QualityReview(context.Background(), testIssue(), 10, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 1)
+	_, err := QualityReview(context.Background(), testIssue(), 10, false, cfg, qualityPromptsWithDirective(t), nil, testLogger(t), 1)
 	if err != nil {
 		t.Fatalf("QualityReview() error = %v", err)
 	}

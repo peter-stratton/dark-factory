@@ -11,6 +11,7 @@ import (
 
 func strPtr(s string) *string { return &s }
 func intPtr(i int) *int       { return &i }
+func boolPtr(b bool) *bool    { return &b }
 
 func writeYAML(t *testing.T, dir, content string) string {
 	t.Helper()
@@ -196,6 +197,35 @@ max_retries: 2
 	}
 	if cfg.MaxRetries != 5 {
 		t.Errorf("MaxRetries = %d, want 5", cfg.MaxRetries)
+	}
+}
+
+func TestFlagOverridePreservesDockerCompose(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+docker_compose:
+  file: docker-compose.test.yml
+  project_name: myproject
+concurrency:
+  max_workers: 4
+`)
+
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DockerCompose == nil {
+		t.Fatal("DockerCompose is nil after Load, want non-nil")
+	}
+	if cfg.DockerCompose.File != "docker-compose.test.yml" {
+		t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+	}
+	if cfg.DockerCompose.ProjectName != "myproject" {
+		t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "myproject")
+	}
+	if cfg.Concurrency.MaxWorkers != 4 {
+		t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
 	}
 }
 
@@ -2749,4 +2779,126 @@ func TestModelOverridesEmptyIsNil(t *testing.T) {
 	if cfg.ModelOverrides != nil {
 		t.Errorf("ModelOverrides = %v, want nil", cfg.ModelOverrides)
 	}
+}
+
+func TestConfigConcurrencyMaxWorkers(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+concurrency:
+  max_workers: 3
+`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Concurrency.MaxWorkers != 3 {
+		t.Errorf("Concurrency.MaxWorkers = %d, want 3", cfg.Concurrency.MaxWorkers)
+	}
+}
+
+func TestConfigConcurrencyDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `repo: owner/repo`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Concurrency.MaxWorkers != 1 {
+		t.Errorf("Concurrency.MaxWorkers = %d, want 1 (default)", cfg.Concurrency.MaxWorkers)
+	}
+}
+
+func TestConfigConcurrencyRejectsInvalid(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+	}{
+		{"zero", "repo: owner/repo\nconcurrency:\n  max_workers: 0"},
+		{"negative", "repo: owner/repo\nconcurrency:\n  max_workers: -1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeYAML(t, dir, tc.yaml)
+			_, err := Load(path, CLIFlags{})
+			if err == nil {
+				t.Fatal("Load() expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestApplyFlagsDoesNotMutateDockerCompose(t *testing.T) {
+	t.Run("empty flags preserve DockerCompose", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 4},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml", ProjectName: "myproject"},
+		}
+		applyFlags(cfg, CLIFlags{})
+		if cfg.DockerCompose == nil {
+			t.Fatal("DockerCompose is nil after applyFlags, want non-nil")
+		}
+		if cfg.DockerCompose.File != "docker-compose.test.yml" {
+			t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+		}
+		if cfg.DockerCompose.ProjectName != "myproject" {
+			t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "myproject")
+		}
+	})
+
+	t.Run("empty flags preserve Concurrency", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 4},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml"},
+		}
+		applyFlags(cfg, CLIFlags{})
+		if cfg.Concurrency.MaxWorkers != 4 {
+			t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
+		}
+	})
+
+	t.Run("all flags set preserve DockerCompose and Concurrency", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 4},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml"},
+		}
+		applyFlags(cfg, CLIFlags{
+			Repo:       strPtr("other/repo"),
+			MaxRetries: intPtr(10),
+			NoJudge:    boolPtr(true),
+			Model:      strPtr("opus"),
+		})
+		if cfg.DockerCompose == nil {
+			t.Fatal("DockerCompose is nil after applyFlags with all flags set, want non-nil")
+		}
+		if cfg.DockerCompose.File != "docker-compose.test.yml" {
+			t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+		}
+		if cfg.Concurrency.MaxWorkers != 4 {
+			t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
+		}
+	})
+
+	t.Run("integration and workers flags preserve DockerCompose and Concurrency", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 4},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml", ProjectName: "myproject"},
+		}
+		applyFlags(cfg, CLIFlags{
+			Integration: boolPtr(true),
+			Workers:     intPtr(2),
+		})
+		if cfg.DockerCompose == nil {
+			t.Fatal("DockerCompose is nil after applyFlags with Integration+Workers, want non-nil")
+		}
+		if cfg.DockerCompose.File != "docker-compose.test.yml" {
+			t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+		}
+		if cfg.DockerCompose.ProjectName != "myproject" {
+			t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "myproject")
+		}
+		if cfg.Concurrency.MaxWorkers != 4 {
+			t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
+		}
+	})
 }
