@@ -813,11 +813,22 @@ func verifyToTimelineView(vr rundata.VerifyStepResult) TimelineStepView {
 
 // computeConcurrencySaved calculates wall-clock time saved by running issues
 // concurrently. Returns a formatted duration string, or empty if no savings.
+//
+// Idle gaps between waves (most commonly rate-limit holds, but also post-wave
+// housekeeping) are subtracted from wall-clock time so they don't count
+// against concurrency savings — a run that parallelized four issues and then
+// slept 30 minutes on a rate limit should still show the parallelism win.
 func computeConcurrencySaved(detail *rundata.RunDetail) string {
 	if detail.FinishedAt == nil {
 		return ""
 	}
 	wallSecs := detail.FinishedAt.Sub(detail.StartedAt).Seconds()
+	for i := 1; i < len(detail.Waves); i++ {
+		gap := detail.Waves[i].StartedAt.Sub(detail.Waves[i-1].FinishedAt).Seconds()
+		if gap > 0 {
+			wallSecs -= gap
+		}
+	}
 	var serialSecs float64
 	for _, issue := range detail.Issues {
 		serialSecs += issue.Recon.DurationSeconds +

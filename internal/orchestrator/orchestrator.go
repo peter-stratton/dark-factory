@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -410,8 +411,11 @@ func processUnblockedLoop(
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
-		issueLogger := perIssueLogger(writer, issue.Number, logger)
+		issueLogger, issueLogCloser := perIssueLogger(writer, issue.Number, logger)
 		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration)
+		if err := issueLogCloser.Close(); err != nil {
+			logger.Warn("failed to close per-issue logger", "issue", issue.Number, "error", err)
+		}
 		attempted++
 
 		writeResolveDialogue(writer, issue, outcome, cfg, logger)
@@ -561,18 +565,25 @@ type waveResult struct {
 
 // perIssueLogger returns a file-backed logger rooted at the issue's run-data
 // directory, falling back to the run-level logger if writer is nil or the
-// per-issue logger fails to initialize.
-func perIssueLogger(writer *rundata.Writer, issueNum int, logger *slog.Logger) *slog.Logger {
+// per-issue logger fails to initialize. The returned io.Closer must be closed
+// by the caller (may be a no-op closer when falling back to the run logger).
+func perIssueLogger(writer *rundata.Writer, issueNum int, logger *slog.Logger) (*slog.Logger, io.Closer) {
 	if writer == nil {
-		return logger
+		return logger, nopCloser{}
 	}
-	il, err := logging.NewFileLogger(writer.IssueDir(issueNum))
+	il, closer, err := logging.NewFileLogger(writer.IssueDir(issueNum))
 	if err != nil {
 		logger.Warn("failed to create per-issue logger", "issue", issueNum, "error", err)
-		return logger
+		return logger, nopCloser{}
 	}
-	return il
+	return il, closer
 }
+
+// nopCloser satisfies io.Closer with a no-op Close. Used when perIssueLogger
+// falls back to the run-level logger (no file was opened).
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
 
 // runOneIssue processes a single issue within a wave: sets up per-issue
 // logging, calls processIssueFn, writes dialogue, and computes cost. It
@@ -585,7 +596,12 @@ func runOneIssue(ctx context.Context, issue github.Issue, cfg *config.Config,
 	writer *rundata.Writer) waveResult {
 
 	// Create a per-issue file logger when a run-data writer is available.
-	issueLogger := perIssueLogger(writer, issue.Number, logger)
+	issueLogger, issueLogCloser := perIssueLogger(writer, issue.Number, logger)
+	defer func() {
+		if err := issueLogCloser.Close(); err != nil {
+			logger.Warn("failed to close per-issue logger", "issue", issue.Number, "error", err)
+		}
+	}()
 
 	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration)
 
@@ -810,6 +826,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	// Track which issues have been seen (processed or failed) to avoid reprocessing.
 	seen := make(map[int]bool)
 	wave := 0
+waveLoop:
 	for {
 		wave++
 		waveStart := time.Now()
@@ -888,7 +905,9 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				defer wg.Done()
 				defer func() { <-sem }()
 				reporter.WorkersActive(int(activeWorkers.Add(1)), maxWorkers)
-				defer reporter.WorkersActive(int(activeWorkers.Add(-1)), maxWorkers)
+				defer func() {
+					reporter.WorkersActive(int(activeWorkers.Add(-1)), maxWorkers)
+				}()
 				results <- runOneIssue(ctx, iss, cfg, runMode, prompts, authEnv, logger, hook, reporter, writer)
 			}(issue)
 		}
@@ -904,6 +923,15 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		slices.SortFunc(collected, func(a, b waveResult) int {
 			return cmp.Compare(a.IssueNumber, b.IssueNumber)
 		})
+
+		// Snapshot authEnv before spawning punchlist enrichment goroutines.
+		// The post-wave rate-limit handler below may mutate authEnv (token
+		// refresh), and enrichment goroutines can outlive this wave via plWg,
+		// so they must read from an immutable copy to stay race-free.
+		authEnvSnap := make(map[string]string, len(authEnv))
+		for k, v := range authEnv {
+			authEnvSnap[k] = v
+		}
 
 		// Process results in ascending issue-number order: update stats,
 		// report completions, and spawn punchlist enrichment goroutines.
@@ -950,7 +978,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				plWg.Add(1)
 				go func(iss github.Issue, oc agent.IssueOutcome) {
 					defer plWg.Done()
-					entry := buildPunchlistEntry(ctx, iss, oc, cfg, prompts, authEnv, logger)
+					entry := buildPunchlistEntry(ctx, iss, oc, cfg, prompts, authEnvSnap, logger)
 					plMu.Lock()
 					plEntries = append(plEntries, entry)
 					plMu.Unlock()
@@ -1055,7 +1083,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				case <-ctx.Done():
 					timer.Stop()
 					logger.Warn("context cancelled during rate-limit hold")
-					return nil
+					// Break out of the wave loop so finalization still runs
+					// (RunFinished, rollup, FinalizeRun, notifications, and
+					// the plWg.Wait() for in-flight punchlist enrichments).
+					runStats.abortReason = "context cancelled during rate-limit hold"
+					break waveLoop
 				case <-timer.C:
 				}
 

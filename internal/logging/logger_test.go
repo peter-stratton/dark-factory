@@ -69,10 +69,11 @@ func TestNewLoggerFileOnly_NoStdout(t *testing.T) {
 
 func TestNewFileLogger_CreatesDebugLog(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewFileLogger(dir)
+	logger, closer, err := NewFileLogger(dir)
 	if err != nil {
 		t.Fatalf("NewFileLogger() error = %v", err)
 	}
+	defer closer.Close()
 
 	logger.Info("per-issue test entry", "issue", 42)
 
@@ -95,10 +96,11 @@ func TestNewFileLogger_CreatesDebugLog(t *testing.T) {
 
 func TestNewFileLogger_CreatesDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues", "42")
-	_, err := NewFileLogger(dir)
+	_, closer, err := NewFileLogger(dir)
 	if err != nil {
 		t.Fatalf("NewFileLogger() error = %v", err)
 	}
+	defer closer.Close()
 	if _, err := os.Stat(filepath.Join(dir, "debug.log")); os.IsNotExist(err) {
 		t.Fatal("expected debug.log to be created in nested directory")
 	}

@@ -38,8 +38,12 @@ func (f *fakeNotifier) Send(_ context.Context, event notify.Event) error {
 	return nil
 }
 
-// fakeReporter records all reporter calls for test assertions.
+// fakeReporter records all reporter calls for test assertions. A mutex
+// guards every recorded field because punchlist enrichment, issue processing,
+// and the wave dispatcher all call reporter methods from multiple goroutines
+// under bounded concurrency — without this, -race fails on legitimate waves.
 type fakeReporter struct {
+	mu              sync.Mutex
 	issueCompleted  []fakeIssueCompleted
 	waveStarted     []fakeWaveStarted
 	runFinished     []fakeRunFinished
@@ -89,28 +93,46 @@ func (r *fakeReporter) RunStarted(_, _, _, _, _, _ string, _ []progress.IssueSum
 func (r *fakeReporter) IssueStarted(_ int, _ string)                                  {}
 func (r *fakeReporter) IssueStageChanged(_ int, _ string)                             {}
 func (r *fakeReporter) IssueCompleted(issueNumber int, title, status string, prNumber, retries int, errMsg string, costUSD float64, traceID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.issueCompleted = append(r.issueCompleted, fakeIssueCompleted{issueNumber, title, status, prNumber, retries, errMsg, costUSD, traceID})
 }
 func (r *fakeReporter) WaveStarted(wave, count int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.waveStarted = append(r.waveStarted, fakeWaveStarted{wave, count})
 }
 func (r *fakeReporter) AllBlocked(total, blocked int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.allBlocked = append(r.allBlocked, fakeAllBlocked{total, blocked})
 }
 func (r *fakeReporter) RollupCreated(prNumber int, prURL string, merged bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.rollupCreated = append(r.rollupCreated, fakeRollupCreated{prNumber, prURL, merged})
 }
 func (r *fakeReporter) RunFinished(implemented, readyToMerge, needsHumanReview, failed, blocked int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.runFinished = append(r.runFinished, fakeRunFinished{implemented, readyToMerge, needsHumanReview, failed, blocked})
 }
 func (r *fakeReporter) JudgeIntervention(_ int, _, _, _, _ string) {}
 func (r *fakeReporter) PunchlistText(text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.punchlistTexts = append(r.punchlistTexts, text)
 }
 func (r *fakeReporter) RateLimited(resetsAt time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.rateLimitedAt = append(r.rateLimitedAt, resetsAt)
 }
-func (r *fakeReporter) RateLimitCleared() { r.rateLimitClears++ }
+func (r *fakeReporter) RateLimitCleared() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rateLimitClears++
+}
 
 // cancelOnRateLimitReporter cancels a context as soon as RateLimited is
 // reported, providing a race-free way for tests to interrupt a rate-limit

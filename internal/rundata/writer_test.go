@@ -2,6 +2,7 @@ package rundata
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1566,6 +1567,61 @@ func TestConcurrentSetClearRateLimit(t *testing.T) {
 	var meta RunMeta
 	if err := json.Unmarshal(data, &meta); err != nil {
 		t.Fatalf("run.json is not valid JSON after concurrent writes: %v", err)
+	}
+}
+
+// TestConcurrentRunMetaMutations hammers every writer method that mutates
+// run.json concurrently. It verifies that the writer mutex serializes the
+// read-modify-write cycles so run.json remains valid JSON and no goroutine
+// sees a partial update. Run with -race to catch ordering bugs.
+func TestConcurrentRunMetaMutations(t *testing.T) {
+	base := t.TempDir()
+	w, err := NewWithBase(base, "owner/repo", "ms", []int{1, 2, 3}, "", AutoMerge{}, "")
+	if err != nil {
+		t.Fatalf("NewWithBase: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	const goroutines = 20
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			switch n % 5 {
+			case 0:
+				if err := w.WriteIssueDeps([]IssueDep{{IssueNumber: n, DependsOn: []int{1}}}); err != nil {
+					t.Errorf("WriteIssueDeps goroutine %d: %v", n, err)
+				}
+			case 1:
+				if err := w.WriteIssueTitles(map[string]string{"1": fmt.Sprintf("t%d", n)}); err != nil {
+					t.Errorf("WriteIssueTitles goroutine %d: %v", n, err)
+				}
+			case 2:
+				resetsAt := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+				if err := w.SetRateLimit(resetsAt); err != nil {
+					t.Errorf("SetRateLimit goroutine %d: %v", n, err)
+				}
+			case 3:
+				if err := w.ClearRateLimit(); err != nil {
+					t.Errorf("ClearRateLimit goroutine %d: %v", n, err)
+				}
+			case 4:
+				summary := RunSummary{Total: n, Implemented: n}
+				if err := w.FinalizeRun(summary); err != nil {
+					t.Errorf("FinalizeRun goroutine %d: %v", n, err)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("run.json is not valid JSON after concurrent writes: %v\nraw: %s", err, data)
 	}
 }
 

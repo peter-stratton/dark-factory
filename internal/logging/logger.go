@@ -45,20 +45,24 @@ func NewLoggerFileOnly(dir string) (*slog.Logger, error) {
 // in dir with append semantics. The directory is created if it does not exist.
 // Use for per-entity log files (e.g. per-issue logs) where stdout output is
 // not needed and the file must survive retries without truncation.
-func NewFileLogger(dir string) (*slog.Logger, error) {
+//
+// The returned io.Closer closes the underlying log file; callers are
+// responsible for calling Close when the logger is no longer needed. Leaking
+// the closer leaks a file descriptor per call.
+func NewFileLogger(dir string) (*slog.Logger, io.Closer, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create log directory: %w", err)
+		return nil, nil, fmt.Errorf("create log directory: %w", err)
 	}
 
 	path := filepath.Join(dir, "debug.log")
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("open log file: %w", err)
+		return nil, nil, fmt.Errorf("open log file: %w", err)
 	}
 
 	jsonHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
-	return slog.New(jsonHandler), nil
+	return slog.New(jsonHandler), f, nil
 }
 
 // NewLogger creates a logger that writes structured JSON to debug.log in dir
