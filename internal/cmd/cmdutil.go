@@ -49,6 +49,14 @@ func parseCLIFlags(cmd *cobra.Command) config.CLIFlags {
 		v, _ := cmd.Flags().GetBool("with-compose")
 		flags.WithCompose = &v
 	}
+	if cmd.Flags().Changed("integration") {
+		v, _ := cmd.Flags().GetBool("integration")
+		flags.Integration = &v
+	}
+	if cmd.Flags().Changed("workers") {
+		v, _ := cmd.Flags().GetInt("workers")
+		flags.Workers = &v
+	}
 
 	return flags
 }

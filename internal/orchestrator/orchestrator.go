@@ -56,7 +56,7 @@ const (
 // logFactory is called to create the run-directory logger once the RunDataWriter
 // has established its directory. Pass logging.NewLogger for text/pipe mode and
 // logging.NewLoggerFileOnly for TUI mode (where the TUI owns stdout).
-func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, dryRun bool, force bool, punchlistPath string, version string) error {
+func Run(ctx context.Context, cfg *config.Config, runMode config.RunMode, logger *slog.Logger, reporter progress.ProgressReporter, logFactory func(string) (*slog.Logger, error), milestone string, dryRun bool, force bool, punchlistPath string, version string) error {
 	// Preflight: fail fast if working tree is dirty (skip in dry-run mode).
 	if !dryRun {
 		if err := CheckWorkingTree(); err != nil {
@@ -159,7 +159,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, reporter 
 		return nil
 	}
 
-	return processIssues(ctx, issues, closedSet, noDarkNums, cfg, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
+	return processIssues(ctx, issues, closedSet, noDarkNums, cfg, runMode, logger, reporter, writer, force, punchlistPath, milestone, notifiers)
 }
 
 // filterNoDarkIssues removes any issue labeled with label.NoDark from the
@@ -260,6 +260,7 @@ func ReResolveAndProcess(
 	noDarkNums []int,
 	seen map[int]bool,
 	cfg *config.Config,
+	runMode config.RunMode,
 	milestone string,
 	logger *slog.Logger,
 	reporter progress.ProgressReporter,
@@ -286,7 +287,7 @@ func ReResolveAndProcess(
 
 	logger.Info("re-resolution: newly unblocked issues found", "count", len(unblocked))
 
-	authEnv, prompts, err := prepareResolveEnv(ctx, cfg, logger)
+	authEnv, prompts, err := prepareResolveEnv(ctx, cfg, runMode, logger)
 	if err != nil {
 		return false, err
 	}
@@ -325,7 +326,7 @@ func ReResolveAndProcess(
 		}
 	}()
 
-	attempted, implemented, failed, abortReason := processUnblockedLoop(ctx, unblocked, cfg, prompts, authEnv, logger, hook, reporter, writer, seen)
+	attempted, implemented, failed, abortReason := processUnblockedLoop(ctx, unblocked, cfg, runMode, prompts, authEnv, logger, hook, reporter, writer, seen)
 	finalizeResolveRun(ctx, statsDB, cfg, writer, implemented, failed, abortReason, notifiers, logger)
 
 	return attempted > 0, nil
@@ -353,7 +354,7 @@ func refreshHostGHToken(logger *slog.Logger) {
 // prepareResolveEnv sets up auth, prompts, lifecycle labels, and (when
 // sandbox mode is active) builds the Docker image. cfg.Docker.Image is
 // updated in place when a new image is built.
-func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Logger) (map[string]string, *agent.Prompts, error) {
+func prepareResolveEnv(ctx context.Context, cfg *config.Config, runMode config.RunMode, logger *slog.Logger) (map[string]string, *agent.Prompts, error) {
 	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collecting auth: %w", err)
@@ -370,7 +371,11 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, logger *slog.Log
 		}
 	}
 
-	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+	composeForRun := cfg.DockerCompose
+	if !runMode.Integration {
+		composeForRun = nil
+	}
+	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, composeForRun)
 	tag, err := buildImageFn(ctx, dc, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building Docker image: %w", err)
@@ -388,6 +393,7 @@ func processUnblockedLoop(
 	ctx context.Context,
 	unblocked []github.Issue,
 	cfg *config.Config,
+	runMode config.RunMode,
 	prompts *agent.Prompts,
 	authEnv map[string]string,
 	logger *slog.Logger,
@@ -405,7 +411,7 @@ func processUnblockedLoop(
 
 		reporter.IssueStarted(issue.Number, issue.Title)
 		issueLogger := perIssueLogger(writer, issue.Number, logger)
-		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, cfg.DockerCompose != nil)
+		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration)
 		attempted++
 
 		writeResolveDialogue(writer, issue, outcome, cfg, logger)
@@ -574,14 +580,14 @@ func perIssueLogger(writer *rundata.Writer, issueNum int, logger *slog.Logger) *
 // limit. Shared mutable state (runStats, seen, implementedIssues, punchlist)
 // is left to the caller.
 func runOneIssue(ctx context.Context, issue github.Issue, cfg *config.Config,
-	prompts *agent.Prompts, authEnv map[string]string, logger *slog.Logger,
-	hook agent.RunDataHook, reporter progress.ProgressReporter,
+	runMode config.RunMode, prompts *agent.Prompts, authEnv map[string]string,
+	logger *slog.Logger, hook agent.RunDataHook, reporter progress.ProgressReporter,
 	writer *rundata.Writer) waveResult {
 
 	// Create a per-issue file logger when a run-data writer is available.
 	issueLogger := perIssueLogger(writer, issue.Number, logger)
 
-	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, cfg.DockerCompose != nil)
+	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, runMode.Integration)
 
 	if outcome.UsageLimited {
 		return waveResult{
@@ -674,7 +680,7 @@ func printDryRun(processable []github.Issue, blocked []blockedIssue, total int) 
 // function was called. They are re-injected into every rebuilt closedSet so
 // that issues depending on a nodark issue are never re-classified as blocked
 // on waves 2+.
-func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, noDarkNums []int, cfg *config.Config, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
+func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[int]bool, noDarkNums []int, cfg *config.Config, runMode config.RunMode, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, force bool, punchlistPath string, milestone string, notifiers []notify.Notifier) error {
 	// Open stats DB early; nil on failure (errors logged, never fatal).
 	statsDB := OpenStatsDB(logger)
 	if statsDB != nil {
@@ -730,7 +736,11 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 	// Compute DockerConfig for image build and compose startup.
-	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+	composeForRun := cfg.DockerCompose
+	if !runMode.Integration {
+		composeForRun = nil
+	}
+	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, composeForRun)
 
 	tag, err := buildImageFn(ctx, dc, logger)
 	if err != nil {
@@ -745,8 +755,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		}
 	}
 
-	// Start compose services if configured, before any agent execution.
-	if cfg.DockerCompose != nil {
+	// Start compose services if integration mode is active, before any agent execution.
+	if runMode.Integration {
 		cleanupEnvFile, err := sandbox.ComposeUp(ctx, dc, cfg.RequiredEnv, logger)
 		if err != nil {
 			return fmt.Errorf("starting compose services: %w", err)
@@ -854,8 +864,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			seen[issue.Number] = true
 		}
 
-		// Fan out workers, capped by MaxWorkers.
-		maxWorkers := cfg.Concurrency.MaxWorkers
+		// Fan out workers, capped by runMode.Workers.
+		maxWorkers := runMode.Workers
 		if maxWorkers < 1 {
 			maxWorkers = 1
 		}
@@ -879,7 +889,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 				defer func() { <-sem }()
 				reporter.WorkersActive(int(activeWorkers.Add(1)), maxWorkers)
 				defer reporter.WorkersActive(int(activeWorkers.Add(-1)), maxWorkers)
-				results <- runOneIssue(ctx, iss, cfg, prompts, authEnv, logger, hook, reporter, writer)
+				results <- runOneIssue(ctx, iss, cfg, runMode, prompts, authEnv, logger, hook, reporter, writer)
 			}(issue)
 		}
 		wg.Wait()
@@ -1101,7 +1111,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		cfg.AutoMerge.Rollup != config.RollupNone &&
 		cfg.BaseBranch != "" && cfg.BaseBranch != defaultBranch &&
 		runStats.implemented > 0 {
-		prNum, prURL, err := HandleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
+		prNum, prURL, err := HandleRollupPR(ctx, cfg, runMode, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
 		if err != nil {
 			logger.Warn("rollup PR handling failed", "error", err)
 			fmt.Printf("Rollup PR warning: %v\n", err)
@@ -1244,7 +1254,7 @@ var mergeCoordinateFn = agent.MergeCoordinate
 // into defaultBranch. It is called when rollup is "manual" or "auto" and at
 // least one issue was implemented into the base branch during the run.
 // Returns the PR number, URL, and any error.
-func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
+func HandleRollupPR(ctx context.Context, cfg *config.Config, runMode config.RunMode, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
 	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
@@ -1263,7 +1273,7 @@ func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 
 	// Conflict resolution loop: check mergeable status and invoke the merge
 	// coordinator if the rollup PR has conflicts. Bounded by MaxRebaseAttempts.
-	verifyPassedInLoop, earlyPR, err := resolveRollupConflicts(ctx, cfg, prNum, prURL, title, body, defaultBranch, logger, reporter, writer, prompts, authEnv)
+	verifyPassedInLoop, earlyPR, err := resolveRollupConflicts(ctx, cfg, runMode, prNum, prURL, title, body, defaultBranch, logger, reporter, writer, prompts, authEnv)
 	if err != nil {
 		return 0, "", err
 	}
@@ -1278,7 +1288,7 @@ func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 		if writer != nil {
 			writeResult = writer.WriteRollupVerifyResult
 		}
-		verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult, cfg.DockerCompose != nil)
+		verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult, runMode.Integration)
 		if err != nil {
 			return 0, "", fmt.Errorf("rollup verify: %w", err)
 		}
@@ -1300,7 +1310,7 @@ func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 // resolveRollupConflicts runs the conflict resolution loop for a rollup PR.
 // It returns whether verify passed during resolution, whether the caller should
 // return early (PR left open), and any error.
-func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, prURL, title, body, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (verifyPassed bool, earlyReturn bool, err error) {
+func resolveRollupConflicts(ctx context.Context, cfg *config.Config, runMode config.RunMode, prNum int, prURL, title, body, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (verifyPassed bool, earlyReturn bool, err error) {
 	if cfg.MaxRebaseAttempts <= 0 || mergeCoordinateFn == nil {
 		return false, false, nil
 	}
@@ -1328,7 +1338,7 @@ func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, 
 			prNum, cfg.BaseBranch, defaultBranch,
 		)
 
-		result, mcErr := mergeCoordinateFn(ctx, syntheticIssue, prNum, conflictInfo, cfg.DockerCompose != nil, cfg, prompts, authEnv, logger)
+		result, mcErr := mergeCoordinateFn(ctx, syntheticIssue, prNum, conflictInfo, runMode.Integration, cfg, prompts, authEnv, logger)
 		if mcErr != nil {
 			return false, false, fmt.Errorf("rollup merge coordinator: %w", mcErr)
 		}
@@ -1357,7 +1367,7 @@ func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, 
 		if writer != nil {
 			writeVerify = writer.WriteRollupVerifyResult
 		}
-		passed, vErr := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeVerify, cfg.DockerCompose != nil)
+		passed, vErr := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeVerify, runMode.Integration)
 		if vErr != nil {
 			return false, false, fmt.Errorf("rollup verify after conflict resolution: %w", vErr)
 		}
