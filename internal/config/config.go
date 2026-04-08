@@ -387,6 +387,8 @@ type CLIFlags struct {
 	NoJudge           *bool
 	Model             *string
 	WithCompose       *bool
+	Workers           *int
+	Integration       *bool
 	Config            string
 }
 
