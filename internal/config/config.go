@@ -627,6 +627,10 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	if flags.Model != nil {
 		cfg.Model = *flags.Model
 	}
+	applyComposeFlags(cfg, flags)
+}
+
+func applyComposeFlags(cfg *Config, flags CLIFlags) {
 	if flags.WithCompose != nil && *flags.WithCompose {
 		cfg.Concurrency.MaxWorkers = 1
 		if cfg.DockerCompose == nil {
