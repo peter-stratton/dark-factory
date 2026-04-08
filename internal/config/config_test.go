@@ -2848,4 +2848,15 @@ func TestApplyFlagsWithCompose(t *testing.T) {
 			t.Error("expected DockerCompose to be preserved when max_workers=1")
 		}
 	})
+
+	t.Run("integration preserves compose when max_workers > 1", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 4},
+			DockerCompose: &DockerCompose{File: compose.File},
+		}
+		applyFlags(cfg, CLIFlags{Integration: boolPtr(true)})
+		if cfg.DockerCompose == nil {
+			t.Error("expected DockerCompose to be preserved when --integration is set")
+		}
+	})
 }

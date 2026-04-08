@@ -632,7 +632,8 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 		if cfg.DockerCompose == nil {
 			slog.Warn("--with-compose set but no docker_compose block in config")
 		}
-	} else if cfg.Concurrency.MaxWorkers > 1 && cfg.DockerCompose != nil {
+	} else if cfg.Concurrency.MaxWorkers > 1 && cfg.DockerCompose != nil &&
+		(flags.Integration == nil || !*flags.Integration) {
 		slog.Info("compose skipped: max_workers > 1")
 		cfg.DockerCompose = nil
 	}
