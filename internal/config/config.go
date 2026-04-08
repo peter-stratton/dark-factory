@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -87,8 +86,8 @@ type Verify struct {
 // required checks succeed.
 type WaitForChecks struct {
 	Timeout      string   `yaml:"timeout"`       // duration string, e.g. "10m"
-	Required     []string `yaml:"required"`       // check names to wait for
-	StartupGrace string   `yaml:"startup_grace"`  // duration to wait for checks to appear before treating as N/A (default: "60s")
+	Required     []string `yaml:"required"`      // check names to wait for
+	StartupGrace string   `yaml:"startup_grace"` // duration to wait for checks to appear before treating as N/A (default: "60s")
 }
 
 // Module holds per-module build/test/lint/generate commands and dependency
@@ -216,13 +215,13 @@ type Config struct {
 
 	Model          string            `yaml:"model"`
 	ModelOverrides map[string]string `yaml:"model_overrides"`
-	AgentTimeout  string            `yaml:"agent_timeout"`
-	FormatCommand string            `yaml:"format_command"`
-	BuildCommand  string            `yaml:"build_command"`
-	TestCommand   string            `yaml:"test_command"`
-	LintCommand   string            `yaml:"lint_command"`
-	SandboxEnv    map[string]string `yaml:"sandbox_env"`
-	Runtime       Runtime           `yaml:"runtime"`
+	AgentTimeout   string            `yaml:"agent_timeout"`
+	FormatCommand  string            `yaml:"format_command"`
+	BuildCommand   string            `yaml:"build_command"`
+	TestCommand    string            `yaml:"test_command"`
+	LintCommand    string            `yaml:"lint_command"`
+	SandboxEnv     map[string]string `yaml:"sandbox_env"`
+	Runtime        Runtime           `yaml:"runtime"`
 
 	ProtectedPaths []string `yaml:"protected_paths"`
 	DeniedCommands []string `yaml:"denied_commands"`
@@ -243,8 +242,8 @@ type Config struct {
 	DefaultBranch          string    `yaml:"default_branch"`
 	BranchPrefix           string    `yaml:"branch_prefix"`
 	LabelPrefix            string    `yaml:"label_prefix"`
-	QualityStrictnessDecay bool   `yaml:"quality_strictness_decay"`
-	EnforceArchitecture    bool   `yaml:"enforce_architecture"`
+	QualityStrictnessDecay bool      `yaml:"quality_strictness_decay"`
+	EnforceArchitecture    bool      `yaml:"enforce_architecture"`
 
 	// AuthPreference controls which Anthropic auth token is preferred when both
 	// ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set.
@@ -351,17 +350,17 @@ type HostService struct {
 
 // Prompts holds paths to prompt template files.
 type Prompts struct {
-	Implementer          string `yaml:"implementer"`
-	ImplementerRetry     string `yaml:"implementer_retry"`
-	Reviewer             string `yaml:"reviewer"`
-	ReviewerSemiformal   string `yaml:"reviewer_semiformal"`
-	QualityReviewer      string `yaml:"quality_reviewer"`
-	SpecGenerator        string `yaml:"spec_generator"`
-	Punchlist            string `yaml:"punchlist"`
-	VerifyFix            string `yaml:"verify_fix"`
-	Recon                string `yaml:"recon"`
-	Planner              string `yaml:"planner"`
-	MergeCoordinator     string `yaml:"merge_coordinator"`
+	Implementer        string `yaml:"implementer"`
+	ImplementerRetry   string `yaml:"implementer_retry"`
+	Reviewer           string `yaml:"reviewer"`
+	ReviewerSemiformal string `yaml:"reviewer_semiformal"`
+	QualityReviewer    string `yaml:"quality_reviewer"`
+	SpecGenerator      string `yaml:"spec_generator"`
+	Punchlist          string `yaml:"punchlist"`
+	VerifyFix          string `yaml:"verify_fix"`
+	Recon              string `yaml:"recon"`
+	Planner            string `yaml:"planner"`
+	MergeCoordinator   string `yaml:"merge_coordinator"`
 }
 
 // Concurrency holds concurrency settings for the run orchestrator.
@@ -378,18 +377,17 @@ type Review struct {
 // CLIFlags holds flag values passed on the command line.
 // Pointer fields distinguish "not set" (nil) from zero values.
 type CLIFlags struct {
-	Repo              *string
-	MaxRetries        *int
-	AutoMergeFeature  *string
-	AutoMergeRollup   *string
-	BaseBranch        *string
-	DefaultBranch     *string
-	NoJudge           *bool
-	Model             *string
-	WithCompose       *bool
-	Workers           *int
-	Integration       *bool
-	Config            string
+	Repo             *string
+	MaxRetries       *int
+	AutoMergeFeature *string
+	AutoMergeRollup  *string
+	BaseBranch       *string
+	DefaultBranch    *string
+	NoJudge          *bool
+	Model            *string
+	Workers          *int
+	Integration      *bool
+	Config           string
 }
 
 // phasePattern matches "Phase N" at the start of a milestone title (case-insensitive).
@@ -569,9 +567,9 @@ func defaults() *Config {
 		MaxRetries:        3,
 		MaxResumeRetries:  2,
 		MaxRebaseAttempts: 1,
-		AutoMerge:      AutoMerge{Feature: MergeNone, Rollup: RollupManual},
-		RoadmapPath:    "docs/roadmap/",
-		ProtectedPaths: []string{"godark.yaml"},
+		AutoMerge:         AutoMerge{Feature: MergeNone, Rollup: RollupManual},
+		RoadmapPath:       "docs/roadmap/",
+		ProtectedPaths:    []string{"godark.yaml"},
 		DeniedCommands: []string{
 			"rm -rf",
 			"git push --force",
@@ -626,20 +624,6 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.Model != nil {
 		cfg.Model = *flags.Model
-	}
-	applyComposeFlags(cfg, flags)
-}
-
-func applyComposeFlags(cfg *Config, flags CLIFlags) {
-	if flags.WithCompose != nil && *flags.WithCompose {
-		cfg.Concurrency.MaxWorkers = 1
-		if cfg.DockerCompose == nil {
-			slog.Warn("--with-compose set but no docker_compose block in config")
-		}
-	} else if cfg.Concurrency.MaxWorkers > 1 && cfg.DockerCompose != nil &&
-		(flags.Integration == nil || !*flags.Integration) {
-		slog.Info("compose skipped: max_workers > 1")
-		cfg.DockerCompose = nil
 	}
 }
 

@@ -610,7 +610,6 @@ func init() {
 	f.String("issues", "", "Comma-separated list of issue numbers (e.g. 160,161,162)")
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
 	f.String("default-branch", "", "Default branch of the repository (auto-detected if omitted)")
-	f.Bool("with-compose", false, "Enable Docker Compose services (forces max_workers=1; skipped by default when max_workers > 1)")
 	f.Bool("integration", false, "Enable Docker Compose integration testing (forces single worker)")
 	f.Int("workers", 0, "Maximum parallel workers (0 = use concurrency.max_workers from config)")
 
