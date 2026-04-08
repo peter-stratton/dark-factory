@@ -19,6 +19,6 @@ next wave.
 - TUI concurrent status display (multiple spinners, worker count in summary bar)
 - Dashboard wave grouping (wave metadata in run data, wall-clock savings)
 
-**Issues**: #745–#754
+**Issues**: #745–#754, #768–#771 (RunMode refactor addendum)
 
 **Planning doc**: `docs/planning/phase-14-bounded-concurrency.md`

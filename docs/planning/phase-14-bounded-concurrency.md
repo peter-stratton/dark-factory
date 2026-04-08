@@ -664,3 +664,380 @@ ProgressReporter stub updates needed (issue 9):
 ```
 
 All hops covered. No gaps.
+
+---
+
+# Addendum: Refactor `--with-compose` to Runtime `RunMode`
+
+> Follow-up to #748 / PR #765 (issue #766). The current `applyFlags` silently
+> nils `cfg.DockerCompose` when `max_workers > 1`, which violates the
+> "explicit over implicit in config" rule. Replace it with an ephemeral
+> `RunMode` struct built per-invocation from CLI flags, leaving config as a
+> verbatim capability declaration.
+
+## Model
+
+- **Config** declares *capability*: `concurrency.max_workers` is the project's
+  parallelism ceiling and default; `docker_compose` lists services that are
+  *available*.
+- **Flags** declare *per-run intent*:
+  - `--integration` activates compose services for this run; forces
+    `Workers = 1`.
+  - `--workers N` selects worker count for this run (1..max_workers).
+- **`RunMode`** is the ephemeral struct flowed from cmd → orchestrator → agent
+  layer:
+  ```go
+  type RunMode struct {
+      Workers     int
+      Integration bool
+  }
+  ```
+- Default behaviour with no flags: `Workers = cfg.Concurrency.MaxWorkers`,
+  `Integration = false`. Compose stays off in all cases unless `--integration`
+  is passed.
+- `--with-compose` is removed outright (not aliased). Anyone scripting it
+  gets a clean "unknown flag" error.
+
+---
+
+## Issue 768: Define `RunMode` type and `BuildRunMode` constructor with validation
+
+### Description
+
+Introduce the `RunMode` struct and a `BuildRunMode(cfg, flags)` constructor in
+the `config` package. The constructor centralises all per-invocation
+validation. No call sites are touched in this issue — this is pure new code
+with its own unit tests.
+
+### Key constraints
+
+- New file `internal/config/runmode.go` in package `config`.
+- Type:
+  ```go
+  type RunMode struct {
+      Workers     int
+      Integration bool
+  }
+  ```
+- Add two pointer fields to `CLIFlags` in `internal/config/config.go`:
+  `Workers *int` and `Integration *bool`. Do NOT remove `WithCompose` yet —
+  removal happens in the cleanup issue.
+- Constructor signature:
+  ```go
+  func BuildRunMode(cfg *Config, flags CLIFlags) (RunMode, error)
+  ```
+- Validation rules (return errors verbatim, no slog warnings):
+  - If `flags.Integration != nil && *flags.Integration` and
+    `cfg.DockerCompose == nil`: return error
+    `"--integration requires a docker_compose block in config"`.
+  - If `flags.Integration != nil && *flags.Integration` and
+    `flags.Workers != nil && *flags.Workers > 1`: return error
+    `"--integration cannot be combined with --workers > 1; integration services are shared and not safe under parallel workers"`.
+  - If `flags.Workers != nil && *flags.Workers > cfg.Concurrency.MaxWorkers`:
+    return error
+    `"--workers N exceeds concurrency.max_workers ceiling M"` (interpolating
+    N and M).
+  - If `flags.Workers != nil && *flags.Workers < 1`: return error
+    `"--workers must be >= 1"`.
+- Worker resolution order:
+  1. If `flags.Integration` is set and true → `Workers = 1` (forced).
+  2. Else if `flags.Workers` is set → `Workers = *flags.Workers`.
+  3. Else → `Workers = cfg.Concurrency.MaxWorkers`.
+- `Integration = flags.Integration != nil && *flags.Integration`.
+- Do NOT mutate `cfg`. The constructor is read-only over its inputs.
+
+### Acceptance criteria
+
+- [ ] `internal/config/runmode.go` defines `RunMode` and `BuildRunMode`.
+- [ ] `CLIFlags` has new `Workers *int` and `Integration *bool` fields.
+- [ ] All four error rules are exercised by unit tests.
+- [ ] All three worker-resolution branches are exercised by unit tests.
+- [ ] `BuildRunMode` provably does not mutate its `*Config` argument
+      (verified by a test that snapshots the config before and after).
+
+### Test cases
+
+- **Default no flags**: `cfg.Concurrency.MaxWorkers=4`, no flags → returns
+  `RunMode{Workers: 4, Integration: false}`.
+- **Explicit workers**: `--workers 2` with ceiling 4 → `RunMode{Workers: 2, Integration: false}`.
+- **Integration forces serial**: `--integration` with ceiling 4 →
+  `RunMode{Workers: 1, Integration: true}`.
+- **Integration without compose block**: `cfg.DockerCompose == nil` and
+  `--integration` → error mentioning "requires a docker_compose block".
+- **Integration plus workers > 1**: `--integration --workers 2` → error
+  mentioning "cannot be combined".
+- **Workers exceeds ceiling**: `--workers 10` with ceiling 4 → error
+  mentioning "exceeds concurrency.max_workers".
+- **Config not mutated**: snapshot `cfg`, call `BuildRunMode` with each
+  combination above, assert deep-equal snapshot afterwards.
+
+---
+
+## Issue 769: Plumb explicit `integration bool` parameter through agent layer
+
+**Blocked by**: #768
+
+### Description
+
+Behaviour-preserving signature change. Replace every runtime use of
+`cfg.DockerCompose != nil` *inside the agent layer* with an explicit
+`integration bool` parameter passed in by callers. All call sites continue to
+source the parameter from `cfg.DockerCompose != nil` for now — the actual
+flag-driven source switch happens in the next issue. After this issue, the
+agent layer no longer reads `cfg.DockerCompose != nil` to decide compose
+activation; it reads the parameter.
+
+### Key constraints
+
+- Files modified (5):
+  - `internal/agent/loop.go` — both `sandboxCommandRunner` call sites
+    (currently `:352` and `:453`) take an `integration` parameter from the
+    enclosing function. Add `integration bool` to the enclosing function
+    signatures and propagate.
+  - `internal/agent/verify.go` — `:173` call to `sandboxCommandRunner`
+    likewise; thread `integration` through the verify entry function.
+  - `internal/agent/implementer.go` — `:277` `MountDockerSocket: cfg.DockerCompose != nil`
+    becomes `MountDockerSocket: integration`. `:141`
+    `ComposeServices: buildComposeServices(cfg.DockerCompose, cfg.HostServices)`
+    becomes guarded so services are only listed when `integration == true`
+    (when false, pass an empty compose-services value so the prompt does not
+    advertise unavailable services). Add `integration bool` to the
+    implementer entry function signature.
+  - `internal/orchestrator/orchestrator.go` — every call site that invokes
+    the agent layer functions (loop, verify, implementer) now passes
+    `cfg.DockerCompose != nil` as the new `integration` argument. Do NOT
+    change `:373`, `:733`, `:749` gating yet — those are flipped in the next
+    issue.
+  - Test files for the changed agent functions (loop_test, verify_test,
+    implementer_test, modules_test) — update call signatures only; no
+    behaviour changes.
+- After this issue, `cfg.DockerCompose != nil` must not appear inside any
+  function in `internal/agent/`. (Validated by grep.)
+- `internal/cmd/implement.go:155` and `internal/cmd/doctor.go:36` are NOT
+  touched. Doctor reports declarative capability and stays as-is. The
+  implement command's call into the agent layer is updated in the next
+  issue alongside flag parsing.
+
+### Acceptance criteria
+
+- [ ] No occurrences of `cfg.DockerCompose != nil` remain inside
+      `internal/agent/`.
+- [ ] All four agent entry functions touched accept an explicit
+      `integration bool` parameter.
+- [ ] All orchestrator call sites pass `cfg.DockerCompose != nil` as the new
+      argument.
+- [ ] `go build ./...` and `go test ./internal/agent/... ./internal/orchestrator/...`
+      pass with no behaviour change.
+- [ ] When `integration == false`, `buildBasePromptData` produces an empty
+      `ComposeServices` value regardless of `cfg.DockerCompose`.
+
+### Test cases
+
+- **Build still passes**: full `go build ./...` exits 0.
+- **Agent tests still pass**: existing `internal/agent/...` tests pass with
+  call-site updates.
+- **Implementer omits compose services when integration=false**: call
+  `buildBasePromptData` with `cfg.DockerCompose` populated but
+  `integration=false` → returned `ComposeServices` is empty.
+- **Implementer includes compose services when integration=true**: same
+  config, `integration=true` → `ComposeServices` matches
+  `buildComposeServices(cfg.DockerCompose, cfg.HostServices)`.
+- **MountDockerSocket follows parameter**: integration=true → mount; false →
+  no mount.
+- **Grep gate**: assert via test (or document as a manual check) that
+  `cfg.DockerCompose != nil` does not appear in `internal/agent/`.
+
+---
+
+## Issue 770: Add `--integration` and `--workers` flags; thread `RunMode` from cmd into orchestrator
+
+**Blocked by**: #768, #769
+
+### Description
+
+Wire the new flags into both `godark run` and `godark implement`. Build a
+`RunMode` in the cmd layer via `BuildRunMode`. Thread it as a new parameter
+on the orchestrator entry function and on the `godark implement` single-issue
+path. Switch the source of `integration` for all agent call sites from
+`cfg.DockerCompose != nil` to `runMode.Integration`. Switch the orchestrator's
+own compose-start gating (`:749`) and `DockerConfigFromConfig` calls
+(`:373`, `:733`) to consult `runMode.Integration`. Switch the worker
+semaphore cap (`:858`) to `runMode.Workers`.
+
+### Key constraints
+
+- Files modified (5):
+  - `internal/cmd/run.go` — register `--integration` (bool) and `--workers`
+    (int) flags. Remove the `--with-compose` flag registration at `:299` ONLY
+    if it does not break parseCLIFlags compilation; otherwise leave it
+    registered as a no-op string and remove it in the cleanup issue. (The
+    cleanup issue is responsible for full removal.) Build `RunMode` via
+    `BuildRunMode(cfg, flags)` after `parseCLIFlags`. Surface validation
+    errors with the same error path as other flag-validation failures. Pass
+    the resulting `RunMode` into the orchestrator entry function.
+  - `internal/cmd/implement.go` — same flag registration, same `RunMode`
+    construction. Pass `RunMode` into the single-issue path. The compose
+    docker-config decision at `:155` becomes
+    `sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, composeForRun)`
+    where `composeForRun = cfg.DockerCompose if runMode.Integration else nil`.
+  - `internal/cmd/cmdutil.go` — extend `parseCLIFlags` to populate
+    `flags.Integration` and `flags.Workers` when the flags are `Changed`.
+    Leave the existing `flags.WithCompose` block in place (cleanup issue
+    removes it).
+  - `internal/orchestrator/orchestrator.go` — orchestrator entry function
+    accepts a new `runMode config.RunMode` parameter. Internal usages:
+    - `:373` and `:733` — `DockerConfigFromConfig(... , composeForRun)`
+      where `composeForRun = cfg.DockerCompose if runMode.Integration else nil`.
+    - `:749` — `if runMode.Integration` (replaces `if cfg.DockerCompose != nil`).
+    - `:858` — `maxWorkers := runMode.Workers` (replaces
+      `cfg.Concurrency.MaxWorkers`). Keep the `< 1` defensive clamp.
+    - All call sites that previously passed `cfg.DockerCompose != nil` to
+      agent functions (added in the previous issue) now pass
+      `runMode.Integration`.
+  - `internal/orchestrator/orchestrator_test.go` — tests construct a
+    `config.RunMode` and pass it to the entry function. Existing tests that
+    set `cfg.Concurrency.MaxWorkers = N` to drive parallelism now also set
+    `runMode.Workers = N`. Existing tests that set `cfg.DockerCompose` to
+    drive compose activation now also set `runMode.Integration = true`.
+- `internal/cmd/doctor.go:36` is unchanged — doctor reports configured
+  capability, not runtime intent.
+- `BuildRunMode` errors are surfaced before any side-effecting work
+  (logging, locking, container start). Mirror the existing config-validation
+  error path so users see them at the same point as a bad `godark.yaml`.
+- `--integration` is mutually exclusive with `--workers > 1`; this exclusion
+  is enforced by `BuildRunMode`, not by Cobra annotations. The error message
+  is asserted by tests.
+
+### Acceptance criteria
+
+- [ ] `--integration` and `--workers` flags are registered on `run` and
+      `implement`.
+- [ ] `RunMode` is constructed via `BuildRunMode` in both commands and
+      passed into the orchestrator/implement entry functions.
+- [ ] Orchestrator semaphore cap reads `runMode.Workers`.
+- [ ] All compose-activation branches (orchestrator `:373`, `:733`, `:749`;
+      implement `:155`; agent layer parameters) source from
+      `runMode.Integration`.
+- [ ] After this issue, `cfg.DockerCompose != nil` does not appear in
+      `internal/orchestrator/orchestrator.go` or `internal/agent/` for the
+      purpose of *deciding* compose activation. (Reading `cfg.DockerCompose`
+      to obtain the *content* of the compose declaration is fine.)
+- [ ] Existing orchestrator tests pass after being updated to pass
+      `RunMode`.
+
+### Test cases
+
+- **No flags, parallel config**: `cfg.Concurrency.MaxWorkers=4`, no flags →
+  `runMode.Workers=4`, `runMode.Integration=false`; orchestrator dispatches
+  with sem cap 4, compose not started even if `cfg.DockerCompose` is set.
+- **Explicit `--workers 2`**: ceiling 4 → sem cap 2, compose not started.
+- **Explicit `--integration`**: compose configured → sem cap 1, compose
+  start path invoked, agents receive `integration=true`.
+- **`--integration --workers 3`**: error from `BuildRunMode` surfaces
+  before any work begins.
+- **`--workers 10` with ceiling 4**: error before any work begins.
+- **`--integration` with no compose block**: error before any work begins.
+- **Implement single-issue with `--integration`**: `cfg.DockerCompose`
+  populated → `DockerConfigFromConfig` receives the compose config; without
+  `--integration` → receives nil for the compose argument.
+- **Config not mutated**: after a `--workers 4` run, `cfg.DockerCompose`
+  still equals its loaded value and `cfg.Concurrency.MaxWorkers` is
+  unchanged.
+
+---
+
+## Issue 771: Remove `--with-compose` flag and `applyFlags` config mutation
+
+**Blocked by**: #770
+
+### Description
+
+Destructive cleanup. The previous issues introduce `--integration` /
+`--workers` and switch all runtime decisions to `runMode`. This issue rips
+out the legacy `--with-compose` flag and the `applyFlags` mutation in
+`internal/config/config.go` so config is verifiably read-only after load.
+Updates the Phase 14 scenario to reflect the new behaviour.
+
+### Key constraints
+
+- Files modified (3):
+  - `internal/config/config.go` — delete the entire block at `:628–:636`
+    (`if flags.WithCompose != nil && *flags.WithCompose { ... } else if
+    cfg.Concurrency.MaxWorkers > 1 && cfg.DockerCompose != nil { ... }`).
+    Delete the `WithCompose` field from `CLIFlags`. Delete its
+    `applyFlags` handling. Drop the now-unused `slog` import if it has no
+    other consumers in the file.
+  - `internal/cmd/run.go` and `internal/cmd/implement.go` — remove the
+    `--with-compose` flag registrations at `run.go:299` and
+    `implement.go:603`. Remove the `if cmd.Flags().Changed("with-compose")`
+    block from `internal/cmd/cmdutil.go:48–:51`.
+  - `internal/config/config_test.go` — delete or rewrite tests that
+    asserted the mutation behaviour (existing
+    `TestApplyFlagsWithComposeMutatesMaxWorkers`-style cases). Add a test
+    that asserts `applyFlags` does not mutate `cfg.DockerCompose` or
+    `cfg.Concurrency` for any input.
+  - `tests/scenarios/phase-14/with-compose-flag.md` — replace assertions
+    that depend on `cfg.DockerCompose` being nilled. The new scenario
+    asserts: (a) no flags + parallel config → compose stays unstarted but
+    `cfg.DockerCompose` is preserved verbatim; (b) `--integration` →
+    compose started, `Workers=1`; (c) `--integration --workers 2` →
+    validation error before any side effect.
+- After this issue, `cfg.DockerCompose = nil` and `cfg.Concurrency.MaxWorkers = `
+  do not appear anywhere in `internal/config/config.go` outside of
+  `applyDefaults` (where defaulting is legitimate).
+- `--with-compose` is gone — `godark run --with-compose` exits with Cobra's
+  unknown-flag error.
+
+### Acceptance criteria
+
+- [ ] The `flags.WithCompose` mutation block is deleted from
+      `internal/config/config.go`.
+- [ ] `WithCompose` is removed from the `CLIFlags` struct.
+- [ ] `--with-compose` is no longer registered on `run` or `implement`.
+- [ ] `internal/cmd/cmdutil.go` no longer references `with-compose`.
+- [ ] A test asserts `applyFlags` does not mutate `cfg.DockerCompose` or
+      `cfg.Concurrency` for any flag combination.
+- [ ] `tests/scenarios/phase-14/with-compose-flag.md` is updated (or
+      renamed to `integration-flag.md`) to assert the new behaviour.
+- [ ] `go build ./...` and `go test ./...` pass.
+
+### Test cases
+
+- **Mutation gone**: load a config with `docker_compose` set and
+  `concurrency.max_workers: 4`; call `applyFlags` with empty `CLIFlags`;
+  assert `cfg.DockerCompose` deep-equals the original and
+  `cfg.Concurrency.MaxWorkers == 4`.
+- **`--with-compose` rejected**: invoke `godark run --with-compose` →
+  exit code non-zero, stderr contains `unknown flag`.
+- **Scenario passes**: the rewritten Phase 14 scenario file passes against
+  a fresh build.
+
+---
+
+## Integration chain audit (addendum)
+
+```
+RunMode defined in internal/config/runmode.go (issue A)
+  -> built by BuildRunMode(cfg, flags) in cmd layer (issue B2)
+     -> called from internal/cmd/run.go after parseCLIFlags (issue B2)
+     -> called from internal/cmd/implement.go after parseCLIFlags (issue B2)
+  -> passed into orchestrator entry function (issue B2)
+     -> orchestrator semaphore cap reads runMode.Workers (issue B2, replaces orchestrator.go:858)
+     -> orchestrator compose start gates on runMode.Integration (issue B2, replaces orchestrator.go:749)
+     -> orchestrator passes runMode.Integration to agent functions (issue B2)
+        -> agent/loop.go sandboxCommandRunner (parameter added in issue B1, source switched in B2)
+        -> agent/verify.go sandboxCommandRunner (parameter added in issue B1, source switched in B2)
+        -> agent/implementer.go MountDockerSocket + ComposeServices (parameter added in issue B1, source switched in B2)
+  -> passed into single-issue path in internal/cmd/implement.go (issue B2)
+     -> DockerConfigFromConfig at implement.go:155 receives composeForRun (issue B2)
+
+applyFlags mutation block at internal/config/config.go:628-636 removed (issue C)
+  -> WithCompose field removed from CLIFlags (issue C)
+  -> --with-compose flag deregistered from run.go:299 and implement.go:603 (issue C)
+  -> cmdutil.go:48-51 with-compose handling removed (issue C)
+  -> phase-14 with-compose-flag scenario updated (issue C)
+```
+
+All hops covered. Doctor's `cfg.DockerCompose != nil` at `cmd/doctor.go:36`
+intentionally preserved — it reports declarative capability, not runtime
+intent.
