@@ -2878,4 +2878,27 @@ func TestApplyFlagsDoesNotMutateDockerCompose(t *testing.T) {
 			t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
 		}
 	})
+
+	t.Run("integration and workers flags preserve DockerCompose and Concurrency", func(t *testing.T) {
+		cfg := &Config{
+			Concurrency:   Concurrency{MaxWorkers: 4},
+			DockerCompose: &DockerCompose{File: "docker-compose.test.yml", ProjectName: "myproject"},
+		}
+		applyFlags(cfg, CLIFlags{
+			Integration: boolPtr(true),
+			Workers:     intPtr(2),
+		})
+		if cfg.DockerCompose == nil {
+			t.Fatal("DockerCompose is nil after applyFlags with Integration+Workers, want non-nil")
+		}
+		if cfg.DockerCompose.File != "docker-compose.test.yml" {
+			t.Errorf("DockerCompose.File = %q, want %q", cfg.DockerCompose.File, "docker-compose.test.yml")
+		}
+		if cfg.DockerCompose.ProjectName != "myproject" {
+			t.Errorf("DockerCompose.ProjectName = %q, want %q", cfg.DockerCompose.ProjectName, "myproject")
+		}
+		if cfg.Concurrency.MaxWorkers != 4 {
+			t.Errorf("Concurrency.MaxWorkers = %d, want 4", cfg.Concurrency.MaxWorkers)
+		}
+	})
 }
