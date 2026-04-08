@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2943,36 +2944,46 @@ func TestHandleRollupPR_VerifyRerunAfterConflictResolution(t *testing.T) {
 }
 
 // TestProcessIssues_HoldAndResume verifies that when an issue returns
-// UsageLimited=true with a near-future resetsAt, the orchestrator:
+// UsageLimited=true with a near-past resetsAt (so the hold sleeps ~0s),
+// the orchestrator:
 //  1. calls reporter.RateLimited / reporter.RateLimitCleared
 //  2. retries the issue (it is not counted as seen)
-//  3. the second attempt succeeds
-func TestProcessIssues_UsageLimitedTreatedAsFailure(t *testing.T) {
+//  3. the second attempt succeeds and is reported as implemented
+func TestProcessIssues_HoldAndResume(t *testing.T) {
 	allIssues := []github.Issue{
 		{Number: 10, Title: "rate limited issue"},
 	}
 
-	resetsAt := time.Now().Add(50 * time.Millisecond)
+	resetsAt := time.Now().Add(-1 * time.Minute)
 
+	var callCount int32
 	setupProcessMocks(t, func() []int { return nil },
 		func(_ context.Context, issue github.Issue, _ *config.Config, _ *agent.Prompts, _ map[string]string, _ *slog.Logger, _ agent.RunDataHook, _ progress.ProgressReporter) agent.IssueOutcome {
-			return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
+			n := atomic.AddInt32(&callCount, 1)
+			if n == 1 {
+				return agent.IssueOutcome{IssueNumber: issue.Number, UsageLimited: true, ResetsAt: resetsAt}
+			}
+			return agent.IssueOutcome{IssueNumber: issue.Number, Status: agent.StatusImplemented, PRNumber: 100}
 		})
 
 	reporter := &fakeReporter{}
-	closedSet := map[int]bool{}
 	cfg := testConfig()
 
-	if err := processIssues(context.Background(), allIssues, closedSet, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
+	if err := processIssues(context.Background(), allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m1", nil); err != nil {
 		t.Fatalf("processIssues() error = %v", err)
 	}
 
-	// Usage-limited issues are treated as failures until #752 adds hold logic.
+	if len(reporter.rateLimitedAt) != 1 {
+		t.Errorf("expected 1 RateLimited call, got %d", len(reporter.rateLimitedAt))
+	}
+	if reporter.rateLimitClears != 1 {
+		t.Errorf("expected 1 RateLimitCleared call, got %d", reporter.rateLimitClears)
+	}
 	if len(reporter.issueCompleted) != 1 {
 		t.Fatalf("expected 1 IssueCompleted call, got %d", len(reporter.issueCompleted))
 	}
-	if reporter.issueCompleted[0].status != "failed" {
-		t.Errorf("expected final status=failed, got %q", reporter.issueCompleted[0].status)
+	if reporter.issueCompleted[0].status != "implemented" {
+		t.Errorf("expected final status=implemented, got %q", reporter.issueCompleted[0].status)
 	}
 }
 

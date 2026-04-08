@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/peter-stratton/dark-factory/internal/agent"
@@ -403,14 +404,7 @@ func processUnblockedLoop(
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
-		issueLogger := logger
-		if writer != nil {
-			if il, err := logging.NewFileLogger(writer.IssueDir(issue.Number)); err != nil {
-				logger.Warn("failed to create per-issue logger", "issue", issue.Number, "error", err)
-			} else {
-				issueLogger = il
-			}
-		}
+		issueLogger := perIssueLogger(writer, issue.Number, logger)
 		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
 		attempted++
 
@@ -559,6 +553,21 @@ type waveResult struct {
 	ResetsAt     time.Time
 }
 
+// perIssueLogger returns a file-backed logger rooted at the issue's run-data
+// directory, falling back to the run-level logger if writer is nil or the
+// per-issue logger fails to initialize.
+func perIssueLogger(writer *rundata.Writer, issueNum int, logger *slog.Logger) *slog.Logger {
+	if writer == nil {
+		return logger
+	}
+	il, err := logging.NewFileLogger(writer.IssueDir(issueNum))
+	if err != nil {
+		logger.Warn("failed to create per-issue logger", "issue", issueNum, "error", err)
+		return logger
+	}
+	return il
+}
+
 // runOneIssue processes a single issue within a wave: sets up per-issue
 // logging, calls processIssueFn, writes dialogue, and computes cost. It
 // returns early with UsageLimited set when the agent hits a Claude usage
@@ -570,14 +579,7 @@ func runOneIssue(ctx context.Context, issue github.Issue, cfg *config.Config,
 	writer *rundata.Writer) waveResult {
 
 	// Create a per-issue file logger when a run-data writer is available.
-	issueLogger := logger
-	if writer != nil {
-		if il, err := logging.NewFileLogger(writer.IssueDir(issue.Number)); err != nil {
-			logger.Warn("failed to create per-issue logger", "issue", issue.Number, "error", err)
-		} else {
-			issueLogger = il
-		}
-	}
+	issueLogger := perIssueLogger(writer, issue.Number, logger)
 
 	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
 
@@ -860,6 +862,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 		results := make(chan waveResult, len(batch))
 		sem := make(chan struct{}, maxWorkers)
 		var wg sync.WaitGroup
+		var activeWorkers atomic.Int32
 	dispatch:
 		for _, issue := range batch {
 			// Use select on semaphore send so context cancellation is not
@@ -874,6 +877,8 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 			go func(iss github.Issue) {
 				defer wg.Done()
 				defer func() { <-sem }()
+				reporter.WorkersActive(int(activeWorkers.Add(1)), maxWorkers)
+				defer reporter.WorkersActive(int(activeWorkers.Add(-1)), maxWorkers)
 				results <- runOneIssue(ctx, iss, cfg, prompts, authEnv, logger, hook, reporter, writer)
 			}(issue)
 		}

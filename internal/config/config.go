@@ -3,10 +3,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
-	"log/slog"
 	"strings"
 	"time"
 

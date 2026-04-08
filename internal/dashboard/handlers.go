@@ -820,7 +820,13 @@ func computeConcurrencySaved(detail *rundata.RunDetail) string {
 	wallSecs := detail.FinishedAt.Sub(detail.StartedAt).Seconds()
 	var serialSecs float64
 	for _, issue := range detail.Issues {
-		serialSecs += issue.Implement.DurationSeconds + issue.QualityReview.DurationSeconds + issue.FunctionalReview.DurationSeconds
+		serialSecs += issue.Recon.DurationSeconds +
+			issue.SpecGenerator.DurationSeconds +
+			issue.Planner.DurationSeconds +
+			issue.Implement.DurationSeconds +
+			issue.QualityReview.DurationSeconds +
+			issue.FunctionalReview.DurationSeconds +
+			issue.MergeCoordinator.DurationSeconds
 		for _, retry := range issue.Retries {
 			serialSecs += retry.Retry.DurationSeconds + retry.QualityReview.DurationSeconds + retry.FunctionalReview.DurationSeconds
 		}
