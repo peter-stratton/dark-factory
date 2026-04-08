@@ -66,6 +66,11 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return err
 		}
 
+		runMode, err := config.BuildRunMode(cfg, flags)
+		if err != nil {
+			return err
+		}
+
 		if dryRun {
 			for _, num := range issueNums {
 				issue, err := github.FetchIssue(cfg.Repo, num)
@@ -152,7 +157,11 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			return fmt.Errorf("loading prompts: %w", err)
 		}
 
-		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, cfg.DockerCompose)
+		composeForRun := cfg.DockerCompose
+		if !runMode.Integration {
+			composeForRun = nil
+		}
+		dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, composeForRun)
 		tag, err := sandbox.BuildImage(cmd.Context(), dc, logger)
 		if err != nil {
 			return fmt.Errorf("building Docker image: %w", err)
@@ -201,7 +210,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 		// runLoop executes the issue processing loop and returns any error. It is
 		// run directly in text mode or in a goroutine in TUI mode.
 		runLoop := func() error {
-			return implementIssues(ctx, issueNums, cfg, prompts, authEnv, logger, hook, writer, notifiers, reporter, punchlistPath, issueTitles)
+			return implementIssues(ctx, issueNums, cfg, runMode, prompts, authEnv, logger, hook, writer, notifiers, reporter, punchlistPath, issueTitles)
 		}
 
 		if useTUI {
@@ -224,6 +233,7 @@ func implementIssues(
 	ctx context.Context,
 	issueNums []int,
 	cfg *config.Config,
+	runMode config.RunMode,
 	prompts *agent.Prompts,
 	authEnv map[string]string,
 	logger *slog.Logger,
@@ -286,7 +296,7 @@ func implementIssues(
 		}
 
 		reporter.IssueStarted(issue.Number, issue.Title)
-		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, cfg.DockerCompose != nil)
+		outcome := agent.ProcessIssue(ctx, issue, cfg, prompts, authEnv, logger, hook, reporter, runMode.Integration)
 
 		if held := handleUsageLimitHold(ctx, outcome, issue, cfg, logger, reporter, authEnv); held {
 			i-- // retry this issue
@@ -310,7 +320,7 @@ func implementIssues(
 	finalizeRunData(ctx, writer, statsDB, cfg, implemented, readyToMerge, needsHumanReview, failed, logger)
 	finalizePunchlistEntries(ctx, punchlistEntries, writer, prompts, cfg, authEnv, logger, punchlistPath, reporter)
 
-	maybeCreateRollupPR(ctx, cfg, implementedIssues, logger, reporter, writer, prompts, authEnv)
+	maybeCreateRollupPR(ctx, cfg, runMode, implementedIssues, logger, reporter, writer, prompts, authEnv)
 
 	return nil
 }
@@ -371,14 +381,14 @@ func handleUsageLimitHold(ctx context.Context, outcome agent.IssueOutcome, issue
 
 // maybeCreateRollupPR creates a rollup PR when using a non-default base branch,
 // rollup is not disabled, and at least one issue was implemented.
-func maybeCreateRollupPR(ctx context.Context, cfg *config.Config, implementedIssues []github.Issue, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) {
+func maybeCreateRollupPR(ctx context.Context, cfg *config.Config, runMode config.RunMode, implementedIssues []github.Issue, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) {
 	defaultBranch := cfg.EffectiveDefaultBranch(cfg.Repo)
 	if cfg.AutoMerge.Rollup == config.RollupNone ||
 		cfg.BaseBranch == "" || cfg.BaseBranch == defaultBranch ||
 		len(implementedIssues) == 0 {
 		return
 	}
-	_, _, err := orchestrator.HandleRollupPR(ctx, cfg, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
+	_, _, err := orchestrator.HandleRollupPR(ctx, cfg, runMode, implementedIssues, defaultBranch, logger, reporter, writer, prompts, authEnv)
 	if err != nil {
 		logger.Warn("rollup PR handling failed", "error", err)
 		fmt.Fprintf(os.Stderr, "Rollup PR warning: %v\n", err)
@@ -601,6 +611,8 @@ func init() {
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
 	f.String("default-branch", "", "Default branch of the repository (auto-detected if omitted)")
 	f.Bool("with-compose", false, "Enable Docker Compose services (forces max_workers=1; skipped by default when max_workers > 1)")
+	f.Bool("integration", false, "Enable Docker Compose integration testing (forces single worker)")
+	f.Int("workers", 0, "Maximum parallel workers (0 = use concurrency.max_workers from config)")
 
 	rootCmd.AddCommand(implementCmd)
 }

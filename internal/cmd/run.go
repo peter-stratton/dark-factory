@@ -62,6 +62,11 @@ Use "godark implement" to process individual issues by number.`,
 			return err
 		}
 
+		runMode, err := config.BuildRunMode(cfg, flags)
+		if err != nil {
+			return err
+		}
+
 		// Determine whether to use TUI mode: interactive terminal and --no-tui not set.
 		useTUI := !noTUI && isTerminalFn(int(os.Stdout.Fd()))
 
@@ -118,7 +123,7 @@ Use "godark implement" to process individual issues by number.`,
 
 			errCh := make(chan error, 1)
 			go func() {
-				err := orchestrator.Run(tuiCtx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath, Version)
+				err := orchestrator.Run(tuiCtx, cfg, runMode, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath, Version)
 				if err != nil || !watchFlag {
 					errCh <- err
 					program.Send(tui.RunDoneMsg{})
@@ -127,7 +132,7 @@ Use "godark implement" to process individual issues by number.`,
 				// Signal the TUI that we are entering watch mode; the spinner keeps
 				// running and the hint changes to "watching for merges".
 				program.Send(tui.WatchingMsg{})
-				watchErr := runEnterWatch(tuiCtx, cfg, logger, milestone, reporter)
+				watchErr := runEnterWatch(tuiCtx, cfg, runMode, logger, milestone, reporter)
 				errCh <- watchErr
 				program.Send(tui.RunDoneMsg{})
 			}()
@@ -137,13 +142,13 @@ Use "godark implement" to process individual issues by number.`,
 		}
 
 		reporter := progress.NewTextReporter(os.Stdout)
-		runErr := orchestrator.Run(ctx, cfg, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath, Version)
+		runErr := orchestrator.Run(ctx, cfg, runMode, logger, reporter, logFactory, milestone, dryRun, force, punchlistPath, Version)
 		if runErr != nil || !watchFlag {
 			return runErr
 		}
 
 		// --watch: enter polling loop if any PRs are awaiting review.
-		return runEnterWatch(ctx, cfg, logger, milestone, reporter)
+		return runEnterWatch(ctx, cfg, runMode, logger, milestone, reporter)
 	},
 }
 
@@ -156,7 +161,7 @@ var isTerminalFn = term.IsTerminal
 // orchestrator.Run when --watch is set. milestone is used for re-resolution
 // runs triggered by external merges. reporter is used to surface re-resolution
 // issue progress (TUI reporter in TUI mode, text reporter otherwise).
-func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger, milestone string, reporter progress.ProgressReporter) error {
+func runEnterWatch(ctx context.Context, cfg *config.Config, runMode config.RunMode, logger *slog.Logger, milestone string, reporter progress.ProgressReporter) error {
 	// Check for awaiting PRs first to avoid loading prompts/auth unnecessarily.
 	prs, err := runListPRsFn(cfg.Repo, label.AwaitingHumanReview)
 	if err != nil {
@@ -199,7 +204,7 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, logger *slog.Logger,
 		w.SetMergeCallback(func(mCtx context.Context, mergedNums []int) {
 			logger.Info("daemon re-resolve triggered", "merged_issue_count", len(mergedNums))
 			if _, reErr := orchestrator.ReResolveAndProcess(
-				mCtx, allIssues, noDarkNums, seen, cfg, milestone, logger, reporter, nil, Version,
+				mCtx, allIssues, noDarkNums, seen, cfg, runMode, milestone, logger, reporter, nil, Version,
 			); reErr != nil {
 				logger.Error("daemon re-resolve failed", "err", reErr)
 			}
@@ -297,6 +302,8 @@ func init() {
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
 	f.String("default-branch", "", "Default branch of the repository (auto-detected if omitted)")
 	f.Bool("with-compose", false, "Enable Docker Compose services (forces max_workers=1; skipped by default when max_workers > 1)")
+	f.Bool("integration", false, "Enable Docker Compose integration testing (forces single worker)")
+	f.Int("workers", 0, "Maximum parallel workers (0 = use concurrency.max_workers from config)")
 
 	rootCmd.AddCommand(runCmd)
 }
