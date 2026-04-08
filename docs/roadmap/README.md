@@ -20,7 +20,7 @@
 - [Phase 11: Run Analysis & Prompt Feedback](phase-11.md) ✅
 - [Phase 12: Complex Project Support](phase-12.md) ✅
 - [Phase 13: Human-in-the-Loop Review](phase-13.md) ✅
-- [Phase 14: Bounded Concurrency](phase-14.md)
+- [Phase 14: Bounded Concurrency](phase-14.md) ✅
 - [Phase 15: Server Mode & Centralized Operation](phase-15.md)
 - [Phase 16: Public Release](phase-16.md) ✅
 - [Phase 17: Configurable Base Branch](phase-17.md) ✅
