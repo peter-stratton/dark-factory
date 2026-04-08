@@ -111,6 +111,19 @@ func (r *fakeReporter) RateLimited(resetsAt time.Time) {
 	r.rateLimitedAt = append(r.rateLimitedAt, resetsAt)
 }
 func (r *fakeReporter) RateLimitCleared() { r.rateLimitClears++ }
+
+// cancelOnRateLimitReporter cancels a context as soon as RateLimited is
+// reported, providing a race-free way for tests to interrupt a rate-limit
+// hold after verifying the hold was entered.
+type cancelOnRateLimitReporter struct {
+	*fakeReporter
+	cancel context.CancelFunc
+}
+
+func (r *cancelOnRateLimitReporter) RateLimited(resetsAt time.Time) {
+	r.fakeReporter.RateLimited(resetsAt)
+	r.cancel()
+}
 func (r *fakeReporter) WorkersActive(_, _ int)                  {}
 
 // ghIssue mirrors the JSON shape for test fixtures.
@@ -3867,10 +3880,11 @@ func TestWaveLoop_ContextCancelledDuringHold(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel shortly after the hold begins.
-	time.AfterFunc(50*time.Millisecond, cancel)
+	defer cancel()
 
-	reporter := &fakeReporter{}
+	// Cancel the context synchronously from within RateLimited, so the hold
+	// is guaranteed to have been entered (and reported) before cancellation.
+	reporter := &cancelOnRateLimitReporter{fakeReporter: &fakeReporter{}, cancel: cancel}
 	cfg := testConfig()
 	err := processIssues(ctx, allIssues, map[int]bool{}, nil, cfg, testLogger(t), reporter, nil, false, "", "m", nil)
 	if err != nil {
