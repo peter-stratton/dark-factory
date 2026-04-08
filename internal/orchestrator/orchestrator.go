@@ -405,7 +405,7 @@ func processUnblockedLoop(
 
 		reporter.IssueStarted(issue.Number, issue.Title)
 		issueLogger := perIssueLogger(writer, issue.Number, logger)
-		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
+		outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, cfg.DockerCompose != nil)
 		attempted++
 
 		writeResolveDialogue(writer, issue, outcome, cfg, logger)
@@ -581,7 +581,7 @@ func runOneIssue(ctx context.Context, issue github.Issue, cfg *config.Config,
 	// Create a per-issue file logger when a run-data writer is available.
 	issueLogger := perIssueLogger(writer, issue.Number, logger)
 
-	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter)
+	outcome := processIssueFn(ctx, issue, cfg, prompts, authEnv, issueLogger, hook, reporter, cfg.DockerCompose != nil)
 
 	if outcome.UsageLimited {
 		return waveResult{
@@ -1278,7 +1278,7 @@ func HandleRollupPR(ctx context.Context, cfg *config.Config, issues []github.Iss
 		if writer != nil {
 			writeResult = writer.WriteRollupVerifyResult
 		}
-		verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult)
+		verifyPassed, err := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeResult, cfg.DockerCompose != nil)
 		if err != nil {
 			return 0, "", fmt.Errorf("rollup verify: %w", err)
 		}
@@ -1328,7 +1328,7 @@ func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, 
 			prNum, cfg.BaseBranch, defaultBranch,
 		)
 
-		result, mcErr := mergeCoordinateFn(ctx, syntheticIssue, prNum, conflictInfo, cfg, prompts, authEnv, logger)
+		result, mcErr := mergeCoordinateFn(ctx, syntheticIssue, prNum, conflictInfo, cfg.DockerCompose != nil, cfg, prompts, authEnv, logger)
 		if mcErr != nil {
 			return false, false, fmt.Errorf("rollup merge coordinator: %w", mcErr)
 		}
@@ -1357,7 +1357,7 @@ func resolveRollupConflicts(ctx context.Context, cfg *config.Config, prNum int, 
 		if writer != nil {
 			writeVerify = writer.WriteRollupVerifyResult
 		}
-		passed, vErr := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeVerify)
+		passed, vErr := runRollupVerifyFn(ctx, prNum, cfg.BaseBranch, cfg, prompts, authEnv, logger, writeVerify, cfg.DockerCompose != nil)
 		if vErr != nil {
 			return false, false, fmt.Errorf("rollup verify after conflict resolution: %w", vErr)
 		}

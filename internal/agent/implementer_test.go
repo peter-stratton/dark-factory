@@ -8,13 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/peter-stratton/dark-factory/internal/config"
 	"github.com/peter-stratton/dark-factory/internal/sandbox"
 )
 
 func TestImplement_RendersPromptAndCallsRun(t *testing.T) {
 	stubSandboxRunner(t)
 
-	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "", "")
+	result, err := Implement(context.Background(), testIssue(), false, testConfig(), testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -30,7 +31,7 @@ func TestImplement_PromptContainsIssueDetails(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, testConfig(), testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -51,7 +52,7 @@ func TestRetry_RendersRetryPromptWithPR(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	result, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	result, err := Retry(context.Background(), testIssue(), 7, "", "", "", false, testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -75,7 +76,7 @@ func TestRetry_WithSessionID_DoesNotSetGODARK_SESSION_ID(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"sess-new","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", "", false, testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -92,7 +93,7 @@ func TestRetry_WithoutSessionID_NoSessionEnv(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", false, testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -110,7 +111,7 @@ func TestRetry_WithHandoffContext_SkipsSessionID(t *testing.T) {
 	})
 
 	// Even with a prevSessionID, handoffContext non-empty means fresh session.
-	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", "Prior attempt context.", testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "sess-abc123", "", "Prior attempt context.", false, testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -132,7 +133,7 @@ func TestRetry_WithHandoffContext_RendersHandoffInPrompt(t *testing.T) {
 		ImplementerRetry: `PR #{{.PRNumber}}{{if .HandoffContext}} FRESH: {{.HandoffContext}}{{end}}`,
 	}
 
-	_, err := Retry(context.Background(), testIssue(), 7, "", "", handoff, testConfig(), prompts, nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", handoff, false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -157,7 +158,7 @@ func TestRetry_WithEmptyHandoffContext_NoFreshBlock(t *testing.T) {
 		ImplementerRetry: `PR #{{.PRNumber}}{{if .HandoffContext}} FRESH: {{.HandoffContext}}{{end}}`,
 	}
 
-	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), prompts, nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -175,7 +176,7 @@ func TestImplement_DoesNotSetSessionIDEnv(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, testConfig(), testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -191,7 +192,7 @@ func TestImplement_AgentTimeoutParsed(t *testing.T) {
 	cfg := testConfig()
 	cfg.AgentTimeout = "5m"
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, cfg, testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -203,7 +204,7 @@ func TestImplement_InvalidTimeout(t *testing.T) {
 	cfg := testConfig()
 	cfg.AgentTimeout = "invalid"
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, cfg, testPrompts(t), nil, testLogger(t), "", "")
 	if err == nil {
 		t.Fatal("expected error for invalid timeout")
 	}
@@ -219,7 +220,7 @@ func TestBranchName(t *testing.T) {
 func TestNewRunOpts_SetsAllFields(t *testing.T) {
 	cfg := testConfig()
 	env := map[string]string{"FOO": "bar"}
-	opts, err := newRunOpts("prompt text", cfg, env, "implementer")
+	opts, err := newRunOpts("prompt text", cfg, env, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -246,7 +247,7 @@ func TestNewRunOpts_SetsAllFields(t *testing.T) {
 func TestNewRunOpts_InvalidTimeout(t *testing.T) {
 	cfg := testConfig()
 	cfg.AgentTimeout = "bad"
-	_, err := newRunOpts("prompt", cfg, nil, "implementer")
+	_, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err == nil {
 		t.Fatal("expected error for invalid timeout")
 	}
@@ -254,7 +255,7 @@ func TestNewRunOpts_InvalidTimeout(t *testing.T) {
 
 func TestNewRunOpts_SetsProtectedPathsEnv(t *testing.T) {
 	cfg := testConfig() // ProtectedPaths: ["CLAUDE.md", "tests/scenarios/"]
-	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -267,7 +268,7 @@ func TestNewRunOpts_SetsProtectedPathsEnv(t *testing.T) {
 func TestNewRunOpts_EmptyProtectedPathsEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.ProtectedPaths = nil
-	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -284,7 +285,7 @@ func TestImplement_ProtectedPathsInEnv(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, testConfig(), testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -298,7 +299,7 @@ func TestImplement_ProtectedPathsInEnv(t *testing.T) {
 func TestNewRunOpts_SetsDeniedCommandsEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.DeniedCommands = []string{"rm -rf", "git push --force"}
-	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -311,7 +312,7 @@ func TestNewRunOpts_SetsDeniedCommandsEnv(t *testing.T) {
 func TestNewRunOpts_EmptyDeniedCommandsEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.DeniedCommands = nil
-	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -331,7 +332,7 @@ func TestImplement_DeniedCommandsInEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.DeniedCommands = []string{"rm -rf", "git reset --hard"}
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, cfg, testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -345,7 +346,7 @@ func TestImplement_DeniedCommandsInEnv(t *testing.T) {
 func TestNewRunOpts_DoesNotMutateAuthEnv(t *testing.T) {
 	cfg := testConfig()
 	authEnv := map[string]string{"GH_TOKEN": "tok-xyz"}
-	_, err := newRunOpts("prompt", cfg, authEnv, "implementer")
+	_, err := newRunOpts("prompt", cfg, authEnv, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -376,7 +377,7 @@ func TestImplement_BranchExistsDetection(t *testing.T) {
 		Implementer: "{{if .BranchExists}}EXISTING{{else}}NEW{{end}}",
 	}
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), prompts, nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, testConfig(), prompts, nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -394,7 +395,7 @@ func TestImplement_SetsImplementerRole(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	_, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, testConfig(), testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -411,7 +412,7 @@ func TestRetry_SetsImplementerRetryRole(t *testing.T) {
 		return &sandbox.RunResult{Stdout: `{"session_id":"","result":"ok","cost_usd":0,"is_error":false}`}, nil
 	})
 
-	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", testConfig(), testPrompts(t), nil, testLogger(t))
+	_, err := Retry(context.Background(), testIssue(), 7, "", "", "", false, testConfig(), testPrompts(t), nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
@@ -426,7 +427,7 @@ func TestImplement_NonZeroExitSurfacedInResult(t *testing.T) {
 		return &sandbox.RunResult{Stdout: "fail output", ExitCode: 1}, nil
 	})
 
-	result, err := Implement(context.Background(), testIssue(), testConfig(), testPrompts(t), nil, testLogger(t), "", "")
+	result, err := Implement(context.Background(), testIssue(), false, testConfig(), testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() should not return error for non-zero exit, got: %v", err)
 	}
@@ -447,7 +448,7 @@ func TestNewPromptData_ArchitectureDocFileExists(t *testing.T) {
 	cfg.ArchitectureDoc = archPath
 	cfg.ConventionsDoc = filepath.Join(dir, "nonexistent.md")
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.ArchitectureDocContent != content {
 		t.Errorf("ArchitectureDocContent = %q, want %q", data.ArchitectureDocContent, content)
@@ -458,7 +459,7 @@ func TestNewPromptData_ArchitectureDocFileMissing(t *testing.T) {
 	cfg := testConfig()
 	cfg.ArchitectureDoc = "/nonexistent/path/architecture.md"
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.ArchitectureDocContent != "" {
 		t.Errorf("ArchitectureDocContent = %q, want empty string for missing file", data.ArchitectureDocContent)
@@ -483,7 +484,7 @@ func TestNewPromptData_BothFilesExist(t *testing.T) {
 	cfg.ArchitectureDoc = archPath
 	cfg.ConventionsDoc = convPath
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.ArchitectureDocContent != archContent {
 		t.Errorf("ArchitectureDocContent = %q, want %q", data.ArchitectureDocContent, archContent)
@@ -497,7 +498,7 @@ func TestNewPromptData_ConventionsDocFileMissing(t *testing.T) {
 	cfg := testConfig()
 	cfg.ConventionsDoc = "/nonexistent/path/conventions.md"
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.ConventionsDocContent != "" {
 		t.Errorf("ConventionsDocContent = %q, want empty string for missing file", data.ConventionsDocContent)
@@ -515,7 +516,7 @@ func TestNewPromptData_ArchitectureJSONFileExists(t *testing.T) {
 	cfg := testConfig()
 	cfg.ArchitectureJSON = jsonPath
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.ArchitectureJSON != content {
 		t.Errorf("ArchitectureJSON = %q, want %q", data.ArchitectureJSON, content)
@@ -526,7 +527,7 @@ func TestNewPromptData_ArchitectureJSONFileMissing(t *testing.T) {
 	cfg := testConfig()
 	cfg.ArchitectureJSON = "/nonexistent/path/architecture.json"
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.ArchitectureJSON != "" {
 		t.Errorf("ArchitectureJSON = %q, want empty string for missing file", data.ArchitectureJSON)
@@ -537,7 +538,7 @@ func TestNewPromptData_EnforceArchitectureFromConfig(t *testing.T) {
 	cfg := testConfig()
 	cfg.EnforceArchitecture = true
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if !data.EnforceArchitecture {
 		t.Error("EnforceArchitecture should be true when set in config")
@@ -548,7 +549,7 @@ func TestNewPromptData_EnforceArchitectureDefaultFalse(t *testing.T) {
 	cfg := testConfig()
 	// EnforceArchitecture not set — zero value is false.
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.EnforceArchitecture {
 		t.Error("EnforceArchitecture should be false when not set in config")
@@ -567,7 +568,7 @@ func TestVerifyFix_RendersPromptWithErrors(t *testing.T) {
 	}
 	verifyErrors := "=== build (exit code 1) ===\nbuild failed\n"
 
-	_, err := VerifyFix(context.Background(), testIssue(), 7, verifyErrors, "", testConfig(), prompts, nil, testLogger(t))
+	_, err := VerifyFix(context.Background(), testIssue(), 7, verifyErrors, "", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("VerifyFix() error = %v", err)
 	}
@@ -592,7 +593,7 @@ func TestVerifyFix_WithSessionID_DoesNotSetGODARK_SESSION_ID(t *testing.T) {
 	})
 
 	prompts := &Prompts{VerifyFix: "fix prompt"}
-	_, err := VerifyFix(context.Background(), testIssue(), 7, "some errors", "sess-abc123", testConfig(), prompts, nil, testLogger(t))
+	_, err := VerifyFix(context.Background(), testIssue(), 7, "some errors", "sess-abc123", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("VerifyFix() error = %v", err)
 	}
@@ -610,7 +611,7 @@ func TestVerifyFix_WithoutSessionID_NoSessionEnv(t *testing.T) {
 	})
 
 	prompts := &Prompts{VerifyFix: "fix prompt"}
-	_, err := VerifyFix(context.Background(), testIssue(), 7, "some errors", "", testConfig(), prompts, nil, testLogger(t))
+	_, err := VerifyFix(context.Background(), testIssue(), 7, "some errors", "", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("VerifyFix() error = %v", err)
 	}
@@ -628,7 +629,7 @@ func TestVerifyFix_SetsImplementerRetryRole(t *testing.T) {
 	})
 
 	prompts := &Prompts{VerifyFix: "fix prompt"}
-	_, err := VerifyFix(context.Background(), testIssue(), 7, "errors", "", testConfig(), prompts, nil, testLogger(t))
+	_, err := VerifyFix(context.Background(), testIssue(), 7, "errors", "", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("VerifyFix() error = %v", err)
 	}
@@ -641,7 +642,7 @@ func TestVerifyFix_SetsImplementerRetryRole(t *testing.T) {
 func TestNewRunOpts_SetsGeneratedPathsEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.GeneratedPaths = []string{"service/api/grpc/gen/", "**/*.freezed.dart"}
-	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -654,7 +655,7 @@ func TestNewRunOpts_SetsGeneratedPathsEnv(t *testing.T) {
 func TestNewRunOpts_EmptyGeneratedPathsEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.GeneratedPaths = nil
-	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -674,7 +675,7 @@ func TestImplement_GeneratedPathsInEnv(t *testing.T) {
 	cfg := testConfig()
 	cfg.GeneratedPaths = []string{"gen/", "**/*.pb.go"}
 
-	_, err := Implement(context.Background(), testIssue(), cfg, testPrompts(t), nil, testLogger(t), "", "")
+	_, err := Implement(context.Background(), testIssue(), false, cfg, testPrompts(t), nil, testLogger(t), "", "")
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -689,7 +690,7 @@ func TestNewPromptData_GeneratedPathsJoined(t *testing.T) {
 	cfg := testConfig()
 	cfg.GeneratedPaths = []string{"service/api/grpc/gen/", "**/*.freezed.dart"}
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	want := "service/api/grpc/gen/, **/*.freezed.dart"
 	if data.GeneratedPaths != want {
@@ -701,7 +702,7 @@ func TestNewPromptData_EmptyGeneratedPaths(t *testing.T) {
 	cfg := testConfig()
 	cfg.GeneratedPaths = nil
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.GeneratedPaths != "" {
 		t.Errorf("GeneratedPaths = %q, want empty string", data.GeneratedPaths)
@@ -712,7 +713,7 @@ func TestNewPromptData_SharedRulesContainsProtectedPaths(t *testing.T) {
 	cfg := testConfig() // ProtectedPaths: ["CLAUDE.md", "tests/scenarios/"]
 	cfg.ScenarioDir = ""
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	want := "CLAUDE.md, tests/scenarios/"
 	if !strings.Contains(data.SharedRules, want) {
@@ -724,7 +725,7 @@ func TestNewPromptData_SharedRulesContainsScenarioDir(t *testing.T) {
 	cfg := testConfig() // ScenarioDir: "tests/scenarios/"
 	cfg.ProtectedPaths = nil
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	want := "tests/scenarios/"
 	if !strings.Contains(data.SharedRules, want) {
@@ -737,7 +738,7 @@ func TestNewPromptData_SharedRulesEmptyWhenNoPaths(t *testing.T) {
 	cfg.ProtectedPaths = nil
 	cfg.ScenarioDir = ""
 
-	data := newPromptData(testIssue(), cfg, "test-slug")
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
 
 	if data.SharedRules != "" {
 		t.Errorf("SharedRules = %q, want empty string when both ProtectedPaths and ScenarioDir are empty", data.SharedRules)
@@ -786,7 +787,7 @@ func TestNewRunOpts_ModelOverride(t *testing.T) {
 	cfg.Model = "opus"
 	cfg.ModelOverrides = map[string]string{"recon": "sonnet"}
 
-	opts, err := newRunOpts("prompt", cfg, nil, "recon")
+	opts, err := newRunOpts("prompt", cfg, nil, "recon", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -800,7 +801,7 @@ func TestNewRunOpts_ModelFallsBackToGlobal(t *testing.T) {
 	cfg.Model = "opus"
 	cfg.ModelOverrides = map[string]string{"recon": "sonnet"}
 
-	opts, err := newRunOpts("prompt", cfg, nil, "implementer")
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
@@ -813,11 +814,60 @@ func TestNewRunOpts_NilModelOverrides(t *testing.T) {
 	cfg := testConfig()
 	cfg.Model = "opus"
 
-	opts, err := newRunOpts("prompt", cfg, nil, "recon")
+	opts, err := newRunOpts("prompt", cfg, nil, "recon", false)
 	if err != nil {
 		t.Fatalf("newRunOpts() error = %v", err)
 	}
 	if opts.Model != "opus" {
 		t.Errorf("Model = %q, want opus (no overrides configured)", opts.Model)
+	}
+}
+
+func TestNewPromptData_IntegrationFalseOmitsComposeServices(t *testing.T) {
+	cfg := testConfig()
+	cfg.DockerCompose = &config.DockerCompose{
+		Services: []config.ComposeService{{Name: "postgres", Description: "database"}},
+	}
+
+	data := newPromptData(testIssue(), cfg, "test-slug", false)
+
+	if data.ComposeServices != "" {
+		t.Errorf("ComposeServices = %q, want empty when integration=false", data.ComposeServices)
+	}
+}
+
+func TestNewPromptData_IntegrationTrueIncludesComposeServices(t *testing.T) {
+	cfg := testConfig()
+	cfg.DockerCompose = &config.DockerCompose{
+		Services: []config.ComposeService{{Name: "postgres", Description: "database"}},
+	}
+
+	data := newPromptData(testIssue(), cfg, "test-slug", true)
+
+	want := buildComposeServices(cfg.DockerCompose, cfg.HostServices)
+	if data.ComposeServices != want {
+		t.Errorf("ComposeServices = %q, want %q", data.ComposeServices, want)
+	}
+}
+
+func TestNewRunOpts_IntegrationTrueMountsDockerSocket(t *testing.T) {
+	cfg := testConfig()
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", true)
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	if !opts.MountDockerSocket {
+		t.Error("MountDockerSocket = false, want true when integration=true")
+	}
+}
+
+func TestNewRunOpts_IntegrationFalseNoDockerSocket(t *testing.T) {
+	cfg := testConfig()
+	opts, err := newRunOpts("prompt", cfg, nil, "implementer", false)
+	if err != nil {
+		t.Fatalf("newRunOpts() error = %v", err)
+	}
+	if opts.MountDockerSocket {
+		t.Error("MountDockerSocket = true, want false when integration=false")
 	}
 }

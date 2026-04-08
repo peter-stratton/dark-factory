@@ -16,7 +16,7 @@ func TestReview_ReturnsVerdict(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
+	result, err := Review(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -31,7 +31,7 @@ func TestReview_ChangesRequested(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
+	result, err := Review(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -47,7 +47,7 @@ func TestReview_SetsReviewerRole(t *testing.T) {
 		return &sandbox.RunResult{Stdout: "AGENT_RESULT=APPROVED\n"}, nil
 	})
 
-	_, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
+	_, err := Review(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -63,7 +63,7 @@ func TestReview_StructuredVerdictApproved(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
+	result, err := Review(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -78,7 +78,7 @@ func TestReview_StructuredVerdictChangesRequested(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
+	result, err := Review(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestReview_NoStructuredVerdict_FallsBackToStdout(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
+	result, err := Review(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -109,7 +109,7 @@ func TestReview_NeitherSource_EmptyVerdict(t *testing.T) {
 		return &sandbox.RunResult{Stdout: out}, nil
 	})
 
-	result, err := Review(context.Background(), testIssue(), 10, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
+	result, err := Review(context.Background(), testIssue(), 10, false, testConfig(), testPrompts(t).Reviewer, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestReview_AcceptsPromptParam(t *testing.T) {
 	})
 
 	customPrompt := "custom semiformal prompt for PR #{{.PRNumber}}"
-	_, err := Review(context.Background(), testIssue(), 10, testConfig(), customPrompt, nil, testLogger(t), false)
+	_, err := Review(context.Background(), testIssue(), 10, false, testConfig(), customPrompt, nil, testLogger(t), false)
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}

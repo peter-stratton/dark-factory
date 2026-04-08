@@ -18,7 +18,7 @@ func TestMergeCoordinate_RendersPromptAndCallsRun(t *testing.T) {
 	})
 
 	prompts := &Prompts{MergeCoordinator: "Merge PR #{{.PRNumber}} for issue #{{.IssueNumber}}: {{.IssueTitle}}"}
-	result, err := MergeCoordinate(context.Background(), testIssue(), 99, "conflict in main.go", testConfig(), prompts, nil, testLogger(t))
+	result, err := MergeCoordinate(context.Background(), testIssue(), 99, "conflict in main.go", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("MergeCoordinate() error = %v", err)
 	}
@@ -47,7 +47,7 @@ func TestMergeCoordinate_ConflictInfoInjected(t *testing.T) {
 
 	conflictInfo := "CONFLICT (content): Merge conflict in pkg/server.go"
 	prompts := &Prompts{MergeCoordinator: "Conflicts: {{.ConflictInfo}}"}
-	_, err := MergeCoordinate(context.Background(), testIssue(), 10, conflictInfo, testConfig(), prompts, nil, testLogger(t))
+	_, err := MergeCoordinate(context.Background(), testIssue(), 10, conflictInfo, false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("MergeCoordinate() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestMergeCoordinate_PRNumberInjected(t *testing.T) {
 	})
 
 	prompts := &Prompts{MergeCoordinator: "PR={{.PRNumber}}"}
-	_, err := MergeCoordinate(context.Background(), testIssue(), 55, "", testConfig(), prompts, nil, testLogger(t))
+	_, err := MergeCoordinate(context.Background(), testIssue(), 55, "", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("MergeCoordinate() error = %v", err)
 	}
@@ -86,7 +86,7 @@ func TestMergeCoordinate_Role(t *testing.T) {
 	})
 
 	prompts := &Prompts{MergeCoordinator: "merge prompt"}
-	_, err := MergeCoordinate(context.Background(), testIssue(), 1, "", testConfig(), prompts, nil, testLogger(t))
+	_, err := MergeCoordinate(context.Background(), testIssue(), 1, "", false, testConfig(), prompts, nil, testLogger(t))
 	if err != nil {
 		t.Fatalf("MergeCoordinate() error = %v", err)
 	}
@@ -103,7 +103,7 @@ func TestMergeCoordinate_InvalidTimeout(t *testing.T) {
 	cfg.AgentTimeout = "invalid"
 
 	prompts := &Prompts{MergeCoordinator: "merge prompt"}
-	_, err := MergeCoordinate(context.Background(), testIssue(), 1, "", cfg, prompts, nil, testLogger(t))
+	_, err := MergeCoordinate(context.Background(), testIssue(), 1, "", false, cfg, prompts, nil, testLogger(t))
 	if err == nil {
 		t.Fatal("expected error for invalid timeout")
 	}
