@@ -33,13 +33,7 @@ const configTail = `
 # roadmap_path: docs/roadmap/
 # planning_dir: docs/planning/
 # scenario_dir: tests/scenarios/
-
-# Patch coverage enforcement (optional)
-# When set, the verify step computes patch coverage after tests pass and fails
-# if the percentage of covered changed lines is below patch_target.
-# coverage:
-#   patch_target: 80          # 1-100, percentage of changed lines that must be covered
-#   test_command: ""           # optional override (must write -coverprofile=/tmp/cov.out)
+# review_dir: tests/review/
 
 # Prompt templates (override by copying to a custom path)
 prompts:
@@ -58,18 +52,90 @@ prompts:
 # Default branch of the repository (auto-detected from GitHub if omitted)
 # default_branch: main
 
-# Bounded concurrency (optional, Phase 14)
+# Retry behavior
+# max_resume_retries: 2   # after this many retries, switch from session resumption to fresh session
+# max_rebase_attempts: 1  # auto rebase/conflict-fix cycles before labeling needs-human-review (0 = disable)
+
+# Agent timeout (Go duration format: "30m", "1h", etc.)
+# agent_timeout: "30m"
+
+# Model selection (default: sonnet via CLI)
+# model: opus
+# model_overrides:
+#   recon: sonnet
+#   quality_reviewer: sonnet
+#   spec_generator: sonnet
+
+# Review step tuning
+# review:
+#   semiformal: false          # use semiformal reviewer
+#   semiformal_on_retry: false # use semiformal reviewer on retries
+
+# Quality review tuning
+# quality_strictness_decay: true  # diminishing strictness on quality review retries
+
+# Output truncation limits (bytes)
+# truncation:
+#   verify_output: 4096   # max bytes from verify command stdout+stderr
+#   pr_diff: 30000         # max bytes from PR diff embedded in prompts
+
+# Container health judge
+# judge:
+#   enabled: true
+#   default_idle_timeout: 300          # seconds before killing idle agent
+#   default_no_progress_timeout: 0     # seconds with no meaningful progress (0 = disabled)
+#   tool_thrash_threshold: 3           # repeated identical tool calls to trigger kill
+#   tool_thrash_window_secs: 60        # window for tool thrash detection
+#   transport_failure_threshold: 10    # transport errors before killing agent
+#   container_retry_limit: 2           # container restart attempts
+#   # Per-role overrides (optional):
+#   # idle_timeout_by_role:
+#   #   implementer: 600
+#   # no_progress_timeout_by_role:
+#   #   reviewer: 180
+
+# Bounded concurrency (optional)
 # Controls how many issues in a wave run in parallel. Default is 1
-# (serial behavior, identical to pre-Phase-14 godark). Set higher to
-# fan out independent issues across workers; dependent issues still
-# respect topological ordering via wave-barrier dispatch.
+# (serial behavior). Set higher to fan out independent issues across
+# workers; dependent issues still respect topological ordering via
+# wave-barrier dispatch.
 #
 # Mutually exclusive with --integration on the CLI: an integration run
 # (which brings up docker_compose services) requires max_workers=1
 # because compose services are shared, host-side state. Pass
 # --workers N on the CLI to override this value per-run.
 # concurrency:
-#   max_workers: 1   # default; raise to fan out independent issues
+#   max_workers: 1
+
+# Customizable prefixes for branch names and GitHub labels (default: "godark")
+# branch_prefix: godark
+# label_prefix: godark
+
+# Custom title for rollup PR (supports {{.BaseBranch}} and {{.DefaultBranch}} templates)
+# rollup_title: ""
+
+# Environment variables passed into the sandbox alongside auth vars
+# sandbox_env:
+#   DATABASE_URL: "postgres://localhost:5432/test"
+
+# Environment variables that must be set before a run starts.
+# Their values are forwarded to the sandbox.
+# required_env:
+#   - DATABASE_URL
+#   - REDIS_URL
+
+# Auth token preference when both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set
+# auth_preference: oauth   # "oauth" (default) or "api_key"
+
+# Watch command polling settings
+# watch:
+#   poll_interval: "60s"
+
+# CI check gating — wait for status checks before merging
+# wait_for_checks:
+#   timeout: "10m"
+#   required: []
+#   startup_grace: "60s"   # grace period for checks to appear
 
 # Docker Compose integration (optional)
 # When set, godark can bring up compose services alongside the sandbox
@@ -100,19 +166,15 @@ prompts:
 #     health_check:
 #       command: "curl -sf http://localhost:8787/"
 
-# Agent timeout (Go duration format: "30m", "1h", etc.)
-# agent_timeout: "30m"
-
-# Model selection (default: sonnet via CLI)
-# model: opus
-# model_overrides:
-#   recon: sonnet
-#   quality_reviewer: sonnet
-#   spec_generator: sonnet
-
-# Customizable prefixes for branch names and GitHub labels (default: "godark")
-# branch_prefix: godark
-# label_prefix: godark
+# Docker sandbox customization
+# docker:
+#   image: ubuntu:22.04
+#   # dockerfile: ""          # custom Dockerfile path (overrides auto-generated)
+#   # mount: ""               # Docker mount configuration
+#   # user: ""                # user to run commands as in container
+#   # node_version: "20"      # Node.js major version
+#   # extra_packages: []      # additional apt packages
+#   # install_commands: []    # shell commands run during image build
 `
 
 // buildDefaultConfig constructs the default godark.yaml config string.
