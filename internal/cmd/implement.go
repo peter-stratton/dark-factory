@@ -609,6 +609,7 @@ func init() {
 	f.String("punchlist", "", "Write manual testing punchlist to this file (always printed to stdout)")
 	f.String("issues", "", "Comma-separated list of issue numbers (e.g. 160,161,162)")
 	f.String("base-branch", "", "Base branch for PRs (overrides repo default branch)")
+	f.String("rollup-title", "", "Custom title for the rollup PR (supports {{.BaseBranch}} and {{.DefaultBranch}} templates)")
 	f.String("default-branch", "", "Default branch of the repository (auto-detected if omitted)")
 	f.Bool("integration", false, "Enable Docker Compose integration testing (forces single worker)")
 	f.Int("workers", 0, "Maximum parallel workers (0 = use concurrency.max_workers from config)")

@@ -239,6 +239,7 @@ type Config struct {
 
 	AutoMerge              AutoMerge `yaml:"auto_merge"`
 	BaseBranch             string    `yaml:"base_branch"`
+	RollupTitle            string    `yaml:"rollup_title"`
 	DefaultBranch          string    `yaml:"default_branch"`
 	BranchPrefix           string    `yaml:"branch_prefix"`
 	LabelPrefix            string    `yaml:"label_prefix"`
@@ -382,6 +383,7 @@ type CLIFlags struct {
 	AutoMergeFeature *string
 	AutoMergeRollup  *string
 	BaseBranch       *string
+	RollupTitle      *string
 	DefaultBranch    *string
 	NoJudge          *bool
 	Model            *string
@@ -465,6 +467,21 @@ func ResolveProjectName(prefix string, issueNumber int) string {
 		return fmt.Sprintf("godark-%d", issueNumber)
 	}
 	return fmt.Sprintf("%s-%d", s, issueNumber)
+}
+
+// ResolveRollupTitle returns the rollup PR title. When RollupTitle is set, it
+// is used as a template with {{.BaseBranch}} and {{.DefaultBranch}} expanded.
+// When RollupTitle is empty, the default "chore: merge <base> into <default>"
+// format is returned.
+func (c *Config) ResolveRollupTitle(baseBranch, defaultBranch string) string {
+	if c.RollupTitle == "" {
+		return fmt.Sprintf("chore: merge %s into %s", baseBranch, defaultBranch)
+	}
+	r := strings.NewReplacer(
+		"{{.BaseBranch}}", baseBranch,
+		"{{.DefaultBranch}}", defaultBranch,
+	)
+	return r.Replace(c.RollupTitle)
 }
 
 // EffectiveBaseBranch returns BaseBranch, defaulting to "main" when empty.
@@ -612,6 +629,9 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 	if flags.BaseBranch != nil {
 		cfg.BaseBranch = *flags.BaseBranch
+	}
+	if flags.RollupTitle != nil {
+		cfg.RollupTitle = *flags.RollupTitle
 	}
 	if flags.DefaultBranch != nil {
 		cfg.DefaultBranch = *flags.DefaultBranch

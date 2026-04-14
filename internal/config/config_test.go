@@ -2122,6 +2122,49 @@ func TestResolveBranch_CustomPrefix_BaseBranchOverrides(t *testing.T) {
 	}
 }
 
+func TestResolveRollupTitle_Default(t *testing.T) {
+	cfg := &Config{}
+	got := cfg.ResolveRollupTitle("godark/phase-8", "main")
+	want := "chore: merge godark/phase-8 into main"
+	if got != want {
+		t.Errorf("ResolveRollupTitle() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveRollupTitle_CustomStatic(t *testing.T) {
+	cfg := &Config{RollupTitle: "PROJ-456: phase 8 rollup"}
+	got := cfg.ResolveRollupTitle("godark/phase-8", "main")
+	want := "PROJ-456: phase 8 rollup"
+	if got != want {
+		t.Errorf("ResolveRollupTitle() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveRollupTitle_TemplateExpansion(t *testing.T) {
+	cfg := &Config{RollupTitle: "PROJ-456: merge {{.BaseBranch}} into {{.DefaultBranch}}"}
+	got := cfg.ResolveRollupTitle("godark/phase-8", "main")
+	want := "PROJ-456: merge godark/phase-8 into main"
+	if got != want {
+		t.Errorf("ResolveRollupTitle() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveRollupTitle_CLIFlagOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+rollup_title: "from-yaml"
+`)
+	title := "from-flag"
+	cfg, err := Load(path, CLIFlags{RollupTitle: &title})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.RollupTitle != "from-flag" {
+		t.Errorf("RollupTitle = %q, want %q", cfg.RollupTitle, "from-flag")
+	}
+}
+
 func TestDefaultRollupIsManual(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `repo: owner/repo`)

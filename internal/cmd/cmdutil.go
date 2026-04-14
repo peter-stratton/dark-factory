@@ -33,6 +33,10 @@ func parseCLIFlags(cmd *cobra.Command) config.CLIFlags {
 		v, _ := cmd.Flags().GetString("base-branch")
 		flags.BaseBranch = &v
 	}
+	if cmd.Flags().Changed("rollup-title") {
+		v, _ := cmd.Flags().GetString("rollup-title")
+		flags.RollupTitle = &v
+	}
 	if cmd.Flags().Changed("default-branch") {
 		v, _ := cmd.Flags().GetString("default-branch")
 		flags.DefaultBranch = &v

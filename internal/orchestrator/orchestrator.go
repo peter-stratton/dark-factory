@@ -1323,7 +1323,7 @@ var mergeCoordinateFn = agent.MergeCoordinate
 // least one issue was implemented into the base branch during the run.
 // Returns the PR number, URL, and any error.
 func HandleRollupPR(ctx context.Context, cfg *config.Config, runMode config.RunMode, issues []github.Issue, defaultBranch string, logger *slog.Logger, reporter progress.ProgressReporter, writer *rundata.Writer, prompts *agent.Prompts, authEnv map[string]string) (int, string, error) {
-	title := fmt.Sprintf("chore: merge %s into %s", cfg.BaseBranch, defaultBranch)
+	title := cfg.ResolveRollupTitle(cfg.BaseBranch, defaultBranch)
 	body := buildRollupBody(issues)
 
 	logger.Info("upserting rollup PR",
