@@ -47,4 +47,5 @@ type StepResultRecord struct {
 	PeakMemoryBytes  int64
 	CPUNanoseconds   int64
 	TraceID          string
+	Prompt           string
 }

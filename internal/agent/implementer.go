@@ -46,7 +46,12 @@ func Implement(ctx context.Context, issue github.Issue, integration bool, cfg *c
 		"branch", branch,
 	)
 
-	return Run(ctx, opts, logger)
+	result, err := Run(ctx, opts, logger)
+	if err != nil {
+		return nil, err
+	}
+	result.Prompt = rendered
+	return result, nil
 }
 
 // Retry runs the implementer agent in retry mode for an existing PR.
@@ -82,7 +87,12 @@ func Retry(ctx context.Context, issue github.Issue, prNumber int, prevSessionID 
 		"pr_number", prNumber,
 	)
 
-	return Run(ctx, opts, logger)
+	result, err := Run(ctx, opts, logger)
+	if err != nil {
+		return nil, err
+	}
+	result.Prompt = rendered
+	return result, nil
 }
 
 // VerifyFix runs the implementer agent in verify-fix mode. It renders the
@@ -110,7 +120,12 @@ func VerifyFix(ctx context.Context, issue github.Issue, prNumber int, verifyErro
 		"pr_number", prNumber,
 	)
 
-	return Run(ctx, opts, logger)
+	result, err := Run(ctx, opts, logger)
+	if err != nil {
+		return nil, err
+	}
+	result.Prompt = rendered
+	return result, nil
 }
 
 // BranchName returns the conventional branch name for an issue.

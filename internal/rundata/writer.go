@@ -81,6 +81,7 @@ type StepResult struct {
 	PeakMemoryBytes  int64      `json:"peak_memory_bytes,omitempty"`
 	CPUNanoseconds   int64      `json:"cpu_nanoseconds,omitempty"`
 	TraceID          string     `json:"trace_id,omitempty"`
+	Prompt           string     `json:"prompt,omitempty"`
 }
 
 // OutcomeStatus constants mirror the agent.OutcomeStatus values for use in

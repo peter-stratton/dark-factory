@@ -115,7 +115,7 @@ func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueO
 func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResultRecord, error) {
 	where, args := buildRunJoinWhere(filter)
 	const stepResultsBase = `SELECT sr.run_id, sr.issue_number, sr.step_name, sr.cost_usd, sr.duration_seconds,
-	             sr.flags, sr.started_at, sr.finished_at, sr.peak_memory_bytes, sr.cpu_nanoseconds, sr.trace_id
+	             sr.flags, sr.started_at, sr.finished_at, sr.peak_memory_bytes, sr.cpu_nanoseconds, sr.trace_id, sr.prompt
 	      FROM step_results sr
 	      INNER JOIN runs r ON r.id = sr.run_id`
 	q := stepResultsBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
@@ -132,7 +132,7 @@ func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResu
 		var flagsJSON, startedAt, finishedAt string
 		if scanErr := rows.Scan(
 			&s.RunID, &s.IssueNumber, &s.StepName, &s.CostUSD, &s.DurationSeconds,
-			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID,
+			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID, &s.Prompt,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan step result: %w", scanErr)
 		}
@@ -164,7 +164,7 @@ func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResu
 // sorted by started_at ascending. Returns an empty slice if none found.
 func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepResultRecord, error) {
 	const q = `SELECT run_id, issue_number, step_name, cost_usd, duration_seconds,
-	             flags, started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id
+	             flags, started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id, prompt
 	      FROM step_results WHERE trace_id = ? ORDER BY started_at ASC`
 
 	rows, err := db.db.QueryContext(ctx, q, traceID)
@@ -179,7 +179,7 @@ func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepRes
 		var flagsJSON, startedAt, finishedAt string
 		if scanErr := rows.Scan(
 			&s.RunID, &s.IssueNumber, &s.StepName, &s.CostUSD, &s.DurationSeconds,
-			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID,
+			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID, &s.Prompt,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan step result: %w", scanErr)
 		}
@@ -205,6 +205,39 @@ func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepRes
 		return []StepResultRecord{}, nil
 	}
 	return results, nil
+}
+
+// QueryRunByID returns a single RunRecord by run_id (the timestamp), or nil if not found.
+func QueryRunByID(ctx context.Context, db *DB, runID string) (*RunRecord, error) {
+	const q = `SELECT id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
+	             started_at, finished_at, total, implemented, failed, abort_reason
+	      FROM runs WHERE id = ? LIMIT 1`
+
+	var r RunRecord
+	var startedAt, finishedAt string
+	err := db.db.QueryRowContext(ctx, q, runID).Scan(
+		&r.ID, &r.Repo, &r.Milestone, &r.BaseBranch,
+		&r.AutoMergeFeature, &r.AutoMergeRollup,
+		&startedAt, &finishedAt,
+		&r.Total, &r.Implemented, &r.Failed, &r.AbortReason,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query run by id: %w", err)
+	}
+	t, err := time.Parse(timeLayout, startedAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse started_at %q: %w", startedAt, err)
+	}
+	r.StartedAt = t
+	t, err = time.Parse(timeLayout, finishedAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse finished_at %q: %w", finishedAt, err)
+	}
+	r.FinishedAt = t
+	return &r, nil
 }
 
 // QueryOutcomeByTraceID returns the issue outcome for a given trace ID,

@@ -53,6 +53,7 @@ type Result struct {
 	PeakMemoryBytes   int64  // peak RSS in bytes; 0 if unavailable
 	CPUNanoseconds    int64  // total CPU time (user + system) in nanoseconds; 0 if unavailable
 	CloneSHA          string // HEAD SHA captured inside the container immediately after clone
+	Prompt            string // rendered prompt sent to the agent
 	UsageLimited      bool      // true when Claude hit its usage limit during this run
 	ResetsAt          time.Time // when the usage limit resets; zero if unknown
 }

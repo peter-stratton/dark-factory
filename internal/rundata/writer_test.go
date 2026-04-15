@@ -1705,3 +1705,14 @@ func TestWriteWaveResult(t *testing.T) {
 		t.Errorf("wave 1 issue numbers: got %v, want [1 2]", got.IssueNumbers)
 	}
 }
+
+func TestStepResult_JSONOmitEmpty(t *testing.T) {
+	s := StepResult{}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"prompt"`) {
+		t.Errorf("empty StepResult should omit prompt key, got: %s", data)
+	}
+}

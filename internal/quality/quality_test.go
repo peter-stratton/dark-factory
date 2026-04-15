@@ -156,6 +156,21 @@ func TestCheckSemiformalConsistency(t *testing.T) {
 			output:   "FORMAL CONCLUSION\nStatus: BROKEN\nAGENT_RESULT=CHANGES_REQUESTED",
 			wantCode: "",
 		},
+		{
+			name:     "FLAGGED with APPROVED",
+			output:   "FORMAL CONCLUSION\nSECURITY TRACE\nauth.go: FLAGGED (hardcoded API key)\nAGENT_RESULT=APPROVED",
+			wantCode: "semiformal_inconsistency",
+		},
+		{
+			name:     "CLEAR with APPROVED",
+			output:   "FORMAL CONCLUSION\nSECURITY TRACE\nauth.go: CLEAR\nAGENT_RESULT=APPROVED",
+			wantCode: "",
+		},
+		{
+			name:     "FLAGGED with CHANGES_REQUESTED",
+			output:   "FORMAL CONCLUSION\nSECURITY TRACE\nauth.go: FLAGGED (missing auth)\nAGENT_RESULT=CHANGES_REQUESTED",
+			wantCode: "",
+		},
 	}
 
 	for _, tt := range tests {

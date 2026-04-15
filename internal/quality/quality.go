@@ -156,6 +156,15 @@ func CheckSemiformalConsistency(output string) *Flag {
 			Message: "verdict APPROVED but uncovered paths contain Risk: HIGH",
 		}
 	}
+	// Match the prompt's required format "FLAGGED (description)" to avoid
+	// false positives on incidental prose (e.g. "I flagged this earlier").
+	// See prompts/reviewer_semiformal.txt SECURITY TRACE section.
+	if strings.Contains(output, "FLAGGED (") {
+		return &Flag{
+			Code:    "semiformal_inconsistency",
+			Message: "verdict APPROVED but security trace contains FLAGGED",
+		}
+	}
 	return nil
 }
 

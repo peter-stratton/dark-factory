@@ -12,6 +12,24 @@ type execContext interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+// maxPromptBytes caps the rendered prompt stored in step_results.prompt to keep
+// stats.db from growing unboundedly on pathologically large prompts. Typical
+// rendered prompts are 5-20KB; this leaves headroom while protecting against
+// runaway growth when context-heavy templates blow out. The full prompt is
+// still persisted to the per-run JSON files on disk.
+const maxPromptBytes = 32 * 1024
+
+// capPrompt truncates s to maxPromptBytes when needed, appending a marker so
+// consumers can tell the value was shortened. Slices at byte level, which is
+// safe for storage: stats.db never interprets the field as rune-oriented text.
+func capPrompt(s string) string {
+	if len(s) <= maxPromptBytes {
+		return s
+	}
+	const marker = "\n...[truncated]"
+	return s[:maxPromptBytes-len(marker)] + marker
+}
+
 // WriteRun inserts or replaces a row in the runs table.
 // If a row with the same id already exists it is replaced (idempotent).
 func WriteRun(ctx context.Context, db *DB, run RunRecord) error {
@@ -104,8 +122,8 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 	_, err = ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO step_results
 			(run_id, issue_number, step_name, cost_usd, duration_seconds, flags,
-			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id, prompt)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		step.RunID,
 		step.IssueNumber,
 		step.StepName,
@@ -117,6 +135,7 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 		step.PeakMemoryBytes,
 		step.CPUNanoseconds,
 		step.TraceID,
+		capPrompt(step.Prompt),
 	)
 	if err != nil {
 		return fmt.Errorf("write step result (run=%q issue=%d step=%q): %w", step.RunID, step.IssueNumber, step.StepName, err)
