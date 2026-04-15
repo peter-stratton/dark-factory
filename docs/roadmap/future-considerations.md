@@ -93,6 +93,15 @@
   simple (poll a health endpoint or error rate after merge) and grow toward
   richer integrations. Valuable for building organizational confidence in
   autonomous code generation
+- Effects-as-data directives — Jido-style pattern where agent loop returns
+  directive structs (LabelPR, MergePR, CloseIssue, etc.) instead of calling
+  infrastructure inline, and the orchestrator dispatches them. Main benefit is
+  testability: assert on agent decisions without mocking GitHub. Evaluated
+  April 2026 and deferred because the orchestrator is already well-structured
+  (merges already deferred via MergeApprovedPRArgs, inline effects are 1-2 line
+  calls, external commands already stubbed in tests). Revisit if benchmarking
+  (Phase 37) reveals that decision/effect coupling is causing concrete problems
+  like difficulty testing new merge strategies or retry logic getting tangled
 - Self-optimization from historical data — use accumulated run analytics
   (stats.db) to tune pipeline behavior automatically. Examples: issues of a
   certain type or complexity that fail review frequently get more recon/spec
