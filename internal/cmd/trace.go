@@ -129,7 +129,7 @@ func renderTraceDetailFromDB(ctx context.Context, w io.Writer, db *stats.DB, tra
 		return fmt.Errorf("querying run: %w", err)
 	}
 	if runRecord == nil {
-		fmt.Fprintln(w, "Run data not found on disk; showing summary from stats.db")
+		fmt.Fprintf(w, "Run record not found in stats.db for run %s; showing summary\n", outcome.RunID)
 		return renderTraceText(w, traceID, issueNumber, outcome, steps)
 	}
 
@@ -266,14 +266,16 @@ func renderTraceDetail(w io.Writer, traceID string, issueNumber int, outcome *st
 	renderStepSection(w, "RECON", detail.Recon)
 	renderStepSection(w, "IMPLEMENT", detail.Implement)
 
-	// Verify results (initial, before retries)
-	for _, vr := range detail.VerifyResults {
-		renderVerifySection(w, vr)
+	// Interleave verify results with retries in chronological order:
+	// verify[0] (initial), then for each retry: retry[i] followed by verify[i+1]
+	if len(detail.VerifyResults) > 0 {
+		renderVerifySection(w, detail.VerifyResults[0])
 	}
-
-	// Retries in chronological order with inline dialogue
-	for _, retry := range detail.Retries {
+	for i, retry := range detail.Retries {
 		renderRetrySection(w, retry, detail.Dialogue)
+		if i+1 < len(detail.VerifyResults) {
+			renderVerifySection(w, detail.VerifyResults[i+1])
+		}
 	}
 
 	renderStepSection(w, "QUALITY REVIEW", detail.QualityReview)
