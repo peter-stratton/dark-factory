@@ -207,6 +207,39 @@ func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepRes
 	return results, nil
 }
 
+// QueryRunByID returns a single RunRecord by run_id (the timestamp), or nil if not found.
+func QueryRunByID(ctx context.Context, db *DB, runID string) (*RunRecord, error) {
+	const q = `SELECT id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
+	             started_at, finished_at, total, implemented, failed, abort_reason
+	      FROM runs WHERE id = ? LIMIT 1`
+
+	var r RunRecord
+	var startedAt, finishedAt string
+	err := db.db.QueryRowContext(ctx, q, runID).Scan(
+		&r.ID, &r.Repo, &r.Milestone, &r.BaseBranch,
+		&r.AutoMergeFeature, &r.AutoMergeRollup,
+		&startedAt, &finishedAt,
+		&r.Total, &r.Implemented, &r.Failed, &r.AbortReason,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query run by id: %w", err)
+	}
+	t, err := time.Parse(timeLayout, startedAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse started_at %q: %w", startedAt, err)
+	}
+	r.StartedAt = t
+	t, err = time.Parse(timeLayout, finishedAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse finished_at %q: %w", finishedAt, err)
+	}
+	r.FinishedAt = t
+	return &r, nil
+}
+
 // QueryOutcomeByTraceID returns the issue outcome for a given trace ID,
 // or nil if no outcome exists with that trace ID.
 func QueryOutcomeByTraceID(ctx context.Context, db *DB, traceID string) (*IssueOutcomeRecord, error) {

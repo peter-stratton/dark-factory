@@ -634,6 +634,75 @@ func TestQueryLatestTraceForIssue_SkipsEmptyTraceID(t *testing.T) {
 	}
 }
 
+// TestQueryRunByID_Found: insert a run, query by ID, verify fields match.
+func TestQueryRunByID_Found(t *testing.T) {
+	db := openTestDB(t)
+
+	want := RunRecord{
+		ID:               "run-1",
+		Repo:             "org/repo",
+		Milestone:        "Phase 1",
+		BaseBranch:       "main",
+		AutoMergeFeature: "true",
+		AutoMergeRollup:  "false",
+		StartedAt:        ts1,
+		FinishedAt:       ts2,
+		Total:            5,
+		Implemented:      3,
+		Failed:           2,
+		AbortReason:      "timeout",
+	}
+	writeRun(t, db, want)
+
+	got, err := QueryRunByID(context.Background(), db, "run-1")
+	if err != nil {
+		t.Fatalf("QueryRunByID: %v", err)
+	}
+	if got == nil {
+		t.Fatal("got nil, want non-nil RunRecord")
+	}
+	if got.ID != want.ID {
+		t.Errorf("ID = %q, want %q", got.ID, want.ID)
+	}
+	if got.Repo != want.Repo {
+		t.Errorf("Repo = %q, want %q", got.Repo, want.Repo)
+	}
+	if got.Milestone != want.Milestone {
+		t.Errorf("Milestone = %q, want %q", got.Milestone, want.Milestone)
+	}
+	if got.Total != want.Total {
+		t.Errorf("Total = %d, want %d", got.Total, want.Total)
+	}
+	if got.Implemented != want.Implemented {
+		t.Errorf("Implemented = %d, want %d", got.Implemented, want.Implemented)
+	}
+	if got.Failed != want.Failed {
+		t.Errorf("Failed = %d, want %d", got.Failed, want.Failed)
+	}
+	if got.AbortReason != want.AbortReason {
+		t.Errorf("AbortReason = %q, want %q", got.AbortReason, want.AbortReason)
+	}
+	if !got.StartedAt.Equal(want.StartedAt) {
+		t.Errorf("StartedAt = %v, want %v", got.StartedAt, want.StartedAt)
+	}
+	if !got.FinishedAt.Equal(want.FinishedAt) {
+		t.Errorf("FinishedAt = %v, want %v", got.FinishedAt, want.FinishedAt)
+	}
+}
+
+// TestQueryRunByID_NotFound: query a nonexistent run ID, verify nil return.
+func TestQueryRunByID_NotFound(t *testing.T) {
+	db := openTestDB(t)
+
+	got, err := QueryRunByID(context.Background(), db, "nonexistent")
+	if err != nil {
+		t.Fatalf("QueryRunByID: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %+v, want nil", got)
+	}
+}
+
 // TestQueryRuns_ExcludeRepo: ExcludeRepo filters out matching repos.
 func TestQueryRuns_ExcludeRepo(t *testing.T) {
 	db := openTestDB(t)
