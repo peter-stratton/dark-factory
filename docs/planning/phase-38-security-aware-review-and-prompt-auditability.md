@@ -1,4 +1,4 @@
-# Phase 37: Security-Aware Review & Prompt Auditability
+# Phase 38: Security-Aware Review & Prompt Auditability
 
 > **Goal:** The reviewer catches security anti-patterns before merge, every agent
 > prompt is captured for post-hoc audit, and `godark trace --detail` renders the
@@ -6,7 +6,7 @@
 
 ## Milestone
 
-`Phase 37: Security-Aware Review & Prompt Auditability`
+`Phase 38: Security-Aware Review & Prompt Auditability`
 
 ---
 

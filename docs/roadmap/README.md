@@ -43,5 +43,5 @@
 - [Phase 34: Frontend-Aware Verification](phase-34.md)
 - [Phase 35: Issue Completeness Auditing](phase-35.md)
 - [Phase 36: Structured Frontend Issue Decomposition](phase-36.md)
-- [Phase 37: Security-Aware Review & Prompt Auditability](phase-37.md)
+- [Phase 38: Security-Aware Review & Prompt Auditability](phase-38.md)
 - [Future considerations](future-considerations.md)
