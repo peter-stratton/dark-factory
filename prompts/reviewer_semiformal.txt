@@ -64,18 +64,27 @@ For each existing test that touches a modified file:
 List code paths introduced by the patch that are not exercised by any test cited above.
 Rate each: HIGH / MEDIUM / LOW risk.
 
+### SECURITY TRACE
+For each changed file, check for:
+- Hardcoded credentials, API keys, or secrets (variable names, string literals, config values that look like keys/tokens)
+- Tokens or sessions without expiration or TTL
+- Sensitive data written to logs, caches, or shared storage locations
+- New endpoints or data paths missing authentication or authorization checks
+For each finding, state: CLEAR / FLAGGED (with one-line description)
+
 ### FORMAL CONCLUSION
 Derive your verdict:
 - If any acceptance criterion is NOT SATISFIED → CHANGES_REQUESTED
 - If any regression is BROKEN → CHANGES_REQUESTED
 - If any uncovered path is HIGH risk → CHANGES_REQUESTED
+- If any security finding is FLAGGED → CHANGES_REQUESTED
 - Otherwise → APPROVED
 
 State the verdict explicitly here before continuing.
 
 CRITICAL: Your AGENT_RESULT line MUST match your FORMAL CONCLUSION. If any AC
-is NOT SATISFIED, any RT is BROKEN, or any uncovered path is HIGH risk, you
-MUST print AGENT_RESULT=CHANGES_REQUESTED.
+is NOT SATISFIED, any RT is BROKEN, any uncovered path is HIGH risk, or any
+security finding is FLAGGED, you MUST print AGENT_RESULT=CHANGES_REQUESTED.
 
 CRITICAL RULES:
 {{.SharedRules}}{{- if .GeneratedPaths -}}

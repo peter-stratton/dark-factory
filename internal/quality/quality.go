@@ -156,6 +156,12 @@ func CheckSemiformalConsistency(output string) *Flag {
 			Message: "verdict APPROVED but uncovered paths contain Risk: HIGH",
 		}
 	}
+	if strings.Contains(output, "FLAGGED") {
+		return &Flag{
+			Code:    "semiformal_inconsistency",
+			Message: "verdict APPROVED but security trace contains FLAGGED",
+		}
+	}
 	return nil
 }
 
