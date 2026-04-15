@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/peter-stratton/dark-factory/internal/rundata"
 	"github.com/peter-stratton/dark-factory/internal/stats"
 )
 
@@ -24,7 +28,7 @@ func TestTraceCommandRegistered(t *testing.T) {
 
 // TestTraceCommandFlags verifies all flags are present with correct defaults.
 func TestTraceCommandFlags(t *testing.T) {
-	for _, name := range []string{"repo", "run", "json"} {
+	for _, name := range []string{"repo", "run", "json", "detail"} {
 		if traceCmd.Flags().Lookup(name) == nil {
 			t.Errorf("trace command missing flag --%s", name)
 		}
@@ -109,7 +113,7 @@ func TestTraceByIssueNumber(t *testing.T) {
 	seedTraceData(t, db)
 
 	var buf bytes.Buffer
-	if err := runTrace(&buf, db, "42", "", "", false); err != nil {
+	if err := runTrace(&buf, db, "42", "", "", false, false); err != nil {
 		t.Fatalf("runTrace: %v", err)
 	}
 
@@ -137,7 +141,7 @@ func TestTraceByTraceID(t *testing.T) {
 	seedTraceData(t, db)
 
 	var buf bytes.Buffer
-	if err := runTrace(&buf, db, "t-1", "", "", false); err != nil {
+	if err := runTrace(&buf, db, "t-1", "", "", false, false); err != nil {
 		t.Fatalf("runTrace: %v", err)
 	}
 
@@ -184,7 +188,7 @@ func TestTraceMultipleRunsMostRecent(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runTrace(&buf, db, "42", "", "", false); err != nil {
+	if err := runTrace(&buf, db, "42", "", "", false, false); err != nil {
 		t.Fatalf("runTrace: %v", err)
 	}
 
@@ -227,7 +231,7 @@ func TestTraceWithRunFilter(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runTrace(&buf, db, "42", "", "run-old", false); err != nil {
+	if err := runTrace(&buf, db, "42", "", "run-old", false, false); err != nil {
 		t.Fatalf("runTrace: %v", err)
 	}
 
@@ -242,7 +246,7 @@ func TestTraceNoResults(t *testing.T) {
 	db := openTraceTestDB(t)
 
 	var buf bytes.Buffer
-	err := runTrace(&buf, db, "999", "", "", false)
+	err := runTrace(&buf, db, "999", "", "", false, false)
 	if err == nil {
 		t.Fatal("expected error for non-existent issue, got nil")
 	}
@@ -256,7 +260,7 @@ func TestTraceNoResultsTraceID(t *testing.T) {
 	db := openTraceTestDB(t)
 
 	var buf bytes.Buffer
-	err := runTrace(&buf, db, "nonexistent-trace", "", "", false)
+	err := runTrace(&buf, db, "nonexistent-trace", "", "", false, false)
 	if err == nil {
 		t.Fatal("expected error for non-existent trace ID, got nil")
 	}
@@ -271,7 +275,7 @@ func TestTraceJSONOutput(t *testing.T) {
 	seedTraceData(t, db)
 
 	var buf bytes.Buffer
-	if err := runTrace(&buf, db, "42", "", "", true); err != nil {
+	if err := runTrace(&buf, db, "42", "", "", true, false); err != nil {
 		t.Fatalf("runTrace: %v", err)
 	}
 
@@ -351,12 +355,410 @@ func TestTraceRepoFilter(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runTrace(&buf, db, "42", "org/repo-a", "", false); err != nil {
+	if err := runTrace(&buf, db, "42", "org/repo-a", "", false, false); err != nil {
 		t.Fatalf("runTrace: %v", err)
 	}
 
 	out := buf.String()
 	if !strings.Contains(out, "t-a") {
 		t.Errorf("expected trace 't-a' for org/repo-a; got:\n%s", out)
+	}
+}
+
+// buildFixtureDir creates a minimal run data directory structure for detail tests.
+// Returns the base dir. The run data is at <base>/org/repo/<runID>/.
+func buildFixtureDir(t *testing.T, runID string, issueNum int, step rundata.StepResult, verify *rundata.VerifyStepResult, risk *rundata.RiskAssessment, retry *rundata.RetryDetail, dialogue []rundata.DialogueEntry) string {
+	t.Helper()
+	base := t.TempDir()
+
+	issueDir := filepath.Join(base, "org", "repo", runID, "issues", strconv.Itoa(issueNum))
+	if err := os.MkdirAll(issueDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	// Write run.json
+	runMeta := rundata.RunMeta{
+		Repo:         "org/repo",
+		IssueNumbers: []int{issueNum},
+		StartedAt:    time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+	}
+	writeJSON(t, filepath.Join(base, "org", "repo", runID, "run.json"), runMeta)
+
+	// Write step files: recon and implement use the same data for simplicity
+	writeJSON(t, filepath.Join(issueDir, "recon.json"), step)
+	writeJSON(t, filepath.Join(issueDir, "implement.json"), step)
+
+	// Write outcome
+	outcome := rundata.Outcome{Status: "implemented"}
+	writeJSON(t, filepath.Join(issueDir, "outcome.json"), outcome)
+
+	if verify != nil {
+		writeJSON(t, filepath.Join(issueDir, "verify-0.json"), verify)
+	}
+
+	if risk != nil {
+		writeJSON(t, filepath.Join(issueDir, "risk-assessment.json"), risk)
+	}
+
+	if retry != nil {
+		retryDir := filepath.Join(issueDir, "retries", strconv.Itoa(retry.Attempt))
+		if err := os.MkdirAll(retryDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeJSON(t, filepath.Join(retryDir, "retry.json"), retry.Retry)
+		writeJSON(t, filepath.Join(retryDir, "quality-review.json"), retry.QualityReview)
+		writeJSON(t, filepath.Join(retryDir, "functional-review.json"), retry.FunctionalReview)
+	}
+
+	if dialogue != nil {
+		writeJSON(t, filepath.Join(issueDir, "dialogue.json"), dialogue)
+	}
+
+	return base
+}
+
+func writeJSON(t *testing.T, path string, v any) {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("WriteFile %s: %v", path, err)
+	}
+}
+
+// seedDetailData seeds stats.db with a run and outcome for detail tests.
+func seedDetailData(t *testing.T, db *stats.DB, runID string, issueNum int) {
+	t.Helper()
+	ctx := context.Background()
+
+	run := stats.RunRecord{
+		ID:        runID,
+		Repo:      "org/repo",
+		StartedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		FinishedAt: time.Date(2026, 3, 1, 11, 0, 0, 0, time.UTC),
+	}
+	if err := stats.WriteRun(ctx, db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	outcome := stats.IssueOutcomeRecord{
+		RunID:       runID,
+		IssueNumber: issueNum,
+		Title:       "Test issue",
+		Status:      "implemented",
+		PRNumber:    742,
+		TraceID:     "t-detail",
+	}
+	if err := stats.WriteIssueOutcome(ctx, db, outcome); err != nil {
+		t.Fatalf("WriteIssueOutcome: %v", err)
+	}
+}
+
+// TestTraceDetailRendersSteps: verify --detail renders step section headers.
+func TestTraceDetailRendersSteps(t *testing.T) {
+	db := openTraceTestDB(t)
+	seedDetailData(t, db, "run-detail", 42)
+
+	started := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	step := rundata.StepResult{
+		Output:          "some output",
+		DurationSeconds: 150,
+		CostUSD:         0.0412,
+		ToolTrace:       []string{"tool1", "tool2"},
+		StartedAt:       &started,
+	}
+	base := buildFixtureDir(t, "run-detail", 42, step, nil, nil, nil, nil)
+
+	orig := newTraceReader
+	newTraceReader = func() (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(base, nil), nil
+	}
+	defer func() { newTraceReader = orig }()
+
+	var buf bytes.Buffer
+	if err := runTrace(&buf, db, "42", "", "", false, true); err != nil {
+		t.Fatalf("runTrace: %v", err)
+	}
+
+	out := buf.String()
+	for _, section := range []string{"=== RECON", "=== IMPLEMENT", "=== OUTCOME"} {
+		if !strings.Contains(out, section) {
+			t.Errorf("output missing section %q; got:\n%s", section, out)
+		}
+	}
+	if !strings.Contains(out, "some output") {
+		t.Errorf("output missing step output; got:\n%s", out)
+	}
+	if !strings.Contains(out, "2 calls") {
+		t.Errorf("output missing tool trace count; got:\n%s", out)
+	}
+}
+
+// TestTraceDetailWithPrompt: verify prompt is rendered when present.
+func TestTraceDetailWithPrompt(t *testing.T) {
+	db := openTraceTestDB(t)
+	seedDetailData(t, db, "run-prompt", 42)
+
+	started := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	step := rundata.StepResult{
+		Prompt:          "Line one\nLine two\nLine three\nLine four",
+		Output:          "output",
+		DurationSeconds: 60,
+		CostUSD:         0.01,
+		StartedAt:       &started,
+	}
+	base := buildFixtureDir(t, "run-prompt", 42, step, nil, nil, nil, nil)
+
+	orig := newTraceReader
+	newTraceReader = func() (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(base, nil), nil
+	}
+	defer func() { newTraceReader = orig }()
+
+	var buf bytes.Buffer
+	if err := runTrace(&buf, db, "42", "", "", false, true); err != nil {
+		t.Fatalf("runTrace: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Line one") {
+		t.Errorf("output missing prompt; got:\n%s", out)
+	}
+	// Verify the prompt appears in the RECON section (prompt is set for recon/implement steps)
+	if !strings.Contains(out, "Prompt: Line one") {
+		t.Errorf("output missing prompt content in step section; got:\n%s", out)
+	}
+}
+
+// TestTraceDetailWithoutPrompt: verify [not captured] when prompt is empty.
+func TestTraceDetailWithoutPrompt(t *testing.T) {
+	db := openTraceTestDB(t)
+	seedDetailData(t, db, "run-noprompt", 42)
+
+	started := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	step := rundata.StepResult{
+		Output:          "output",
+		DurationSeconds: 60,
+		CostUSD:         0.01,
+		StartedAt:       &started,
+	}
+	base := buildFixtureDir(t, "run-noprompt", 42, step, nil, nil, nil, nil)
+
+	orig := newTraceReader
+	newTraceReader = func() (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(base, nil), nil
+	}
+	defer func() { newTraceReader = orig }()
+
+	var buf bytes.Buffer
+	if err := runTrace(&buf, db, "42", "", "", false, true); err != nil {
+		t.Fatalf("runTrace: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "[not captured]") {
+		t.Errorf("output missing [not captured]; got:\n%s", out)
+	}
+}
+
+// TestTraceDetailWithRetries: verify retry appears in output.
+func TestTraceDetailWithRetries(t *testing.T) {
+	db := openTraceTestDB(t)
+	seedDetailData(t, db, "run-retry", 42)
+
+	started := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	step := rundata.StepResult{
+		Output:          "output",
+		DurationSeconds: 60,
+		CostUSD:         0.01,
+		StartedAt:       &started,
+	}
+	retry := &rundata.RetryDetail{
+		Attempt: 1,
+		Retry: rundata.StepResult{
+			Output:          "retry output",
+			DurationSeconds: 30,
+			CostUSD:         0.005,
+		},
+		QualityReview: rundata.StepResult{
+			Output:          "qr retry",
+			DurationSeconds: 15,
+			CostUSD:         0.002,
+		},
+		FunctionalReview: rundata.StepResult{
+			Output:          "fr retry",
+			DurationSeconds: 10,
+			CostUSD:         0.001,
+		},
+	}
+	base := buildFixtureDir(t, "run-retry", 42, step, nil, nil, retry, nil)
+
+	orig := newTraceReader
+	newTraceReader = func() (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(base, nil), nil
+	}
+	defer func() { newTraceReader = orig }()
+
+	var buf bytes.Buffer
+	if err := runTrace(&buf, db, "42", "", "", false, true); err != nil {
+		t.Fatalf("runTrace: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "=== RETRY 1") {
+		t.Errorf("output missing retry section; got:\n%s", out)
+	}
+	if !strings.Contains(out, "retry output") {
+		t.Errorf("output missing retry content; got:\n%s", out)
+	}
+}
+
+// TestTraceDetailFallbackMissingDir: falls back to summary when run dir is missing.
+func TestTraceDetailFallbackMissingDir(t *testing.T) {
+	db := openTraceTestDB(t)
+	seedDetailData(t, db, "run-gone", 42)
+
+	// Seed a step so the summary has content
+	ctx := context.Background()
+	if err := stats.WriteStepResult(ctx, db, stats.StepResultRecord{
+		RunID:       "run-gone",
+		IssueNumber: 42,
+		StepName:    "implement",
+		TraceID:     "t-detail",
+		StartedAt:   time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		FinishedAt:  time.Date(2026, 3, 1, 10, 2, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	// Point reader at an empty temp dir (no run data)
+	emptyBase := t.TempDir()
+	orig := newTraceReader
+	newTraceReader = func() (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(emptyBase, nil), nil
+	}
+	defer func() { newTraceReader = orig }()
+
+	var buf bytes.Buffer
+	if err := runTrace(&buf, db, "42", "", "", false, true); err != nil {
+		t.Fatalf("runTrace: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Run data not found on disk") {
+		t.Errorf("output missing fallback note; got:\n%s", out)
+	}
+	if !strings.Contains(out, "implement") {
+		t.Errorf("output missing summary step; got:\n%s", out)
+	}
+}
+
+// TestTraceDetailAndJSONError: --detail and --json together produce an error.
+func TestTraceDetailAndJSONError(t *testing.T) {
+	db := openTraceTestDB(t)
+
+	var buf bytes.Buffer
+	err := runTrace(&buf, db, "42", "", "", true, true)
+	if err == nil {
+		t.Fatal("expected error for --detail and --json together, got nil")
+	}
+	if !strings.Contains(err.Error(), "--detail and --json are mutually exclusive") {
+		t.Errorf("error = %q, want to contain '--detail and --json are mutually exclusive'", err.Error())
+	}
+}
+
+// TestTraceDetailVerifyResults: verify results show per-check pass/fail.
+func TestTraceDetailVerifyResults(t *testing.T) {
+	db := openTraceTestDB(t)
+	seedDetailData(t, db, "run-verify", 42)
+
+	started := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	step := rundata.StepResult{
+		Output:          "output",
+		DurationSeconds: 60,
+		CostUSD:         0.01,
+		StartedAt:       &started,
+	}
+	verify := &rundata.VerifyStepResult{
+		Attempt:      0,
+		AllPassed:    true,
+		FixAttempted: false,
+		Checks: []rundata.CheckResult{
+			{Name: "build", Passed: true, ExitCode: 0},
+			{Name: "lint", Passed: true, ExitCode: 0},
+			{Name: "test", Passed: false, ExitCode: 1},
+		},
+	}
+	base := buildFixtureDir(t, "run-verify", 42, step, verify, nil, nil, nil)
+
+	orig := newTraceReader
+	newTraceReader = func() (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(base, nil), nil
+	}
+	defer func() { newTraceReader = orig }()
+
+	var buf bytes.Buffer
+	if err := runTrace(&buf, db, "42", "", "", false, true); err != nil {
+		t.Fatalf("runTrace: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "=== VERIFY") {
+		t.Errorf("output missing verify section; got:\n%s", out)
+	}
+	if !strings.Contains(out, "build PASS") {
+		t.Errorf("output missing 'build PASS'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "test FAIL") {
+		t.Errorf("output missing 'test FAIL'; got:\n%s", out)
+	}
+}
+
+// TestTraceDetailRiskAssessment: risk assessment shows gate results.
+func TestTraceDetailRiskAssessment(t *testing.T) {
+	db := openTraceTestDB(t)
+	seedDetailData(t, db, "run-risk", 42)
+
+	started := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	step := rundata.StepResult{
+		Output:          "output",
+		DurationSeconds: 60,
+		CostUSD:         0.01,
+		StartedAt:       &started,
+	}
+	risk := &rundata.RiskAssessment{
+		IsLowRisk: true,
+		Gates: []rundata.RiskGate{
+			{Name: "lines_changed", Passed: true, Detail: "ok"},
+			{Name: "files_changed", Passed: false, Detail: "too many"},
+		},
+	}
+	base := buildFixtureDir(t, "run-risk", 42, step, nil, risk, nil, nil)
+
+	orig := newTraceReader
+	newTraceReader = func() (*rundata.Reader, error) {
+		return rundata.NewReaderWithBase(base, nil), nil
+	}
+	defer func() { newTraceReader = orig }()
+
+	var buf bytes.Buffer
+	if err := runTrace(&buf, db, "42", "", "", false, true); err != nil {
+		t.Fatalf("runTrace: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "=== RISK ASSESSMENT") {
+		t.Errorf("output missing risk section; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Low risk: yes") {
+		t.Errorf("output missing 'Low risk: yes'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "lines_changed PASS") {
+		t.Errorf("output missing 'lines_changed PASS'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "files_changed FAIL") {
+		t.Errorf("output missing 'files_changed FAIL'; got:\n%s", out)
 	}
 }

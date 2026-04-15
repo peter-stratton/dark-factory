@@ -40,6 +40,7 @@ type IssueDetail struct {
 	FailureAnalysis    *FailureAnalysis    // from failure-analysis.json; nil if not present
 	JudgeInterventions []JudgeIntervention // from judge-interventions.json; nil if not present
 	SpecDelta          *SpecDeltaData      // from spec-delta.json; nil if not present
+	RiskAssessment     *RiskAssessment     // from risk-assessment.json; nil if not present
 }
 
 // RunDetail holds the full data for one run, including per-issue details.
@@ -308,6 +309,7 @@ func (r *Reader) loadIssueDetail(issueDir string, issueNum int) IssueDetail {
 		FailureAnalysis:    r.readFailureAnalysis(filepath.Join(issueDir, "failure-analysis.json")),
 		JudgeInterventions: r.readJudgeInterventions(filepath.Join(issueDir, "judge-interventions.json")),
 		SpecDelta:          r.readSpecDelta(filepath.Join(issueDir, "spec-delta.json")),
+		RiskAssessment:     r.readRiskAssessment(filepath.Join(issueDir, "risk-assessment.json")),
 	}
 }
 
@@ -329,6 +331,26 @@ func (r *Reader) readFailureAnalysis(path string) *FailureAnalysis {
 		return nil
 	}
 	return &fa
+}
+
+// readRiskAssessment reads a RiskAssessment from path. Returns nil if the file is
+// missing or corrupt (corrupt files are logged as a warning).
+func (r *Reader) readRiskAssessment(path string) *RiskAssessment {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("skipping risk assessment file", "path", path, "error", err)
+		return nil
+	}
+
+	var ra RiskAssessment
+	if err := json.Unmarshal(data, &ra); err != nil {
+		r.logger.Warn("corrupt risk assessment file, skipping", "path", path, "error", err)
+		return nil
+	}
+	return &ra
 }
 
 // readSpecDelta reads a SpecDeltaData from path. Returns nil if the file is
