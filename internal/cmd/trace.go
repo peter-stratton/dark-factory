@@ -161,7 +161,7 @@ func renderTraceDetailFromDB(ctx context.Context, w io.Writer, db *stats.DB, tra
 		}
 	}
 	if issueDetail == nil {
-		fmt.Fprintln(w, "Run data not found on disk; showing summary from stats.db")
+		fmt.Fprintf(w, "Issue #%d not found in run data; showing summary from stats.db\n", issueNumber)
 		return renderTraceText(w, traceID, issueNumber, outcome, steps)
 	}
 
@@ -264,6 +264,8 @@ func renderTraceDetail(w io.Writer, traceID string, issueNumber int, outcome *st
 	fmt.Fprintf(w, "Issue: #%d\n\n", issueNumber)
 
 	renderStepSection(w, "RECON", detail.Recon)
+	renderStepSectionIfPresent(w, "SPEC GENERATOR", detail.SpecGenerator)
+	renderStepSectionIfPresent(w, "PLANNER", detail.Planner)
 	renderStepSection(w, "IMPLEMENT", detail.Implement)
 
 	// Interleave verify results with retries in chronological order:
@@ -280,6 +282,7 @@ func renderTraceDetail(w io.Writer, traceID string, issueNumber int, outcome *st
 
 	renderStepSection(w, "QUALITY REVIEW", detail.QualityReview)
 	renderStepSection(w, "FUNCTIONAL REVIEW", detail.FunctionalReview)
+	renderStepSectionIfPresent(w, "MERGE COORDINATOR", detail.MergeCoordinator)
 
 	// Risk assessment
 	if detail.RiskAssessment != nil {
@@ -318,6 +321,17 @@ func renderTraceDetail(w io.Writer, traceID string, issueNumber int, outcome *st
 	}
 
 	return nil
+}
+
+// renderStepSectionIfPresent renders the step only when it has any meaningful
+// content. Used for conditional phases (spec_generator, planner,
+// merge_coordinator) that may be absent depending on the issue's flow.
+func renderStepSectionIfPresent(w io.Writer, name string, step rundata.StepResult) {
+	if step.Output == "" && step.Prompt == "" && step.DurationSeconds == 0 &&
+		step.CostUSD == 0 && len(step.ToolTrace) == 0 && len(step.Flags) == 0 {
+		return
+	}
+	renderStepSection(w, name, step)
 }
 
 // renderStepSection renders a single step with prompt, output, tool trace, and flags.
