@@ -143,6 +143,7 @@ func toStepResult(s StepResultRecord) rundata.StepResult {
 		PeakMemoryBytes: s.PeakMemoryBytes,
 		CPUNanoseconds:  s.CPUNanoseconds,
 		TraceID:         s.TraceID,
+		Prompt:          s.Prompt,
 	}
 
 	if !s.StartedAt.IsZero() {

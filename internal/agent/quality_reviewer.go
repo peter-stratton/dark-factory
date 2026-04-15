@@ -44,6 +44,7 @@ func QualityReview(ctx context.Context, issue github.Issue, prNum int, integrati
 	if err != nil {
 		return nil, fmt.Errorf("running quality reviewer agent: %w", err)
 	}
+	result.Prompt = rendered
 
 	// Use structured verdict from runner JSON first; fall back to parsing result text.
 	verdict := result.Verdict

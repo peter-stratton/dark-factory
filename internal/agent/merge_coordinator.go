@@ -33,5 +33,10 @@ func MergeCoordinate(ctx context.Context, issue github.Issue, prNum int, conflic
 		"pr_number", prNum,
 	)
 
-	return Run(ctx, opts, logger)
+	result, err := Run(ctx, opts, logger)
+	if err != nil {
+		return nil, err
+	}
+	result.Prompt = rendered
+	return result, nil
 }

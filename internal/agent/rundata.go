@@ -16,6 +16,7 @@ func ResultToStep(r *Result) rundata.StepResult {
 		SessionID:       r.SessionID,
 		PeakMemoryBytes: r.PeakMemoryBytes,
 		CPUNanoseconds:  r.CPUNanoseconds,
+		Prompt:          r.Prompt,
 	}
 	if !r.StartedAt.IsZero() {
 		t := r.StartedAt

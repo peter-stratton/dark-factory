@@ -575,3 +575,67 @@ func TestQueryIssueOutcomes_TraceID(t *testing.T) {
 		t.Errorf("TraceID: got %q, want %q", results[0].TraceID, "trace-xyz")
 	}
 }
+
+func TestWriteStepResult_Prompt(t *testing.T) {
+	db := openTestDB(t)
+
+	step := StepResultRecord{
+		RunID:       "run-prompt",
+		IssueNumber: 10,
+		StepName:    "implement",
+		TraceID:     "trace-prompt",
+		Prompt:      "You are an implementer agent. Fix issue #10.",
+	}
+
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	results, err := QueryStepsByTraceID(context.Background(), db, "trace-prompt")
+	if err != nil {
+		t.Fatalf("QueryStepsByTraceID: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Prompt != step.Prompt {
+		t.Errorf("Prompt: got %q, want %q", results[0].Prompt, step.Prompt)
+	}
+}
+
+func TestWriteStepResult_EmptyPrompt(t *testing.T) {
+	db := openTestDB(t)
+
+	step := StepResultRecord{
+		RunID:       "run-empty-prompt",
+		IssueNumber: 10,
+		StepName:    "implement",
+		Prompt:      "",
+	}
+
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	var gotPrompt string
+	err := db.db.QueryRow(
+		`SELECT prompt FROM step_results
+		 WHERE run_id = ? AND issue_number = ? AND step_name = ?`,
+		step.RunID, step.IssueNumber, step.StepName,
+	).Scan(&gotPrompt)
+	if err != nil {
+		t.Fatalf("SELECT prompt: %v", err)
+	}
+	if gotPrompt != "" {
+		t.Errorf("prompt: got %q, want empty string", gotPrompt)
+	}
+}
+
+func TestMigrateIdempotent(t *testing.T) {
+	db := openTestDB(t)
+
+	// openTestDB already calls migrate once via Open. Call it again to verify idempotency.
+	if err := migrate(db.db); err != nil {
+		t.Fatalf("second migrate call failed: %v", err)
+	}
+}

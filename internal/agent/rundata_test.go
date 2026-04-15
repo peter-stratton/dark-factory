@@ -81,6 +81,29 @@ func TestResultToStep_NilToolTraceOmitted(t *testing.T) {
 	}
 }
 
+func TestResultToStep_CopiesPrompt(t *testing.T) {
+	r := &Result{
+		ResultText: "done",
+		Prompt:     "You are an implementer agent.",
+	}
+
+	step := ResultToStep(r)
+
+	if step.Prompt != "You are an implementer agent." {
+		t.Errorf("Prompt = %q, want %q", step.Prompt, "You are an implementer agent.")
+	}
+}
+
+func TestResultToStep_EmptyPrompt(t *testing.T) {
+	r := &Result{ResultText: "done"}
+
+	step := ResultToStep(r)
+
+	if step.Prompt != "" {
+		t.Errorf("Prompt = %q, want empty string", step.Prompt)
+	}
+}
+
 func TestResultToStep_DurationSeconds_Positive(t *testing.T) {
 	started := time.Now()
 	finished := started.Add(5 * time.Second)

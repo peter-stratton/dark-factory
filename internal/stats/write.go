@@ -104,8 +104,8 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 	_, err = ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO step_results
 			(run_id, issue_number, step_name, cost_usd, duration_seconds, flags,
-			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id, prompt)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		step.RunID,
 		step.IssueNumber,
 		step.StepName,
@@ -117,6 +117,7 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 		step.PeakMemoryBytes,
 		step.CPUNanoseconds,
 		step.TraceID,
+		step.Prompt,
 	)
 	if err != nil {
 		return fmt.Errorf("write step result (run=%q issue=%d step=%q): %w", step.RunID, step.IssueNumber, step.StepName, err)

@@ -55,6 +55,7 @@ func Review(ctx context.Context, issue github.Issue, prNum int, integration bool
 	if err != nil {
 		return nil, fmt.Errorf("running reviewer agent: %w", err)
 	}
+	result.Prompt = rendered
 
 	// Use structured verdict from runner JSON first; fall back to parsing result text.
 	verdict := result.Verdict

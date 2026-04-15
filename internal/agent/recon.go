@@ -31,5 +31,10 @@ func Recon(ctx context.Context, issue github.Issue, integration bool, cfg *confi
 		"issue_title", issue.Title,
 	)
 
-	return Run(ctx, opts, logger)
+	result, err := Run(ctx, opts, logger)
+	if err != nil {
+		return nil, err
+	}
+	result.Prompt = rendered
+	return result, nil
 }
