@@ -209,7 +209,8 @@
           <span class="card__title">Wave {{.Wave}}</span>
           <span class="badge badge--info">{{len .Issues}} issues &middot; {{.Duration}}</span>
         </div>
-        <table class="data-table data-table--clickable">
+        <table class="data-table data-table--fixed data-table--clickable">
+          {{template "issues-colgroup"}}
           <thead>
             <tr>
               <th>Issue</th>
@@ -230,7 +231,8 @@
       {{else}}
       <!-- Issues Table (serial run / single wave) -->
       <div class="card animate-in animate-in-1">
-        <table class="data-table data-table--clickable">
+        <table class="data-table data-table--fixed data-table--clickable">
+          {{template "issues-colgroup"}}
           <thead>
             <tr>
               <th>Issue</th>
@@ -255,6 +257,17 @@
   </div>
 </body>
 </html>
+
+{{define "issues-colgroup"}}
+<colgroup>
+  <col>
+  <col style="width: 120px;">
+  <col style="width: 70px;">
+  <col style="width: 80px;">
+  <col style="width: 80px;">
+  <col style="width: 90px;">
+</colgroup>
+{{end}}
 
 {{define "issues-rows"}}
 {{range .}}

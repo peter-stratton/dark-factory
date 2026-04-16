@@ -397,6 +397,14 @@ a:hover {
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
+.data-table--fixed {
+  table-layout: fixed;
+}
+.data-table--fixed td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .data-table thead {
   position: sticky;
