@@ -6,20 +6,31 @@ on:
 
 jobs:
   close-external:
-    if: github.event.pull_request.user.login != 'peter-stratton' && github.event.pull_request.user.login != 'godark-runner[bot]'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
     steps:
-      - name: Close PR with comment
+      - name: Close PR unless author is trusted
         uses: actions/github-script@v7
         with:
           script: |
+            const BOT_ALLOWLIST = ['godark-runner[bot]'];
+            const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+
+            const author = context.payload.pull_request.user.login;
+            const association = context.payload.pull_request.author_association;
+
+            if (BOT_ALLOWLIST.includes(author) || TRUSTED_ASSOCIATIONS.includes(association)) {
+              core.info(`Allowing PR from ${author} (association: ${association})`);
+              return;
+            }
+
+            core.info(`Closing PR from ${author} (association: ${association})`);
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: `Thanks for your interest in Dark Factory! This project is an experiment in autonomous software development — the codebase is generated and maintained entirely by AI agents via the [GoDark](https://github.com/peter-stratton/dark-factory) process. Because of that, we don't accept external pull requests.\n\nIf you've found a bug or have a feature idea, please open an issue instead — GoDark can pick it up and add it to the roadmap.\n\nFeel free to fork the project and take it in your own direction!`
+              body: `Thanks for your interest in Dark Factory! This project is an experiment in autonomous software development - the codebase is generated and maintained entirely by AI agents via the [GoDark](https://github.com/peter-stratton/dark-factory) process. Because of that, we don't accept unsolicited pull requests.\n\nIf you've found a bug or have a feature idea, please open an issue instead - GoDark can pick it up and add it to the roadmap.\n\nFeel free to fork the project and take it in your own direction!`
             });
             await github.rest.pulls.update({
               owner: context.repo.owner,
