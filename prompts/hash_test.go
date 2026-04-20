@@ -8,7 +8,7 @@ func TestHash_ReturnsHexDigest(t *testing.T) {
 		t.Errorf("Hash() length = %d, want 64 hex chars", len(got))
 	}
 	for _, c := range got {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("Hash() contains non-hex character %q: %s", c, got)
 			break
 		}
