@@ -1,6 +1,7 @@
 package rundata
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -469,6 +470,105 @@ func TestToolTraceWrittenToJSON(t *testing.T) {
 		if written.ToolTrace[i] != want {
 			t.Errorf("ToolTrace[%d] = %q, want %q", i, written.ToolTrace[i], want)
 		}
+	}
+}
+
+func TestHarnessHashWrittenToRunJSON(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{1})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(w.Dir(), "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var meta RunMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+
+	if len(meta.HarnessHash) != 64 {
+		t.Errorf("HarnessHash length = %d, want 64 hex chars (got %q)", len(meta.HarnessHash), meta.HarnessHash)
+	}
+}
+
+func TestTranscriptWrittenAsSiblingGzip(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	transcript := []byte("gzipped-bytes-from-filter")
+	step := StepResult{Output: "done", Transcript: transcript}
+	if err := w.WriteImplementResult(42, step); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	jsonPath := filepath.Join(w.Dir(), "issues", "42", "implement.json")
+	if _, err := os.Stat(jsonPath); err != nil {
+		t.Fatalf("implement.json not written: %v", err)
+	}
+
+	transcriptPath := filepath.Join(w.Dir(), "issues", "42", "implement-transcript.jsonl.gz")
+	got, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("reading transcript: %v", err)
+	}
+	if !bytes.Equal(got, transcript) {
+		t.Errorf("transcript bytes mismatch: got %q, want %q", got, transcript)
+	}
+
+	// Transcript field is not serialized into the JSON artifact.
+	jsonData, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("reading implement.json: %v", err)
+	}
+	if strings.Contains(string(jsonData), "transcript") {
+		t.Errorf("transcript leaked into JSON: %s", jsonData)
+	}
+}
+
+func TestTranscriptNotWrittenWhenEmpty(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	step := StepResult{Output: "done"}
+	if err := w.WriteImplementResult(42, step); err != nil {
+		t.Fatalf("WriteImplementResult() error: %v", err)
+	}
+
+	transcriptPath := filepath.Join(w.Dir(), "issues", "42", "implement-transcript.jsonl.gz")
+	if _, err := os.Stat(transcriptPath); !os.IsNotExist(err) {
+		t.Errorf("transcript file should not exist when Transcript is nil, stat err = %v", err)
+	}
+}
+
+func TestTranscriptWrittenForRetry(t *testing.T) {
+	base := t.TempDir()
+	w, err := newWithBase(t, base, "owner/repo", "Phase 7", []int{42})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	transcript := []byte("retry-transcript-bytes")
+	step := StepResult{Output: "done", Transcript: transcript}
+	if err := w.WriteRetryResult(42, 1, step); err != nil {
+		t.Fatalf("WriteRetryResult() error: %v", err)
+	}
+
+	transcriptPath := filepath.Join(w.Dir(), "issues", "42", "retries", "1", "retry-transcript.jsonl.gz")
+	got, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("reading retry transcript: %v", err)
+	}
+	if !bytes.Equal(got, transcript) {
+		t.Errorf("retry transcript bytes mismatch: got %q, want %q", got, transcript)
 	}
 }
 

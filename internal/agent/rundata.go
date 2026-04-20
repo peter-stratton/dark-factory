@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+
 	"github.com/peter-stratton/dark-factory/internal/quality"
 	"github.com/peter-stratton/dark-factory/internal/rundata"
 )
@@ -28,6 +31,13 @@ func ResultToStep(r *Result) rundata.StepResult {
 	}
 	if step.StartedAt != nil && step.FinishedAt != nil {
 		step.DurationSeconds = r.FinishedAt.Sub(r.StartedAt).Seconds()
+	}
+	if transcript, err := FilterTranscript(r.Stdout); err == nil {
+		step.Transcript = transcript
+	}
+	if r.Prompt != "" {
+		sum := sha256.Sum256([]byte(r.Prompt))
+		step.PromptHash = hex.EncodeToString(sum[:])
 	}
 	return step
 }

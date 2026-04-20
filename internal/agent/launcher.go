@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -450,6 +452,59 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return "..." + s[len(s)-n:]
+}
+
+// FilterTranscript parses ndjson stdout from the Claude CLI stream-json mode
+// and returns a gzipped transcript of the agent's reasoning trajectory.
+//
+// Kept: "assistant" messages (text and tool_use blocks) and "user" messages
+// (tool_result blocks). These capture the agent's decisions and the tool
+// responses it reasoned over.
+//
+// Dropped: "system" init messages, "result" final summary, rate_limit_event
+// envelopes, CLONE_SHA sentinel lines, and any non-JSON output. These are
+// orchestration noise and are already captured elsewhere (StepResult fields,
+// container-log.txt on failure).
+//
+// Returns nil if no transcript lines were found.
+func FilterTranscript(stdout string) ([]byte, error) {
+	var kept [][]byte
+	for _, line := range strings.Split(stdout, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed[0] != '{' {
+			continue
+		}
+		var peek struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &peek); err != nil {
+			continue
+		}
+		if peek.Type != "assistant" && peek.Type != "user" {
+			continue
+		}
+		kept = append(kept, []byte(trimmed))
+	}
+	if len(kept) == 0 {
+		return nil, nil
+	}
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	for i, line := range kept {
+		if i > 0 {
+			if _, err := gz.Write([]byte{'\n'}); err != nil {
+				return nil, fmt.Errorf("gzip write: %w", err)
+			}
+		}
+		if _, err := gz.Write(line); err != nil {
+			return nil, fmt.Errorf("gzip write: %w", err)
+		}
+	}
+	if err := gz.Close(); err != nil {
+		return nil, fmt.Errorf("gzip close: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // extractToolTrace scans CLI stream-json stdout for assistant messages

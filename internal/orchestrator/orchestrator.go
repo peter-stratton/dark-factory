@@ -1412,18 +1412,7 @@ func resolveRollupConflicts(ctx context.Context, cfg *config.Config, runMode con
 		}
 
 		if writer != nil {
-			step := rundata.StepResult{
-				Output:          result.ResultText,
-				TimedOut:        result.TimedOut,
-				StartedAt:       &result.StartedAt,
-				FinishedAt:      &result.FinishedAt,
-				DurationSeconds: result.FinishedAt.Sub(result.StartedAt).Seconds(),
-				CostUSD:         result.CostUSD,
-				ToolTrace:       result.ToolTrace,
-				SessionID:       result.SessionID,
-				PeakMemoryBytes: result.PeakMemoryBytes,
-				CPUNanoseconds:  result.CPUNanoseconds,
-			}
+			step := agent.ResultToStep(result)
 			if wErr := writer.WriteRollupMergeCoordinatorResult(attempt, step); wErr != nil {
 				logger.Warn("failed to write rollup merge coordinator result",
 					"attempt", attempt, "error", wErr)

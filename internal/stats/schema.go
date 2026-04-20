@@ -69,8 +69,10 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE step_results ADD COLUMN cpu_nanoseconds INTEGER DEFAULT 0`,
 		`ALTER TABLE step_results ADD COLUMN trace_id TEXT DEFAULT ''`,
 		`ALTER TABLE step_results ADD COLUMN prompt TEXT DEFAULT ''`,
+		`ALTER TABLE step_results ADD COLUMN prompt_hash TEXT DEFAULT ''`,
 		`ALTER TABLE issue_outcomes ADD COLUMN trace_id TEXT DEFAULT ''`,
 		`ALTER TABLE issue_outcomes ADD COLUMN clone_sha TEXT DEFAULT ''`,
+		`ALTER TABLE runs ADD COLUMN harness_hash TEXT DEFAULT ''`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil {

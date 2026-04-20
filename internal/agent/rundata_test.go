@@ -104,6 +104,66 @@ func TestResultToStep_EmptyPrompt(t *testing.T) {
 	}
 }
 
+func TestResultToStep_PromptHashPopulatedFromPrompt(t *testing.T) {
+	r := &Result{
+		ResultText: "done",
+		Prompt:     "You are an implementer agent.",
+	}
+
+	step := ResultToStep(r)
+
+	if len(step.PromptHash) != 64 {
+		t.Fatalf("PromptHash length = %d, want 64 hex chars", len(step.PromptHash))
+	}
+	step2 := ResultToStep(r)
+	if step2.PromptHash != step.PromptHash {
+		t.Errorf("PromptHash not deterministic: %q vs %q", step.PromptHash, step2.PromptHash)
+	}
+	r.Prompt = "You are a reviewer agent."
+	step3 := ResultToStep(r)
+	if step3.PromptHash == step.PromptHash {
+		t.Errorf("PromptHash did not change when prompt changed")
+	}
+}
+
+func TestResultToStep_EmptyPromptProducesEmptyHash(t *testing.T) {
+	r := &Result{ResultText: "done"}
+
+	step := ResultToStep(r)
+
+	if step.PromptHash != "" {
+		t.Errorf("PromptHash = %q, want empty when Prompt is empty", step.PromptHash)
+	}
+}
+
+func TestResultToStep_PopulatesTranscriptFromStdout(t *testing.T) {
+	r := &Result{
+		ResultText: "done",
+		Stdout: `{"type":"system","subtype":"init"}` + "\n" +
+			`{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}` + "\n" +
+			`{"type":"result","session_id":"s","result":"done"}`,
+	}
+
+	step := ResultToStep(r)
+
+	if len(step.Transcript) == 0 {
+		t.Fatal("expected Transcript to be populated from Stdout")
+	}
+}
+
+func TestResultToStep_NilTranscriptWhenStdoutHasNoRelevantEvents(t *testing.T) {
+	r := &Result{
+		ResultText: "done",
+		Stdout:     `{"type":"result","session_id":"s","result":"done"}`,
+	}
+
+	step := ResultToStep(r)
+
+	if step.Transcript != nil {
+		t.Errorf("Transcript = %v, want nil when Stdout has only result/system events", step.Transcript)
+	}
+}
+
 func TestResultToStep_DurationSeconds_Positive(t *testing.T) {
 	started := time.Now()
 	finished := started.Add(5 * time.Second)
