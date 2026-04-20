@@ -1,10 +1,16 @@
 package agent
 
 import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +181,81 @@ func TestRunSandboxOnce_UsageLimitedFallback(t *testing.T) {
 	}
 	if !res.ResetsAt.IsZero() {
 		t.Errorf("expected ResetsAt to be zero for fallback, got %v", res.ResetsAt)
+	}
+}
+
+func TestFilterTranscript_KeepsAssistantAndUserEvents(t *testing.T) {
+	stdout := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s1"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"thinking"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/foo.go"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","content":"file contents"}]}}`,
+		`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}`,
+		`CLONE_SHA=deadbeef`,
+		`{"type":"result","session_id":"s1","result":"done"}`,
+		``,
+	}, "\n")
+
+	compressed, err := FilterTranscript(stdout)
+	if err != nil {
+		t.Fatalf("FilterTranscript() error: %v", err)
+	}
+	if len(compressed) == 0 {
+		t.Fatal("expected non-empty transcript")
+	}
+
+	gz, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatalf("gzip.NewReader() error: %v", err)
+	}
+	defer gz.Close()
+	decompressed, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error: %v", err)
+	}
+
+	var gotTypes []string
+	scanner := bufio.NewScanner(bytes.NewReader(decompressed))
+	for scanner.Scan() {
+		var peek struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &peek); err != nil {
+			t.Fatalf("each kept line must be valid JSON, got %q: %v", scanner.Text(), err)
+		}
+		gotTypes = append(gotTypes, peek.Type)
+	}
+
+	wantTypes := []string{"assistant", "assistant", "user"}
+	if len(gotTypes) != len(wantTypes) {
+		t.Fatalf("kept %d lines, want %d: %v", len(gotTypes), len(wantTypes), gotTypes)
+	}
+	for i, want := range wantTypes {
+		if gotTypes[i] != want {
+			t.Errorf("line %d type = %q, want %q", i, gotTypes[i], want)
+		}
+	}
+}
+
+func TestFilterTranscript_EmptyStdoutReturnsNil(t *testing.T) {
+	got, err := FilterTranscript("")
+	if err != nil {
+		t.Fatalf("FilterTranscript() error: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for empty stdout, got %d bytes", len(got))
+	}
+}
+
+func TestFilterTranscript_NoRelevantEventsReturnsNil(t *testing.T) {
+	stdout := `{"type":"system","subtype":"init"}` + "\n" +
+		`{"type":"result","session_id":"s1","result":"done"}`
+	got, err := FilterTranscript(stdout)
+	if err != nil {
+		t.Fatalf("FilterTranscript() error: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil when only system/result events present, got %d bytes", len(got))
 	}
 }
 

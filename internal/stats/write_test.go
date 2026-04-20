@@ -631,6 +631,74 @@ func TestWriteStepResult_EmptyPrompt(t *testing.T) {
 	}
 }
 
+func TestWriteRun_HarnessHashRoundtrip(t *testing.T) {
+	db := openTestDB(t)
+
+	run := RunRecord{
+		ID:          "20260420-120000",
+		Repo:        "org/repo",
+		Milestone:   "Phase 39",
+		StartedAt:   time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC),
+		FinishedAt:  time.Date(2026, 4, 20, 13, 0, 0, 0, time.UTC),
+		HarnessHash: "deadbeef" + "cafebabe" + "deadbeef" + "cafebabe" + "deadbeef" + "cafebabe" + "deadbeef" + "cafebabe",
+	}
+	if err := WriteRun(context.Background(), db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	got, err := QueryRunByID(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("QueryRunByID: %v", err)
+	}
+	if got == nil {
+		t.Fatal("QueryRunByID returned nil")
+	}
+	if got.HarnessHash != run.HarnessHash {
+		t.Errorf("HarnessHash: got %q, want %q", got.HarnessHash, run.HarnessHash)
+	}
+}
+
+func TestWriteStepResult_PromptHashRoundtrip(t *testing.T) {
+	db := openTestDB(t)
+
+	run := RunRecord{
+		ID:         "20260420-130000",
+		Repo:       "org/repo",
+		StartedAt:  time.Date(2026, 4, 20, 13, 0, 0, 0, time.UTC),
+		FinishedAt: time.Date(2026, 4, 20, 13, 30, 0, 0, time.UTC),
+	}
+	if err := WriteRun(context.Background(), db, run); err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	step := StepResultRecord{
+		RunID:       run.ID,
+		IssueNumber: 1,
+		StepName:    "implement",
+		StartedAt:   run.StartedAt,
+		FinishedAt:  run.FinishedAt,
+		Prompt:      "rendered prompt text",
+		PromptHash:  "cafebabe" + "deadbeef" + "cafebabe" + "deadbeef" + "cafebabe" + "deadbeef" + "cafebabe" + "deadbeef",
+	}
+	if err := WriteStepResult(context.Background(), db, step); err != nil {
+		t.Fatalf("WriteStepResult: %v", err)
+	}
+
+	steps, err := QueryStepResults(context.Background(), db, RunFilter{Repo: "org/repo"})
+	if err != nil {
+		t.Fatalf("QueryStepResults: %v", err)
+	}
+	if len(steps) != 1 {
+		t.Fatalf("got %d steps, want 1", len(steps))
+	}
+	if steps[0].PromptHash != step.PromptHash {
+		t.Errorf("PromptHash: got %q, want %q", steps[0].PromptHash, step.PromptHash)
+	}
+	if steps[0].Prompt != step.Prompt {
+		t.Errorf("Prompt: got %q, want %q", steps[0].Prompt, step.Prompt)
+	}
+}
+
 func TestMigrateIdempotent(t *testing.T) {
 	db := openTestDB(t)
 

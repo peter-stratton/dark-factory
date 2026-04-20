@@ -45,8 +45,8 @@ func doWriteRun(ctx context.Context, ex execContext, run RunRecord) error {
 	_, err := ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO runs
 			(id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
-			 started_at, finished_at, total, implemented, failed, abort_reason)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 started_at, finished_at, total, implemented, failed, abort_reason, harness_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		run.ID,
 		run.Repo,
 		run.Milestone,
@@ -59,6 +59,7 @@ func doWriteRun(ctx context.Context, ex execContext, run RunRecord) error {
 		run.Implemented,
 		run.Failed,
 		run.AbortReason,
+		run.HarnessHash,
 	)
 	if err != nil {
 		return fmt.Errorf("write run %q: %w", run.ID, err)
@@ -122,8 +123,8 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 	_, err = ex.ExecContext(ctx,
 		`INSERT OR REPLACE INTO step_results
 			(run_id, issue_number, step_name, cost_usd, duration_seconds, flags,
-			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id, prompt)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id, prompt, prompt_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		step.RunID,
 		step.IssueNumber,
 		step.StepName,
@@ -136,6 +137,7 @@ func doWriteStepResult(ctx context.Context, ex execContext, step StepResultRecor
 		step.CPUNanoseconds,
 		step.TraceID,
 		capPrompt(step.Prompt),
+		step.PromptHash,
 	)
 	if err != nil {
 		return fmt.Errorf("write step result (run=%q issue=%d step=%q): %w", step.RunID, step.IssueNumber, step.StepName, err)

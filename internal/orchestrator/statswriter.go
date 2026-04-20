@@ -150,6 +150,7 @@ func buildRunRecord(runID, repo string, detail *rundata.RunDetail, summary runda
 		Implemented:      summary.Implemented,
 		Failed:           summary.Failed,
 		AbortReason:      summary.AbortReason,
+		HarnessHash:      detail.HarnessHash,
 	}
 }
 
@@ -222,5 +223,7 @@ func stepToRecord(runID string, issueNumber int, stepName string, step rundata.S
 		PeakMemoryBytes: step.PeakMemoryBytes,
 		CPUNanoseconds:  step.CPUNanoseconds,
 		TraceID:         step.TraceID,
+		Prompt:          step.Prompt,
+		PromptHash:      step.PromptHash,
 	}
 }

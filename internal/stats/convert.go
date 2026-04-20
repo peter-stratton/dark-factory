@@ -104,10 +104,11 @@ func ToRunDetails(runs []RunRecord, outcomes []IssueOutcomeRecord, steps []StepR
 // toRunMeta converts a RunRecord into a rundata.RunMeta.
 func toRunMeta(r RunRecord) rundata.RunMeta {
 	meta := rundata.RunMeta{
-		Repo:       r.Repo,
-		Milestone:  r.Milestone,
-		BaseBranch: r.BaseBranch,
-		StartedAt:  r.StartedAt,
+		Repo:        r.Repo,
+		Milestone:   r.Milestone,
+		BaseBranch:  r.BaseBranch,
+		StartedAt:   r.StartedAt,
+		HarnessHash: r.HarnessHash,
 	}
 
 	if r.AutoMergeFeature != "" || r.AutoMergeRollup != "" {
@@ -144,6 +145,7 @@ func toStepResult(s StepResultRecord) rundata.StepResult {
 		CPUNanoseconds:  s.CPUNanoseconds,
 		TraceID:         s.TraceID,
 		Prompt:          s.Prompt,
+		PromptHash:      s.PromptHash,
 	}
 
 	if !s.StartedAt.IsZero() {

@@ -17,6 +17,7 @@ type RunRecord struct {
 	Implemented      int
 	Failed           int
 	AbortReason      string
+	HarnessHash      string
 }
 
 // IssueOutcomeRecord holds the data for a single row in issue_outcomes.
@@ -48,4 +49,5 @@ type StepResultRecord struct {
 	CPUNanoseconds   int64
 	TraceID          string
 	Prompt           string
+	PromptHash       string
 }

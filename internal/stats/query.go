@@ -33,7 +33,7 @@ type RunFilter struct {
 func QueryRuns(ctx context.Context, db *DB, filter RunFilter) ([]RunRecord, error) {
 	where, args := buildRunWhere(filter)
 	const runsBase = `SELECT id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
-	             started_at, finished_at, total, implemented, failed, abort_reason
+	             started_at, finished_at, total, implemented, failed, abort_reason, harness_hash
 	      FROM runs`
 	q := runsBase + where + ` ORDER BY started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
 
@@ -52,6 +52,7 @@ func QueryRuns(ctx context.Context, db *DB, filter RunFilter) ([]RunRecord, erro
 			&r.AutoMergeFeature, &r.AutoMergeRollup,
 			&startedAt, &finishedAt,
 			&r.Total, &r.Implemented, &r.Failed, &r.AbortReason,
+			&r.HarnessHash,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan run: %w", scanErr)
 		}
@@ -115,7 +116,7 @@ func QueryIssueOutcomes(ctx context.Context, db *DB, filter RunFilter) ([]IssueO
 func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResultRecord, error) {
 	where, args := buildRunJoinWhere(filter)
 	const stepResultsBase = `SELECT sr.run_id, sr.issue_number, sr.step_name, sr.cost_usd, sr.duration_seconds,
-	             sr.flags, sr.started_at, sr.finished_at, sr.peak_memory_bytes, sr.cpu_nanoseconds, sr.trace_id, sr.prompt
+	             sr.flags, sr.started_at, sr.finished_at, sr.peak_memory_bytes, sr.cpu_nanoseconds, sr.trace_id, sr.prompt, sr.prompt_hash
 	      FROM step_results sr
 	      INNER JOIN runs r ON r.id = sr.run_id`
 	q := stepResultsBase + where + ` ORDER BY r.started_at ASC` // #nosec G202 -- where contains only hardcoded clauses with ? placeholders
@@ -132,7 +133,7 @@ func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResu
 		var flagsJSON, startedAt, finishedAt string
 		if scanErr := rows.Scan(
 			&s.RunID, &s.IssueNumber, &s.StepName, &s.CostUSD, &s.DurationSeconds,
-			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID, &s.Prompt,
+			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID, &s.Prompt, &s.PromptHash,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan step result: %w", scanErr)
 		}
@@ -164,7 +165,7 @@ func QueryStepResults(ctx context.Context, db *DB, filter RunFilter) ([]StepResu
 // sorted by started_at ascending. Returns an empty slice if none found.
 func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepResultRecord, error) {
 	const q = `SELECT run_id, issue_number, step_name, cost_usd, duration_seconds,
-	             flags, started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id, prompt
+	             flags, started_at, finished_at, peak_memory_bytes, cpu_nanoseconds, trace_id, prompt, prompt_hash
 	      FROM step_results WHERE trace_id = ? ORDER BY started_at ASC`
 
 	rows, err := db.db.QueryContext(ctx, q, traceID)
@@ -179,7 +180,7 @@ func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepRes
 		var flagsJSON, startedAt, finishedAt string
 		if scanErr := rows.Scan(
 			&s.RunID, &s.IssueNumber, &s.StepName, &s.CostUSD, &s.DurationSeconds,
-			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID, &s.Prompt,
+			&flagsJSON, &startedAt, &finishedAt, &s.PeakMemoryBytes, &s.CPUNanoseconds, &s.TraceID, &s.Prompt, &s.PromptHash,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan step result: %w", scanErr)
 		}
@@ -210,7 +211,7 @@ func QueryStepsByTraceID(ctx context.Context, db *DB, traceID string) ([]StepRes
 // QueryRunByID returns a single RunRecord by run_id (the timestamp), or nil if not found.
 func QueryRunByID(ctx context.Context, db *DB, runID string) (*RunRecord, error) {
 	const q = `SELECT id, repo, milestone, base_branch, auto_merge_feature, auto_merge_rollup,
-	             started_at, finished_at, total, implemented, failed, abort_reason
+	             started_at, finished_at, total, implemented, failed, abort_reason, harness_hash
 	      FROM runs WHERE id = ? LIMIT 1`
 
 	var r RunRecord
@@ -220,6 +221,7 @@ func QueryRunByID(ctx context.Context, db *DB, runID string) (*RunRecord, error)
 		&r.AutoMergeFeature, &r.AutoMergeRollup,
 		&startedAt, &finishedAt,
 		&r.Total, &r.Implemented, &r.Failed, &r.AbortReason,
+		&r.HarnessHash,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

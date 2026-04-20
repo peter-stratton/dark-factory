@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/peter-stratton/dark-factory/prompts"
 )
 
 // AutoMerge holds the auto-merge strategy settings recorded at run start.
@@ -32,6 +34,10 @@ type RunMeta struct {
 	IssueDeps          []IssueDep        `json:"issue_deps,omitempty"`
 	IssueTitles        map[string]string `json:"issue_titles,omitempty"`
 	GodarkVersion      string            `json:"godark_version,omitempty"`
+	// HarnessHash identifies the prompt bundle embedded in the godark binary
+	// that produced this run. A meta-agent can use it to distinguish runs that
+	// share a godark version but differ in prompt edits.
+	HarnessHash        string            `json:"harness_hash,omitempty"`
 	StartedAt          time.Time         `json:"started_at"`
 	FinishedAt         *time.Time        `json:"finished_at,omitempty"`
 	Summary            *RunSummary       `json:"summary,omitempty"`
@@ -82,6 +88,14 @@ type StepResult struct {
 	CPUNanoseconds   int64      `json:"cpu_nanoseconds,omitempty"`
 	TraceID          string     `json:"trace_id,omitempty"`
 	Prompt           string     `json:"prompt,omitempty"`
+	// PromptHash is a SHA256 hex digest of the rendered prompt sent to the
+	// agent. Lets a meta-agent correlate step outcomes with specific prompt
+	// versions without rereading the full Prompt text.
+	PromptHash       string     `json:"prompt_hash,omitempty"`
+	// Transcript holds the gzipped filtered ndjson stream of assistant and
+	// tool-result events from the agent's run. Persisted as a sibling
+	// <step>-transcript.jsonl.gz file, not serialized into the step JSON.
+	Transcript       []byte     `json:"-"`
 }
 
 // OutcomeStatus constants mirror the agent.OutcomeStatus values for use in
@@ -162,6 +176,7 @@ func NewWithBase(baseDir, repo, milestone string, issueNumbers []int, baseBranch
 		AutoMerge:     autoMergePtr,
 		IssueNumbers:  issueNumbers,
 		GodarkVersion: version,
+		HarnessHash:   prompts.Hash(),
 		StartedAt:     now,
 	}
 	if err := writeJSON(filepath.Join(dir, "run.json"), meta); err != nil {
@@ -239,35 +254,35 @@ func (w *Writer) issueRetryDir(issueNum, retryNum int) string {
 // Path: issues/<issueNum>/recon.json
 func (w *Writer) WriteReconResult(issueNum int, step StepResult) error {
 	path := filepath.Join(w.issueDir(issueNum), "recon.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WritePlannerResult writes the planner step result for the given issue.
 // Path: issues/<issueNum>/planner.json
 func (w *Writer) WritePlannerResult(issueNum int, step StepResult) error {
 	path := filepath.Join(w.issueDir(issueNum), "planner.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteSpecGeneratorResult writes the spec generator step result for the given issue.
 // Path: issues/<issueNum>/spec-generator.json
 func (w *Writer) WriteSpecGeneratorResult(issueNum int, step StepResult) error {
 	path := filepath.Join(w.issueDir(issueNum), "spec-generator.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteImplementResult writes the implement step result for the given issue.
 // Path: issues/<issueNum>/implement.json
 func (w *Writer) WriteImplementResult(issueNum int, step StepResult) error {
 	path := filepath.Join(w.issueDir(issueNum), "implement.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteMergeCoordinatorResult writes the merge coordinator step result for the given issue.
 // Path: issues/<issueNum>/merge_coordinator.json
 func (w *Writer) WriteMergeCoordinatorResult(issueNum int, step StepResult) error {
 	path := filepath.Join(w.issueDir(issueNum), "merge_coordinator.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteReviewResult writes a review step result for the given issue.
@@ -278,28 +293,28 @@ func (w *Writer) WriteReviewResult(issueNum int, kind string, step StepResult) e
 		return fmt.Errorf("review kind must be %q or %q, got %q", "quality", "functional", kind)
 	}
 	path := filepath.Join(w.issueDir(issueNum), kind+"-review.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteRetryResult writes a retry step result for the given issue and retry number.
 // Path: issues/<issueNum>/retries/<retryNum>/retry.json
 func (w *Writer) WriteRetryResult(issueNum, retryNum int, step StepResult) error {
 	path := filepath.Join(w.issueRetryDir(issueNum, retryNum), "retry.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteRetryReviewResult writes a quality review result for a retry step.
 // Path: issues/<issueNum>/retries/<retryNum>/quality-review.json
 func (w *Writer) WriteRetryReviewResult(issueNum, retryNum int, step StepResult) error {
 	path := filepath.Join(w.issueRetryDir(issueNum, retryNum), "quality-review.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteRetryFunctionalReviewResult writes the functional review that triggered a retry.
 // Path: issues/<issueNum>/retries/<retryNum>/functional-review.json
 func (w *Writer) WriteRetryFunctionalReviewResult(issueNum, retryNum int, step StepResult) error {
 	path := filepath.Join(w.issueRetryDir(issueNum, retryNum), "functional-review.json")
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // WriteOutcome writes the outcome for the issue identified by outcome.IssueNumber.
@@ -417,7 +432,7 @@ func (w *Writer) WriteRollupVerifyResult(step VerifyStepResult) error {
 // Path: rollup/merge_coordinator-<attempt>.json
 func (w *Writer) WriteRollupMergeCoordinatorResult(attempt int, step StepResult) error {
 	path := filepath.Join(w.dir, "rollup", fmt.Sprintf("merge_coordinator-%d.json", attempt))
-	return writeJSONMkdirs(path, step)
+	return writeStepArtifact(path, step)
 }
 
 // RiskGate records the outcome of a single risk gate evaluation.
@@ -675,4 +690,29 @@ func writeJSONMkdirs(path string, v any) error {
 		return fmt.Errorf("creating directories for %s: %w", path, err)
 	}
 	return writeJSON(path, v)
+}
+
+// writeStepArtifact writes a StepResult JSON file, and if step.Transcript is
+// non-empty, also writes a sibling <basename>-transcript.jsonl.gz containing
+// the pre-gzipped transcript bytes. The transcript is already filtered and
+// compressed by the caller; this function only persists it.
+func writeStepArtifact(jsonPath string, step StepResult) error {
+	transcript := step.Transcript
+	if err := writeJSONMkdirs(jsonPath, step); err != nil {
+		return err
+	}
+	if len(transcript) == 0 {
+		return nil
+	}
+	transcriptPath := transcriptPathFor(jsonPath)
+	if err := os.WriteFile(transcriptPath, transcript, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", transcriptPath, err)
+	}
+	return nil
+}
+
+// transcriptPathFor derives the transcript path sibling to a step JSON file.
+// Example: issues/42/implement.json -> issues/42/implement-transcript.jsonl.gz.
+func transcriptPathFor(jsonPath string) string {
+	return strings.TrimSuffix(jsonPath, ".json") + "-transcript.jsonl.gz"
 }
