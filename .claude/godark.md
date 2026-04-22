@@ -46,13 +46,19 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | Field | Purpose | Default |
 |-------|---------|---------|
 | `max_retries` | Review/fix cycles before escalating to human | `3` |
-| `agent_timeout` | Max wall-clock time per agent run | `30m` |
-| `model` | Default Claude model for all agent steps. Accepts an alias (`sonnet`, `opus`, `haiku`, `opusplan`) or a full model id (`claude-opus-4-7`, `claude-sonnet-4-6-20250929`), optionally with a variant suffix like `opus[1m]`. | `""` (CLI default) |
-| `model_overrides` | Per-role model overrides (map of role → model, same value format as `model`) | `{}` |
+| `max_resume_retries` | After this many retries, switch from session resumption to fresh session with structured handoff | `2` |
+| `max_rebase_attempts` | Auto rebase/conflict-fix cycles before labeling needs-human-review (0 = disable) | `1` |
+| `agent_timeout` | Max wall-clock time per agent run (Go duration) | `30m` |
+| `model` | Default Claude model for all agent steps (`sonnet` or `opus`) | `""` (CLI default) |
+| `model_overrides` | Per-role model overrides (map of role → model) | `{}` |
 | `auto_merge.feature` | Merge strategy for feature PRs after approval: `none`, `low_risk`, `all` | `none` |
 | `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `manual` |
 | `base_branch` | Base branch for feature PRs. Auto-generated when omitted: `godark/phase-N` for milestone runs, `godark/issue-N` for implement runs. Set to `main` to merge directly to the default branch without a rollup PR. | auto-generated |
+| `rollup_title` | Custom title for rollup PR (supports `{{.BaseBranch}}` and `{{.DefaultBranch}}` templates) | `""` |
 | `default_branch` | Default branch of the repo (auto-detected from GitHub if omitted) | auto-detect / `main` |
+| `branch_prefix` | Prefix for auto-generated branch names | `godark` |
+| `label_prefix` | Prefix for GitHub labels | `godark` |
+| `quality_strictness_decay` | Use diminishing strictness on quality review retries | `true` |
 
 #### Model overrides
 
@@ -62,16 +68,10 @@ reasoning. Keys are role names passed to the agent launcher:
 ```yaml
 model: opus
 model_overrides:
-  planner: claude-opus-4-7
   recon: sonnet
   quality_reviewer: sonnet
   spec_generator: sonnet
 ```
-
-Values can be a Claude Code alias (`sonnet`, `opus`, `haiku`, `opusplan`) or a
-full model id (`claude-opus-4-7`, `claude-sonnet-4-6-20250929`), optionally
-with a `[variant]` suffix like `opus[1m]`. Use full ids when you need to pin
-exact versions as new models roll out.
 
 Valid roles: `implementer`, `implementer_retry`, `reviewer`, `reviewer_semiformal`,
 `quality_reviewer`, `recon`, `planner`, `spec_generator`, `verify_fix`,
@@ -84,6 +84,8 @@ Valid roles: `implementer`, `implementer_retry`, `reviewer`, `reviewer_semiforma
 | `protected_paths` | Files agents must never modify | `[]` |
 | `denied_commands` | Shell commands agents must not run | `[]` |
 | `generated_paths` | Glob patterns for generated code (excluded from review) | `[]` |
+| `roadmap_path` | Directory containing roadmap files | `docs/roadmap/` |
+| `planning_dir` | Directory for planning documents | `docs/planning/` |
 | `scenario_dir` | Directory containing scenario spec files | `tests/scenarios/` |
 | `review_dir` | Directory where the reviewer writes ephemeral integration tests | `tests/review/` |
 
@@ -103,20 +105,71 @@ Valid roles: `implementer`, `implementer_retry`, `reviewer`, `reviewer_semiforma
 | `verify.max_fix_attempts` | Auto-fix attempts per verify failure | `3` |
 | `verify.blocking` | Fail the issue if verify doesn't pass | `true` |
 
+### Review step tuning
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `review.semiformal` | Use semiformal reviewer | `false` |
+| `review.semiformal_on_retry` | Use semiformal reviewer on retries | `false` |
+
 ### Quality review tuning
 
 | Field | Purpose | Default |
 |-------|---------|---------|
 | `quality.min_review_cost_usd` | Flag reviews cheaper than this (likely rubber-stamped) | `0` |
 | `quality.min_review_duration_seconds` | Flag reviews shorter than this | `0` |
-| `quality_strictness_decay` | Use diminishing strictness on quality review retries | `true` |
 
 ### CI integration
 
-| Field | Purpose |
-|-------|---------|
-| `wait_for_checks.timeout` | Max time to wait for CI checks to complete |
-| `wait_for_checks.required` | List of CI check names that must pass before merge |
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `wait_for_checks.timeout` | Max time to wait for CI checks to complete | |
+| `wait_for_checks.required` | List of CI check names that must pass before merge | `[]` |
+| `wait_for_checks.startup_grace` | Grace period for checks to appear before treating as N/A | `60s` |
+
+### Output truncation
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `truncation.verify_output` | Max bytes from verify command stdout+stderr | `4096` |
+| `truncation.pr_diff` | Max bytes from PR diff embedded in prompts | `30000` |
+
+### Container health judge
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `judge.enabled` | Enable the container health judge | `true` |
+| `judge.default_idle_timeout` | Seconds before killing an idle agent | `300` |
+| `judge.default_no_progress_timeout` | Seconds with no meaningful progress (0 = disabled) | `0` |
+| `judge.tool_thrash_threshold` | Repeated identical tool calls to trigger kill | `3` |
+| `judge.tool_thrash_window_secs` | Window in seconds for tool thrash detection | `60` |
+| `judge.transport_failure_threshold` | Transport errors before killing agent | `10` |
+| `judge.container_retry_limit` | Container restart attempts | `2` |
+| `judge.idle_timeout_by_role` | Per-role idle timeout overrides (map of role → seconds) | `{}` |
+| `judge.no_progress_timeout_by_role` | Per-role no-progress timeout overrides | `{}` |
+
+### Concurrency
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `concurrency.max_workers` | Maximum parallel workers for issue processing | `1` |
+
+Mutually exclusive with `--integration` on the CLI: integration runs require
+`max_workers=1` because compose services are shared host state.
+
+### Watch
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `watch.poll_interval` | Polling interval for the watch command (Go duration) | `60s` |
+
+### Environment
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `sandbox_env` | Environment variables passed into the sandbox (map of name → value) | `{}` |
+| `required_env` | Environment variable names that must be set before a run starts; values are forwarded to the sandbox | `[]` |
+| `auth_preference` | Preferred auth token when both are available: `oauth` or `api_key` | `oauth` |
 
 ### Rollup modes (`auto_merge.rollup`)
 
@@ -235,13 +288,15 @@ reachable. Start them before running `godark run` or `godark implement`.
 
 ### Docker sandbox
 
-| Field | Purpose |
-|-------|---------|
-| `docker.image` | Base image (default: `ubuntu:22.04`) |
-| `docker.dockerfile` | Custom Dockerfile path (overrides auto-generated one) |
-| `docker.extra_packages` | Additional apt packages to install |
-| `docker.install_commands` | Shell commands to run during image build (after runtime setup) |
-| `docker.node_version` | Node.js major version to install (default: `20`) |
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `docker.image` | Base image | `ubuntu:22.04` |
+| `docker.dockerfile` | Custom Dockerfile path (overrides auto-generated one) | |
+| `docker.mount` | Docker mount configuration | |
+| `docker.user` | User to run commands as in the container | |
+| `docker.node_version` | Node.js major version to install | `20` |
+| `docker.extra_packages` | Additional apt packages to install | `[]` |
+| `docker.install_commands` | Shell commands to run during image build (after runtime setup) | `[]` |
 
 ## Run history and artifacts
 
