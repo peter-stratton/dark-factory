@@ -60,8 +60,12 @@ prompts:
 # agent_timeout: "30m"
 
 # Model selection (default: sonnet via CLI)
+# Values accept a Claude Code alias (sonnet, opus, haiku, opusplan) or a full
+# model id (claude-opus-4-7, claude-sonnet-4-6-20250929), optionally with a
+# [variant] suffix like opus[1m]. Use full ids to pin exact versions.
 # model: opus
 # model_overrides:
+#   planner: claude-opus-4-7
 #   recon: sonnet
 #   quality_reviewer: sonnet
 #   spec_generator: sonnet

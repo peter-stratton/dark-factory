@@ -663,11 +663,8 @@ func validate(cfg *Config) error {
 	if !cfg.AutoMerge.Rollup.Valid() {
 		return fmt.Errorf("auto_merge.rollup must be \"none\", \"manual\", or \"auto\", got %q", cfg.AutoMerge.Rollup)
 	}
-	switch cfg.Model {
-	case "", "sonnet", "opus":
-		// valid (empty = CLI default, which is sonnet)
-	default:
-		return fmt.Errorf("model must be \"sonnet\" or \"opus\", got %q", cfg.Model)
+	if cfg.Model != "" && !isValidModelValue(cfg.Model) {
+		return fmt.Errorf("model must be a Claude alias (sonnet, opus, haiku, opusplan) or full model id (e.g. claude-opus-4-7), got %q", cfg.Model)
 	}
 	if err := validateModelOverrides(cfg.ModelOverrides); err != nil {
 		return err
@@ -760,19 +757,26 @@ func validateRiskThresholds(r *RiskThresholds) error {
 	return nil
 }
 
-// validateModules checks that module names are safe, that all depends_on
+// modelValuePattern matches Claude Code --model accepted values:
+// aliases (sonnet, opus, haiku, opusplan) or full ids (claude-opus-4-7,
+// claude-sonnet-4-6-20250929), each optionally with a [variant] suffix like
+// [1m].
+var modelValuePattern = regexp.MustCompile(`^((sonnet|opus|haiku|opusplan)|claude-[a-z0-9-]+)(\[[a-z0-9]+\])?$`)
+
+func isValidModelValue(value string) bool {
+	return modelValuePattern.MatchString(value)
+}
+
 func validateModelOverrides(overrides map[string]string) error {
 	for role, model := range overrides {
-		switch model {
-		case "sonnet", "opus":
-			// valid
-		default:
-			return fmt.Errorf("model_overrides.%s must be \"sonnet\" or \"opus\", got %q", role, model)
+		if !isValidModelValue(model) {
+			return fmt.Errorf("model_overrides.%s must be a Claude alias (sonnet, opus, haiku, opusplan) or full model id (e.g. claude-opus-4-7), got %q", role, model)
 		}
 	}
 	return nil
 }
 
+// validateModules checks that module names are safe, that all depends_on
 // references name existing modules (with no duplicates), and that there are no
 // dependency cycles.
 func validateModules(modules map[string]Module) error {

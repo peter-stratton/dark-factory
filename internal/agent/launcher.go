@@ -31,7 +31,7 @@ type RunOpts struct {
 	Branch            string
 	WorkDir           string
 	Timeout           time.Duration
-	Model             string        // claude CLI model alias: "sonnet", "opus", or "" (default)
+	Model             string        // claude CLI --model value: alias (sonnet/opus/haiku/opusplan), full id (claude-opus-4-7), or "" (default)
 	MountDockerSocket bool          // mount /var/run/docker.sock into sandbox container
 	JudgeConfig       *config.Judge // nil means judge is disabled
 }

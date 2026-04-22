@@ -49,8 +49,8 @@ step fails, the verify-fix agent attempts to correct the issue automatically.
 | `max_resume_retries` | After this many retries, switch from session resumption to fresh session with structured handoff | `2` |
 | `max_rebase_attempts` | Auto rebase/conflict-fix cycles before labeling needs-human-review (0 = disable) | `1` |
 | `agent_timeout` | Max wall-clock time per agent run (Go duration) | `30m` |
-| `model` | Default Claude model for all agent steps (`sonnet` or `opus`) | `""` (CLI default) |
-| `model_overrides` | Per-role model overrides (map of role → model) | `{}` |
+| `model` | Default Claude model for all agent steps. Accepts an alias (`sonnet`, `opus`, `haiku`, `opusplan`) or a full model id (`claude-opus-4-7`, `claude-sonnet-4-6-20250929`), optionally with a variant suffix like `opus[1m]`. | `""` (CLI default) |
+| `model_overrides` | Per-role model overrides (map of role → model, same value format as `model`) | `{}` |
 | `auto_merge.feature` | Merge strategy for feature PRs after approval: `none`, `low_risk`, `all` | `none` |
 | `auto_merge.rollup` | Rollup PR handling after a run completes: `none`, `manual`, `auto` | `manual` |
 | `base_branch` | Base branch for feature PRs. Auto-generated when omitted: `godark/phase-N` for milestone runs, `godark/issue-N` for implement runs. Set to `main` to merge directly to the default branch without a rollup PR. | auto-generated |
@@ -68,10 +68,16 @@ reasoning. Keys are role names passed to the agent launcher:
 ```yaml
 model: opus
 model_overrides:
+  planner: claude-opus-4-7
   recon: sonnet
   quality_reviewer: sonnet
   spec_generator: sonnet
 ```
+
+Values can be a Claude Code alias (`sonnet`, `opus`, `haiku`, `opusplan`) or a
+full model id (`claude-opus-4-7`, `claude-sonnet-4-6-20250929`), optionally
+with a `[variant]` suffix like `opus[1m]`. Use full ids when you need to pin
+exact versions as new models roll out.
 
 Valid roles: `implementer`, `implementer_retry`, `reviewer`, `reviewer_semiformal`,
 `quality_reviewer`, `recon`, `planner`, `spec_generator`, `verify_fix`,

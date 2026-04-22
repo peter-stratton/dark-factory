@@ -2812,6 +2812,54 @@ model_overrides:
 	}
 }
 
+func TestModelExactVersions(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+model: claude-opus-4-6
+model_overrides:
+  planner: claude-opus-4-7
+  recon: sonnet
+  reviewer: haiku
+  spec_generator: claude-sonnet-4-6-20250929
+  quality_reviewer: opus[1m]
+`)
+	cfg, err := Load(path, CLIFlags{})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Model != "claude-opus-4-6" {
+		t.Errorf("Model = %q, want claude-opus-4-6", cfg.Model)
+	}
+	want := map[string]string{
+		"planner":          "claude-opus-4-7",
+		"recon":            "sonnet",
+		"reviewer":         "haiku",
+		"spec_generator":   "claude-sonnet-4-6-20250929",
+		"quality_reviewer": "opus[1m]",
+	}
+	for role, model := range want {
+		if got := cfg.ModelOverrides[role]; got != model {
+			t.Errorf("ModelOverrides[%q] = %q, want %q", role, got, model)
+		}
+	}
+}
+
+func TestModelInvalidValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+repo: owner/repo
+model: gpt-4
+`)
+	_, err := Load(path, CLIFlags{})
+	if err == nil {
+		t.Fatal("expected error for invalid top-level model")
+	}
+	if !strings.Contains(err.Error(), "model must be") {
+		t.Errorf("error = %q, want mention of \"model must be\"", err.Error())
+	}
+}
+
 func TestModelOverridesEmptyIsNil(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, `repo: owner/repo`)
