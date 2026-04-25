@@ -410,6 +410,9 @@ func ProcessIssueWithMode(ctx context.Context, issue github.Issue, cfg *config.C
 	)
 	if outcome.Status == StatusApprovedReadyForMerge {
 		outcome.MergeArgs = mergeArgs
+		if reporter != nil {
+			reporter.IssueStageChanged(issue.Number, "awaiting-merge")
+		}
 	}
 	return outcome
 }

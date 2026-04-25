@@ -88,7 +88,14 @@ func pruneAbsentChecks(ctx context.Context, repo string, prNum int, required []s
 		"--json", "name",
 	)
 	if err != nil {
-		// Can't determine what's present — keep all required.
+		// gh reports "no checks reported on the '...' branch" as plain text with
+		// a non-zero exit when CI is not configured for this PR's target branch.
+		// Treat all required checks as absent so they get pruned.
+		if strings.Contains(string(out), "no checks reported") {
+			logger.Info("no checks reported during prune, treating all required as absent", "pr_number", prNum)
+			return nil
+		}
+		// Other command errors (auth, network) — can't determine what's present, keep all required.
 		return required
 	}
 
@@ -154,6 +161,14 @@ func pollChecks(repo string, prNum int, required []string, logger *slog.Logger) 
 	// messages) before the JSON array. Find the first '[' to skip it.
 	jsonStart := bytes.IndexByte(out, '[')
 	if jsonStart < 0 {
+		// gh reports "no checks reported on the '...' branch" as plain text
+		// when CI workflows aren't configured to run on this PR's target branch.
+		// Treat it as pending so the startup grace period can prune all required
+		// checks as absent rather than failing the entire run immediately.
+		if strings.Contains(string(out), "no checks reported") {
+			logger.Info("no checks reported for PR, waiting for grace period to prune", "pr_number", prNum)
+			return nil, false, nil
+		}
 		return nil, false, fmt.Errorf("parsing checks JSON: no JSON array found in output: %s", truncateForError(out))
 	}
 	var checks []checkEntry

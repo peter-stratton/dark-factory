@@ -33,11 +33,12 @@ const (
 
 // Lipgloss styles for status markers.
 var (
-	markerQueuedStyle    = lipgloss.NewStyle().Foreground(colorMuted)
-	markerCompletedStyle = lipgloss.NewStyle().Foreground(colorGreen)
-	markerReviewStyle    = lipgloss.NewStyle().Foreground(colorYellow)
-	markerFailedStyle    = lipgloss.NewStyle().Foreground(colorRed)
-	markerJudgeStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#D4760A", Dark: "#FF8C00"})
+	markerQueuedStyle        = lipgloss.NewStyle().Foreground(colorMuted)
+	markerCompletedStyle     = lipgloss.NewStyle().Foreground(colorGreen)
+	markerReviewStyle        = lipgloss.NewStyle().Foreground(colorYellow)
+	markerAwaitingMergeStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#0E7C7B", Dark: "#2DD4BF"})
+	markerFailedStyle        = lipgloss.NewStyle().Foreground(colorRed)
+	markerJudgeStyle         = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#D4760A", Dark: "#FF8C00"})
 	rowNumberStyle       = lipgloss.NewStyle().Foreground(colorMuted)
 	rowTitleStyle = lipgloss.NewStyle().Foreground(colorBright)
 	traceStyle   = lipgloss.NewStyle().Faint(true)
@@ -155,6 +156,9 @@ func badgeFor(row issueRow, rateLimitedUntil *time.Time) string {
 		}
 		return badgeFailedStyle.Render("FAILED")
 	default:
+		if row.stage == "awaiting-merge" {
+			return badgeAwaitingMergeStyle.Render("AWAITING MERGE")
+		}
 		if row.stage == "rate-limited" || (rateLimitedUntil != nil && row.stage != "") {
 			label := "RATE-LIMITED"
 			if rateLimitedUntil != nil {
@@ -193,6 +197,9 @@ func markerFor(row issueRow, spin spinner.Model) string {
 		return markerFailedStyle.Render(markerFailed)
 	default:
 		// No terminal status: distinguish in-progress (stage set) from queued.
+		if row.stage == "awaiting-merge" {
+			return markerAwaitingMergeStyle.Render(markerReview)
+		}
 		if row.stage != "" {
 			return spin.View()
 		}
