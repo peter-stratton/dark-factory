@@ -649,7 +649,7 @@ func applyFlags(cfg *Config, flags CLIFlags) {
 	}
 }
 
-func validate(cfg *Config) error {
+func validateScalarFields(cfg *Config) error {
 	if cfg.Repo == "" {
 		return fmt.Errorf("repo is required (set in config file or pass --repo)")
 	}
@@ -667,6 +667,13 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Model != "" && !isValidModelValue(cfg.Model) {
 		return fmt.Errorf("model must be a Claude alias (sonnet, opus, haiku, opusplan) or full model id (e.g. claude-opus-4-7), got %q", cfg.Model)
+	}
+	return nil
+}
+
+func validate(cfg *Config) error {
+	if err := validateScalarFields(cfg); err != nil {
+		return err
 	}
 	if err := validateModelOverrides(cfg.ModelOverrides); err != nil {
 		return err
