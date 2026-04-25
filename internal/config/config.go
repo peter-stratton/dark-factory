@@ -77,8 +77,9 @@ type Quality struct {
 
 // Verify holds configuration for the verify step.
 type Verify struct {
-	MaxFixAttempts int  `yaml:"max_fix_attempts"`
-	Blocking       bool `yaml:"blocking"`
+	MaxFixAttempts int    `yaml:"max_fix_attempts"`
+	Blocking       bool   `yaml:"blocking"`
+	Timeout        string `yaml:"timeout"` // duration string, e.g. "30m"; 0 means no limit
 }
 
 // WaitForChecks holds CI check gating configuration. When non-nil, godark
@@ -605,6 +606,7 @@ func defaults() *Config {
 		Verify: Verify{
 			MaxFixAttempts: 2,
 			Blocking:       true,
+			Timeout:        "30m",
 		},
 		Truncation: TruncationLimits{
 			VerifyOutput: 4096,
@@ -694,6 +696,9 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if err := validateConcurrency(cfg.Concurrency); err != nil {
+		return err
+	}
+	if err := validateVerify(cfg.Verify); err != nil {
 		return err
 	}
 	return nil
@@ -858,6 +863,20 @@ func expandNotifySettings(cfg *Config) {
 		}
 		cfg.Notify[i].Settings = expanded
 	}
+}
+
+// validateVerify ensures Verify fields are valid.
+func validateVerify(v Verify) error {
+	if v.Timeout != "" {
+		d, err := time.ParseDuration(v.Timeout)
+		if err != nil {
+			return fmt.Errorf("verify.timeout %q is not a valid duration: %w", v.Timeout, err)
+		}
+		if d < 0 {
+			return fmt.Errorf("verify.timeout must be non-negative, got %q", v.Timeout)
+		}
+	}
+	return nil
 }
 
 // validateConcurrency ensures Concurrency fields are valid.

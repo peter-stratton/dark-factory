@@ -446,7 +446,8 @@ func runVerifyPhase(
 			return fmt.Errorf("sorting modules for verify: %w", err)
 		}
 
-		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, integration, logger)
+		verifyTimeout, _ := time.ParseDuration(cfg.Verify.Timeout) // already validated by config.Load
+		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, integration, verifyTimeout, logger)
 
 		moduleFailed := false
 		var failedModName string
@@ -547,7 +548,8 @@ func runVerifyPhase(
 			)
 		}
 	} else if verifyChecks := buildVerifyChecks(cfg); len(verifyChecks) > 0 {
-		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, integration, logger)
+		verifyTimeout, _ := time.ParseDuration(cfg.Verify.Timeout) // already validated by config.Load
+		verifyRunner := sandboxCommandRunner(cfg.Docker.Image, cfg.Repo, branch, authEnv, integration, verifyTimeout, logger)
 		logger.Info("running verify step", "issue_number", issue.Number, "check_count", len(verifyChecks))
 		verifyResult := RunVerify(ctx, verifyChecks, verifyRunner, cfg.Truncation)
 		if hook != nil {
