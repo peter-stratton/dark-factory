@@ -62,6 +62,7 @@ type Opts struct {
 	Runtime           string // detected runtime name (e.g. "go")
 	LintCommand       string // configured lint command
 	ComposeConfigured bool   // docker_compose block is present
+	OAuthTokenEnv     string // host env var name for Claude OAuth token (default CLAUDE_CODE_OAUTH_TOKEN)
 }
 
 // Checks returns the full ordered list of pre-flight checks.
@@ -97,13 +98,19 @@ func Checks(opts Opts) []*Check {
 				return err == nil
 			},
 		},
-		&Check{
-			Name: "Anthropic auth token set",
-			Fix:  "Export ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in your shell profile or pass it in the environment.",
-			run: func() bool {
-				return EnvLookup("ANTHROPIC_API_KEY") != "" || EnvLookup("CLAUDE_CODE_OAUTH_TOKEN") != ""
-			},
-		},
+		func() *Check {
+			oauthEnv := opts.OAuthTokenEnv
+			if oauthEnv == "" {
+				oauthEnv = "CLAUDE_CODE_OAUTH_TOKEN"
+			}
+			return &Check{
+				Name: "Anthropic auth token set",
+				Fix:  fmt.Sprintf("Export ANTHROPIC_API_KEY or %s in your shell profile or pass it in the environment.", oauthEnv),
+				run: func() bool {
+					return EnvLookup("ANTHROPIC_API_KEY") != "" || EnvLookup(oauthEnv) != ""
+				},
+			}
+		}(),
 	)
 
 	if opts.ComposeConfigured {

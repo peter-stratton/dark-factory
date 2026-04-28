@@ -356,7 +356,7 @@ func refreshHostGHToken(logger *slog.Logger) {
 // sandbox mode is active) builds the Docker image. cfg.Docker.Image is
 // updated in place when a new image is built.
 func prepareResolveEnv(ctx context.Context, cfg *config.Config, runMode config.RunMode, logger *slog.Logger) (map[string]string, *agent.Prompts, error) {
-	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.OAuthTokenEnv, cfg.RequiredEnv)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collecting auth: %w", err)
 	}
@@ -740,7 +740,7 @@ func processIssues(ctx context.Context, allIssues []github.Issue, closedSet map[
 	}
 
 	// Collect auth tokens once at the start.
-	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.OAuthTokenEnv, cfg.RequiredEnv)
 	if err != nil {
 		return fmt.Errorf("collecting auth: %w", err)
 	}

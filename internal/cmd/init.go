@@ -131,6 +131,11 @@ prompts:
 # Auth token preference when both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set
 # auth_preference: oauth   # "oauth" (default) or "api_key"
 
+# Host env var to read the Claude OAuth token from. The value is forwarded into
+# the runner as CLAUDE_CODE_OAUTH_TOKEN regardless of the host name. Use this
+# when org policy prevents setting CLAUDE_CODE_OAUTH_TOKEN directly on the host.
+# oauth_token_env: CLAUDE_CODE_OAUTH_TOKEN
+
 # Watch command polling settings
 # watch:
 #   poll_interval: "60s"

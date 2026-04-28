@@ -147,7 +147,7 @@ Issue numbers may be provided as positional arguments, via --issues, or both.`,
 			notifiers = nil
 		}
 
-		authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+		authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.OAuthTokenEnv, cfg.RequiredEnv)
 		if err != nil {
 			return fmt.Errorf("collecting auth: %w", err)
 		}

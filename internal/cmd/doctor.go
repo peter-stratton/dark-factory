@@ -31,15 +31,18 @@ Checks:
 		// Best-effort config load to obtain lint_command and compose config.
 		lintCommand := ""
 		composeConfigured := false
+		oauthTokenEnv := ""
 		if cfg, err := config.Load("godark.yaml", config.CLIFlags{}); err == nil {
 			lintCommand = cfg.LintCommand
 			composeConfigured = cfg.DockerCompose != nil
+			oauthTokenEnv = cfg.OAuthTokenEnv
 		}
 
 		checks := doctor.Checks(doctor.Opts{
 			Runtime:           runtime,
 			LintCommand:       lintCommand,
 			ComposeConfigured: composeConfigured,
+			OAuthTokenEnv:     oauthTokenEnv,
 		})
 		passed := doctor.Run(os.Stdout, checks)
 		if !passed {

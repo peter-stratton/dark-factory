@@ -178,7 +178,7 @@ func runEnterWatch(ctx context.Context, cfg *config.Config, runMode config.RunMo
 		return fmt.Errorf("loading prompts: %w", err)
 	}
 
-	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.RequiredEnv)
+	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.OAuthTokenEnv, cfg.RequiredEnv)
 	if err != nil {
 		return fmt.Errorf("collecting auth: %w", err)
 	}

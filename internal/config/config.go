@@ -252,6 +252,13 @@ type Config struct {
 	// Valid values: "oauth" (default) or "api_key".
 	AuthPreference string `yaml:"auth_preference"`
 
+	// OAuthTokenEnv is the host environment variable name to read the Claude
+	// OAuth token from. The value is always forwarded into the runner under
+	// CLAUDE_CODE_OAUTH_TOKEN regardless of the host name. Default is
+	// "CLAUDE_CODE_OAUTH_TOKEN". Useful when org policy prevents setting
+	// CLAUDE_CODE_OAUTH_TOKEN directly on the host.
+	OAuthTokenEnv string `yaml:"oauth_token_env"`
+
 	Docker      Docker           `yaml:"docker"`
 	Prompts     Prompts          `yaml:"prompts"`
 	Review      Review           `yaml:"review"`
@@ -603,6 +610,7 @@ func defaults() *Config {
 		ConventionsDoc:         "docs/conventions.md",
 		QualityStrictnessDecay: true,
 		AuthPreference:         "oauth",
+		OAuthTokenEnv:          "CLAUDE_CODE_OAUTH_TOKEN",
 		Verify: Verify{
 			MaxFixAttempts: 2,
 			Blocking:       true,

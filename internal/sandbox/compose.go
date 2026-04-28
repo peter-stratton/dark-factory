@@ -90,7 +90,7 @@ func ComposeUp(_ context.Context, dc DockerConfig, requiredEnv []string, logger 
 func collectComposeEnv(requiredEnv []string) map[string]string {
 	env := make(map[string]string)
 	for _, name := range requiredEnv {
-		if _, isAuth := authManagedVars[name]; isAuth {
+		if _, isAuth := baseAuthManagedVars[name]; isAuth {
 			continue
 		}
 		if v := os.Getenv(name); v != "" {

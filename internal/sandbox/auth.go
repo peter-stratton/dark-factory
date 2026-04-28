@@ -10,11 +10,13 @@ import (
 	"github.com/peter-stratton/dark-factory/internal/ghapp"
 )
 
-// authManagedVars are controlled exclusively by auth preference logic.
-// required_env must never add or override any of these — even when one
+// baseAuthManagedVars are always controlled exclusively by auth preference logic.
+// required_env must never add or override any of these - even when one
 // was intentionally excluded (e.g. ANTHROPIC_API_KEY excluded under
-// oauth preference) — to prevent auth_preference from being bypassed.
-var authManagedVars = map[string]struct{}{
+// oauth preference) - to prevent auth_preference from being bypassed.
+// The host-side OAuth token env var name (configurable) is also reserved
+// dynamically in CollectAuthEnv.
+var baseAuthManagedVars = map[string]struct{}{
 	"ANTHROPIC_API_KEY":       {},
 	"CLAUDE_CODE_OAUTH_TOKEN": {},
 	"GH_TOKEN":                {},
@@ -24,14 +26,22 @@ var authManagedVars = map[string]struct{}{
 // and returns a map suitable for passing as container environment variables.
 // authPreference controls which token is preferred when both are set:
 // "oauth" (default) prefers CLAUDE_CODE_OAUTH_TOKEN; "api_key" prefers ANTHROPIC_API_KEY.
+// oauthTokenEnv is the host env var name to read the OAuth token from (defaults
+// to "CLAUDE_CODE_OAUTH_TOKEN"). The value is always forwarded to the runner
+// under "CLAUDE_CODE_OAUTH_TOKEN" regardless of the host name. This lets users
+// store the token under an alternate name when org policy prevents setting
+// CLAUDE_CODE_OAUTH_TOKEN directly on the host.
 // requiredEnv is a list of additional environment variable names whose values
 // are forwarded from the host environment into the sandbox. Missing values are
 // silently skipped (startup validation is a separate concern). Values are never
 // logged.
-func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []string) (map[string]string, error) {
+func CollectAuthEnv(logger *slog.Logger, authPreference, oauthTokenEnv string, requiredEnv []string) (map[string]string, error) {
 	env := make(map[string]string)
 
-	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+	if oauthTokenEnv == "" {
+		oauthTokenEnv = "CLAUDE_CODE_OAUTH_TOKEN"
+	}
+	oauthToken := os.Getenv(oauthTokenEnv)
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 
 	preferAPIKey := authPreference == "api_key"
@@ -45,11 +55,15 @@ func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []st
 		logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth (api_key preferred but not set)")
 	case oauthToken != "":
 		env["CLAUDE_CODE_OAUTH_TOKEN"] = oauthToken
-		logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth")
+		if oauthTokenEnv != "CLAUDE_CODE_OAUTH_TOKEN" {
+			logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth", "host_env", oauthTokenEnv)
+		} else {
+			logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth")
+		}
 	case apiKey != "":
 		env["ANTHROPIC_API_KEY"] = apiKey
 	default:
-		return nil, fmt.Errorf("missing authentication: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN")
+		return nil, fmt.Errorf("missing authentication: set ANTHROPIC_API_KEY or %s", oauthTokenEnv)
 	}
 
 	if err := collectGitHubToken(env, logger); err != nil {
@@ -59,8 +73,11 @@ func CollectAuthEnv(logger *slog.Logger, authPreference string, requiredEnv []st
 	// Forward required env vars from the host. Values are not logged to avoid
 	// leaking secrets.
 	for _, name := range requiredEnv {
-		if _, isAuth := authManagedVars[name]; isAuth {
+		if _, isAuth := baseAuthManagedVars[name]; isAuth {
 			continue // auth_preference owns these vars exclusively
+		}
+		if name == oauthTokenEnv {
+			continue // host-side oauth token name is also auth-managed
 		}
 		if v := os.Getenv(name); v != "" {
 			env[name] = v
