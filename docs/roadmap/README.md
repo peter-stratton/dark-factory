@@ -47,4 +47,5 @@
 - [Phase 38: Security-Aware Review & Prompt Auditability](phase-38.md)
 - [Phase 39: Meta-Agent Human Mode](phase-39.md)
 - [Phase 40: Meta-Agent Autonomous Mode](phase-40.md)
+- [Phase 41: Typed Agent Events](phase-41.md)
 - [Future considerations](future-considerations.md)
