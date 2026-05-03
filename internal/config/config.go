@@ -588,7 +588,7 @@ func Load(path string, flags CLIFlags) (*Config, error) {
 }
 
 func defaults() *Config {
-	return &Config{
+	return &Config{ //nolint:gosec
 		MaxRetries:        3,
 		MaxResumeRetries:  2,
 		MaxRebaseAttempts: 1,

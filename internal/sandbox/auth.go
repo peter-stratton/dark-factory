@@ -39,7 +39,7 @@ func CollectAuthEnv(logger *slog.Logger, authPreference, oauthTokenEnv string, r
 	env := make(map[string]string)
 
 	if oauthTokenEnv == "" {
-		oauthTokenEnv = "CLAUDE_CODE_OAUTH_TOKEN"
+		oauthTokenEnv = "CLAUDE_CODE_OAUTH_TOKEN" //nolint:gosec
 	}
 	oauthToken := os.Getenv(oauthTokenEnv)
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
@@ -55,7 +55,7 @@ func CollectAuthEnv(logger *slog.Logger, authPreference, oauthTokenEnv string, r
 		logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth (api_key preferred but not set)")
 	case oauthToken != "":
 		env["CLAUDE_CODE_OAUTH_TOKEN"] = oauthToken
-		if oauthTokenEnv != "CLAUDE_CODE_OAUTH_TOKEN" {
+		if oauthTokenEnv != "CLAUDE_CODE_OAUTH_TOKEN" { //nolint:gosec
 			logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth", "host_env", oauthTokenEnv)
 		} else {
 			logger.Info("using CLAUDE_CODE_OAUTH_TOKEN for Anthropic auth")
