@@ -59,10 +59,13 @@ func runtimeVersionCmd(runtime string) (string, []string) {
 
 // Opts controls which checks are included.
 type Opts struct {
-	Runtime           string // detected runtime name (e.g. "go")
-	LintCommand       string // configured lint command
-	ComposeConfigured bool   // docker_compose block is present
-	OAuthTokenEnv     string // host env var name for Claude OAuth token (default CLAUDE_CODE_OAUTH_TOKEN)
+	Runtime           string   // detected runtime name (e.g. "go")
+	ConfiguredRuntime string   // runtime.name from godark.yaml (e.g. "python")
+	DetectedRuntimes  []string // every runtime whose marker file is present in the repo
+	ModulesConfigured bool     // a non-empty modules: block is present in godark.yaml
+	LintCommand       string   // configured lint command
+	ComposeConfigured bool     // docker_compose block is present
+	OAuthTokenEnv     string   // host env var name for Claude OAuth token (default CLAUDE_CODE_OAUTH_TOKEN)
 }
 
 // Checks returns the full ordered list of pre-flight checks.
@@ -112,6 +115,31 @@ func Checks(opts Opts) []*Check {
 			}
 		}(),
 	)
+
+	if opts.ConfiguredRuntime != "" && opts.Runtime != "" && opts.ConfiguredRuntime != opts.Runtime {
+		configured := opts.ConfiguredRuntime
+		detected := opts.Runtime
+		checks = append(checks, &Check{
+			Name: "Configured runtime matches repo files",
+			Fix: fmt.Sprintf(
+				"godark.yaml has runtime.name=%q but the repo contains %s marker files. Update godark.yaml to runtime.name=%q, or configure a modules: block if this is a multi-runtime repo.",
+				configured, detected, detected,
+			),
+			run: func() bool { return false },
+		})
+	}
+
+	if len(opts.DetectedRuntimes) > 1 && !opts.ModulesConfigured {
+		detected := strings.Join(opts.DetectedRuntimes, ", ")
+		checks = append(checks, &Check{
+			Name: "Multi-runtime repo has modules: configured",
+			Fix: fmt.Sprintf(
+				"Detected multiple runtimes (%s) but no modules: block in godark.yaml. Add a modules: map keyed by directory so each module has its own build_command and test_command, or remove marker files for runtimes you don't use.",
+				detected,
+			),
+			run: func() bool { return false },
+		})
+	}
 
 	if opts.ComposeConfigured {
 		checks = append(checks, &Check{

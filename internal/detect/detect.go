@@ -20,6 +20,47 @@ type DetectedProject struct {
 	TestCommand  string
 }
 
+// DetectAllRuntimes scans repoPath for language marker files and returns every
+// runtime whose marker file is present. The returned slice is deduplicated and
+// in deterministic priority order: go, flutter, node, rust, elixir, python.
+// Returns an empty slice if no known marker files are found.
+//
+// This is meant for callers that need to detect multi-runtime repos (e.g.
+// pre-flight checks that warn when modules: is not configured for a repo with
+// both go.mod and pyproject.toml). For "what runtime is this project?" use
+// DetectRuntime instead.
+func DetectAllRuntimes(repoPath string) []string {
+	var runtimes []string
+	if _, err := os.Stat(filepath.Join(repoPath, "go.mod")); err == nil {
+		runtimes = append(runtimes, "go")
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "pubspec.yaml")); err == nil {
+		runtimes = append(runtimes, "flutter")
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "package.json")); err == nil {
+		runtimes = append(runtimes, "node")
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "Cargo.toml")); err == nil {
+		runtimes = append(runtimes, "rust")
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "mix.exs")); err == nil {
+		runtimes = append(runtimes, "elixir")
+	}
+	pyProject := false
+	if _, err := os.Stat(filepath.Join(repoPath, "pyproject.toml")); err == nil {
+		pyProject = true
+	}
+	if !pyProject {
+		if _, err := os.Stat(filepath.Join(repoPath, "requirements.txt")); err == nil {
+			pyProject = true
+		}
+	}
+	if pyProject {
+		runtimes = append(runtimes, "python")
+	}
+	return runtimes
+}
+
 // DetectRuntime scans repoPath for language marker files and returns a
 // DetectedProject with sensible defaults. First match wins.
 // Returns an error if no known marker file is found.
