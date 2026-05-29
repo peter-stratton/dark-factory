@@ -313,6 +313,75 @@ func TestDetectRuntime_ElixirLongerAtomKeyNotMatched(t *testing.T) {
 	}
 }
 
+// --- DetectAllRuntimes ---
+
+func TestDetectAllRuntimes_Empty(t *testing.T) {
+	dir := t.TempDir()
+	got := DetectAllRuntimes(dir)
+	if len(got) != 0 {
+		t.Errorf("DetectAllRuntimes = %v, want empty slice", got)
+	}
+}
+
+func TestDetectAllRuntimes_SingleRuntime(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n\ngo 1.22\n")
+
+	got := DetectAllRuntimes(dir)
+	if len(got) != 1 || got[0] != "go" {
+		t.Errorf("DetectAllRuntimes = %v, want [go]", got)
+	}
+}
+
+func TestDetectAllRuntimes_MultipleRuntimes(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n")
+	writeFile(t, filepath.Join(dir, "pyproject.toml"), "[project]\nname = \"x\"\n")
+
+	got := DetectAllRuntimes(dir)
+	if len(got) != 2 {
+		t.Fatalf("DetectAllRuntimes = %v, want length 2", got)
+	}
+	// Priority order: go before python.
+	if got[0] != "go" || got[1] != "python" {
+		t.Errorf("DetectAllRuntimes = %v, want [go python]", got)
+	}
+}
+
+func TestDetectAllRuntimes_PythonMarkerEitherFile(t *testing.T) {
+	// Either pyproject.toml or requirements.txt counts as one "python" entry,
+	// never two.
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pyproject.toml"), "[project]\nname = \"x\"\n")
+	writeFile(t, filepath.Join(dir, "requirements.txt"), "requests\n")
+
+	got := DetectAllRuntimes(dir)
+	if len(got) != 1 || got[0] != "python" {
+		t.Errorf("DetectAllRuntimes = %v, want [python]", got)
+	}
+}
+
+func TestDetectAllRuntimes_AllRuntimesPresent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module x\n")
+	writeFile(t, filepath.Join(dir, "pubspec.yaml"), "name: x\n")
+	writeFile(t, filepath.Join(dir, "package.json"), "{}")
+	writeFile(t, filepath.Join(dir, "Cargo.toml"), "[package]\nname=\"x\"\n")
+	writeFile(t, filepath.Join(dir, "mix.exs"), "defmodule X.MixProject do\nend\n")
+	writeFile(t, filepath.Join(dir, "pyproject.toml"), "[project]\nname=\"x\"\n")
+
+	got := DetectAllRuntimes(dir)
+	want := []string{"go", "flutter", "node", "rust", "elixir", "python"}
+	if len(got) != len(want) {
+		t.Fatalf("DetectAllRuntimes = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("DetectAllRuntimes[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 // writeFile is a test helper that creates a file with the given content.
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()

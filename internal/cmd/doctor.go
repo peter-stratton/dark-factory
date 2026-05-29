@@ -20,26 +20,36 @@ any check fails.
 Checks:
   • Docker daemon running
   • gh CLI installed and authenticated
-  • Anthropic auth token set`,
+  • Anthropic auth token set
+  • Configured runtime matches repo files (when both are detectable)
+  • Multi-runtime repo has modules: configured (when more than one runtime is detected)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Best-effort runtime detection from the current directory.
 		runtime := ""
 		if dp, err := detect.DetectRuntime("."); err == nil {
 			runtime = dp.Runtime.Name
 		}
+		detectedRuntimes := detect.DetectAllRuntimes(".")
 
-		// Best-effort config load to obtain lint_command and compose config.
+		// Best-effort config load to obtain lint_command, modules, compose, oauth.
 		lintCommand := ""
+		configuredRuntime := ""
+		modulesConfigured := false
 		composeConfigured := false
 		oauthTokenEnv := ""
 		if cfg, err := config.Load("godark.yaml", config.CLIFlags{}); err == nil {
 			lintCommand = cfg.LintCommand
+			configuredRuntime = cfg.Runtime.Name
+			modulesConfigured = len(cfg.Modules) > 0
 			composeConfigured = cfg.DockerCompose != nil
 			oauthTokenEnv = cfg.OAuthTokenEnv
 		}
 
 		checks := doctor.Checks(doctor.Opts{
 			Runtime:           runtime,
+			ConfiguredRuntime: configuredRuntime,
+			DetectedRuntimes:  detectedRuntimes,
+			ModulesConfigured: modulesConfigured,
 			LintCommand:       lintCommand,
 			ComposeConfigured: composeConfigured,
 			OAuthTokenEnv:     oauthTokenEnv,

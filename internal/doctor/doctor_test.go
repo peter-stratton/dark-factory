@@ -299,6 +299,115 @@ func TestRuntimeVersionCmd(t *testing.T) {
 	}
 }
 
+// --- Runtime mismatch and multi-runtime checks ---
+
+func TestChecks_RuntimeMatch_NoExtraCheck(t *testing.T) {
+	checks := Checks(Opts{Runtime: "go", ConfiguredRuntime: "go"})
+	for _, c := range checks {
+		if strings.Contains(c.Name, "runtime matches") {
+			t.Errorf("unexpected runtime mismatch check when runtimes match: %s", c.Name)
+		}
+	}
+}
+
+func TestChecks_RuntimeMismatch_AddsFailingCheck(t *testing.T) {
+	checks := Checks(Opts{Runtime: "go", ConfiguredRuntime: "python"})
+	var found *Check
+	for _, c := range checks {
+		if c.Name == "Configured runtime matches repo files" {
+			found = c
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected runtime mismatch check to be added")
+	}
+	if found.run() {
+		t.Error("expected runtime mismatch check to fail")
+	}
+}
+
+func TestChecks_RuntimeMismatch_FixMentionsBoth(t *testing.T) {
+	checks := Checks(Opts{Runtime: "go", ConfiguredRuntime: "python"})
+	for _, c := range checks {
+		if c.Name != "Configured runtime matches repo files" {
+			continue
+		}
+		if !strings.Contains(c.Fix, "python") {
+			t.Errorf("Fix should mention configured runtime 'python': %s", c.Fix)
+		}
+		if !strings.Contains(c.Fix, "go") {
+			t.Errorf("Fix should mention detected runtime 'go': %s", c.Fix)
+		}
+		return
+	}
+	t.Fatal("expected runtime mismatch check to be present")
+}
+
+func TestChecks_RuntimeMismatch_SkippedWhenConfiguredEmpty(t *testing.T) {
+	// When godark.yaml has no runtime.name, we can't compare. Skip the check.
+	checks := Checks(Opts{Runtime: "go", ConfiguredRuntime: ""})
+	for _, c := range checks {
+		if c.Name == "Configured runtime matches repo files" {
+			t.Error("expected mismatch check to be skipped when ConfiguredRuntime is empty")
+		}
+	}
+}
+
+func TestChecks_RuntimeMismatch_SkippedWhenDetectedEmpty(t *testing.T) {
+	// When no marker files are found, we can't tell what the project is. Skip.
+	checks := Checks(Opts{Runtime: "", ConfiguredRuntime: "go"})
+	for _, c := range checks {
+		if c.Name == "Configured runtime matches repo files" {
+			t.Error("expected mismatch check to be skipped when Runtime is empty")
+		}
+	}
+}
+
+func TestChecks_SingleRuntime_NoMultiRuntimeCheck(t *testing.T) {
+	checks := Checks(Opts{DetectedRuntimes: []string{"go"}})
+	for _, c := range checks {
+		if c.Name == "Multi-runtime repo has modules: configured" {
+			t.Error("expected multi-runtime check to be skipped for single runtime")
+		}
+	}
+}
+
+func TestChecks_MultiRuntime_NoModules_AddsFailingCheck(t *testing.T) {
+	checks := Checks(Opts{
+		DetectedRuntimes:  []string{"go", "python"},
+		ModulesConfigured: false,
+	})
+	var found *Check
+	for _, c := range checks {
+		if c.Name == "Multi-runtime repo has modules: configured" {
+			found = c
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected multi-runtime check to be added")
+	}
+	if found.run() {
+		t.Error("expected multi-runtime check to fail when modules: is missing")
+	}
+	if !strings.Contains(found.Fix, "go") || !strings.Contains(found.Fix, "python") {
+		t.Errorf("Fix should mention both detected runtimes: %s", found.Fix)
+	}
+}
+
+func TestChecks_MultiRuntime_WithModules_NoCheck(t *testing.T) {
+	checks := Checks(Opts{
+		DetectedRuntimes:  []string{"go", "python"},
+		ModulesConfigured: true,
+	})
+	for _, c := range checks {
+		if c.Name == "Multi-runtime repo has modules: configured" {
+			t.Error("expected multi-runtime check to be skipped when ModulesConfigured is true")
+		}
+	}
+}
+
 func TestRun_Timeout(t *testing.T) {
 	origTimeout := CheckTimeout
 	defer func() { CheckTimeout = origTimeout }()
