@@ -59,13 +59,14 @@ func runtimeVersionCmd(runtime string) (string, []string) {
 
 // Opts controls which checks are included.
 type Opts struct {
-	Runtime           string   // detected runtime name (e.g. "go")
-	ConfiguredRuntime string   // runtime.name from godark.yaml (e.g. "python")
-	DetectedRuntimes  []string // every runtime whose marker file is present in the repo
-	ModulesConfigured bool     // a non-empty modules: block is present in godark.yaml
-	LintCommand       string   // configured lint command
-	ComposeConfigured bool     // docker_compose block is present
-	OAuthTokenEnv     string   // host env var name for Claude OAuth token (default CLAUDE_CODE_OAUTH_TOKEN)
+	Runtime                  string   // detected runtime name (e.g. "go")
+	ConfiguredRuntime        string   // runtime.name from godark.yaml (e.g. "python")
+	ConfiguredRuntimeVersion string   // runtime.version from godark.yaml (e.g. "1.22")
+	DetectedRuntimes         []string // every runtime whose marker file is present in the repo
+	ModulesConfigured        bool     // a non-empty modules: block is present in godark.yaml
+	LintCommand              string   // configured lint command
+	ComposeConfigured        bool     // docker_compose block is present
+	OAuthTokenEnv            string   // host env var name for Claude OAuth token (default CLAUDE_CODE_OAUTH_TOKEN)
 }
 
 // Checks returns the full ordered list of pre-flight checks.
@@ -138,6 +139,18 @@ func Checks(opts Opts) []*Check {
 				detected,
 			),
 			run: func() bool { return false },
+		})
+	}
+
+	// The sandbox Dockerfile builder hard-fails when runtime.name=go without a
+	// version, and the error currently propagates back to the caller without
+	// being logged in debug.log, producing a silent stall after "collected auth
+	// env". Catching it here surfaces the misconfig at preflight time.
+	if opts.ConfiguredRuntime == "go" && opts.ConfiguredRuntimeVersion == "" {
+		checks = append(checks, &Check{
+			Name: "Go runtime has a version",
+			Fix:  "godark.yaml has runtime.name=go but runtime.version is unset. The sandbox image builder needs a version to install the Go toolchain. Set runtime.version to a major.minor like \"1.22\" (or whichever version your project targets).",
+			run:  func() bool { return false },
 		})
 	}
 

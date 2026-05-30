@@ -358,11 +358,13 @@ func refreshHostGHToken(logger *slog.Logger) {
 func prepareResolveEnv(ctx context.Context, cfg *config.Config, runMode config.RunMode, logger *slog.Logger) (map[string]string, *agent.Prompts, error) {
 	authEnv, err := sandbox.CollectAuthEnv(logger, cfg.AuthPreference, cfg.OAuthTokenEnv, cfg.RequiredEnv)
 	if err != nil {
+		logger.Error("collecting auth env failed", "error", err)
 		return nil, nil, fmt.Errorf("collecting auth: %w", err)
 	}
 
 	prompts, err := agent.LoadPrompts(cfg)
 	if err != nil {
+		logger.Error("loading prompts failed", "error", err)
 		return nil, nil, fmt.Errorf("loading prompts: %w", err)
 	}
 
@@ -379,6 +381,11 @@ func prepareResolveEnv(ctx context.Context, cfg *config.Config, runMode config.R
 	dc := sandbox.DockerConfigFromConfig(cfg.Docker, cfg.Runtime, cfg.SandboxEnv, composeForRun)
 	tag, err := buildImageFn(ctx, dc, logger)
 	if err != nil {
+		// Without this Error log, build failures surface only via the wrapped
+		// return error. When the caller drops the error into a TUI display
+		// without writing to the run log, the user sees a silent stall after
+		// "collected auth env" with no indication of the root cause.
+		logger.Error("building Docker image failed", "error", err)
 		return nil, nil, fmt.Errorf("building Docker image: %w", err)
 	}
 	cfg.Docker.Image = tag

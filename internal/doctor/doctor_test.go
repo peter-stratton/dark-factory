@@ -408,6 +408,51 @@ func TestChecks_MultiRuntime_WithModules_NoCheck(t *testing.T) {
 	}
 }
 
+func TestChecks_GoRuntimeWithoutVersion_AddsFailingCheck(t *testing.T) {
+	checks := Checks(Opts{ConfiguredRuntime: "go", ConfiguredRuntimeVersion: ""})
+	var found *Check
+	for _, c := range checks {
+		if c.Name == "Go runtime has a version" {
+			found = c
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected 'Go runtime has a version' check to be added")
+	}
+	if found.run() {
+		t.Error("expected the check to fail when version is empty")
+	}
+	if !strings.Contains(found.Fix, "runtime.version") {
+		t.Errorf("Fix should mention runtime.version: %s", found.Fix)
+	}
+}
+
+func TestChecks_GoRuntimeWithVersion_NoCheck(t *testing.T) {
+	checks := Checks(Opts{ConfiguredRuntime: "go", ConfiguredRuntimeVersion: "1.22"})
+	for _, c := range checks {
+		if c.Name == "Go runtime has a version" {
+			t.Error("expected 'Go runtime has a version' check to be skipped when version is set")
+		}
+	}
+}
+
+func TestChecks_NonGoRuntime_NoVersionCheck(t *testing.T) {
+	// Only runtime.name=go triggers the version requirement; other runtimes
+	// either default the version (flutter) or have no validation (node, rust,
+	// python).
+	for _, name := range []string{"python", "node", "rust", "flutter"} {
+		t.Run(name, func(t *testing.T) {
+			checks := Checks(Opts{ConfiguredRuntime: name, ConfiguredRuntimeVersion: ""})
+			for _, c := range checks {
+				if c.Name == "Go runtime has a version" {
+					t.Errorf("expected version check to be skipped for runtime=%q", name)
+				}
+			}
+		})
+	}
+}
+
 func TestRun_Timeout(t *testing.T) {
 	origTimeout := CheckTimeout
 	defer func() { CheckTimeout = origTimeout }()
