@@ -1065,7 +1065,25 @@ func runFunctionalReviewCycle(
 			}
 
 		default:
-			// No verdict found — write to top-level and treat as failure.
+			// No verdict found. This is usually a transient agent crash (e.g. an
+			// Anthropic API socket error mid-run) rather than a genuine refusal,
+			// so retry the review while attempts remain instead of failing the
+			// issue outright. Only a no-verdict on the final attempt is fatal.
+			if retriesLeft := maxAttempts - attempt - 1; retriesLeft > 0 {
+				logger.Warn("functional reviewer produced no verdict — re-running reviewer",
+					"issue_number", issue.Number,
+					"attempt", attempt+1,
+					"retries_left", retriesLeft,
+				)
+				// Drop any partial review comment so the dialogue doesn't show a
+				// phantom round.
+				if err := github.DeleteLastPRCommentWithHeader(cfg.Repo, prNum, "## Review Notes"); err != nil {
+					logger.Warn("failed to delete stale review comment", "error", err)
+				}
+				continue
+			}
+
+			// Final attempt with no verdict — write to top-level and treat as failure.
 			if hook != nil {
 				if err := hook.WriteReviewResult(issue.Number, "functional", fStep); err != nil {
 					logger.Warn("failed to write functional review result", "error", err)

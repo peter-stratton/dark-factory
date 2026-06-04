@@ -916,6 +916,48 @@ func TestProcessIssue_AutoMergeNone_QualityReviewStillRuns(t *testing.T) {
 	}
 }
 
+func TestProcessIssue_NoVerdictRetriesFunctionalReviewer(t *testing.T) {
+	// A functional reviewer that crashes mid-run (e.g. an Anthropic API socket
+	// error) produces no AGENT_RESULT verdict. With retries remaining, the
+	// review should re-run rather than failing the issue outright.
+	cfg := loopConfig()
+	cfg.AutoMerge.Feature = "none"
+
+	reviewerCalls := 0
+	origRunner := SandboxRunner
+	origGuard := GuardRunner
+	t.Cleanup(func() {
+		SandboxRunner = origRunner
+		GuardRunner = origGuard
+	})
+	GuardRunner = loopGuardFn
+
+	SandboxRunner = func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		switch opts.Env["GODARK_ROLE"] {
+		case "quality_reviewer":
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
+		case "reviewer":
+			reviewerCalls++
+			if reviewerCalls == 1 {
+				// Transient crash: output with no AGENT_RESULT line.
+				return &sandbox.RunResult{Stdout: wrapRunnerJSON("API Error: The socket connection was closed unexpectedly")}, nil
+			}
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("AGENT_RESULT=APPROVED")}, nil
+		default: // implementer
+			return &sandbox.RunResult{Stdout: wrapRunnerJSON("implementer output")}, nil
+		}
+	}
+
+	outcome := ProcessIssue(context.Background(), loopIssue(), cfg, testPrompts(t), nil, testLogger(t), nil, nil, false)
+
+	if outcome.Status != "ready-to-merge" {
+		t.Errorf("Status = %q, want %q (err: %v)", outcome.Status, "ready-to-merge", outcome.Err)
+	}
+	if reviewerCalls < 2 {
+		t.Errorf("expected functional reviewer to re-run after no verdict, got %d call(s)", reviewerCalls)
+	}
+}
+
 func TestProcessIssue_SkipsQualityReviewWhenNoPrompt(t *testing.T) {
 	agentCallCount := 0
 	setupLoopTest(t, nil, func(name string, args ...string) ([]byte, error) {
