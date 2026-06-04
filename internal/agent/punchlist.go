@@ -61,6 +61,17 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 		return nil
 	}
 
+	// Clone the branch that holds the work under review. During a milestone run
+	// this is the integration base branch (where feature PRs merge); for single
+	// runs with no base branch it is the repo's actual default branch. Never
+	// assume "main": repos default to develop, master, etc., and a wrong branch
+	// makes `git checkout` fail, exiting the container before any tests are
+	// generated.
+	branch := cfg.BaseBranch
+	if branch == "" {
+		branch = cfg.EffectiveDefaultBranch(cfg.Repo)
+	}
+
 	timeout := 10 * time.Minute
 	opts := RunOpts{
 		Prompt:  buf.String(),
@@ -68,7 +79,7 @@ func GenerateAcceptanceTests(ctx context.Context, entry punchlist.Entry, prompts
 		Env:     authEnv,
 		Image:   cfg.Docker.Image,
 		Repo:    cfg.Repo,
-		Branch:  "main",
+		Branch:  branch,
 		Timeout: timeout,
 	}
 

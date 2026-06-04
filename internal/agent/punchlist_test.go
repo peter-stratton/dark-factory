@@ -3,8 +3,10 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/peter-stratton/dark-factory/internal/config"
@@ -346,5 +348,68 @@ func TestGenerateAcceptanceTests_LogsWarnOnUnparseable(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected Warn log when acceptance tests cannot be parsed")
+	}
+}
+
+// TestGenerateAcceptanceTests_ClonesBaseBranch verifies the punchlist agent
+// clones the configured base branch (the integration branch holding the merged
+// feature work), not a hardcoded "main". A wrong branch makes `git checkout`
+// fail and the container exits before generating any tests.
+func TestGenerateAcceptanceTests_ClonesBaseBranch(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	var gotCmd []string
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		gotCmd = opts.Cmd
+		return &sandbox.RunResult{Stdout: `{"result":"[]","is_error":false}`}, nil
+	})
+	origCmd := punchlist.CommandRunner
+	defer func() { punchlist.CommandRunner = origCmd }()
+	punchlist.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("diff\n"), nil
+	}
+
+	entry := punchlist.Entry{IssueNumber: 42, PRNumber: 10}
+	prompts := &Prompts{Punchlist: "Generate tests for issue {{.IssueNumber}}"}
+	cfg := &config.Config{Repo: "owner/repo", BaseBranch: "godark/phase-1"}
+
+	GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, map[string]string{}, logger)
+
+	script := strings.Join(gotCmd, " ")
+	if !strings.Contains(script, "git checkout godark/phase-1") {
+		t.Errorf("expected clone script to checkout base branch godark/phase-1, got: %s", script)
+	}
+	if strings.Contains(script, "git checkout main") {
+		t.Errorf("clone script must not hardcode main branch, got: %s", script)
+	}
+}
+
+// TestGenerateAcceptanceTests_FallsBackToDefaultBranch verifies that when no
+// base branch is configured the punchlist agent clones the repo's default
+// branch rather than assuming "main".
+func TestGenerateAcceptanceTests_FallsBackToDefaultBranch(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	var gotCmd []string
+	stubSandboxRunnerFunc(t, func(ctx context.Context, opts sandbox.RunOpts, logger *slog.Logger) (*sandbox.RunResult, error) {
+		gotCmd = opts.Cmd
+		return &sandbox.RunResult{Stdout: `{"result":"[]","is_error":false}`}, nil
+	})
+	origCmd := punchlist.CommandRunner
+	defer func() { punchlist.CommandRunner = origCmd }()
+	punchlist.CommandRunner = func(name string, args ...string) ([]byte, error) {
+		return []byte("diff\n"), nil
+	}
+
+	entry := punchlist.Entry{IssueNumber: 42, PRNumber: 10}
+	prompts := &Prompts{Punchlist: "Generate tests for issue {{.IssueNumber}}"}
+	// No BaseBranch; DefaultBranch set so EffectiveDefaultBranch avoids a gh call.
+	cfg := &config.Config{Repo: "owner/repo", DefaultBranch: "develop"}
+
+	GenerateAcceptanceTests(context.Background(), entry, prompts, cfg, map[string]string{}, logger)
+
+	script := strings.Join(gotCmd, " ")
+	if !strings.Contains(script, "git checkout develop") {
+		t.Errorf("expected clone script to checkout default branch develop, got: %s", script)
 	}
 }
