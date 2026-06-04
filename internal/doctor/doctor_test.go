@@ -364,6 +364,23 @@ func TestChecks_RuntimeMismatch_SkippedWhenDetectedEmpty(t *testing.T) {
 	}
 }
 
+func TestChecks_RuntimeMismatch_SkippedWhenConfiguredRuntimePresent(t *testing.T) {
+	// Root-only detection reports python (e.g. legacy requirements.txt at the
+	// root), but the configured Go runtime's marker exists in a subdirectory
+	// (server/go.mod). This is a valid rewrite-in-progress layout and must not
+	// be flagged as a mismatch.
+	checks := Checks(Opts{
+		Runtime:                  "python",
+		ConfiguredRuntime:        "go",
+		ConfiguredRuntimePresent: true,
+	})
+	for _, c := range checks {
+		if c.Name == "Configured runtime matches repo files" {
+			t.Error("expected mismatch check to be skipped when the configured runtime's marker is present in a subdirectory")
+		}
+	}
+}
+
 func TestChecks_SingleRuntime_NoMultiRuntimeCheck(t *testing.T) {
 	checks := Checks(Opts{DetectedRuntimes: []string{"go"}})
 	for _, c := range checks {

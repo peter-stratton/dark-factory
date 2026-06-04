@@ -383,6 +383,50 @@ func TestDetectAllRuntimes_AllRuntimesPresent(t *testing.T) {
 }
 
 // writeFile is a test helper that creates a file with the given content.
+func TestRuntimeMarkerPresent_SubdirModule(t *testing.T) {
+	// Legacy Python markers at the root, Go module under server/. The Go marker
+	// must be found even though it is not at the root.
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "requirements.txt"), "requests\n")
+	if err := os.MkdirAll(filepath.Join(dir, "server"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "server", "go.mod"), "module example.com/server\n\ngo 1.22\n")
+
+	if !RuntimeMarkerPresent(dir, "go") {
+		t.Error("expected go marker to be found in server/ subdirectory")
+	}
+	if !RuntimeMarkerPresent(dir, "python") {
+		t.Error("expected python marker to be found at root")
+	}
+}
+
+func TestRuntimeMarkerPresent_Absent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "requirements.txt"), "requests\n")
+	if RuntimeMarkerPresent(dir, "go") {
+		t.Error("expected go marker to be absent")
+	}
+}
+
+func TestRuntimeMarkerPresent_SkipsHeavyDirs(t *testing.T) {
+	// A marker buried in a skipped directory must not count.
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "node_modules", "dep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "node_modules", "dep", "go.mod"), "module dep\n")
+	if RuntimeMarkerPresent(dir, "go") {
+		t.Error("expected go marker inside node_modules to be ignored")
+	}
+}
+
+func TestRuntimeMarkerPresent_UnknownRuntime(t *testing.T) {
+	if RuntimeMarkerPresent(t.TempDir(), "cobol") {
+		t.Error("expected false for unknown runtime")
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

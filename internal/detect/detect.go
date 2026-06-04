@@ -61,6 +61,56 @@ func DetectAllRuntimes(repoPath string) []string {
 	return runtimes
 }
 
+// runtimeMarkers maps a runtime name to the marker filenames that indicate its
+// presence. A runtime is considered present if any of its markers exist.
+var runtimeMarkers = map[string][]string{
+	"go":      {"go.mod"},
+	"flutter": {"pubspec.yaml"},
+	"node":    {"package.json"},
+	"rust":    {"Cargo.toml"},
+	"elixir":  {"mix.exs"},
+	"python":  {"pyproject.toml", "requirements.txt"},
+}
+
+// RuntimeMarkerPresent reports whether a marker file for the named runtime
+// exists anywhere in repoPath, including subdirectories. This catches monorepo
+// and rewrite-in-progress layouts where the module lives in a subdirectory
+// (e.g. a Go module under server/ while legacy Python markers sit at the root),
+// which root-only detection via DetectRuntime/DetectAllRuntimes would miss.
+//
+// Common heavy or vendored directories are skipped. Returns false for unknown
+// runtimes or when no marker is found.
+func RuntimeMarkerPresent(repoPath, runtime string) bool {
+	markers := runtimeMarkers[runtime]
+	if len(markers) == 0 {
+		return false
+	}
+	markerSet := make(map[string]struct{}, len(markers))
+	for _, m := range markers {
+		markerSet[m] = struct{}{}
+	}
+
+	found := false
+	_ = filepath.WalkDir(repoPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries rather than aborting the walk
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "vendor", ".godark", "build", "dist", ".dart_tool":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if _, ok := markerSet[d.Name()]; ok {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
 // DetectRuntime scans repoPath for language marker files and returns a
 // DetectedProject with sensible defaults. First match wins.
 // Returns an error if no known marker file is found.

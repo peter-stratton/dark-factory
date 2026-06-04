@@ -48,10 +48,16 @@ Checks:
 			oauthTokenEnv = cfg.OAuthTokenEnv
 		}
 
+		// Whether the configured runtime's marker exists anywhere in the repo,
+		// including subdirectories (e.g. a Go module under server/).
+		configuredRuntimePresent := configuredRuntime != "" &&
+			detect.RuntimeMarkerPresent(".", configuredRuntime)
+
 		checks := doctor.Checks(doctor.Opts{
 			Runtime:                  runtime,
 			ConfiguredRuntime:        configuredRuntime,
 			ConfiguredRuntimeVersion: configuredRuntimeVersion,
+			ConfiguredRuntimePresent: configuredRuntimePresent,
 			DetectedRuntimes:         detectedRuntimes,
 			ModulesConfigured:        modulesConfigured,
 			LintCommand:              lintCommand,

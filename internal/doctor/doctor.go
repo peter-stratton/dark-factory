@@ -62,6 +62,7 @@ type Opts struct {
 	Runtime                  string   // detected runtime name (e.g. "go")
 	ConfiguredRuntime        string   // runtime.name from godark.yaml (e.g. "python")
 	ConfiguredRuntimeVersion string   // runtime.version from godark.yaml (e.g. "1.22")
+	ConfiguredRuntimePresent bool     // a marker for ConfiguredRuntime exists anywhere in the repo (incl. subdirs)
 	DetectedRuntimes         []string // every runtime whose marker file is present in the repo
 	ModulesConfigured        bool     // a non-empty modules: block is present in godark.yaml
 	LintCommand              string   // configured lint command
@@ -117,14 +118,20 @@ func Checks(opts Opts) []*Check {
 		}(),
 	)
 
-	if opts.ConfiguredRuntime != "" && opts.Runtime != "" && opts.ConfiguredRuntime != opts.Runtime {
+	// Flag a mismatch only when the configured runtime is genuinely absent from
+	// the repo. A configured runtime whose marker lives in a subdirectory (e.g. a
+	// Go module under server/ alongside legacy Python markers at the root) is
+	// valid even though root-only detection reports a different runtime, so it
+	// must not be flagged.
+	if opts.ConfiguredRuntime != "" && opts.Runtime != "" &&
+		opts.ConfiguredRuntime != opts.Runtime && !opts.ConfiguredRuntimePresent {
 		configured := opts.ConfiguredRuntime
 		detected := opts.Runtime
 		checks = append(checks, &Check{
 			Name: "Configured runtime matches repo files",
 			Fix: fmt.Sprintf(
-				"godark.yaml has runtime.name=%q but the repo contains %s marker files. Update godark.yaml to runtime.name=%q, or configure a modules: block if this is a multi-runtime repo.",
-				configured, detected, detected,
+				"godark.yaml has runtime.name=%q but no %s marker files were found anywhere in the repo; the repo contains %s marker files instead. Update godark.yaml to runtime.name=%q, or configure a modules: block if this is a multi-runtime repo.",
+				configured, configured, detected, detected,
 			),
 			run: func() bool { return false },
 		})
